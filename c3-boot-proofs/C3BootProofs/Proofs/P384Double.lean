@@ -283,7 +283,7 @@ theorem pd_dbl_loop {P F : Word} {M1 : Word → BitVec 8} (hF : F.toNat % 4 = 0)
     exact ⟨n', M'', c1.trans c', u', hc', hf', hb', hv', fun q hq => by rw [fr' q hq, fr q hq]⟩
 
 /-- `borrowing_sub`'s offset from `double`. -/
-abbrev pdBsub (P : Word) : Word := P + 0xFFFEE3C8
+abbrev pdBsub (P : Word) : Word := P + 0xFFFEC5B8
 
 /-- **One round of the final subtraction**, from 0x62: subtract limb `i` of
 the modulus and the borrow from limb `i` of the accumulator, and store the
@@ -334,7 +334,7 @@ theorem pd_sub_iter {M : Word → BitVec 8} {P F acc np D b : Word} {n : Machine
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd, hz]
     · simp [upd, h0, q0, q1]
-  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFEE3C8 (by decide))
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFEC5B8 (by decide))
     pd3_at_68 pd3_at_6c (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x68 + 8) (by decide))
     (by rw [k2 sp (by decide) (by decide), rsp]) hF sFB
   rw [g2a0, g2a1, k2 a2 (by decide) (by decide), ra2] at a03 a13
@@ -772,7 +772,7 @@ theorem pd_tail {M : Word → BitVec 8} {P F c b : Word} {n : Machine} (hP : P.t
   have x8 : reg n1 8 = aluEval .and (aluEval .sltu c 1) b := by
     rw [u1.regs]; simp +decide only [upd_app, ↓reduceIte]
   have x18 : reg n1 18 = reg n 18 := r1 18 rfl
-  obtain ⟨n2, c2, u2, _, _, sp2, fr2, mem2⟩ := u1.self.bsubCall hc1 hb1 (even_at P hP 0xFFFEE3C8 (by decide))
+  obtain ⟨n2, c2, u2, _, _, sp2, fr2, mem2⟩ := u1.self.bsubCall hc1 hb1 (even_at P hP 0xFFFEC5B8 (by decide))
     pd3_at_9e pd3_at_a2 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x9E + 8) (by decide))
     sp1 hF (by have := sB.sub (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this)
   have hc2 : CodeIn n2.mem P p384DoubleCode := fun i hi => by

@@ -124,8 +124,8 @@ structure U8CEEnv (M : Word → BitVec 8) (P sp0 pa pb : Word) : Prop where
   cod : CodeIn M P uint8CtEqCode
   spl : CodeIn M (P + 0x80) splitAt8Code
   lce : CodeIn M (P + 0xFFFFBCE6) limbCtEqCode
-  uiz : CodeIn M (P + 0xFFFF12EE) uintRefIsZeroCode
-  unz : CodeIn M (P + 0xFFFF12EE + 0x1A) uintRefIsNonzeroCode
+  uiz : CodeIn M (P + 0xFFFEF4DE) uintRefIsZeroCode
+  unz : CodeIn M (P + 0xFFFEF4DE + 0x1A) uintRefIsNonzeroCode
   hsp : sp0.toNat % 4 = 0
   hS : 0x44 ≤ sp0.toNat
   hpa : pa.toNat % 4 = 0
@@ -133,8 +133,8 @@ structure U8CEEnv (M : Word → BitVec 8) (P sp0 pa pb : Word) : Prop where
   sRC : Sep (sp0 + 0xFFFFFFBC) 0x44 P uint8CtEqCode.length
   sRS : Sep (sp0 + 0xFFFFFFBC) 0x44 (P + 0x80) splitAt8Code.length
   sRL : Sep (sp0 + 0xFFFFFFBC) 0x44 (P + 0xFFFFBCE6) limbCtEqCode.length
-  sRZ : Sep (sp0 + 0xFFFFFFBC) 0x44 (P + 0xFFFF12EE) uintRefIsZeroCode.length
-  sRN : Sep (sp0 + 0xFFFFFFBC) 0x44 (P + 0xFFFF12EE + 0x1A) uintRefIsNonzeroCode.length
+  sRZ : Sep (sp0 + 0xFFFFFFBC) 0x44 (P + 0xFFFEF4DE) uintRefIsZeroCode.length
+  sRN : Sep (sp0 + 0xFFFFFFBC) 0x44 (P + 0xFFFEF4DE + 0x1A) uintRefIsNonzeroCode.length
   sAR : Sep pa 32 (sp0 + 0xFFFFFFBC) 0x44
   sBR : Sep pb 32 (sp0 + 0xFFFFFFBC) 0x44
 
@@ -374,14 +374,14 @@ theorem uint8CtEq_correct (m : Machine) {P sp0 pa pb retAddr : Word} (env : U8CE
   simp only [runBlock, BInstr.run, uceMid1] at u12
   have and_ff : ∀ c : Nat, (if c = 0 then (1 : Word) else 0) = aluEval .and (if c = 0 then (1 : Word) else 0) 0xFF :=
     fun c => by split <;> rfl
-  have hZ : CodeIn M2 (P + 0xFFFF12EE) uintRefIsZeroCode := fun i hi => by
+  have hZ : CodeIn M2 (P + 0xFFFEF4DE) uintRefIsZeroCode := fun i hi => by
     rw [M2out _ (sRZ.subR (c := i) (l := 1) (by omega))]; exact env.uiz i hi
-  have hN : CodeIn M2 (P + 0xFFFF12EE + 0x1A) uintRefIsNonzeroCode := fun i hi => by
+  have hN : CodeIn M2 (P + 0xFFFEF4DE + 0x1A) uintRefIsNonzeroCode := fun i hi => by
     rw [M2out _ (sRN.subR (c := i) (l := 1) (by omega))]; exact env.unz i hi
   have eR : F + 0xFFFFFFEC = R := by rw [← hF, BitVec.add_assoc]; exact BitVec.add_zero R
-  have sZ0 : Sep R 0x14 (P + 0xFFFF12EE) uintRefIsZeroCode.length := by
+  have sZ0 : Sep R 0x14 (P + 0xFFFEF4DE) uintRefIsZeroCode.length := by
     have := sRZ.sub (c := 0) (l := 0x14) (by decide); rwa [add_ofNat_zero] at this
-  have sN0 : Sep R 0x14 (P + 0xFFFF12EE + 0x1A) uintRefIsNonzeroCode.length := by
+  have sN0 : Sep R 0x14 (P + 0xFFFEF4DE + 0x1A) uintRefIsNonzeroCode.length := by
     have := sRN.sub (c := 0) (l := 0x14) (by decide); rwa [add_ofNat_zero] at this
   have v12 : reg m12 9 = aluEval .and (reg m11 a0) 0xFF ∧ reg m12 a0 = pa + 0x20 ∧ reg m12 a1 = 0 ∧ reg m12 sp = F := by
     refine ⟨?_, ?_, ?_, ?_⟩ <;> rw [u12.regs] <;> simp +decide only [upd_app, ↓reduceIte]
@@ -391,11 +391,11 @@ theorem uint8CtEq_correct (m : Machine) {P sp0 pa pb retAddr : Word} (env : U8CE
         K8 20 (by decide) (by decide) (by decide), v620]; rfl
     · exact sp11
   obtain ⟨v129, v12a0, v12a1, v12sp⟩ := v12
-  obtain ⟨m13, c13, pc13, mem13, regs13⟩ := u12.self.callRa hc8 u8e_at_4e u8e_at_52 (cb := P + 0xFFFF12EE)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFF12EE (by decide))
+  obtain ⟨m13, c13, pc13, mem13, regs13⟩ := u12.self.callRa hc8 u8e_at_4e u8e_at_52 (cb := P + 0xFFFEF4DE)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFEF4DE (by decide))
   have r13 := PEnv.reg1 regs13 u12.self.zero
   obtain ⟨m14, c14, pc14, sp14, a014, k14, f14⟩ := uintRefIsZero_correct m13 (ptr := pa + 0x20) (len := 0) (sp0 := F)
-    (retAddr := P + BitVec.ofNat 32 0x56) (even_at P env.hP 0xFFFF12EE (by decide)) (by rw [mem13]; exact hZ)
+    (retAddr := P + BitVec.ofNat 32 0x56) (even_at P env.hP 0xFFFEF4DE (by decide)) (by rw [mem13]; exact hZ)
     (by rw [mem13]; exact hN) pc13 (by rw [r13 sp (by decide), v12sp]) hFa
     (by rw [r13 a0 (by decide), v12a0]) (by rw [r13 a1 (by decide), v12a1]; rfl) (by decide)
     (aligned_add env.hpa (by decide)) (by rw [eR]; exact sZ0) (by rw [eR]; exact sN0)
@@ -436,15 +436,15 @@ theorem uint8CtEq_correct (m : Machine) {P sp0 pa pb retAddr : Word} (env : U8CE
     · have : q = 0 := Fin.ext hq0
       subst this; simp [upd]; exact u14.zero.symm
     simp only [upd_app, hq0, h9, h0, h1, ite_false]
-  have hZ14 : CodeIn m14.mem (P + 0xFFFF12EE) uintRefIsZeroCode := fun i hi => by
+  have hZ14 : CodeIn m14.mem (P + 0xFFFEF4DE) uintRefIsZeroCode := fun i hi => by
     rw [f14 _ (sub14 (sRZ.subR (c := i) (l := 1) (by omega)))]; exact hZ i hi
-  have hN14 : CodeIn m14.mem (P + 0xFFFF12EE + 0x1A) uintRefIsNonzeroCode := fun i hi => by
+  have hN14 : CodeIn m14.mem (P + 0xFFFEF4DE + 0x1A) uintRefIsNonzeroCode := fun i hi => by
     rw [f14 _ (sub14 (sRN.subR (c := i) (l := 1) (by omega)))]; exact hN i hi
-  obtain ⟨m16, c16, pc16, mem16, regs16⟩ := u15.self.callRa hc14 u8e_at_60 u8e_at_64 (cb := P + 0xFFFF12EE)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFF12EE (by decide))
+  obtain ⟨m16, c16, pc16, mem16, regs16⟩ := u15.self.callRa hc14 u8e_at_60 u8e_at_64 (cb := P + 0xFFFEF4DE)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFEF4DE (by decide))
   have r16 := PEnv.reg1 regs16 u15.self.zero
   obtain ⟨m17, c17, pc17, sp17, a017, k17, f17⟩ := uintRefIsZero_correct m16 (ptr := pb + 0x20) (len := 0) (sp0 := F)
-    (retAddr := P + BitVec.ofNat 32 0x68) (even_at P env.hP 0xFFFF12EE (by decide)) (by rw [mem16]; exact hZ14)
+    (retAddr := P + BitVec.ofNat 32 0x68) (even_at P env.hP 0xFFFEF4DE (by decide)) (by rw [mem16]; exact hZ14)
     (by rw [mem16]; exact hN14) pc16 (by rw [r16 sp (by decide), v15sp]) hFa
     (by rw [r16 a0 (by decide), v15a0]) (by rw [r16 a1 (by decide), v15a1]; rfl) (by decide)
     (aligned_add env.hpb (by decide)) (by rw [eR]; exact sZ0) (by rw [eR]; exact sN0)
@@ -529,8 +529,8 @@ structure P2SEnv (M : Word → BitVec 8) (P sp0 pa pb : Word) : Prop where
   uce : CodeIn M (P + 0xFFFFFB5E) uint8CtEqCode
   spl : CodeIn M (P + 0xFFFFFB5E + 0x80) splitAt8Code
   lce : CodeIn M (P + 0xFFFFFB5E + 0xFFFFBCE6) limbCtEqCode
-  uiz : CodeIn M (P + 0xFFFFFB5E + 0xFFFF12EE) uintRefIsZeroCode
-  unz : CodeIn M (P + 0xFFFFFB5E + 0xFFFF12EE + 0x1A) uintRefIsNonzeroCode
+  uiz : CodeIn M (P + 0xFFFFFB5E + 0xFFFEF4DE) uintRefIsZeroCode
+  unz : CodeIn M (P + 0xFFFFFB5E + 0xFFFEF4DE + 0x1A) uintRefIsNonzeroCode
   bb : CodeIn M (P + 0xFFFFB93E) blackBoxU8Code
   hsp : sp0.toNat % 4 = 0
   hS : 0x54 ≤ sp0.toNat
@@ -540,8 +540,8 @@ structure P2SEnv (M : Word → BitVec 8) (P sp0 pa pb : Word) : Prop where
   sGU : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFB5E) uint8CtEqCode.length
   sGS : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFB5E + 0x80) splitAt8Code.length
   sGL : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFB5E + 0xFFFFBCE6) limbCtEqCode.length
-  sGZ : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFB5E + 0xFFFF12EE) uintRefIsZeroCode.length
-  sGN : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFB5E + 0xFFFF12EE + 0x1A) uintRefIsNonzeroCode.length
+  sGZ : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFB5E + 0xFFFEF4DE) uintRefIsZeroCode.length
+  sGN : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFB5E + 0xFFFEF4DE + 0x1A) uintRefIsNonzeroCode.length
   sGB : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFB93E) blackBoxU8Code.length
   sAG : Sep pa 32 (sp0 + 0xFFFFFFAC) 0x54
   sBG : Sep pb 32 (sp0 + 0xFFFFFFAC) 0x54

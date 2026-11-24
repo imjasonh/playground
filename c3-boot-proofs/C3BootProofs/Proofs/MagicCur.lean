@@ -92,8 +92,8 @@ hypotheses list, there is an execution that reaches the return address with
 says. -/
 theorem readerMagic_correct (m : Machine) (base retAddr self k : Word)
     (hcode : CodeAt m base readerMagicCode)
-    (hacode : CodeAt m (base + 0x1BC) readerArray4Code)
-    (hbcode : CodeAt m (base + 0x1BC + 0xFFFFFF96) readerBytesCode)
+    (hacode : CodeAt m (base + 0xFFFFFFBA) readerArray4Code)
+    (hbcode : CodeAt m (base + 0xFFFFFFBA + 0xFFFFFF8A) readerBytesCode)
     (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
     (ha0 : reg m a0 = self) (ha1 : reg m a1 = k) (hra : reg m ra = retAddr)
     (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
@@ -101,11 +101,11 @@ theorem readerMagic_correct (m : Machine) (base retAddr self k : Word)
     (hbuf : memLoad32 m.mem self ≠ 0 ∧
       (memLoad32 m.mem self).toNat + (memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32)
     (hSu : Sep (reg m sp + 0xFFFFFFD0) 48 base readerMagicCode.length)
-    (hSa : Sep (reg m sp + 0xFFFFFFD0) 48 (base + 0x1BC) readerArray4Code.length)
-    (hSb : Sep (reg m sp + 0xFFFFFFD0) 48 (base + 0x1BC + 0xFFFFFF96) readerBytesCode.length)
+    (hSa : Sep (reg m sp + 0xFFFFFFD0) 48 (base + 0xFFFFFFBA) readerArray4Code.length)
+    (hSb : Sep (reg m sp + 0xFFFFFFD0) 48 (base + 0xFFFFFFBA + 0xFFFFFF8A) readerBytesCode.length)
     (hEu : Sep (self + 8) 4 base readerMagicCode.length)
-    (hEa : Sep (self + 8) 4 (base + 0x1BC) readerArray4Code.length)
-    (hEb : Sep (self + 8) 4 (base + 0x1BC + 0xFFFFFF96) readerBytesCode.length)
+    (hEa : Sep (self + 8) 4 (base + 0xFFFFFFBA) readerArray4Code.length)
+    (hEb : Sep (self + 8) 4 (base + 0xFFFFFFBA + 0xFFFFFF8A) readerBytesCode.length)
     (hRS : Sep self 12 (reg m sp + 0xFFFFFFD0) 48)
     (hBS : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (reg m sp + 0xFFFFFFD0) 48)
     (hBE : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (self + 8) 4) :
@@ -179,11 +179,11 @@ theorem readerMagic_correct (m : Machine) (base retAddr self k : Word)
       by_cases h5 : r = sp
       · subst h5; simp +decide [upd]
       simp [upd, hr, h1, h2, h3, h4, h5]
-  have hev : (base + 0x1BC).toNat % 2 = 0 := even_at base hbase 0x1BC (by decide)
+  have hev : (base + 0xFFFFFFBA).toNat % 2 = 0 := even_at base hbase 0xFFFFFFBA (by decide)
   have hev14 : (base + BitVec.ofNat 32 0x14).toNat % 2 = 0 := even_at base hbase 0x14 (by decide)
-  have hpc8 : m8.pc = base + 0x1BC := by
+  have hpc8 : m8.pc = base + 0xFFFFFFBA := by
     rw [pc8]; simp +decide only [upd, ite_true, ite_false]
-    rw [show base + BitVec.ofNat 32 0x0C + 0 + 0x1B0 = base + 0x1BC by
+    rw [show base + BitVec.ofNat 32 0x0C + 0 + 0xFFFFFFAE = base + 0xFFFFFFBA by
       rw [BitVec.add_assoc, BitVec.add_assoc]; rfl, even_clear _ hev]
   have hGS : G + 0xFFFFFFE0 = S := by rw [hG, BitVec.add_assoc]; exact BitVec.add_zero S
   have r8sp : reg m8 sp = G := by rw [r8]; simp +decide
@@ -195,13 +195,13 @@ theorem readerMagic_correct (m : Machine) (base retAddr self k : Word)
     have := ld2 0 (by omega); rw [add_ofNat_zero] at this; rw [this, hptr]
   have l2l : memLoad32 M2 (self + 4) = len := by rw [show self + 4 = self + BitVec.ofNat 32 4 from rfl, ld2 4 (by omega)]; exact hlen
   have l2e : memLoad32 M2 (self + 8) = memLoad32 m.mem (self + 8) := ld2 8 (by omega)
-  have cA : CodeIn M2 (base + 0x1BC) readerArray4Code := fun i hi => by
+  have cA : CodeIn M2 (base + 0xFFFFFFBA) readerArray4Code := fun i hi => by
     rw [M2out _ (hSa.subR (c := i) (l := 1) (by omega))]; exact hacode i hi
-  have cB : CodeIn M2 (base + 0x1BC + 0xFFFFFF96) readerBytesCode := fun i hi => by
+  have cB : CodeIn M2 (base + 0xFFFFFFBA + 0xFFFFFF8A) readerBytesCode := fun i hi => by
     rw [M2out _ (hSb.subR (c := i) (l := 1) (by omega))]; exact hbcode i hi
   have hm8 : m8.mem = M2 := mem8
-  obtain ⟨m9, c9, pc9, sp9, fr9, mem9⟩ := readerArray4_correct m8 (base + 0x1BC)
-    (base + 0x1BC + 0xFFFFFF96) (base + BitVec.ofNat 32 0x14) G self
+  obtain ⟨m9, c9, pc9, sp9, fr9, mem9⟩ := readerArray4_correct m8 (base + 0xFFFFFFBA)
+    (base + 0xFFFFFFBA + 0xFFFFFF8A) (base + BitVec.ofNat 32 0x14) G self
     (fun i hi => by rw [hm8]; exact cA i hi) (fun i hi => by rw [hm8]; exact cB i hi) rfl hev
     hpc8 (by rw [r8]; simp +decide) (by rw [r8]; simp +decide) (by rw [r8]; simp +decide)
     (even_clear _ hev14) (by rw [r8sp]; exact hGa) hGa hself (by rw [hm8, l2p, l2l]; exact hbuf)

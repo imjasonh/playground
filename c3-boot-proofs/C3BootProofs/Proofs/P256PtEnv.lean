@@ -243,17 +243,17 @@ from the code, `b`, the point, and the result. The result's writes keep
 structure D2Env (M : Word → BitVec 8) (P sp0 out sf : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P p256PtDoubleCode
-  mul : CodeIn M (P + 0xF312) fieldMulCode
-  wm : CodeIn M (P + 0xB056) wideMulCode
-  mset : CodeIn M (P + 0x1249C) memsetCode
-  stub : CodeIn M (P + 0x12504) memcpyStubCode
-  body : CodeIn M (P + 0x1250C) memcpyBodyCode
-  si : CodeIn M (P + 0xF71E) subInnerCode
-  bsub : CodeIn M (siBsub (P + 0xF71E)) borrowingSubCode
-  add : CodeIn M (P + 0xFAD8) fieldAddCode
-  sub : CodeIn M (P + 0xFBFA) fieldSubCode
-  dbl : CodeIn M (P + 0xFDF4) fieldDoubleCode
-  sqr : CodeIn M (P + 0xFDFE) fieldSquareCode
+  mul : CodeIn M (P + 0x11122) fieldMulCode
+  wm : CodeIn M (P + 0xCE66) wideMulCode
+  mset : CodeIn M (P + 0x142AC) memsetCode
+  stub : CodeIn M (P + 0x14314) memcpyStubCode
+  body : CodeIn M (P + 0x1431C) memcpyBodyCode
+  si : CodeIn M (P + 0x1152E) subInnerCode
+  bsub : CodeIn M (siBsub (P + 0x1152E)) borrowingSubCode
+  add : CodeIn M (P + 0x118E8) fieldAddCode
+  sub : CodeIn M (P + 0x11A0A) fieldSubCode
+  dbl : CodeIn M (P + 0x11C04) fieldDoubleCode
+  sqr : CodeIn M (P + 0x11C0E) fieldSquareCode
   bconst : limbVal (wordsAt M bAddr 8) = bMont
   hsp : sp0.toNat % 4 = 0
   hS : 0x410 ≤ sp0.toNat
@@ -261,22 +261,22 @@ structure D2Env (M : Word → BitVec 8) (P sp0 out sf : Word) : Prop where
   hout : out.toNat % 4 = 0
   hwo : out.toNat + 96 < 2 ^ 32
   sC : Sep (d2S sp0) 0x410 P p256PtDoubleCode.length
-  sMul : Sep (d2S sp0) 0x410 (P + 0xF312) fieldMulCode.length
-  sWm : Sep (d2S sp0) 0x410 (P + 0xB056) wideMulCode.length
-  sMs : Sep (d2S sp0) 0x410 (P + 0x1249C) memsetCode.length
-  sU : Sep (d2S sp0) 0x410 (P + 0x12504) memcpyStubCode.length
-  sB : Sep (d2S sp0) 0x410 (P + 0x1250C) memcpyBodyCode.length
-  sI : Sep (d2S sp0) 0x410 (P + 0xF71E) subInnerCode.length
-  sIb : Sep (d2S sp0) 0x410 (siBsub (P + 0xF71E)) borrowingSubCode.length
-  sA : Sep (d2S sp0) 0x410 (P + 0xFAD8) fieldAddCode.length
-  sSb : Sep (d2S sp0) 0x410 (P + 0xFBFA) fieldSubCode.length
-  sD : Sep (d2S sp0) 0x410 (P + 0xFDF4) fieldDoubleCode.length
-  sQ : Sep (d2S sp0) 0x410 (P + 0xFDFE) fieldSquareCode.length
+  sMul : Sep (d2S sp0) 0x410 (P + 0x11122) fieldMulCode.length
+  sWm : Sep (d2S sp0) 0x410 (P + 0xCE66) wideMulCode.length
+  sMs : Sep (d2S sp0) 0x410 (P + 0x142AC) memsetCode.length
+  sU : Sep (d2S sp0) 0x410 (P + 0x14314) memcpyStubCode.length
+  sB : Sep (d2S sp0) 0x410 (P + 0x1431C) memcpyBodyCode.length
+  sI : Sep (d2S sp0) 0x410 (P + 0x1152E) subInnerCode.length
+  sIb : Sep (d2S sp0) 0x410 (siBsub (P + 0x1152E)) borrowingSubCode.length
+  sA : Sep (d2S sp0) 0x410 (P + 0x118E8) fieldAddCode.length
+  sSb : Sep (d2S sp0) 0x410 (P + 0x11A0A) fieldSubCode.length
+  sD : Sep (d2S sp0) 0x410 (P + 0x11C04) fieldDoubleCode.length
+  sQ : Sep (d2S sp0) 0x410 (P + 0x11C0E) fieldSquareCode.length
   sK : Sep (d2S sp0) 0x410 bAddr 32
   sF : Sep sf 96 (d2S sp0) 0x410
   sO : Sep out 96 (d2S sp0) 0x410
   oC : Sep out 96 P p256PtDoubleCode.length
-  oB : Sep out 96 (P + 0x1250C) memcpyBodyCode.length
+  oB : Sep out 96 (P + 0x1431C) memcpyBodyCode.length
 
 /-- What holds between the point doubling's calls, at offset `off`: the
 registers `paKeep` names hold `V`, memory outside `S` is as it was on entry
@@ -382,15 +382,15 @@ doubling with its result in the frame. -/
 theorem D2Env.fmEnv (env : D2Env M0 P sp0 out sf) {M : Word → BitVec 8}
     (fr : ∀ x, Sep (d2S sp0) 0x410 x 1 → M x = M0 x) {d : Nat} {a b : Word}
     (hd : D2Dst d) (sa : D2Src sp0 a) (sb : D2Src sp0 b) :
-    FMEnv M (P + 0xF312) (d2G sp0) (d2G sp0 + BitVec.ofNat 32 d) a b := by
+    FMEnv M (P + 0x11122) (d2G sp0) (d2G sp0 + BitVec.ofNat 32 d) a b := by
   have cT := @D2Env.codeT _ _ _ _ _ env M fr
-  have e1 : P + 0xF312 + 0xFFFFBD44 = P + 0xB056 := by rw [BitVec.add_assoc]; rfl
-  have e2 : P + 0xF312 + 0x40C = P + 0xF71E := by rw [BitVec.add_assoc]; rfl
-  have e5 : P + 0xB056 + 0x7446 = P + 0x1249C := by rw [BitVec.add_assoc]; rfl
-  have e6 : P + 0xB056 + 0x74AE = P + 0x12504 := by rw [BitVec.add_assoc]; rfl
-  have e7 : P + 0xB056 + 0x74B6 = P + 0x1250C := by rw [BitVec.add_assoc]; rfl
+  have e1 : P + 0x11122 + 0xFFFFBD44 = P + 0xCE66 := by rw [BitVec.add_assoc]; rfl
+  have e2 : P + 0x11122 + 0x40C = P + 0x1152E := by rw [BitVec.add_assoc]; rfl
+  have e5 : P + 0xCE66 + 0x7446 = P + 0x142AC := by rw [BitVec.add_assoc]; rfl
+  have e6 : P + 0xCE66 + 0x74AE = P + 0x14314 := by rw [BitVec.add_assoc]; rfl
+  have e7 : P + 0xCE66 + 0x74B6 = P + 0x1431C := by rw [BitVec.add_assoc]; rfl
   have hG := env.hGw; have hS := env.hS
-  refine ⟨even_at P env.hP 0xF312 (by decide), cT env.mul env.sMul,
+  refine ⟨even_at P env.hP 0x11122 (by decide), cT env.mul env.sMul,
     by rw [e1]; exact cT env.wm env.sWm,
     by rw [e1, e5]; exact cT env.mset env.sMs,
     by rw [e1, e6]; exact cT env.stub env.sU, by rw [e1, e7]; exact cT env.body env.sB,
@@ -405,11 +405,11 @@ theorem D2Env.fmEnv (env : D2Env M0 P sp0 out sf) {M : Word → BitVec 8}
 theorem D2Env.faEnv (env : D2Env M0 P sp0 out sf) {M : Word → BitVec 8}
     (fr : ∀ x, Sep (d2S sp0) 0x410 x 1 → M x = M0 x) {d : Nat} {a b : Word}
     (hd : D2Dst d) (sa : D2Src sp0 a) (sb : D2Src sp0 b) :
-    FAEnv M (P + 0xFAD8) (d2G sp0) (d2G sp0 + BitVec.ofNat 32 d) a b := by
+    FAEnv M (P + 0x118E8) (d2G sp0) (d2G sp0 + BitVec.ofNat 32 d) a b := by
   have cT := @D2Env.codeT _ _ _ _ _ env M fr
-  have e : P + 0xFAD8 + 0xFFFFFC46 = P + 0xF71E := by rw [BitVec.add_assoc]; rfl
+  have e : P + 0x118E8 + 0xFFFFFC46 = P + 0x1152E := by rw [BitVec.add_assoc]; rfl
   have hG := env.hGw; have hS := env.hS
-  refine ⟨even_at P env.hP 0xFAD8 (by decide), cT env.add env.sA,
+  refine ⟨even_at P env.hP 0x118E8 (by decide), cT env.add env.sA,
     by rw [e]; exact cT env.si env.sI, by rw [e]; exact cT env.bsub env.sIb,
     env.hGa, hd.al env, sa.1, sb.1, by omega, Nat.le_of_lt (hd.wr env), s2_ad env.sA, by rw [e]; exact s2_ad env.sI,
     by rw [e]; exact s2_ad env.sIb,
@@ -419,11 +419,11 @@ theorem D2Env.faEnv (env : D2Env M0 P sp0 out sf) {M : Word → BitVec 8}
 theorem D2Env.fsEnv (env : D2Env M0 P sp0 out sf) {M : Word → BitVec 8}
     (fr : ∀ x, Sep (d2S sp0) 0x410 x 1 → M x = M0 x) {d : Nat} {a b : Word}
     (hd : D2Dst d) (sa : D2Src sp0 a) (sb : D2Src sp0 b) :
-    FSEnv M (P + 0xFBFA) (d2G sp0) (d2G sp0 + BitVec.ofNat 32 d) a b := by
+    FSEnv M (P + 0x11A0A) (d2G sp0) (d2G sp0 + BitVec.ofNat 32 d) a b := by
   have cT := @D2Env.codeT _ _ _ _ _ env M fr
-  have e : P + 0xFBFA + 0xFFFFFB24 = P + 0xF71E := by rw [BitVec.add_assoc]; rfl
+  have e : P + 0x11A0A + 0xFFFFFB24 = P + 0x1152E := by rw [BitVec.add_assoc]; rfl
   have hG := env.hGw; have hS := env.hS
-  refine ⟨even_at P env.hP 0xFBFA (by decide), cT env.sub env.sSb,
+  refine ⟨even_at P env.hP 0x11A0A (by decide), cT env.sub env.sSb,
     by rw [e]; exact cT env.si env.sI, by rw [e]; exact cT env.bsub env.sIb,
     env.hGa, hd.al env, sa.1, sb.1, by omega, Nat.le_of_lt (hd.wr env), s2_ad env.sSb, by rw [e]; exact s2_ad env.sI,
     by rw [e]; exact s2_ad env.sIb,
@@ -433,17 +433,17 @@ theorem D2Env.fsEnv (env : D2Env M0 P sp0 out sf) {M : Word → BitVec 8}
 theorem D2Env.fdEnv (env : D2Env M0 P sp0 out sf) {M : Word → BitVec 8}
     (fr : ∀ x, Sep (d2S sp0) 0x410 x 1 → M x = M0 x) {d : Nat} {a : Word}
     (hd : D2Dst d) (sa : D2Src sp0 a) :
-    FDEnv M (P + 0xFDF4) (d2G sp0) (d2G sp0 + BitVec.ofNat 32 d) a := by
-  have e : P + 0xFDF4 + 0xFFFFFCE4 = P + 0xFAD8 := by rw [BitVec.add_assoc]; rfl
-  exact ⟨even_at P env.hP 0xFDF4 (by decide), env.codeT fr env.dbl env.sD, by rw [e]; exact env.faEnv fr hd sa sa⟩
+    FDEnv M (P + 0x11C04) (d2G sp0) (d2G sp0 + BitVec.ofNat 32 d) a := by
+  have e : P + 0x11C04 + 0xFFFFFCE4 = P + 0x118E8 := by rw [BitVec.add_assoc]; rfl
+  exact ⟨even_at P env.hP 0x11C04 (by decide), env.codeT fr env.dbl env.sD, by rw [e]; exact env.faEnv fr hd sa sa⟩
 
 /-- `FieldElement::square`'s environment, for a call from the point doubling. -/
 theorem D2Env.fqEnv (env : D2Env M0 P sp0 out sf) {M : Word → BitVec 8}
     (fr : ∀ x, Sep (d2S sp0) 0x410 x 1 → M x = M0 x) {d : Nat} {a : Word}
     (hd : D2Dst d) (sa : D2Src sp0 a) :
-    FQEnv M (P + 0xFDFE) (d2G sp0) (d2G sp0 + BitVec.ofNat 32 d) a := by
-  have e : P + 0xFDFE + 0xFFFFF514 = P + 0xF312 := by rw [BitVec.add_assoc]; rfl
-  exact ⟨even_at P env.hP 0xFDFE (by decide), env.codeT fr env.sqr env.sQ, by rw [e]; exact env.fmEnv fr hd sa sa⟩
+    FQEnv M (P + 0x11C0E) (d2G sp0) (d2G sp0 + BitVec.ofNat 32 d) a := by
+  have e : P + 0x11C0E + 0xFFFFF514 = P + 0x11122 := by rw [BitVec.add_assoc]; rfl
+  exact ⟨even_at P env.hP 0x11C0E (by decide), env.codeT fr env.sqr env.sQ, by rw [e]; exact env.fmEnv fr hd sa sa⟩
 
 /-- The callees' stack and a result slot leave the save slots alone. -/
 theorem d2sv_keep {d c : Nat} (hd : D2Dst d) (h1 : 0x2C0 ≤ c) (h2 : c < 0x2E0) :
@@ -477,7 +477,7 @@ product of the operands. -/
 theorem d2_mul (env : D2Env M0 P sp0 out sf) (I : D2Inv M0 P sp0 V Ms M n off) (hVsp : V sp = d2G sp0)
     (h1 : fetchRel p256PtDoubleCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel p256PtDoubleCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0xF312) (hoff : off % 2 = 0)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x11122) (hoff : off % 2 = 0)
     (hd : D2Dst d) (ha0 : reg n a0 = d2G sp0 + BitVec.ofNat 32 d)
     (sa : D2Src sp0 a) (ha1 : reg n a1 = a) (sb : D2Src sp0 b) (ha2 : reg n a2 = b)
     (hA : limbVal (wordsAt M a 8) = A) (hAp : A < p256) (hB : limbVal (wordsAt M b 8) = B) (hBp : B < p256) :
@@ -485,7 +485,7 @@ theorem d2_mul (env : D2Env M0 P sp0 out sf) (I : D2Inv M0 P sp0 V Ms M n off) (
       (∀ x, Sep (d2S sp0) 0x130 x 1 → Sep (d2G sp0 + BitVec.ofNat 32 d) 32 x 1 → M' x = M x) ∧
       limbVal (wordsAt M' (d2G sp0 + BitVec.ofNat 32 d) 8) = fm A B := by
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := I.st.callRa (env.codeT I.fr env.code env.sC) h1 h2 hb
-    (even_at P env.hP 0xF312 (by decide))
+    (even_at P env.hP 0x11122 (by decide))
   have r1 := PEnv.reg1 regs1 I.st.zero
   obtain ⟨n', c', pc', sp', regs', val', lt', fr'⟩ := fieldMul_correct n1
     (by rw [mem1]; exact env.fmEnv I.fr hd sa sb) pc1
@@ -505,7 +505,7 @@ set_option maxHeartbeats 1000000 in
 theorem d2_sqr (env : D2Env M0 P sp0 out sf) (I : D2Inv M0 P sp0 V Ms M n off) (hVsp : V sp = d2G sp0)
     (h1 : fetchRel p256PtDoubleCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel p256PtDoubleCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0xFDFE) (hoff : off % 2 = 0)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x11C0E) (hoff : off % 2 = 0)
     (hd : D2Dst d) (ha0 : reg n a0 = d2G sp0 + BitVec.ofNat 32 d)
     (sa : D2Src sp0 a) (ha1 : reg n a1 = a)
     (hA : limbVal (wordsAt M a 8) = A) (hAp : A < p256) :
@@ -513,7 +513,7 @@ theorem d2_sqr (env : D2Env M0 P sp0 out sf) (I : D2Inv M0 P sp0 V Ms M n off) (
       (∀ x, Sep (d2S sp0) 0x130 x 1 → Sep (d2G sp0 + BitVec.ofNat 32 d) 32 x 1 → M' x = M x) ∧
       limbVal (wordsAt M' (d2G sp0 + BitVec.ofNat 32 d) 8) = fm A A := by
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := I.st.callRa (env.codeT I.fr env.code env.sC) h1 h2 hb
-    (even_at P env.hP 0xFDFE (by decide))
+    (even_at P env.hP 0x11C0E (by decide))
   have r1 := PEnv.reg1 regs1 I.st.zero
   obtain ⟨n', c', pc', sp', regs', val', lt', fr'⟩ := fieldSquare_correct n1
     (by rw [mem1]; exact env.fqEnv I.fr hd sa) pc1
@@ -533,7 +533,7 @@ set_option maxHeartbeats 1000000 in
 theorem d2_add (env : D2Env M0 P sp0 out sf) (I : D2Inv M0 P sp0 V Ms M n off) (hVsp : V sp = d2G sp0)
     (h1 : fetchRel p256PtDoubleCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel p256PtDoubleCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0xFAD8) (hoff : off % 2 = 0)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x118E8) (hoff : off % 2 = 0)
     (hd : D2Dst d) (ha0 : reg n a0 = d2G sp0 + BitVec.ofNat 32 d)
     (sa : D2Src sp0 a) (ha1 : reg n a1 = a) (sb : D2Src sp0 b) (ha2 : reg n a2 = b)
     (hA : limbVal (wordsAt M a 8) = A) (hAp : A < p256) (hB : limbVal (wordsAt M b 8) = B) (hBp : B < p256) :
@@ -541,7 +541,7 @@ theorem d2_add (env : D2Env M0 P sp0 out sf) (I : D2Inv M0 P sp0 V Ms M n off) (
       (∀ x, Sep (d2S sp0) 0x130 x 1 → Sep (d2G sp0 + BitVec.ofNat 32 d) 32 x 1 → M' x = M x) ∧
       limbVal (wordsAt M' (d2G sp0 + BitVec.ofNat 32 d) 8) = fa A B := by
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := I.st.callRa (env.codeT I.fr env.code env.sC) h1 h2 hb
-    (even_at P env.hP 0xFAD8 (by decide))
+    (even_at P env.hP 0x118E8 (by decide))
   have r1 := PEnv.reg1 regs1 I.st.zero
   obtain ⟨n', c', pc', sp', regs', val', fr'⟩ := fieldAdd_correct n1
     (by rw [mem1]; exact env.faEnv I.fr hd sa sb) pc1
@@ -561,7 +561,7 @@ set_option maxHeartbeats 1000000 in
 theorem d2_sub (env : D2Env M0 P sp0 out sf) (I : D2Inv M0 P sp0 V Ms M n off) (hVsp : V sp = d2G sp0)
     (h1 : fetchRel p256PtDoubleCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel p256PtDoubleCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0xFBFA) (hoff : off % 2 = 0)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x11A0A) (hoff : off % 2 = 0)
     (hd : D2Dst d) (ha0 : reg n a0 = d2G sp0 + BitVec.ofNat 32 d)
     (sa : D2Src sp0 a) (ha1 : reg n a1 = a) (sb : D2Src sp0 b) (ha2 : reg n a2 = b)
     (hA : limbVal (wordsAt M a 8) = A) (hAp : A < p256) (hB : limbVal (wordsAt M b 8) = B) (hBp : B < p256) :
@@ -569,7 +569,7 @@ theorem d2_sub (env : D2Env M0 P sp0 out sf) (I : D2Inv M0 P sp0 V Ms M n off) (
       (∀ x, Sep (d2S sp0) 0x130 x 1 → Sep (d2G sp0 + BitVec.ofNat 32 d) 32 x 1 → M' x = M x) ∧
       limbVal (wordsAt M' (d2G sp0 + BitVec.ofNat 32 d) 8) = fs A B := by
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := I.st.callRa (env.codeT I.fr env.code env.sC) h1 h2 hb
-    (even_at P env.hP 0xFBFA (by decide))
+    (even_at P env.hP 0x11A0A (by decide))
   have r1 := PEnv.reg1 regs1 I.st.zero
   obtain ⟨n', c', pc', sp', regs', val', fr'⟩ := fieldSub_correct n1
     (by rw [mem1]; exact env.fsEnv I.fr hd sa sb) pc1
@@ -593,7 +593,7 @@ set_option maxHeartbeats 1000000 in
 theorem d2_dbl (env : D2Env M0 P sp0 out sf) (I : D2Inv M0 P sp0 V Ms M n off) (hVsp : V sp = d2G sp0)
     (h1 : fetchRel p256PtDoubleCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel p256PtDoubleCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0xFDF4) (hoff : off % 2 = 0)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x11C04) (hoff : off % 2 = 0)
     (hd : D2Dst d) (ha0 : reg n a0 = d2G sp0 + BitVec.ofNat 32 d)
     (sa : D2Src sp0 a) (ha1 : reg n a1 = a)
     (hA : limbVal (wordsAt M a 8) = A) (hAp : A < p256) :
@@ -601,7 +601,7 @@ theorem d2_dbl (env : D2Env M0 P sp0 out sf) (I : D2Inv M0 P sp0 V Ms M n off) (
       (∀ x, Sep (d2S sp0) 0x130 x 1 → Sep (d2G sp0 + BitVec.ofNat 32 d) 32 x 1 → M' x = M x) ∧
       limbVal (wordsAt M' (d2G sp0 + BitVec.ofNat 32 d) 8) = fd A := by
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := I.st.callRa (env.codeT I.fr env.code env.sC) h1 h2 hb
-    (even_at P env.hP 0xFDF4 (by decide))
+    (even_at P env.hP 0x11C04 (by decide))
   have r1 := PEnv.reg1 regs1 I.st.zero
   obtain ⟨n', c', pc', sp', regs', val', fr'⟩ := fieldDouble_correct n1
     (by rw [mem1]; exact env.fdEnv I.fr hd sa) pc1
@@ -621,7 +621,7 @@ set_option maxHeartbeats 1000000 in
 theorem d2_cpy (env : D2Env M0 P sp0 out sf) (I : D2Inv M0 P sp0 V Ms M n off) {s : Nat}
     (h1 : fetchRel p256PtDoubleCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel p256PtDoubleCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x12504) (hoff : off % 2 = 0)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x14314) (hoff : off % 2 = 0)
     (hd : D2Dst d) (hs : D2Dst s) (hds : d + 32 ≤ s ∨ s + 32 ≤ d)
     (ha0 : reg n a0 = d2G sp0 + BitVec.ofNat 32 d)
     (ha1 : reg n a1 = d2G sp0 + BitVec.ofNat 32 s) (ha2 : reg n a2 = 0x20) :
@@ -629,14 +629,14 @@ theorem d2_cpy (env : D2Env M0 P sp0 out sf) (I : D2Inv M0 P sp0 V Ms M n off) {
       (∀ x, Sep (d2S sp0) 0x130 x 1 → Sep (d2G sp0 + BitVec.ofNat 32 d) 32 x 1 → M' x = M x) ∧
       wordsAt M' (d2G sp0 + BitVec.ofNat 32 d) 8 = wordsAt M (d2G sp0 + BitVec.ofNat 32 s) 8 := by
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := I.st.callRa (env.codeT I.fr env.code env.sC) h1 h2 hb
-    (even_at P env.hP 0x12504 (by decide))
+    (even_at P env.hP 0x14314 (by decide))
   have r1 := PEnv.reg1 regs1 I.st.zero
-  have e : P + 0x12504 + 8 = P + 0x1250C := by rw [BitVec.add_assoc]; rfl
-  obtain ⟨n', c', pc', mem', a0', regs'⟩ := memcpy_aligned n1 (P + 0x12504) (P + BitVec.ofNat 32 (off + 8))
+  have e : P + 0x14314 + 8 = P + 0x1431C := by rw [BitVec.add_assoc]; rfl
+  obtain ⟨n', c', pc', mem', a0', regs'⟩ := memcpy_aligned n1 (P + 0x14314) (P + BitVec.ofNat 32 (off + 8))
     (d2G sp0 + BitVec.ofNat 32 d) (d2G sp0 + BitVec.ofNat 32 s) 8
     (fun i hi => by rw [mem1]; exact env.codeT I.fr env.stub env.sU i hi)
     (fun i hi => by rw [mem1, e]; exact env.codeT I.fr env.body env.sB i hi)
-    (even_at P env.hP 0x12504 (by decide)) pc1
+    (even_at P env.hP 0x14314 (by decide)) pc1
     (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2]; rfl)
     (by rw [regs1]; simp +decide [upd]) (d2_ret_even env hoff) (by decide) (hd.wr env) (by decide)
     (hd.al env) (hs.al env)
@@ -882,18 +882,18 @@ theorem d2_pro (m : Machine) {P sp0 out sf : Word} (env : D2Env m.mem P sp0 out 
     rw [frSv _ (hs.subR (c := i) (l := 1) (by omega))]; exact hc i hi
   have r1 : ∀ r, reg n1 r = (runBlock d2ProA (m.mem, reg m)).2 r := u1.regs
   obtain ⟨n2, c2, pc2, mem2, regs2⟩ := u1.self.callRa (cSv env.code env.sC) p2pd_at_2c p2pd_at_30
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x12504 (by decide))
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x14314 (by decide))
   have r2 := PEnv.reg1 regs2 u1.self.zero
-  have e : P + 0x12504 + 8 = P + 0x1250C := by rw [BitVec.add_assoc]; rfl
+  have e : P + 0x14314 + 8 = P + 0x1431C := by rw [BitVec.add_assoc]; rfl
   have hsfw : (d2G sp0).toNat + 4 * 24 < 2 ^ 32 := by
     have := sp0.isLt; omega
   have sDst : Sep (d2G sp0) (4 * 24) sf (4 * 24) := by
     rw [d2G_S0]; exact (env.sF.symm.sub (c := 0x130) (l := 96) (by decide))
-  obtain ⟨n3, c3, pc3, mem3, a03, regs3⟩ := memcpy_aligned n2 (P + 0x12504) (P + BitVec.ofNat 32 (0x2C + 8))
+  obtain ⟨n3, c3, pc3, mem3, a03, regs3⟩ := memcpy_aligned n2 (P + 0x14314) (P + BitVec.ofNat 32 (0x2C + 8))
     (d2G sp0) sf 24
     (fun i hi => by rw [mem2]; exact cSv env.stub env.sU i hi)
     (fun i hi => by rw [mem2, e]; exact cSv env.body env.sB i hi)
-    (even_at P env.hP 0x12504 (by decide)) pc2
+    (even_at P env.hP 0x14314 (by decide)) pc2
     (by rw [r2 a0 (by decide), r1, Ea0]) (by rw [r2 a1 (by decide), r1, Ek a1 (by decide) (by decide)
         (by decide) (by decide) (by decide), ha1])
     (by rw [r2 a2 (by decide), r1, Ea2]; rfl)
@@ -964,17 +964,17 @@ theorem d2_epi {M0 M Ms : Word → BitVec 8} {P sp0 out sf : Word} {V : Fin 32 �
       subst this; simp [upd]; exact I.st.zero.symm
     · simp only [upd_app, hq0, h0, h1, h2, ite_false]
   obtain ⟨m2, c2, pc2, mem2, regs2⟩ := u1.self.callRa cM p2pd_at_228 p2pd_at_22c
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x12504 (by decide))
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x14314 (by decide))
   have r2 := PEnv.reg1 regs2 u1.self.zero
-  have e : P + 0x12504 + 8 = P + 0x1250C := by rw [BitVec.add_assoc]; rfl
+  have e : P + 0x14314 + 8 = P + 0x1431C := by rw [BitVec.add_assoc]; rfl
   have hwo := env.hwo
   have sOut : Sep out (4 * 24) (d2G sp0) (4 * 24) := by
     rw [d2G_S0]; exact env.sO.subR (c := 0x130) (l := 96) (by decide)
-  obtain ⟨m3, c3, pc3, mem3, a03, regs3⟩ := memcpy_aligned m2 (P + 0x12504) (P + BitVec.ofNat 32 (0x228 + 8))
+  obtain ⟨m3, c3, pc3, mem3, a03, regs3⟩ := memcpy_aligned m2 (P + 0x14314) (P + BitVec.ofNat 32 (0x228 + 8))
     out (d2G sp0) 24
     (fun i hi => by rw [mem2]; exact env.codeT I.fr env.stub env.sU i hi)
     (fun i hi => by rw [mem2, e]; exact env.codeT I.fr env.body env.sB i hi)
-    (even_at P env.hP 0x12504 (by decide)) pc2
+    (even_at P env.hP 0x14314 (by decide)) pc2
     (by rw [r2 a0 (by decide), u1.regs]; simp +decide only [upd_app, ↓reduceIte]
         (try rw [I.st.zero]); rw [I.keep 20 rfl, hV20]; exact BitVec.zero_add _)
     (by rw [r2 a1 (by decide), u1.regs]; simp +decide only [upd_app, ↓reduceIte]

@@ -120,7 +120,7 @@ through `a5` unchanged, and memory outside those 16 bytes as `u16Mem`
 says. -/
 theorem readerU16_correct (m : Machine) (base retAddr self : Word)
     (hcode : CodeAt m base readerU16Code)
-    (hbcode : CodeAt m (base + 0xFFFFFFDA) readerBytesCode)
+    (hbcode : CodeAt m (base + 0x44) readerBytesCode)
     (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
     (ha0 : reg m a0 = self) (hra : reg m ra = retAddr)
     (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
@@ -128,9 +128,9 @@ theorem readerU16_correct (m : Machine) (base retAddr self : Word)
     (hbuf : memLoad32 m.mem self ≠ 0 ∧
       (memLoad32 m.mem self).toNat + (memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32)
     (hSu : Sep (reg m sp + 0xFFFFFFF0) 16 base readerU16Code.length)
-    (hSb : Sep (reg m sp + 0xFFFFFFF0) 16 (base + 0xFFFFFFDA) readerBytesCode.length)
+    (hSb : Sep (reg m sp + 0xFFFFFFF0) 16 (base + 0x44) readerBytesCode.length)
     (hEu : Sep (self + 8) 4 base readerU16Code.length)
-    (hEb : Sep (self + 8) 4 (base + 0xFFFFFFDA) readerBytesCode.length)
+    (hEb : Sep (self + 8) 4 (base + 0x44) readerBytesCode.length)
     (hRS : Sep self 12 (reg m sp + 0xFFFFFFF0) 16)
     (hBS : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (reg m sp + 0xFFFFFFF0) 16)
     (hBE : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (self + 8) 4) :
@@ -202,10 +202,10 @@ theorem readerU16_correct (m : Machine) (base retAddr self : Word)
       by_cases h6 : r = sp
       · subst h6; simp +decide [upd]
       simp [upd, hr, h1, h2, h3, h4, h5, h6]
-  have hevb : (base + 0xFFFFFFDA).toNat % 2 = 0 := even_at base hbase 0xFFFFFFDA (by decide)
-  have hpc9 : m9.pc = base + 0xFFFFFFDA := by
+  have hevb : (base + 0x44).toNat % 2 = 0 := even_at base hbase 0x44 (by decide)
+  have hpc9 : m9.pc = base + 0x44 := by
     rw [pc9]; simp +decide only [upd, ite_true, ite_false]
-    rw [show base + BitVec.ofNat 32 0x0E + 0 + 0xFFFFFFCC = base + 0xFFFFFFDA by
+    rw [show base + BitVec.ofNat 32 0x0E + 0 + 0x36 = base + 0x44 by
       rw [BitVec.add_assoc, BitVec.add_assoc]; rfl, even_clear _ hevb]
   have hm9 : m9.mem = M2 := mem9
   have hSself : Sep G 16 self 12 := hRS.symm
@@ -217,9 +217,9 @@ theorem readerU16_correct (m : Machine) (base retAddr self : Word)
   have l2l : memLoad32 M2 (self + 4) = len := by
     rw [show self + 4 = self + BitVec.ofNat 32 4 from rfl, ld2 4 (by omega)]; exact hlen
   have l2e : memLoad32 M2 (self + 8) = memLoad32 m.mem (self + 8) := ld2 8 (by omega)
-  have cB : CodeAt m9 (base + 0xFFFFFFDA) readerBytesCode := fun i hi => by
+  have cB : CodeAt m9 (base + 0x44) readerBytesCode := fun i hi => by
     rw [hm9, M2out _ (hSb.subR (c := i) (l := 1) (by omega))]; exact hbcode i hi
-  obtain ⟨m10, c10, pc10, mem10, fr10⟩ := readerBytes_correct m9 (base + 0xFFFFFFDA)
+  obtain ⟨m10, c10, pc10, mem10, fr10⟩ := readerBytes_correct m9 (base + 0x44)
     (base + BitVec.ofNat 32 0x16) G self 2 cB hpc9 (by rw [r9]; simp +decide)
     (by rw [r9]; simp +decide) (by rw [r9]; simp +decide) (by rw [r9]; simp +decide)
     (even_clear _ (even_at base hbase 0x16 (by decide))) hGa hself
@@ -457,8 +457,8 @@ register but `a0` through `a5` unchanged, and memory outside those 32 bytes
 as `u16Mem` says. -/
 theorem readerVersion1_correct (m : Machine) (base retAddr self : Word)
     (hcode : CodeAt m base readerVersion1Code)
-    (hucode : CodeAt m (base + 0x126) readerU16Code)
-    (hbcode : CodeAt m (base + 0x126 + 0xFFFFFFDA) readerBytesCode)
+    (hucode : CodeAt m (base + 0xFFFFD054) readerU16Code)
+    (hbcode : CodeAt m (base + 0xFFFFD054 + 0x44) readerBytesCode)
     (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
     (ha0 : reg m a0 = self) (hra : reg m ra = retAddr)
     (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
@@ -466,11 +466,11 @@ theorem readerVersion1_correct (m : Machine) (base retAddr self : Word)
     (hbuf : memLoad32 m.mem self ≠ 0 ∧
       (memLoad32 m.mem self).toNat + (memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32)
     (hSv : Sep (reg m sp + 0xFFFFFFE0) 32 base readerVersion1Code.length)
-    (hSu : Sep (reg m sp + 0xFFFFFFE0) 32 (base + 0x126) readerU16Code.length)
-    (hSb : Sep (reg m sp + 0xFFFFFFE0) 32 (base + 0x126 + 0xFFFFFFDA) readerBytesCode.length)
+    (hSu : Sep (reg m sp + 0xFFFFFFE0) 32 (base + 0xFFFFD054) readerU16Code.length)
+    (hSb : Sep (reg m sp + 0xFFFFFFE0) 32 (base + 0xFFFFD054 + 0x44) readerBytesCode.length)
     (hEv : Sep (self + 8) 4 base readerVersion1Code.length)
-    (hEu : Sep (self + 8) 4 (base + 0x126) readerU16Code.length)
-    (hEb : Sep (self + 8) 4 (base + 0x126 + 0xFFFFFFDA) readerBytesCode.length)
+    (hEu : Sep (self + 8) 4 (base + 0xFFFFD054) readerU16Code.length)
+    (hEb : Sep (self + 8) 4 (base + 0xFFFFD054 + 0x44) readerBytesCode.length)
     (hRS : Sep self 12 (reg m sp + 0xFFFFFFE0) 32)
     (hBS : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (reg m sp + 0xFFFFFFE0) 32)
     (hBE : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (self + 8) 4) :
@@ -518,10 +518,10 @@ theorem readerVersion1_correct (m : Machine) (base retAddr self : Word)
   have r4sp : reg m4 sp = G := by rw [regs4]; simp +decide [upd]
   have r4ra : reg m4 ra = base + BitVec.ofNat 32 0x0C := by
     rw [regs4]; simp +decide only [upd, ite_true, ite_false]; exact add_ofNat_assoc base 8 4
-  have hevu : (base + 0x126).toNat % 2 = 0 := even_at base hbase 0x126 (by decide)
-  have hpc4 : m4.pc = base + 0x126 := by
+  have hevu : (base + 0xFFFFD054).toNat % 2 = 0 := even_at base hbase 0xFFFFD054 (by decide)
+  have hpc4 : m4.pc = base + 0xFFFFD054 := by
     rw [pc4]; simp +decide only [upd, ite_true, ite_false]
-    rw [show base + BitVec.ofNat 32 4 + 0 + 0x122 = base + 0x126 by
+    rw [show base + BitVec.ofNat 32 4 + 0xFFFFD000 + 0x50 = base + 0xFFFFD054 by
       rw [BitVec.add_assoc, BitVec.add_assoc]; rfl, even_clear _ hevu]
   have hm4 : m4.mem = M1 := mem4
   have hSself : Sep S 32 self 12 := hRS.symm
@@ -560,7 +560,7 @@ theorem readerVersion1_correct (m : Machine) (base retAddr self : Word)
       with _ | ⟨p, e⟩
     · exact M1out x h
     · exact memStore32_congr (M1out x h)
-  obtain ⟨m5, c5, pc5, sp5, a05, fr5, mem5⟩ := readerU16_correct m4 (base + 0x126)
+  obtain ⟨m5, c5, pc5, sp5, a05, fr5, mem5⟩ := readerU16_correct m4 (base + 0xFFFFD054)
     (base + BitVec.ofNat 32 0x0C) self
     (fun i hi => by rw [hm4, M1out _ (hSu.subR (c := i) (l := 1) (by omega))]; exact hucode i hi)
     (fun i hi => by rw [hm4, M1out _ (hSb.subR (c := i) (l := 1) (by omega))]; exact hbcode i hi)

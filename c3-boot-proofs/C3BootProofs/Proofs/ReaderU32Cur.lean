@@ -148,8 +148,8 @@ exactly as `u32Mem` says: on success, the new position, tag 0, and the 4
 bytes at the slice's position as a little-endian word. -/
 theorem readerU32_correct (m : Machine) (base retAddr out self : Word)
     (hcode : CodeAt m base readerU32Code)
-    (hacode : CodeAt m (base + 0xFFFFFAB6) readerArray4Code)
-    (hbcode : CodeAt m (base + 0xFFFFFAB6 + 0xFFFFFF96) readerBytesCode)
+    (hacode : CodeAt m (base + 0x50) readerArray4Code)
+    (hbcode : CodeAt m (base + 0x50 + 0xFFFFFF8A) readerBytesCode)
     (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
     (ha0 : reg m a0 = out) (ha1 : reg m a1 = self) (hra : reg m ra = retAddr)
     (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
@@ -157,12 +157,12 @@ theorem readerU32_correct (m : Machine) (base retAddr out self : Word)
     (hbuf : memLoad32 m.mem self ≠ 0 ∧
       (memLoad32 m.mem self).toNat + (memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32)
     (hSu : Sep (reg m sp + 0xFFFFFFD0) 48 base readerU32Code.length)
-    (hSa : Sep (reg m sp + 0xFFFFFFD0) 48 (base + 0xFFFFFAB6) readerArray4Code.length)
-    (hSb : Sep (reg m sp + 0xFFFFFFD0) 48 (base + 0xFFFFFAB6 + 0xFFFFFF96) readerBytesCode.length)
+    (hSa : Sep (reg m sp + 0xFFFFFFD0) 48 (base + 0x50) readerArray4Code.length)
+    (hSb : Sep (reg m sp + 0xFFFFFFD0) 48 (base + 0x50 + 0xFFFFFF8A) readerBytesCode.length)
     (hOu : Sep out 8 base readerU32Code.length)
     (hEu : Sep (self + 8) 4 base readerU32Code.length)
-    (hEa : Sep (self + 8) 4 (base + 0xFFFFFAB6) readerArray4Code.length)
-    (hEb : Sep (self + 8) 4 (base + 0xFFFFFAB6 + 0xFFFFFF96) readerBytesCode.length)
+    (hEa : Sep (self + 8) 4 (base + 0x50) readerArray4Code.length)
+    (hEb : Sep (self + 8) 4 (base + 0x50 + 0xFFFFFF8A) readerBytesCode.length)
     (hRS : Sep self 12 (reg m sp + 0xFFFFFFD0) 48)
     (hOS : Sep out 8 (reg m sp + 0xFFFFFFD0) 48)
     (hBS : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (reg m sp + 0xFFFFFFD0) 48)
@@ -209,10 +209,10 @@ theorem readerU32_correct (m : Machine) (base retAddr out self : Word)
   obtain ⟨m6, e6, t6⟩ := t5.auipc hc3 u32_at_0a (off' := 0x0E) (by decide)
   obtain ⟨m7, e7, pc7, mem7, regs7⟩ := t6.call hc3 u32_at_0e
   have hGS : G + 0xFFFFFFE0 = S := by rw [hG, BitVec.add_assoc]; exact BitVec.add_zero S
-  have hsum : base + BitVec.ofNat 32 0x0A + 0 + 0xFFFFFAAC = base + 0xFFFFFAB6 := by
+  have hsum : base + BitVec.ofNat 32 0x0A + 0 + 0x46 = base + 0x50 := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
-  have hev : (base + 0xFFFFFAB6).toNat % 2 = 0 := by
-    rw [BitVec.toNat_add, show (0xFFFFFAB6 : Word).toNat = 0xFFFFFAB6 from rfl]; omega
+  have hev : (base + 0x50).toNat % 2 = 0 := by
+    rw [BitVec.toNat_add, show (0x50 : Word).toNat = 0x50 from rfl]; omega
   have hev2 : (base + BitVec.ofNat 32 0x12).toNat % 2 = 0 := even_at base hbase 0x12 (by decide)
   have r7 : ∀ r, reg m7 r = if r = ra then base + BitVec.ofNat 32 0x12 else
       if r = a0 then G else if r = s0 then out else if r = sp then G else reg m r := by
@@ -237,11 +237,11 @@ theorem readerU32_correct (m : Machine) (base retAddr out self : Word)
       memLoad32_store32_sep (show Sep (G + 0x0C) 4 a 4 from sepG 0x0C 4 (by omega) _ _ h)]
   have hSself : Sep S 48 self 12 := hRS.symm
   have hcA : CodeIn (memStore32 (memStore32 m.mem (G + 0x0C) (reg m ra)) (G + 8) (reg m s0))
-      (base + 0xFFFFFAB6) readerArray4Code :=
+      (base + 0x50) readerArray4Code :=
     ((show CodeIn m.mem _ _ from hacode).store32 (show Sep (G + 0x0C) 4 _ _ from sepG 0x0C 4 (by omega) _ _ hSa)).store32
       (show Sep (G + 8) 4 _ _ from sepG 8 4 (by omega) _ _ hSa)
   have hcB : CodeIn (memStore32 (memStore32 m.mem (G + 0x0C) (reg m ra)) (G + 8) (reg m s0))
-      (base + 0xFFFFFAB6 + 0xFFFFFF96) readerBytesCode :=
+      (base + 0x50 + 0xFFFFFF8A) readerBytesCode :=
     ((show CodeIn m.mem _ _ from hbcode).store32 (show Sep (G + 0x0C) 4 _ _ from sepG 0x0C 4 (by omega) _ _ hSb)).store32
       (show Sep (G + 8) 4 _ _ from sepG 8 4 (by omega) _ _ hSb)
   have r7sp : reg m7 sp = G := by rw [r7]; simp +decide
@@ -251,12 +251,12 @@ theorem readerU32_correct (m : Machine) (base retAddr out self : Word)
   have hbuf7 : memLoad32 m7.mem self ≠ 0 ∧
       (memLoad32 m7.mem self).toNat + (memLoad32 m7.mem (self + 4)).toNat ≤ 2 ^ 32 := by
     rw [mem7, mem2 self h0self, mem2 (self + 4) h4self]; exact hbuf
-  have hS32a : Sep (reg m7 sp + 0xFFFFFFE0) 32 (base + 0xFFFFFAB6) readerArray4Code.length := by
+  have hS32a : Sep (reg m7 sp + 0xFFFFFFE0) 32 (base + 0x50) readerArray4Code.length := by
     rw [r7sp, hGS]; have := hSa.sub (c := 0) (l := 32) (by omega); rwa [add_ofNat_zero] at this
-  have hS32b : Sep (reg m7 sp + 0xFFFFFFE0) 32 (base + 0xFFFFFAB6 + 0xFFFFFF96)
+  have hS32b : Sep (reg m7 sp + 0xFFFFFFE0) 32 (base + 0x50 + 0xFFFFFF8A)
       readerBytesCode.length := by
     rw [r7sp, hGS]; have := hSb.sub (c := 0) (l := 32) (by omega); rwa [add_ofNat_zero] at this
-  have hOa : Sep G 8 (base + 0xFFFFFAB6) readerArray4Code.length := by
+  have hOa : Sep G 8 (base + 0x50) readerArray4Code.length := by
     have := sepG 0 8 (by omega) _ _ hSa; rwa [add_ofNat_zero] at this
   have hRS32 : Sep self 12 (reg m7 sp + 0xFFFFFFE0) 32 := by
     rw [r7sp, hGS]; have := hRS.subR (c := 0) (l := 32) (by omega); rwa [add_ofNat_zero] at this
@@ -264,10 +264,10 @@ theorem readerU32_correct (m : Machine) (base retAddr out self : Word)
     rw [r7sp, hGS, hG]
     have := sep_offsets S (c := 32) (n := 8) (d := 0) (k := 32) (by omega) (by omega) (by omega)
     rwa [add_ofNat_zero] at this
-  have hpc7 : m7.pc = base + 0xFFFFFAB6 := by
+  have hpc7 : m7.pc = base + 0x50 := by
     rw [pc7]; simp +decide only [upd, ite_true, ite_false]; rw [hsum, even_clear _ hev]
-  obtain ⟨m8, c8, pc8, sp8, fr8, mem8⟩ := readerArray4_correct m7 (base + 0xFFFFFAB6)
-    (base + 0xFFFFFAB6 + 0xFFFFFF96) (base + BitVec.ofNat 32 0x12) G self
+  obtain ⟨m8, c8, pc8, sp8, fr8, mem8⟩ := readerArray4_correct m7 (base + 0x50)
+    (base + 0x50 + 0xFFFFFF8A) (base + BitVec.ofNat 32 0x12) G self
     (fun i hi => by rw [mem7]; exact hcA i hi) (fun i hi => by rw [mem7]; exact hcB i hi) rfl hev
     hpc7 (by rw [r7]; simp +decide) (by rw [r7]; simp +decide [ha1]) (by rw [r7]; simp +decide)
     (even_clear _ hev2) (by rw [r7sp]; exact hGa) hGa hself hbuf7 hS32a hS32b hOa hEa hEb hRS32 hGS32

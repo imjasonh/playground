@@ -674,10 +674,10 @@ and the operands at `lp` and `rp`, all apart where they must be. -/
 structure PSEnv (M : Word → BitVec 8) (P sp0 out lp rp : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P p384SubCode
-  mset : CodeIn M (P + 0x1259C) memsetCode
+  mset : CodeIn M (P + 0x143AC) memsetCode
   bsub : CodeIn M (psBsub P) borrowingSubCode
-  stub : CodeIn M (P + 0x12604) memcpyStubCode
-  body : CodeIn M (P + 0x1260C) memcpyBodyCode
+  stub : CodeIn M (P + 0x14414) memcpyStubCode
+  body : CodeIn M (P + 0x1441C) memcpyBodyCode
   pmod : CodeIn M p3M p384ModulusData
   hsp : sp0.toNat % 4 = 0
   hS : 0xB4 ≤ sp0.toNat
@@ -686,13 +686,13 @@ structure PSEnv (M : Word → BitVec 8) (P sp0 out lp rp : Word) : Prop where
   hrp : rp.toNat % 4 = 0
   hwo : out.toNat + 48 < 2 ^ 32
   sSC : Sep (sp0 + 0xFFFFFF4C) 0xB4 P p384SubCode.length
-  sSM : Sep (sp0 + 0xFFFFFF4C) 0xB4 (P + 0x1259C) memsetCode.length
+  sSM : Sep (sp0 + 0xFFFFFF4C) 0xB4 (P + 0x143AC) memsetCode.length
   sSB : Sep (sp0 + 0xFFFFFF4C) 0xB4 (psBsub P) borrowingSubCode.length
-  sSU : Sep (sp0 + 0xFFFFFF4C) 0xB4 (P + 0x12604) memcpyStubCode.length
-  sSY : Sep (sp0 + 0xFFFFFF4C) 0xB4 (P + 0x1260C) memcpyBodyCode.length
+  sSU : Sep (sp0 + 0xFFFFFF4C) 0xB4 (P + 0x14414) memcpyStubCode.length
+  sSY : Sep (sp0 + 0xFFFFFF4C) 0xB4 (P + 0x1441C) memcpyBodyCode.length
   sSP : Sep (sp0 + 0xFFFFFF4C) 0xB4 p3M 48
   sOC : Sep out 48 P p384SubCode.length
-  sOY : Sep out 48 (P + 0x1260C) memcpyBodyCode.length
+  sOY : Sep out 48 (P + 0x1441C) memcpyBodyCode.length
   sOS : Sep out 48 (sp0 + 0xFFFFFF4C) 0xB4
   sLS : Sep lp 48 (sp0 + 0xFFFFFF4C) 0xB4
   sRS : Sep rp 48 (sp0 + 0xFFFFFF4C) 0xB4
@@ -748,9 +748,9 @@ theorem ps_pro (m : Machine) {P sp0 out lp rp : Word} (env : PSEnv m.mem P sp0 o
     (by simp [BlockOk, BInstr.ok, psPro])
   simp only [runBlock, BInstr.run, psPro] at u3
   have g3 : ∀ q, reg m3 q = _ := u3.regs
-  obtain ⟨m4, c4, u4, a04, k4⟩ := St.memsetW (B := P + 0x1259C) (w := 12)
+  obtain ⟨m4, c4, u4, a04, k4⟩ := St.memsetW (B := P + 0x143AC) (w := 12)
     (dst := sp0 + 0xFFFFFF50 + BitVec.ofNat 32 4)
-    (even_at P env.hP 0x1259C (by decide)) u3.self (cIn env.code env.sSC frSv) (cIn env.mset env.sSM frSv)
+    (even_at P env.hP 0x143AC (by decide)) u3.self (cIn env.code env.sSC frSv) (cIn env.mset env.sSM frSv)
     ps3_at_20 ps3_at_24 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP (0x20 + 8) (by decide))
     (by decide) (by rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega) (by decide) (aligned_add hFa (by decide))
     (p3inF' (c := 4) (l := 4 * 12) (by decide) env.sSM)
@@ -820,9 +820,9 @@ set_option maxHeartbeats 8000000 in
 /-- From the subtraction loop's exit at 0x4E to the mask loop at 0x6C: zero
 the buffer at `F + 0x64` and point at it and the modulus. -/
 theorem ps_mid1 {M : Word → BitVec 8} {P F : Word} {n : Machine} (hP : P.toNat % 2 = 0)
-    (s : St M P n 0x4E (reg n)) (hc : CodeIn M P p384SubCode) (hms : CodeIn M (P + 0x1259C) memsetCode)
+    (s : St M P n 0x4E (reg n)) (hc : CodeIn M P p384SubCode) (hms : CodeIn M (P + 0x143AC) memsetCode)
     (hF : F.toNat % 4 = 0) (hFw : F.toNat + 0xB0 ≤ 2 ^ 32)
-    (sM : Sep (F + BitVec.ofNat 32 0x64) (4 * 12) (P + 0x1259C) memsetCode.length)
+    (sM : Sep (F + BitVec.ofNat 32 0x64) (4 * 12) (P + 0x143AC) memsetCode.length)
     (sC : Sep (F + BitVec.ofNat 32 0x64) (4 * 12) P p384SubCode.length) (rsp : reg n sp = F) :
     ∃ n', Steps n n' ∧ St (fillWords M (F + BitVec.ofNat 32 0x64) 0 12) P n' 0x6C (reg n') ∧
       reg n' sp = F ∧ reg n' a0 = p3M + BitVec.ofNat 32 (4 * 0) ∧
@@ -830,8 +830,8 @@ theorem ps_mid1 {M : Word → BitVec 8} {P F : Word} {n : Machine} (hP : P.toNat
       ∀ q, psMid1Keep q = true → reg n' q = reg n q := by
   obtain ⟨n1, c1, u1⟩ := St.block psMid1 s hc psMid1_end (by simp [BlockOk, BInstr.ok, psMid1])
   simp only [runBlock, BInstr.run, psMid1] at u1
-  obtain ⟨n2, c2, u2, a02, k2⟩ := St.memsetW (B := P + 0x1259C) (w := 12) (dst := F + BitVec.ofNat 32 0x64)
-    (even_at P hP 0x1259C (by decide)) u1.self hc hms ps3_at_58 ps3_at_5c
+  obtain ⟨n2, c2, u2, a02, k2⟩ := St.memsetW (B := P + 0x143AC) (w := 12) (dst := F + BitVec.ofNat 32 0x64)
+    (even_at P hP 0x143AC (by decide)) u1.self hc hms ps3_at_58 ps3_at_5c
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x58 + 8) (by decide))
     (by decide) (by rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega) (by decide) (aligned_add hF (by decide)) sM
     (by rw [u1.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [rsp]; rfl)
@@ -867,9 +867,9 @@ set_option maxHeartbeats 8000000 in
 /-- From the mask loop's exit at 0x7C to the sum loop at 0x96: zero the sum
 buffer at `F + 0x34` and point at the three buffers. -/
 theorem ps_mid2 {M : Word → BitVec 8} {P F : Word} {n : Machine} (hP : P.toNat % 2 = 0)
-    (s : St M P n 0x7C (reg n)) (hc : CodeIn M P p384SubCode) (hms : CodeIn M (P + 0x1259C) memsetCode)
+    (s : St M P n 0x7C (reg n)) (hc : CodeIn M P p384SubCode) (hms : CodeIn M (P + 0x143AC) memsetCode)
     (hF : F.toNat % 4 = 0) (hFw : F.toNat + 0xB0 ≤ 2 ^ 32)
-    (sM : Sep (F + BitVec.ofNat 32 0x34) (4 * 12) (P + 0x1259C) memsetCode.length)
+    (sM : Sep (F + BitVec.ofNat 32 0x34) (4 * 12) (P + 0x143AC) memsetCode.length)
     (sC : Sep (F + BitVec.ofNat 32 0x34) (4 * 12) P p384SubCode.length) (rsp : reg n sp = F) (ra1 : reg n a1 = 0) :
     ∃ n', Steps n n' ∧ St (fillWords M (F + BitVec.ofNat 32 0x34) 0 12) P n' 0x96 (reg n') ∧
       reg n' sp = F ∧ reg n' a0 = F + BitVec.ofNat 32 4 + BitVec.ofNat 32 (4 * 0) ∧
@@ -878,8 +878,8 @@ theorem ps_mid2 {M : Word → BitVec 8} {P F : Word} {n : Machine} (hP : P.toNat
       reg n' a3 = 0 ∧ ∀ q, psMid2Keep q = true → reg n' q = reg n q := by
   obtain ⟨n1, c1, u1⟩ := St.block psMid2 s hc psMid2_end (by simp [BlockOk, BInstr.ok, psMid2])
   simp only [runBlock, BInstr.run, psMid2] at u1
-  obtain ⟨n2, c2, u2, a02, k2⟩ := St.memsetW (B := P + 0x1259C) (w := 12) (dst := F + BitVec.ofNat 32 0x34)
-    (even_at P hP 0x1259C (by decide)) u1.self hc hms ps3_at_84 ps3_at_88
+  obtain ⟨n2, c2, u2, a02, k2⟩ := St.memsetW (B := P + 0x143AC) (w := 12) (dst := F + BitVec.ofNat 32 0x34)
+    (even_at P hP 0x143AC (by decide)) u1.self hc hms ps3_at_84 ps3_at_88
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x84 + 8) (by decide))
     (by decide) (by rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega) (by decide) (aligned_add hF (by decide)) sM
     (by rw [u1.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [rsp]; rfl)
@@ -933,11 +933,11 @@ theorem ps_epi {P sp0 out lp rp : Word} {M0 Mx : Word → BitVec 8} {n : Machine
   have hc := cX env.code env.sSC
   obtain ⟨n1, c1, u1⟩ := St.block psCpyArgs s hc psCpyArgs_end (by simp [BlockOk, BInstr.ok, psCpyArgs])
   simp only [runBlock, BInstr.run, psCpyArgs] at u1
-  have e8 : P + 0x12604 + 8 = P + 0x1260C := by rw [BitVec.add_assoc]; rfl
+  have e8 : P + 0x14414 + 8 = P + 0x1441C := by rw [BitVec.add_assoc]; rfl
   have sO60 : Sep out 48 (sp0 + 0xFFFFFF50 + BitVec.ofNat 32 0x34) 48 := by
     have := env.sOS.subR (c := 0x38) (l := 48) (by decide); rwa [psG_34] at this
-  obtain ⟨n2, c2, u2, a02, k2⟩ := St.memcpyW (B := P + 0x12604) (w := 12) (dst := out)
-    (src := sp0 + 0xFFFFFF50 + BitVec.ofNat 32 0x34) (even_at P env.hP 0x12604 (by decide)) u1.self hc
+  obtain ⟨n2, c2, u2, a02, k2⟩ := St.memcpyW (B := P + 0x14414) (w := 12) (dst := out)
+    (src := sp0 + 0xFFFFFF50 + BitVec.ofNat 32 0x34) (even_at P env.hP 0x14414 (by decide)) u1.self hc
     (cX env.stub env.sSU) (by rw [e8]; exact cX env.body env.sSY) ps3_at_bc ps3_at_c0
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP (0xBC + 8) (by decide))
     (by decide) env.hwo (by decide) env.hout (aligned_add hFa (by decide)) sO60 (by rw [e8]; exact env.sOY)

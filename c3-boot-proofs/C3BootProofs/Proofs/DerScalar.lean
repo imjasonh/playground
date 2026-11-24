@@ -326,9 +326,9 @@ structure DSEnv (M : Word → BitVec 8) (P sp0 out d : Word) : Prop where
   elem : CodeIn M (P + 0xFFFFFD12 + 0x72 + 0x5E) derElementCode
   tlv : CodeIn M (P + 0xFFFFFD12 + 0x72 + 0x5E + 0x26) derTlvCode
   zip : CodeIn M (P + 0xFFFFFD62) zipSkipNextCode
-  mset : CodeIn M (P + 0xC566) memsetCode
-  mcs : CodeIn M (P + 0xC5CE) memcpyStubCode
-  mcb : CodeIn M (P + 0xC5D6) memcpyBodyCode
+  mset : CodeIn M (P + 0xCED8) memsetCode
+  mcs : CodeIn M (P + 0xCF40) memcpyStubCode
+  mcb : CodeIn M (P + 0xCF48) memcpyBodyCode
   hsp : sp0.toNat % 4 = 0
   hS : 0xA0 ≤ sp0.toNat
   hd : d.toNat % 4 = 0
@@ -339,17 +339,17 @@ structure DSEnv (M : Word → BitVec 8) (P sp0 out d : Word) : Prop where
   sGE : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFD12 + 0x72 + 0x5E) derElementCode.length
   sGT : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFD12 + 0x72 + 0x5E + 0x26) derTlvCode.length
   sGZ : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFD62) zipSkipNextCode.length
-  sGM : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xC566) memsetCode.length
-  sGS : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xC5CE) memcpyStubCode.length
-  sGB : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xC5D6) memcpyBodyCode.length
+  sGM : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xCED8) memsetCode.length
+  sGS : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xCF40) memcpyStubCode.length
+  sGB : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xCF48) memcpyBodyCode.length
   sOC : Sep out 49 P derScalar48Code.length
-  sOB : Sep out 49 (P + 0xC5D6) memcpyBodyCode.length
+  sOB : Sep out 49 (P + 0xCF48) memcpyBodyCode.length
   sOG : Sep out 49 (sp0 + 0xFFFFFF60) 0xA0
   sDS : Sep (d + 8) 8 P derScalar48Code.length
   sDZ : Sep (d + 8) 8 (P + 0xFFFFFD62) zipSkipNextCode.length
-  sDM : Sep (d + 8) 8 (P + 0xC566) memsetCode.length
-  sDU : Sep (d + 8) 8 (P + 0xC5CE) memcpyStubCode.length
-  sDB : Sep (d + 8) 8 (P + 0xC5D6) memcpyBodyCode.length
+  sDM : Sep (d + 8) 8 (P + 0xCED8) memsetCode.length
+  sDU : Sep (d + 8) 8 (P + 0xCF40) memcpyStubCode.length
+  sDB : Sep (d + 8) 8 (P + 0xCF48) memcpyBodyCode.length
   sDC : Sep (d + 8) 8 (P + 0xFFFFFD12) derPositiveIntegerCode.length
   sDI : Sep (d + 8) 8 (P + 0xFFFFFD12 + 0x72) derIntegerCode.length
   sDT : Sep (d + 8) 8 (P + 0xFFFFFD12 + 0x72 + 0x5E + 0x26) derTlvCode.length
@@ -968,10 +968,10 @@ theorem derScalar48_correct (m : Machine) {P sp0 out d retAddr : Word} (env : DS
     have g17 : ∀ q, reg n17 q = (runBlock dsSetup (m5.mem, reg n16)).2 q := u17.regs
     have hA48 : (F + 0xC).toNat + 4 * 12 < 2 ^ 32 := by
       rw [BitVec.toNat_add, show (0xC : Word).toNat = 0xC from rfl]; omega
-    have sAM : Sep (F + 0xC) (4 * 12) (P + 0xC566) memsetCode.length := by
+    have sAM : Sep (F + 0xC) (4 * 12) (P + 0xCED8) memsetCode.length := by
       rw [eA]; exact sGM.sub (c := 0x3C) (l := 48) (by decide)
-    obtain ⟨n18, c18, u18, _, fr18⟩ := u17.self.memsetW (B := P + 0xC566) (w := 12) (dst := F + 0xC)
-      (even_at P env.hP 0xC566 (by decide)) hc5 (cIn5 env.mset sGM env.sDM) ds_at_56 ds_at_5a
+    obtain ⟨n18, c18, u18, _, fr18⟩ := u17.self.memsetW (B := P + 0xCED8) (w := 12) (dst := F + 0xC)
+      (even_at P env.hP 0xCED8 (by decide)) hc5 (cIn5 env.mset sGM env.sDM) ds_at_56 ds_at_5a
       (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP (0x56 + 8) (by decide)) (by decide)
       hA48 (by decide) (aligned_add hFa (k := 0xC) (by decide)) sAM
       (by rw [g17, ea0, sp16]) (by rw [g17, ea1]) (by rw [g17, ea2])
@@ -1052,8 +1052,8 @@ theorem derScalar48_correct (m : Machine) {P sp0 out d retAddr : Word} (env : DS
     obtain ⟨n21, c21, u21⟩ := St.block [.aluImm .add a0 (18 : Fin 32) 1, .aluImm .add a1 sp 0xC, .aluImm .add a2 x0 0x30]
       u20 hcL0 (off' := 0x92) (by decide) (by simp [BlockOk, BInstr.ok])
     simp only [runBlock, BInstr.run] at u21
-    obtain ⟨n22, c22, pc22, mem22, regs22⟩ := u21.callRa hcL0 ds_at_92 ds_at_96 (cb := P + 0xC5CE)
-      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xC5CE (by decide))
+    obtain ⟨n22, c22, pc22, mem22, regs22⟩ := u21.callRa hcL0 ds_at_92 ds_at_96 (cb := P + 0xCF40)
+      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xCF40 (by decide))
     have r22 := PEnv.reg1 regs22 u21.zero
     have z20 := u20.zero
     have v22 : ∀ q, q ≠ ra → q ≠ a0 → q ≠ a1 → q ≠ a2 → reg n22 q = reg n20 q := fun q hr h0 h1 h2 => by
@@ -1067,9 +1067,9 @@ theorem derScalar48_correct (m : Machine) {P sp0 out d retAddr : Word} (env : DS
     have eGs : F + 0xFFFFFFF0 = G + BitVec.ofNat 32 0x20 := by
       rw [← hGF, BitVec.add_assoc]; rfl
     have hOut1 : (out + 1).toNat = out.toNat + 1 := ho1
-    obtain ⟨n23, c23, pc23, sp23, a023, mem23, k23⟩ := memcpy_correct n22 (P + 0xC5CE) (P + BitVec.ofNat 32 (0x92 + 8))
+    obtain ⟨n23, c23, pc23, sp23, a023, mem23, k23⟩ := memcpy_correct n22 (P + 0xCF40) (P + BitVec.ofNat 32 (0x92 + 8))
       (out + 1) (F + 0xC) 48 (fun i hi => by show n22.mem _ = _; rw [mem22]; exact hcL env.mcs sGS env.sDU i hi)
-      (even_at P env.hP 0xC5CE (by decide)) pc22
+      (even_at P env.hP 0xCF40 (by decide)) pc22
       (by rw [r22 a0 (by decide)]; simp +decide only [upd_app, ↓reduceIte]
           rw [K20 18 (by decide),
             k18 18 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
@@ -1079,7 +1079,7 @@ theorem derScalar48_correct (m : Machine) {P sp0 out d retAddr : Word} (env : DS
       (by rw [r22 a2 (by decide)]; simp +decide only [upd_app, ↓reduceIte])
       (by rw [regs22]; simp +decide [upd]) (even_clear _ (even_at P env.hP (0x92 + 8) (by decide)))
       (by
-        rw [mem22, sp22, eGs, show P + 0xC5CE + 8 = P + 0xC5D6 by rw [BitVec.add_assoc]; rfl]
+        rw [mem22, sp22, eGs, show P + 0xCF40 + 8 = P + 0xCF48 by rw [BitVec.add_assoc]; rfl]
         refine ⟨hcL env.mcb sGB env.sDB, env.sOB.sub (c := 1) (l := 48) (by decide), sGB.sub (by decide),
           (sOG.sub (c := 1) (l := 48) (by decide)).subR (by decide), ?_,
           (sOG.sub (c := 1) (l := 48) (by decide)).subR (c := 0x3C) (l := 48) (by decide) |> fun h => by rw [eA]; exact h,

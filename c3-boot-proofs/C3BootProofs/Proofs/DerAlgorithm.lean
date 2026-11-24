@@ -191,13 +191,13 @@ stack below `sp0`, the 28-byte result at `out`, the reader at `d`, and the
 structure AlgEnv (M : Word → BitVec 8) (P sp0 out d p : Word) (n : Nat) : Prop where
   hP : P.toNat % 2 = 0
   cod : CodeIn M P derAlgorithmCode
-  seq : CodeIn M (P + 0xFFFFF532) derSequenceCode
-  nst : CodeIn M (P + 0xFFFFF7AA) derNestedCode
-  elem : CodeIn M (P + 0xFFFFF6CA) derElementCode
-  tlv : CodeIn M (P + 0xFFFFF6F0) derTlvCode
-  oid : CodeIn M (P + 0xFFFFFE02) derOidCode
-  mcs : CodeIn M (P + 0xBEB6) memcpyStubCode
-  mcb : CodeIn M (P + 0xBEBE) memcpyBodyCode
+  seq : CodeIn M (P + 0xFFFFD080) derSequenceCode
+  nst : CodeIn M (P + 0xFFFFD2F8) derNestedCode
+  elem : CodeIn M (P + 0xFFFFD218) derElementCode
+  tlv : CodeIn M (P + 0xFFFFD23E) derTlvCode
+  oid : CodeIn M (P + 0xDA) derOidCode
+  mcs : CodeIn M (P + 0xA376) memcpyStubCode
+  mcb : CodeIn M (P + 0xA37E) memcpyBodyCode
   hsp : sp0.toNat % 4 = 0
   hS : 0x70 ≤ sp0.toNat
   hout : out.toNat % 4 = 0
@@ -208,23 +208,23 @@ structure AlgEnv (M : Word → BitVec 8) (P sp0 out d p : Word) (n : Nat) : Prop
   hp : 0 < p.toNat
   hpn : p.toNat + n < 2 ^ 32
   sGC : Sep (sp0 + 0xFFFFFF90) 0x70 P derAlgorithmCode.length
-  sGQ : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xFFFFF532) derSequenceCode.length
-  sGN : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xFFFFF7AA) derNestedCode.length
-  sGE : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xFFFFF6CA) derElementCode.length
-  sGT : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xFFFFF6F0) derTlvCode.length
-  sGO : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xFFFFFE02) derOidCode.length
-  sGU : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xBEB6) memcpyStubCode.length
-  sGB : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xBEBE) memcpyBodyCode.length
+  sGQ : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xFFFFD080) derSequenceCode.length
+  sGN : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xFFFFD2F8) derNestedCode.length
+  sGE : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xFFFFD218) derElementCode.length
+  sGT : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xFFFFD23E) derTlvCode.length
+  sGO : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xDA) derOidCode.length
+  sGU : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xA376) memcpyStubCode.length
+  sGB : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xA37E) memcpyBodyCode.length
   sOC : Sep out 0x1C P derAlgorithmCode.length
-  sOB : Sep out 0x1C (P + 0xBEBE) memcpyBodyCode.length
+  sOB : Sep out 0x1C (P + 0xA37E) memcpyBodyCode.length
   sOG : Sep out 0x1C (sp0 + 0xFFFFFF90) 0x70
   sDC : Sep (d + 8) 8 P derAlgorithmCode.length
-  sDN : Sep (d + 8) 8 (P + 0xFFFFF7AA) derNestedCode.length
-  sDE : Sep (d + 8) 8 (P + 0xFFFFF6CA) derElementCode.length
-  sDT : Sep (d + 8) 8 (P + 0xFFFFF6F0) derTlvCode.length
-  sDO : Sep (d + 8) 8 (P + 0xFFFFFE02) derOidCode.length
-  sDU : Sep (d + 8) 8 (P + 0xBEB6) memcpyStubCode.length
-  sDB : Sep (d + 8) 8 (P + 0xBEBE) memcpyBodyCode.length
+  sDN : Sep (d + 8) 8 (P + 0xFFFFD2F8) derNestedCode.length
+  sDE : Sep (d + 8) 8 (P + 0xFFFFD218) derElementCode.length
+  sDT : Sep (d + 8) 8 (P + 0xFFFFD23E) derTlvCode.length
+  sDO : Sep (d + 8) 8 (P + 0xDA) derOidCode.length
+  sDU : Sep (d + 8) 8 (P + 0xA376) memcpyStubCode.length
+  sDB : Sep (d + 8) 8 (P + 0xA37E) memcpyBodyCode.length
   sDG : Sep (d + 8) 8 (sp0 + 0xFFFFFF90) 0x70
   sOD : Sep out 0x1C (d + 8) 8
   sRG : Sep p n (sp0 + 0xFFFFFF90) 0x70
@@ -387,8 +387,8 @@ theorem derAlgorithm_correct (m : Machine) {P sp0 out d p retAddr : Word} {n : N
     rw [u3.regs, upd_ne hv h0, upd_ne hv h21]
   have s21_3 : reg m3 21 = out := by
     rw [u3.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [u2.self.zero, r2 a0 (by decide), ha0]; exact zw out
-  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa hcS alg_at_14 alg_at_18 (cb := P + 0xFFFFF532)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFF532 (by decide))
+  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa hcS alg_at_14 alg_at_18 (cb := P + 0xFFFFD080)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFD080 (by decide))
   have r4 := PEnv.reg1 regs4 u3.self.zero
   have sp4 : reg m4 sp = F := by
     rw [r4 sp (by decide), k3 sp (by decide) (by decide) (by decide), sp2]
@@ -399,10 +399,10 @@ theorem derAlgorithm_correct (m : Machine) {P sp0 out d p retAddr : Word} {n : N
     exact memLoad32_congr fun j hj => frSv _ (by
       rw [show (4 : Word) = BitVec.ofNat 32 4 from rfl, add_ofNat_assoc]
       exact (sDG.sub (c := 4 + j) (l := 1) (by omega)).symm)
-  have eN : P + 0xFFFFF532 + 0x278 = P + 0xFFFFF7AA := by rw [BitVec.add_assoc]; rfl
-  have hNE : NestEnv m4.mem (P + 0xFFFFF532 + 0x278) F (F + 0x20) d := by
+  have eN : P + 0xFFFFD080 + 0x278 = P + 0xFFFFD2F8 := by rw [BitVec.add_assoc]; rfl
+  have hNE : NestEnv m4.mem (P + 0xFFFFD080 + 0x278) F (F + 0x20) d := by
     rw [mem4, eN]
-    refine ⟨even_at P env.hP 0xFFFFF7AA (by decide), cIn env.nst sGN frSv,
+    refine ⟨even_at P env.hP 0xFFFFD2F8 (by decide), cIn env.nst sGN frSv,
       by rw [BitVec.add_assoc]; exact cIn env.elem sGE frSv, by rw [BitVec.add_assoc]; exact cIn env.tlv sGT frSv,
       hFa, by omega, aligned_add hFa (k := 0x20) (by decide), env.hd,
       by rw [eNF]; exact sGN.sub (by decide),
@@ -415,7 +415,7 @@ theorem derAlgorithm_correct (m : Machine) {P sp0 out d p retAddr : Word} {n : N
       by rw [lP, lN, ofNat_tn hn, eNF]; exact sRG.subR (by decide),
       by rw [lP]; exact env.hp,
       by rw [lP, lN, ofNat_tn hn]; exact env.hpn⟩
-  obtain ⟨m5, c5, pc5, sp5, k5, f5⟩ := derSequence_correct m4 (even_at P env.hP 0xFFFFF532 (by decide))
+  obtain ⟨m5, c5, pc5, sp5, k5, f5⟩ := derSequence_correct m4 (even_at P env.hP 0xFFFFD080 (by decide))
     (by rw [mem4]; exact cIn env.seq sGQ frSv) hNE pc4 sp4
     (by rw [r4 a0 (by decide), u3.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [sp2]; rfl)
     (by rw [r4 a1 (by decide), k3 a1 (by decide) (by decide) (by decide), r2 a1 (by decide), ha1])
@@ -518,24 +518,24 @@ theorem derAlgorithm_correct (m : Machine) {P sp0 out d p retAddr : Word} {n : N
       St Mx P n o (reg n) → CodeIn Mx P derAlgorithmCode →
       fetchRel derAlgorithmCode o = some (.auipc ra imm, 4) →
       fetchRel derAlgorithmCode (o + 4) = some (.jalr ra ra oo, 4) →
-      P + BitVec.ofNat 32 o + imm + oo = P + 0xBEB6 → (o + 8) % 2 = 0 →
-      CodeIn Mx (P + 0xBEB6) memcpyStubCode → CodeIn Mx (P + 0xBEBE) memcpyBodyCode →
+      P + BitVec.ofNat 32 o + imm + oo = P + 0xA376 → (o + 8) % 2 = 0 →
+      CodeIn Mx (P + 0xA376) memcpyStubCode → CodeIn Mx (P + 0xA37E) memcpyBodyCode →
       reg n sp = F → reg n a0 = dst → reg n a1 = src → reg n a2 = BitVec.ofNat 32 N →
-      Sep dst N (P + 0xBEBE) memcpyBodyCode.length → Sep dst N (G + BitVec.ofNat 32 0x10) 16 →
+      Sep dst N (P + 0xA37E) memcpyBodyCode.length → Sep dst N (G + BitVec.ofNat 32 0x10) 16 →
       Sep src N (G + BitVec.ofNat 32 0x10) 16 → Sep dst N src N → dst.toNat + N < 2 ^ 32 → src.toNat + N < 2 ^ 32 →
       ∃ n', Steps n n' ∧ St n'.mem P n' (o + 8) (reg n') ∧ reg n' sp = F ∧
         (∀ x, Sep (G + BitVec.ofNat 32 0x10) 16 x 1 → n'.mem x = copyBytes Mx dst src N x) ∧
         ∀ r, r.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' r = reg n r := by
     intro Mx n o imm oo dst src N st hc h1 h2 hb ho hcs hcb rsp ra0 ra1 ra2 sDB sDF sSF sDS hdw hsw
-    obtain ⟨n1, c1, pc1, mem1, regs1⟩ := st.callRa hc h1 h2 (cb := P + 0xBEB6) hb (even_at P env.hP 0xBEB6 (by decide))
+    obtain ⟨n1, c1, pc1, mem1, regs1⟩ := st.callRa hc h1 h2 (cb := P + 0xA376) hb (even_at P env.hP 0xA376 (by decide))
     have r1 := PEnv.reg1 regs1 st.zero
     have sp1 : reg n1 sp = F := by rw [r1 sp (by decide), rsp]
-    obtain ⟨n2, c2, pc2, sp2', a02, mem2, k2⟩ := memcpy_correct n1 (P + 0xBEB6) (P + BitVec.ofNat 32 (o + 8))
-      dst src N (by show CodeIn n1.mem _ _; rw [mem1]; exact hcs) (even_at P env.hP 0xBEB6 (by decide)) pc1
+    obtain ⟨n2, c2, pc2, sp2', a02, mem2, k2⟩ := memcpy_correct n1 (P + 0xA376) (P + BitVec.ofNat 32 (o + 8))
+      dst src N (by show CodeIn n1.mem _ _; rw [mem1]; exact hcs) (even_at P env.hP 0xA376 (by decide)) pc1
       (by rw [r1 a0 (by decide), ra0]) (by rw [r1 a1 (by decide), ra1]) (by rw [r1 a2 (by decide), ra2])
       (by rw [regs1]; simp +decide [upd]) (even_clear _ (even_at P env.hP (o + 8) ho))
       (by
-        rw [mem1, sp1, eSc, show P + 0xBEB6 + 8 = P + 0xBEBE by rw [BitVec.add_assoc]; rfl]
+        rw [mem1, sp1, eSc, show P + 0xA376 + 8 = P + 0xA37E by rw [BitVec.add_assoc]; rfl]
         exact ⟨hcb, sDB, (sGB.sub (c := 0x10) (l := 16) (by decide)), sDF, sSF, sDS,
           aligned_add hGa (k := 0x10) (by decide), by rw [BitVec.toNat_add, ofNat_tn (by decide)]; omega, hdw, hsw⟩)
     refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, by rw [sp2', sp1], fun x hx => ?_, fun r hr => ?_⟩
@@ -800,16 +800,16 @@ theorem derAlgorithm_correct (m : Machine) {P sp0 out d p retAddr : Word} {n : N
     have k11 : ∀ q, reg m11 q = reg m9 q := fun q => by rw [u11.regs]
     have k12 : ∀ q, q.val ≠ 0 → q ≠ a0 → q ≠ a1 → reg m12 q = reg m9 q := fun q hv h0 h1 => by
       rw [u12.regs, upd_ne hv h1, upd_ne hv h0, k11]
-    obtain ⟨m13, c13, pc13, mem13, regs13⟩ := u12.self.callRa hc11 alg_at_40 alg_at_44 (cb := P + 0xFFFFFE02)
-      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFFE02 (by decide))
+    obtain ⟨m13, c13, pc13, mem13, regs13⟩ := u12.self.callRa hc11 alg_at_40 alg_at_44 (cb := P + 0xDA)
+      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xDA (by decide))
     have r13 := PEnv.reg1 regs13 u12.self.zero
     have sp13 : reg m13 sp = F := by rw [r13 sp (by decide), k12 sp (by decide) (by decide) (by decide), sp9]
     have hlen : t.len < 2 ^ 32 := by omega
     have sIn : Sep (p + BitVec.ofNat 32 t.header) t.len G 0x70 := sRG.sub (by omega)
     have sInD : Sep (p + BitVec.ofNat 32 t.header) t.len (d + 8) 8 := env.sRD.sub (by omega)
-    have oenv : OidEnv m13.mem (P + 0xFFFFFE02) F (F + 0x20) F := by
+    have oenv : OidEnv m13.mem (P + 0xDA) F (F + 0x20) F := by
       rw [mem13]
-      refine ⟨even_at P env.hP 0xFFFFFE02 (by decide), c11 env.oid sGO env.sDO,
+      refine ⟨even_at P env.hP 0xDA (by decide), c11 env.oid sGO env.sDO,
         by rw [BitVec.add_assoc]; exact c11 env.elem sGE env.sDE, by rw [BitVec.add_assoc]; exact c11 env.tlv sGT env.sDT,
         hFa, by omega, aligned_add hFa (k := 0x20) (by decide), hFa,
         by rw [eNF]; exact sGO.sub (by decide), by rw [eNF, BitVec.add_assoc]; exact sGE.sub (by decide),
@@ -982,10 +982,10 @@ theorem derAlgorithm_correct (m : Machine) {P sp0 out d p retAddr : Word} {n : N
         simp only [runBlock, BInstr.run] at u20
         have k20 : ∀ q, q.val ≠ 0 → q ≠ a0 → q ≠ a1 → reg m20 q = reg m18 q := fun q hv h0 h1 => by
           rw [u20.regs, upd_ne hv h1, upd_ne hv h0]
-        obtain ⟨m21, c21, pc21, mem21, regs21⟩ := u20.self.callRa hc14 alg_at_56 alg_at_5a (cb := P + 0xFFFFF6F0)
-          (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFF6F0 (by decide))
+        obtain ⟨m21, c21, pc21, mem21, regs21⟩ := u20.self.callRa hc14 alg_at_56 alg_at_5a (cb := P + 0xFFFFD23E)
+          (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFD23E (by decide))
         have r21 := PEnv.reg1 regs21 u20.self.zero
-        obtain ⟨m22, c22, pc22, mem22, k22⟩ := derTlv_correct m21 (out := F + 0x20) (d := F) (even_at P env.hP 0xFFFFF6F0 (by decide))
+        obtain ⟨m22, c22, pc22, mem22, k22⟩ := derTlv_correct m21 (out := F + 0x20) (d := F) (even_at P env.hP 0xFFFFD23E (by decide))
           (by rw [mem21]; exact c14 env.tlv sGT env.sDT) pc21
           (by rw [r21 a0 (by decide), u20.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [sp18]; rfl)
           (by rw [r21 a1 (by decide), u20.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [sp18]; exact zw F)

@@ -55,11 +55,11 @@ end
 bytes at `p` equal the 32 bytes at `q` and 0 otherwise. It saves `ra` in the
 word below `sp`. -/
 theorem arr32Eq_correct (m : Machine) {base retAddr p q : Word} (hP : base.toNat % 2 = 0)
-    (hc : CodeIn m.mem base arr32EqCode) (hm : CodeIn m.mem (base + 0xC0F0) memcmpCode) (hpc : m.pc = base)
+    (hc : CodeIn m.mem base arr32EqCode) (hm : CodeIn m.mem (base + 0xC032) memcmpCode) (hpc : m.pc = base)
     (ha0 : reg m a0 = p) (ha1 : reg m a1 = q)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
     (sSC : Sep (reg m sp + 0xFFFFFFFC) 4 base arr32EqCode.length)
-    (sSM : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xC0F0) memcmpCode.length)
+    (sSM : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xC032) memcmpCode.length)
     (sSP : Sep (reg m sp + 0xFFFFFFFC) 4 p 32) (sSQ : Sep (reg m sp + 0xFFFFFFFC) 4 q 32) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
       reg m' a0 = (if memBytes m.mem p 32 = memBytes m.mem q 32 then 1 else 0) ∧
@@ -77,11 +77,11 @@ theorem arr32Eq_correct (m : Machine) {base retAddr p q : Word} (hP : base.toNat
   have hc2 := CodeIn.store32 (v := retAddr) hc sSC
   have frS : ∀ x, Sep (reg m sp + 0xFFFFFFFC) 4 x 1 → memStore32 m.mem (reg m sp + 0xFFFFFFFC) retAddr x = m.mem x :=
     fun x hx => memStore32_get_sep hx
-  have hm2 : CodeIn (memStore32 m.mem (reg m sp + 0xFFFFFFFC) retAddr) (base + 0xC0F0) memcmpCode := fun i hi => by
+  have hm2 : CodeIn (memStore32 m.mem (reg m sp + 0xFFFFFFFC) retAddr) (base + 0xC032) memcmpCode := fun i hi => by
     rw [frS _ (sSM.subR (c := i) (l := 1) (by omega))]; exact hm i hi
   obtain ⟨n2', d2', u2'⟩ := u2.self.aluImm hc2 aeq_at_4 (off' := 8) (by decide)
   obtain ⟨n3, c3, pc3, mem3, regs3⟩ := u2'.self.callRa hc2 aeq_at_8 aeq_at_c
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hP 0xC0F0 (by decide))
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hP 0xC032 (by decide))
   have r3 := PEnv.reg1 regs3 u2'.self.zero
   have k2 : ∀ q, q ≠ sp → q ≠ a2 → reg n2' q = reg m q := fun q h h2 => by
     rw [u2'.regs, upd_ne' h2 u2.self.zero, u2.regs, updz hz h]
@@ -150,11 +150,11 @@ theorem arr32Eq_correct (m : Machine) {base retAddr p q : Word} (hP : base.toNat
 bytes at `p` equal the 32 bytes at `q` and 1 otherwise. It saves `ra` in the
 word below `sp`. -/
 theorem arr32Ne_correct (m : Machine) {base retAddr p q : Word} (hP : base.toNat % 2 = 0)
-    (hc : CodeIn m.mem base arr32NeCode) (hm : CodeIn m.mem (base + 0xB97A) memcmpCode) (hpc : m.pc = base)
+    (hc : CodeIn m.mem base arr32NeCode) (hm : CodeIn m.mem (base + 0x9F10) memcmpCode) (hpc : m.pc = base)
     (ha0 : reg m a0 = p) (ha1 : reg m a1 = q)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
     (sSC : Sep (reg m sp + 0xFFFFFFFC) 4 base arr32NeCode.length)
-    (sSM : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xB97A) memcmpCode.length)
+    (sSM : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0x9F10) memcmpCode.length)
     (sSP : Sep (reg m sp + 0xFFFFFFFC) 4 p 32) (sSQ : Sep (reg m sp + 0xFFFFFFFC) 4 q 32) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
       reg m' a0 = (if memBytes m.mem p 32 = memBytes m.mem q 32 then 0 else 1) ∧
@@ -172,11 +172,11 @@ theorem arr32Ne_correct (m : Machine) {base retAddr p q : Word} (hP : base.toNat
   have hc2 := CodeIn.store32 (v := retAddr) hc sSC
   have frS : ∀ x, Sep (reg m sp + 0xFFFFFFFC) 4 x 1 → memStore32 m.mem (reg m sp + 0xFFFFFFFC) retAddr x = m.mem x :=
     fun x hx => memStore32_get_sep hx
-  have hm2 : CodeIn (memStore32 m.mem (reg m sp + 0xFFFFFFFC) retAddr) (base + 0xB97A) memcmpCode := fun i hi => by
+  have hm2 : CodeIn (memStore32 m.mem (reg m sp + 0xFFFFFFFC) retAddr) (base + 0x9F10) memcmpCode := fun i hi => by
     rw [frS _ (sSM.subR (c := i) (l := 1) (by omega))]; exact hm i hi
   obtain ⟨n2', d2', u2'⟩ := u2.self.aluImm hc2 ane_at_4 (off' := 8) (by decide)
   obtain ⟨n3, c3, pc3, mem3, regs3⟩ := u2'.self.callRa hc2 ane_at_8 ane_at_c
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hP 0xB97A (by decide))
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hP 0x9F10 (by decide))
   have r3 := PEnv.reg1 regs3 u2'.self.zero
   have k2 : ∀ q, q ≠ sp → q ≠ a2 → reg n2' q = reg m q := fun q h h2 => by
     rw [u2'.regs, upd_ne' h2 u2.self.zero, u2.regs, updz hz h]
@@ -247,15 +247,15 @@ theorem arr32Ne_correct (m : Machine) {base retAddr p q : Word} (hP : base.toNat
 at `p` equal the `ql` bytes at `q`, lengths included, and 1 otherwise. It
 writes only the 0x14 bytes below `sp`. -/
 theorem sliceNe_correct (m : Machine) {base retAddr p q : Word} {pl ql : Nat} (hP : base.toNat % 2 = 0)
-    (hc : CodeIn m.mem base sliceNeCode) (hs : CodeIn m.mem (base + 0x16) sliceEqCode)
-    (he : CodeIn m.mem (base + 0xFFFFF78C) equalSameLengthCode) (hm : CodeIn m.mem (base + 0xC09E) memcmpCode)
+    (hc : CodeIn m.mem base sliceNeCode) (hs : CodeIn m.mem (base + 0xFFFFF372) sliceEqCode)
+    (he : CodeIn m.mem (base + 0xFFFFDF1C) equalSameLengthCode) (hm : CodeIn m.mem (base + 0xB2DA) memcmpCode)
     (hpc : m.pc = base) (ha0 : reg m a0 = p) (ha1 : reg m a1 = BitVec.ofNat 32 pl) (ha2 : reg m a2 = q)
     (ha3 : reg m a3 = BitVec.ofNat 32 ql) (hpl : pl < 2 ^ 32) (hql : ql < 2 ^ 32)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
     (sSC : Sep (reg m sp + 0xFFFFFFEC) 0x14 base sliceNeCode.length)
-    (sSS : Sep (reg m sp + 0xFFFFFFEC) 0x14 (base + 0x16) sliceEqCode.length)
-    (sSE : Sep (reg m sp + 0xFFFFFFEC) 0x14 (base + 0xFFFFF78C) equalSameLengthCode.length)
-    (sSM : Sep (reg m sp + 0xFFFFFFEC) 0x14 (base + 0xC09E) memcmpCode.length)
+    (sSS : Sep (reg m sp + 0xFFFFFFEC) 0x14 (base + 0xFFFFF372) sliceEqCode.length)
+    (sSE : Sep (reg m sp + 0xFFFFFFEC) 0x14 (base + 0xFFFFDF1C) equalSameLengthCode.length)
+    (sSM : Sep (reg m sp + 0xFFFFFFEC) 0x14 (base + 0xB2DA) memcmpCode.length)
     (sSP : Sep (reg m sp + 0xFFFFFFEC) 0x14 p pl) (sSQ : Sep (reg m sp + 0xFFFFFFEC) 0x14 q ql) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
       reg m' a0 = (if memBytes m.mem p pl = memBytes m.mem q ql then 0 else 1) ∧
@@ -284,8 +284,8 @@ theorem sliceNe_correct (m : Machine) {base retAddr p q : Word} {pl ql : Nat} (h
     fun h hs i hi => by rw [frS _ (hs.subR (c := i) (l := 1) (by omega))]; exact h i hi
   rw [hMs] at u2
   have hc2 := cS hc sSC
-  obtain ⟨n3, c3, pc3, mem3, regs3⟩ := u2.self.callRa hc2 sne_at_4 sne_at_8 (cb := base + 0x16)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hP 0x16 (by decide))
+  obtain ⟨n3, c3, pc3, mem3, regs3⟩ := u2.self.callRa hc2 sne_at_4 sne_at_8 (cb := base + 0xFFFFF372)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hP 0xFFFFF372 (by decide))
   have r3 := PEnv.reg1 regs3 u2.self.zero
   have k2 : ∀ q, q ≠ sp → reg n2 q = reg m q := fun q h => by rw [u2.regs, updz hz h]
   have sp3 : reg n3 sp = F := by
@@ -293,7 +293,7 @@ theorem sliceNe_correct (m : Machine) {base retAddr p q : Word} {pl ql : Nat} (h
   have sub4 : ∀ {b : Word} {l : Nat}, Sep G 0x14 b l → Sep (reg n3 sp + 0xFFFFFFFC) 4 b l := fun h => by
     rw [sp3, eFG]; exact h.sub (c := 0) (l := 4) (by decide)
   obtain ⟨n4, c4, pc4, a04, k4, f4⟩ := sliceEq_correct n3 (p := p) (q := q) (pl := pl) (ql := ql)
-    (even_at base hP 0x16 (by decide)) (by rw [mem3]; exact cS hs sSS)
+    (even_at base hP 0xFFFFF372 (by decide)) (by rw [mem3]; exact cS hs sSS)
     (by rw [mem3, BitVec.add_assoc]; exact cS he sSE) (by rw [mem3, BitVec.add_assoc]; exact cS hm sSM) pc3
     (by rw [r3 a0 (by decide), k2 a0 (by decide), ha0]) (by rw [r3 a1 (by decide), k2 a1 (by decide), ha1])
     (by rw [r3 a2 (by decide), k2 a2 (by decide), ha2]) (by rw [r3 a3 (by decide), k2 a3 (by decide), ha3])
@@ -347,11 +347,11 @@ theorem sliceNe_correct (m : Machine) {base retAddr p q : Word} {pl ql : Nat} (h
 bytes at `p` equal the 32 bytes at `q` and 0 otherwise. It saves `ra` in the
 word below `sp`. -/
 theorem arr32EqCrypto_correct (m : Machine) {base retAddr p q : Word} (hP : base.toNat % 2 = 0)
-    (hc : CodeIn m.mem base arr32EqCryptoCode) (hm : CodeIn m.mem (base + 0xFA86) memcmpCode) (hpc : m.pc = base)
+    (hc : CodeIn m.mem base arr32EqCryptoCode) (hm : CodeIn m.mem (base + 0x11896) memcmpCode) (hpc : m.pc = base)
     (ha0 : reg m a0 = p) (ha1 : reg m a1 = q)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
     (sSC : Sep (reg m sp + 0xFFFFFFFC) 4 base arr32EqCryptoCode.length)
-    (sSM : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xFA86) memcmpCode.length)
+    (sSM : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0x11896) memcmpCode.length)
     (sSP : Sep (reg m sp + 0xFFFFFFFC) 4 p 32) (sSQ : Sep (reg m sp + 0xFFFFFFFC) 4 q 32) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
       reg m' a0 = (if memBytes m.mem p 32 = memBytes m.mem q 32 then 1 else 0) ∧
@@ -369,11 +369,11 @@ theorem arr32EqCrypto_correct (m : Machine) {base retAddr p q : Word} (hP : base
   have hc2 := CodeIn.store32 (v := retAddr) hc sSC
   have frS : ∀ x, Sep (reg m sp + 0xFFFFFFFC) 4 x 1 → memStore32 m.mem (reg m sp + 0xFFFFFFFC) retAddr x = m.mem x :=
     fun x hx => memStore32_get_sep hx
-  have hm2 : CodeIn (memStore32 m.mem (reg m sp + 0xFFFFFFFC) retAddr) (base + 0xFA86) memcmpCode := fun i hi => by
+  have hm2 : CodeIn (memStore32 m.mem (reg m sp + 0xFFFFFFFC) retAddr) (base + 0x11896) memcmpCode := fun i hi => by
     rw [frS _ (sSM.subR (c := i) (l := 1) (by omega))]; exact hm i hi
   obtain ⟨n2', d2', u2'⟩ := u2.self.aluImm hc2 aec_at_4 (off' := 8) (by decide)
   obtain ⟨n3, c3, pc3, mem3, regs3⟩ := u2'.self.callRa hc2 aec_at_8 aec_at_c
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hP 0xFA86 (by decide))
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hP 0x11896 (by decide))
   have r3 := PEnv.reg1 regs3 u2'.self.zero
   have k2 : ∀ q, q ≠ sp → q ≠ a2 → reg n2' q = reg m q := fun q h h2 => by
     rw [u2'.regs, upd_ne' h2 u2.self.zero, u2.regs, updz hz h]

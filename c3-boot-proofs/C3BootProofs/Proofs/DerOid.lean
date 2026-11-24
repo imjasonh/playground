@@ -337,18 +337,18 @@ bytes, apart from what each must not touch. -/
 structure OidEnv (M : Word → BitVec 8) (P sp0 out d : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P derOidCode
-  elem : CodeIn M (P + 0xFFFFF8C8) derElementCode
-  tlv : CodeIn M (P + 0xFFFFF8EE) derTlvCode
+  elem : CodeIn M (P + 0xFFFFD13E) derElementCode
+  tlv : CodeIn M (P + 0xFFFFD164) derTlvCode
   hsp : sp0.toNat % 4 = 0
   hS : 0x20 ≤ sp0.toNat
   hout : out.toNat % 4 = 0
   hd : d.toNat % 4 = 0
   sFC : Sep (sp0 + 0xFFFFFFE0) 0x20 P derOidCode.length
-  sFE : Sep (sp0 + 0xFFFFFFE0) 0x20 (P + 0xFFFFF8C8) derElementCode.length
-  sFT : Sep (sp0 + 0xFFFFFFE0) 0x20 (P + 0xFFFFF8EE) derTlvCode.length
+  sFE : Sep (sp0 + 0xFFFFFFE0) 0x20 (P + 0xFFFFD13E) derElementCode.length
+  sFT : Sep (sp0 + 0xFFFFFFE0) 0x20 (P + 0xFFFFD164) derTlvCode.length
   sOC : Sep out 8 P derOidCode.length
   sDC : Sep (d + 8) 8 P derOidCode.length
-  sDT : Sep (d + 8) 8 (P + 0xFFFFF8EE) derTlvCode.length
+  sDT : Sep (d + 8) 8 (P + 0xFFFFD164) derTlvCode.length
   sOF : Sep out 8 (sp0 + 0xFFFFFFE0) 0x20
   sDF : Sep (d + 8) 8 (sp0 + 0xFFFFFFE0) 0x20
   sRF : Sep (memLoad32 M (d + 8)) (memLoad32 M (d + 0xC)).toNat (sp0 + 0xFFFFFFE0) 0x20
@@ -458,11 +458,11 @@ theorem derOid_correct (m : Machine) {P sp0 out d retAddr : Word} (env : OidEnv 
   -- `element`
   have hcS := cIn env.code sFC frSv
   obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa hcS oid_at_c oid_at_10
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFF8C8 (by decide))
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFD13E (by decide))
   have r4 := PEnv.reg1 regs4 u3.self.zero
-  have eT : P + BitVec.ofNat 32 0xFFFFF8C8 + 0x26 = P + 0xFFFFF8EE := by rw [BitVec.add_assoc]; rfl
+  have eT : P + BitVec.ofNat 32 0xFFFFD13E + 0x26 = P + 0xFFFFD164 := by rw [BitVec.add_assoc]; rfl
   have hF4 : F + 4 = F + BitVec.ofNat 32 4 := rfl
-  obtain ⟨m5, c5, pc5, mem5, k5⟩ := derElement_correct m4 (tag := 6) (even_at P env.hP 0xFFFFF8C8 (by decide))
+  obtain ⟨m5, c5, pc5, mem5, k5⟩ := derElement_correct m4 (tag := 6) (even_at P env.hP 0xFFFFD13E (by decide))
     (by rw [mem4]; exact cIn env.elem sFE frSv) (by rw [mem4, eT]; exact cIn env.tlv sFT frSv) pc4
     (by rw [r4 a0 (by decide), v3a0]) (by rw [r4 a1 (by decide), v3a1]) (by rw [r4 a2 (by decide), v3a2]) (by decide)
     (by rw [regs4]; simp +decide [upd]) (even_clear _ (even_at P env.hP (0xC + 8) (by decide)))

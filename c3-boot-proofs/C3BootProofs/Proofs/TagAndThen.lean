@@ -32,8 +32,8 @@ an `Ok` byte at `rp + 4` it stores `tagFromU8Mem` at `out`, and otherwise it
 copies the 0x34-byte error from `rp` to `out`, using the 16 bytes below `sp`. -/
 theorem tagAndThen_correct (m : Machine) {base retAddr out rp : Word} (hP : base.toNat % 2 = 0)
     (hc : CodeIn m.mem base tagAndThenCode) (ht : CodeIn m.mem (base + 0x3E) tagFromU8Code)
-    (hs : CodeIn m.mem (base + 0x119B4) memcpyStubCode)
-    (E : McEnv m.mem (base + 0x119B4 + 8) out rp (reg m sp + 0xFFFFFFF0) 0x34)
+    (hs : CodeIn m.mem (base + 0x137C4) memcpyStubCode)
+    (E : McEnv m.mem (base + 0x137C4 + 8) out rp (reg m sp + 0xFFFFFFF0) 0x34)
     (hpc : m.pc = base) (ha0 : reg m a0 = out) (ha1 : reg m a1 = rp) (hout : out.toNat % 4 = 0)
     (hrp : rp.toNat % 4 = 0) (sOT : Sep out 8 (base + 0x3E) tagFromU8Code.length)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) :
@@ -80,16 +80,16 @@ theorem tagAndThen_correct (m : Machine) {base retAddr out rp : Word} (hP : base
     obtain ⟨n4, d4, u4⟩ := u3.aluImm hc tat_at_8 (off' := 0xC) (by decide)
     obtain ⟨n5, d5, u5⟩ := u4.self.auipc hc tat_at_c (off' := 0x10) (by decide)
     obtain ⟨n6, d6, pc6, mem6, regs6⟩ := u5.self.jalr hc tat_at_10
-    have pc6' : n6.pc = base + 0x119B4 := by
+    have pc6' : n6.pc = base + 0x137C4 := by
       rw [pc6, u5.regs]; simp +decide only [upd, ↓reduceIte]
-      rw [show base + BitVec.ofNat 32 0xC + 0x12000 + 0xFFFFF9A8 = base + 0x119B4 by
+      rw [show base + BitVec.ofNat 32 0xC + 0x13000 + 0x7B8 = base + 0x137C4 by
         rw [BitVec.add_assoc, BitVec.add_assoc]; rfl]
-      exact even_clear _ (even_at base hP 0x119B4 (by decide))
+      exact even_clear _ (even_at base hP 0x137C4 (by decide))
     have k6 : ∀ q, q ≠ t1 → q ≠ a2 → q ≠ a3 → reg n6 q = reg m q := fun q h6 h2 h3 => by
       rw [regs6, u5.regs, upd_ne' h6 u4.self.zero, u4.regs, upd_ne' h2 u3.zero, k2 q h2 h3]
     have sp6 : reg n6 sp = reg m sp := k6 sp (by decide) (by decide) (by decide)
-    obtain ⟨m', c', pc', sp', _, f', k'⟩ := memcpy_correct n6 (base + 0x119B4) retAddr out rp 0x34
-      (fun i hi => by rw [mem6]; exact hs i hi) (even_at base hP 0x119B4 (by decide)) pc6'
+    obtain ⟨m', c', pc', sp', _, f', k'⟩ := memcpy_correct n6 (base + 0x137C4) retAddr out rp 0x34
+      (fun i hi => by rw [mem6]; exact hs i hi) (even_at base hP 0x137C4 (by decide)) pc6'
       (by rw [k6 a0 (by decide) (by decide) (by decide), ha0]) (by rw [k6 a1 (by decide) (by decide) (by decide), ha1])
       (by rw [regs6, u5.regs, upd_ne (by decide) (by decide), u4.regs]; simp +decide only [upd_app, ↓reduceIte]
           rw [u3.zero]; rfl)

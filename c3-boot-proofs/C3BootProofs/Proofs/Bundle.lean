@@ -97,9 +97,9 @@ stack below `sp`, all apart as the hypotheses list, it returns to `ra` with
 the registers but `a0` through `a5` and `t1` restored, and memory outside its
 stack as `fieldMem` says. -/
 theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
-    (hc : CodeIn m.mem base bundleFieldCode) (hu : CodeIn m.mem (base + 0xFFFFCB58) readerU32Code)
-    (ha : CodeIn m.mem (base + 0xFFFFCB58 + 0xFFFFFAB6) readerArray4Code)
-    (hb : CodeIn m.mem (base + 0xFFFFC5A4) readerBytesCode)
+    (hc : CodeIn m.mem base bundleFieldCode) (hu : CodeIn m.mem (base + 0xFFFFCFB0) readerU32Code)
+    (ha : CodeIn m.mem (base + 0xFFFFCFB0 + 0x50) readerArray4Code)
+    (hb : CodeIn m.mem (base + 0xFFFFCF8A) readerBytesCode)
     (hbase : base.toNat % 2 = 0) (hpc : m.pc = base) (ha0 : reg m a0 = out) (ha1 : reg m a1 = self)
     (ha2 : reg m a2 = lo) (ha3 : reg m a3 = hi)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
@@ -107,13 +107,13 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
     (hbuf : memLoad32 m.mem self ≠ 0 ∧
       (memLoad32 m.mem self).toNat + (memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32)
     (hSc : Sep (reg m sp + 0xFFFFFFB0) 80 base bundleFieldCode.length)
-    (hSu : Sep (reg m sp + 0xFFFFFFB0) 80 (base + 0xFFFFCB58) readerU32Code.length)
-    (hSa : Sep (reg m sp + 0xFFFFFFB0) 80 (base + 0xFFFFCB58 + 0xFFFFFAB6) readerArray4Code.length)
-    (hSb : Sep (reg m sp + 0xFFFFFFB0) 80 (base + 0xFFFFC5A4) readerBytesCode.length)
-    (hOc : Sep out 8 base bundleFieldCode.length) (hOb : Sep out 8 (base + 0xFFFFC5A4) readerBytesCode.length)
-    (hEu : Sep (self + 8) 4 (base + 0xFFFFCB58) readerU32Code.length)
-    (hEa : Sep (self + 8) 4 (base + 0xFFFFCB58 + 0xFFFFFAB6) readerArray4Code.length)
-    (hEb : Sep (self + 8) 4 (base + 0xFFFFC5A4) readerBytesCode.length)
+    (hSu : Sep (reg m sp + 0xFFFFFFB0) 80 (base + 0xFFFFCFB0) readerU32Code.length)
+    (hSa : Sep (reg m sp + 0xFFFFFFB0) 80 (base + 0xFFFFCFB0 + 0x50) readerArray4Code.length)
+    (hSb : Sep (reg m sp + 0xFFFFFFB0) 80 (base + 0xFFFFCF8A) readerBytesCode.length)
+    (hOc : Sep out 8 base bundleFieldCode.length) (hOb : Sep out 8 (base + 0xFFFFCF8A) readerBytesCode.length)
+    (hEu : Sep (self + 8) 4 (base + 0xFFFFCFB0) readerU32Code.length)
+    (hEa : Sep (self + 8) 4 (base + 0xFFFFCFB0 + 0x50) readerArray4Code.length)
+    (hEb : Sep (self + 8) 4 (base + 0xFFFFCF8A) readerBytesCode.length)
     (hEc : Sep (self + 8) 4 base bundleFieldCode.length)
     (hRS : Sep self 12 (reg m sp + 0xFFFFFFB0) 80) (hOS : Sep out 8 (reg m sp + 0xFFFFFFB0) 80)
     (hBS : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (reg m sp + 0xFFFFFFB0) 80)
@@ -121,7 +121,7 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = reg m sp ∧
       (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ 6 → reg m' r = reg m r) ∧
       ∀ x, Sep (reg m sp + 0xFFFFFFB0) 80 x 1 → m'.mem x = fieldMem m.mem out self lo hi x := by
-  have hbu : base + 0xFFFFCB58 + 0xFFFFFAB6 + 0xFFFFFF96 = base + 0xFFFFC5A4 := by
+  have hbu : base + 0xFFFFCFB0 + 0x50 + 0xFFFFFF8A = base + 0xFFFFCF8A := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨S, hSd⟩ : ∃ S, reg m sp + 0xFFFFFFB0 = S := ⟨_, rfl⟩
   obtain ⟨G, hGd⟩ : ∃ G, reg m sp + 0xFFFFFFE0 = G := ⟨_, rfl⟩
@@ -208,8 +208,8 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
   obtain ⟨m9, e9, t9⟩ := t8.alu hc6 bfl_at_10 (off' := 0x12) (by decide)
   obtain ⟨m10, e10, t10⟩ := t9.alu hc6 bfl_at_12 (off' := 0x14) (by decide)
   obtain ⟨m11, e11, t11⟩ := t10.aluImm hc6 bfl_at_14 (off' := 0x16) (by decide)
-  obtain ⟨m12, c12, pc12, mem12, regs12⟩ := t11.callRa (cb := base + 0xFFFFCB58) hc6 bfl_at_16 bfl_at_1a
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hbase 0xFFFFCB58 (by decide))
+  obtain ⟨m12, c12, pc12, mem12, regs12⟩ := t11.callRa (cb := base + 0xFFFFCFB0) hc6 bfl_at_16 bfl_at_1a
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hbase 0xFFFFCFB0 (by decide))
   have sp12 : reg m12 sp = G := by rw [regs12]; simp +decide [upd]
   have a012 : reg m12 a0 = G + 4 := by rw [regs12]; simp +decide [upd, aluEval]
   have a112 : reg m12 a1 = self := by rw [regs12]; simp +decide [upd, ha1]
@@ -229,12 +229,12 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
     rw [hSG]; show Sep (G + BitVec.ofNat 32 4) 8 S 48; rw [hGS, add_ofNat_assoc]
     have := sep_offsets S (c := 48 + 4) (n := 8) (d := 0) (k := 48) (Or.inr (by omega)) (by omega) (by omega)
     rwa [add_ofNat_zero] at this
-  obtain ⟨m13, c13, pc13, sp13, k13, mem13⟩ := Cur.readerU32_correct m12 (base + 0xFFFFCB58)
+  obtain ⟨m13, c13, pc13, sp13, k13, mem13⟩ := Cur.readerU32_correct m12 (base + 0xFFFFCFB0)
     (base + BitVec.ofNat 32 (0x16 + 8)) (G + 4) self
     (by show CodeIn m12.mem _ _; rw [mem12]; exact codeOut hSu hu)
     (by show CodeIn m12.mem _ _; rw [mem12]; exact codeOut hSa ha)
     (by show CodeIn m12.mem _ _; rw [mem12, hbu]; exact codeOut hSb hb)
-    (even_at base hbase 0xFFFFCB58 (by decide)) pc12 a012 a112 ra12
+    (even_at base hbase 0xFFFFCFB0 (by decide)) pc12 a012 a112 ra12
     (even_clear _ (even_at base hbase (0x16 + 8) (by decide)))
     (by rw [sp12]; exact hGa) (aligned_add hGa (k := 4) (by decide)) hself (by rw [mem12, l0, l4]; exact hbuf)
     (by rw [sp12]; exact s48 _ _ hSu) (by rw [sp12]; exact s48 _ _ hSa) (by rw [sp12, hbu]; exact s48 _ _ hSb)
@@ -514,11 +514,11 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
     obtain ⟨n26, e26, t26⟩ := t25.aluImm hc13 bfl_at_42 (off' := 0x44) (by decide)
     obtain ⟨n27, e27, t27⟩ := t26.auipc hc13 bfl_at_44 (off' := 0x48) (by decide)
     obtain ⟨n28, e28, pc28, mem28, regs28⟩ := t27.jalr hc13 bfl_at_48
-    have p28 : n28.pc = base + 0xFFFFC5A4 := by
+    have p28 : n28.pc = base + 0xFFFFCF8A := by
       rw [pc28]; simp +decide only [upd, ite_true, ite_false]
-      rw [show base + BitVec.ofNat 32 0x44 + 0xFFFFC000 + 0x560 = base + 0xFFFFC5A4 by
+      rw [show base + BitVec.ofNat 32 0x44 + 0xFFFFD000 + 0xFFFFFF46 = base + 0xFFFFCF8A by
         rw [BitVec.add_assoc, BitVec.add_assoc]; rfl]
-      exact even_clear _ (even_at base hbase 0xFFFFC5A4 (by decide))
+      exact even_clear _ (even_at base hbase 0xFFFFCF8A (by decide))
     have r28 : ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ 6 → reg n28 r = reg m r :=
       fun r h0 h1 h2 h3 h4 h5 h6 => by
         rw [regs28]
@@ -539,7 +539,7 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
         · subst h19; simp +decide [upd]
         simp [upd, hr, hsp', hra', h8', h9', h18, h19, h6]
         rw [q20 r h0 h1 h2]; exact k13' r h0 h1 h2 h3 h4 h5 hra' hsp' h8' h9' h18 h19
-    obtain ⟨m', c', pc', mem', fr'⟩ := readerBytes_correct n28 (base + 0xFFFFC5A4) retAddr out self
+    obtain ⟨m', c', pc', mem', fr'⟩ := readerBytes_correct n28 (base + 0xFFFFCF8A) retAddr out self
       (memLoad32 m.mem p) (by show CodeIn n28.mem _ _; rw [mem28]; exact hb13) p28
       (by rw [regs28]; simp +decide only [upd, ite_false]; exact q20a0)
       (by rw [regs28]; simp +decide only [upd, ite_false]; exact q20a1)

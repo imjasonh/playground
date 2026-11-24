@@ -408,7 +408,7 @@ theorem pv_inz {B : Word} {m : Machine} {off : Nat} {imm o : Word} {cx : Nat} (F
   have r1 : ∀ r, r ≠ ra → reg n1 r = reg m r := fun r h => by rw [regs1]; exact updz s.zero h
   have sp1 : reg n1 sp = B + 0x420 := by rw [r1 sp (by decide)]; exact hsp
   obtain ⟨n2, c2, pc2, a02, k2, fr2⟩ := uint12IsNonzero_correct n1 (ptr := B + 0x420 + BitVec.ofNat 32 cx) (by decide) (by rw [mem1]; exact E.C2.unz)
-    (by rw [mem1, show BitVec.ofNat 32 uint12IsNonzeroAddress + 0xFFFEF156 = BitVec.ofNat 32 uintRefIsNonzeroAddress
+    (by rw [mem1, show BitVec.ofNat 32 uint12IsNonzeroAddress + 0xFFFED346 = BitVec.ofNat 32 uintRefIsNonzeroAddress
       by decide]; exact E.C.K.refnz) pc1
     (by rw [r1 a0 (by decide)]; exact ha0) (by rw [FS.at _ (by omega)]; omega) (by rw [sp1]; omega)
     (by rw [sp1]; exact FS.lowHi (by decide) rfl (by decide) (by decide)) (by rw [regs1]; simp +decide [upd])

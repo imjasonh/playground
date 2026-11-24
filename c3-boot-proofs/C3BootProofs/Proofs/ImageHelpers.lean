@@ -85,7 +85,7 @@ memory outside its 16 bytes of stack as `reservedMem` with `n = 1` says:
 the position advanced by 1 when a byte was left. -/
 theorem readerU8_correct (m : Machine) (base retAddr self : Word)
     (hcode : CodeAt m base readerU8Code)
-    (hbcode : CodeAt m (base + 0xD6) readerBytesCode)
+    (hbcode : CodeAt m (base + 0xFFFFD06E) readerBytesCode)
     (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
     (ha0 : reg m a0 = self) (hra : reg m ra = retAddr)
     (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
@@ -93,9 +93,9 @@ theorem readerU8_correct (m : Machine) (base retAddr self : Word)
     (hbuf : memLoad32 m.mem self ≠ 0 ∧
       (memLoad32 m.mem self).toNat + (memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32)
     (hSr : Sep (reg m sp + 0xFFFFFFF0) 16 base readerU8Code.length)
-    (hSb : Sep (reg m sp + 0xFFFFFFF0) 16 (base + 0xD6) readerBytesCode.length)
+    (hSb : Sep (reg m sp + 0xFFFFFFF0) 16 (base + 0xFFFFD06E) readerBytesCode.length)
     (hEr : Sep (self + 8) 4 base readerU8Code.length)
-    (hEb : Sep (self + 8) 4 (base + 0xD6) readerBytesCode.length)
+    (hEb : Sep (self + 8) 4 (base + 0xFFFFD06E) readerBytesCode.length)
     (hRS : Sep self 12 (reg m sp + 0xFFFFFFF0) 16)
     (hBS : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (reg m sp + 0xFFFFFFF0) 16)
     (hBE : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (self + 8) 4) :
@@ -160,10 +160,10 @@ theorem readerU8_correct (m : Machine) (base retAddr self : Word)
       by_cases h6 : r = sp
       · subst h6; simp +decide [upd]
       simp [upd, hr, h1, h2, h3, h4, h5, h6]
-  have hevb : (base + 0xD6).toNat % 2 = 0 := even_at base hbase 0xD6 (by decide)
-  have hpc7 : m7.pc = base + 0xD6 := by
+  have hevb : (base + 0xFFFFD06E).toNat % 2 = 0 := even_at base hbase 0xFFFFD06E (by decide)
+  have hpc7 : m7.pc = base + 0xFFFFD06E := by
     rw [pc7]; simp +decide only [upd, ite_true, ite_false]
-    rw [show base + BitVec.ofNat 32 0x0E + 0 + 0xC8 = base + 0xD6 by
+    rw [show base + BitVec.ofNat 32 0x0E + 0xFFFFD000 + 0x60 = base + 0xFFFFD06E by
       rw [BitVec.add_assoc, BitVec.add_assoc]; rfl, even_clear _ hevb]
   have hm7 : m7.mem = M1 := mem7
   have hSself : Sep G 16 self 12 := hRS.symm
@@ -175,7 +175,7 @@ theorem readerU8_correct (m : Machine) (base retAddr self : Word)
   have l1l : memLoad32 M1 (self + 4) = len := by
     rw [show self + 4 = self + BitVec.ofNat 32 4 from rfl, ld1 4 (by omega)]; exact hlen
   have l1e : memLoad32 M1 (self + 8) = memLoad32 m.mem (self + 8) := ld1 8 (by omega)
-  obtain ⟨m8, c8, pc8, mem8, fr8⟩ := readerBytes_correct m7 (base + 0xD6)
+  obtain ⟨m8, c8, pc8, mem8, fr8⟩ := readerBytes_correct m7 (base + 0xFFFFD06E)
     (base + BitVec.ofNat 32 0x16) G self 1
     (fun i hi => by rw [hm7, M1out _ (hSb.subR (c := i) (l := 1) (by omega))]; exact hbcode i hi)
     hpc7 (by rw [r7]; simp +decide) (by rw [r7]; simp +decide) (by rw [r7]; simp +decide)

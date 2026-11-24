@@ -85,7 +85,7 @@ end IInv
 theorem ip_codes {P : Word} {M0 Mf : Word → BitVec 8} (code0 : ICode M0 P)
     (hw : ∀ k, k < ipWindowLen → Mf (ipWindow P + BitVec.ofNat 32 k) = M0 (ipWindow P + BitVec.ofNat 32 k)) :
     CodeIn Mf P imageParseCode :=
-  codeIn_of_ipWindow 0x2D2 (ip_wP P) (by decide) code0.parse hw
+  codeIn_of_ipWindow 0x2B78 (ip_wP P) (by decide) code0.parse hw
 
 /-- **`image::parse` returns**: from offset 0xC0, with the code window as at
 entry, the slots holding the caller's registers, and every register

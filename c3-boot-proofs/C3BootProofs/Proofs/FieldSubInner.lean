@@ -21,7 +21,7 @@ theorem alu_zadd (x : Word) : aluEval .add 0#32 x = x := BitVec.zero_add x
 theorem alu_zadd' (x : Word) : aluEval .add 0 x = x := BitVec.zero_add x
 
 /-- `borrowing_sub`'s offset from `sub_inner`. -/
-abbrev siBsub (P : Word) : Word := P + 0xFFFF08B8
+abbrev siBsub (P : Word) : Word := P + 0xFFFEEAA8
 
 /-- A call from `sub_inner` to `borrowing_sub` with `sp` at `F`. -/
 theorem si_bsub {Mx : Word → BitVec 8} {P F : Word} {m : Machine} {off : Nat} {f : Fin 32 → Word}
@@ -35,7 +35,7 @@ theorem si_bsub {Mx : Word → BitVec 8} {P F : Word} {m : Machine} {off : Nat} 
       reg m' a0 = bsubD (f a0) (f a1) (f a2) ∧ reg m' a1 = bsubB (f a0) (f a1) (bsubD (f a0) (f a1) (f a2)) ∧
       reg m' sp = F ∧ (∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ ra → reg m' q = f q) ∧
       ∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → m'.mem x = Mx x := by
-  have hev : (siBsub P).toNat % 2 = 0 := even_at P hP 0xFFFF08B8 (by decide)
+  have hev : (siBsub P).toNat % 2 = 0 := even_at P hP 0xFFFEEAA8 (by decide)
   obtain ⟨m1, c1, pc1, mem1, regs1⟩ := s.callRa hc h1 h2 hcb hev
   have hz := s.zero
   have r1 : ∀ q, q ≠ ra → reg m1 q = f q := fun q hq => by

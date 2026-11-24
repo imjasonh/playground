@@ -56,7 +56,7 @@ theorem sqSubTail_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word}
   exact ⟨h, hs⟩
 
 /-- `borrowing_sub`'s offset from `square_montgomery_form::<12>`. -/
-abbrev sqBsub (P : Word) : Word := P + 0xFFFEE998
+abbrev sqBsub (P : Word) : Word := P + 0xFFFECB88
 
 /-- **One round of the final subtraction**, from 0x11E: subtract limb `i` of
 the modulus and the borrow from limb `i` of the accumulator, and store the
@@ -107,7 +107,7 @@ theorem sqsub_iter {M : Word → BitVec 8} {P F acc np D b : Word} {n : Machine}
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd, hz]
     · simp [upd, h0, q0, q1]
-  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFEE998 (by decide))
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFECB88 (by decide))
     sq_at_124 sq_at_128 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x124 + 8) (by decide))
     (by rw [k2 sp (by decide) (by decide), rsp]) hF sFB
   rw [g2a0, g2a1, k2 a2 (by decide) (by decide), ra2] at a03 a13
@@ -770,7 +770,7 @@ theorem sq_epi {P sp0 out xp np b : Word} {M0 : Word → BitVec 8} {v : Fin 32 �
   have g1 : ∀ q, reg n1 q = (runBlock sqChoice (M, reg n)).2 q := u1.regs
   -- the unused `borrowing_sub`
   obtain ⟨n2, c2, u2, _, _, sp2, fr2, mem2⟩ := u1.self.bsubCall (codeG E.code E.sGC I1G) (codeG E.bsub E.sGB I1G)
-    (even_at P E.hP 0xFFFEE998 (by decide)) sq_at_15a sq_at_15e (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
+    (even_at P E.hP 0xFFFECB88 (by decide)) sq_at_15a sq_at_15e (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
     (even_at P E.hP (0x15A + 8) (by decide))
     (by rw [g1, hk1 _ (by decide) (by decide) (by decide) (by decide), rsp]) hFa
     (by rw [eF4]; exact E.sGB.sub (c := 0x4C) (l := 4) (by decide))

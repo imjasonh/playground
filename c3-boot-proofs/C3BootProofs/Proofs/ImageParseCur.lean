@@ -18,36 +18,36 @@ open C3.Image
 
 set_option maxRecDepth 20000
 
-/-- `image::parse`'s code window: from `Reader::magic`, the lowest function it
+/-- `image::parse`'s code window: from `Reader::u16`, the lowest function it
 reaches, to the end of `memcpy`, the highest. -/
-abbrev ipWindow (P : Word) : Word := P + 0xFFFFFD2E
+abbrev ipWindow (P : Word) : Word := P + 0xFFFFD488
 
-abbrev ipWindowLen : Nat := 0xBA46
+abbrev ipWindowLen : Nat := 0xC87C
 
 /-- The functions `image::parse` runs, and the region tables it reads, where
 the image puts them relative to it. -/
 structure ICode (M : Word → BitVec 8) (P : Word) : Prop where
   parse : CodeIn M P imageParseCode
-  magic : CodeIn M (P + 0xFFFFFD2E) readerMagicCode
-  version : CodeIn M (P + 0xFFFFFD80) readerVersion1Code
-  u8 : CodeIn M (P + 0xFFFFFDAA) readerU8Code
-  reserved : CodeIn M (P + 0xFFFFFDE4) readerReservedCode
-  bytes : CodeIn M (P + 0xFFFFFE80) readerBytesCode
-  u16 : CodeIn M (P + 0xFFFFFEA6) readerU16Code
-  array4 : CodeIn M (P + 0xFFFFFEEA) readerArray4Code
-  u32 : CodeIn M (P + 0x434) readerU32Code
-  physical : CodeIn M (P + 0x484) segmentPhysicalCode
-  stub : CodeIn M (P + 0xB5E6) memcpyStubCode
-  body : CodeIn M (P + 0xB5EE) memcpyBodyCode
+  magic : CodeIn M (P + 0xFFFFD588) readerMagicCode
+  version : CodeIn M (P + 0x434) readerVersion1Code
+  u8 : CodeIn M (P + 0x45E) readerU8Code
+  reserved : CodeIn M (P + 0x498) readerReservedCode
+  bytes : CodeIn M (P + 0xFFFFD4CC) readerBytesCode
+  u16 : CodeIn M (P + 0xFFFFD488) readerU16Code
+  array4 : CodeIn M (P + 0xFFFFD542) readerArray4Code
+  u32 : CodeIn M (P + 0xFFFFD4F2) readerU32Code
+  physical : CodeIn M (P + 0x4D0) segmentPhysicalCode
+  stub : CodeIn M (P + 0x9B76) memcpyStubCode
+  body : CodeIn M (P + 0x9B7E) memcpyBodyCode
   ends : CodeIn M (img% regionEndsAddress) regionEndsData
   starts : CodeIn M (img% regionStartsAddress) regionStartsData
 
-theorem ip_wq (P x : Word) (c : Nat) (h : x = 0xFFFFFD2E + BitVec.ofNat 32 c) :
+theorem ip_wq (P x : Word) (c : Nat) (h : x = 0xFFFFD488 + BitVec.ofNat 32 c) :
     P + x = ipWindow P + BitVec.ofNat 32 c := by rw [h, ← BitVec.add_assoc]
 
-theorem ip_wP (P : Word) : P = ipWindow P + BitVec.ofNat 32 0x2D2 := by
-  show P = P + 0xFFFFFD2E + BitVec.ofNat 32 0x2D2
-  rw [BitVec.add_assoc, show (0xFFFFFD2E : Word) + BitVec.ofNat 32 0x2D2 = 0 from rfl]
+theorem ip_wP (P : Word) : P = ipWindow P + BitVec.ofNat 32 0x2B78 := by
+  show P = P + 0xFFFFD488 + BitVec.ofNat 32 0x2B78
+  rw [BitVec.add_assoc, show (0xFFFFD488 : Word) + BitVec.ofNat 32 0x2B78 = 0 from rfl]
   exact (BitVec.add_zero P).symm
 
 theorem codeIn_of_ipWindow {M M' : Word → BitVec 8} {P b : Word} {code : List Nat} (c : Nat)
@@ -64,18 +64,18 @@ theorem ICode.of_agree {M M' : Word → BitVec 8} {P : Word} (hc : ICode M P)
     (h : ∀ k, k < ipWindowLen → M' (ipWindow P + BitVec.ofNat 32 k) = M (ipWindow P + BitVec.ofNat 32 k))
     (ht : ∀ k, k < 32 → M' ((img% regionEndsAddress) + BitVec.ofNat 32 k) = M ((img% regionEndsAddress) + BitVec.ofNat 32 k)) :
     ICode M' P where
-  parse := codeIn_of_ipWindow 0x2D2 (ip_wP P) (by decide) hc.parse h
-  magic := codeIn_of_ipWindow 0 (ip_wq P _ _ (by decide)) (by decide) hc.magic h
-  version := codeIn_of_ipWindow 0x52 (ip_wq P _ _ (by decide)) (by decide) hc.version h
-  u8 := codeIn_of_ipWindow 0x7C (ip_wq P _ _ (by decide)) (by decide) hc.u8 h
-  reserved := codeIn_of_ipWindow 0xB6 (ip_wq P _ _ (by decide)) (by decide) hc.reserved h
-  bytes := codeIn_of_ipWindow 0x152 (ip_wq P _ _ (by decide)) (by decide) hc.bytes h
-  u16 := codeIn_of_ipWindow 0x178 (ip_wq P _ _ (by decide)) (by decide) hc.u16 h
-  array4 := codeIn_of_ipWindow 0x1BC (ip_wq P _ _ (by decide)) (by decide) hc.array4 h
-  u32 := codeIn_of_ipWindow 0x706 (ip_wq P _ _ (by decide)) (by decide) hc.u32 h
-  physical := codeIn_of_ipWindow 0x756 (ip_wq P _ _ (by decide)) (by decide) hc.physical h
-  stub := codeIn_of_ipWindow 0xB8B8 (ip_wq P _ _ (by decide)) (by decide) hc.stub h
-  body := codeIn_of_ipWindow 0xB8C0 (ip_wq P _ _ (by decide)) (by decide) hc.body h
+  parse := codeIn_of_ipWindow 0x2B78 (ip_wP P) (by decide) hc.parse h
+  magic := codeIn_of_ipWindow 0x100 (ip_wq P _ _ (by decide)) (by decide) hc.magic h
+  version := codeIn_of_ipWindow 0x2FAC (ip_wq P _ _ (by decide)) (by decide) hc.version h
+  u8 := codeIn_of_ipWindow 0x2FD6 (ip_wq P _ _ (by decide)) (by decide) hc.u8 h
+  reserved := codeIn_of_ipWindow 0x3010 (ip_wq P _ _ (by decide)) (by decide) hc.reserved h
+  bytes := codeIn_of_ipWindow 0x44 (ip_wq P _ _ (by decide)) (by decide) hc.bytes h
+  u16 := codeIn_of_ipWindow 0 (ip_wq P _ _ (by decide)) (by decide) hc.u16 h
+  array4 := codeIn_of_ipWindow 0xBA (ip_wq P _ _ (by decide)) (by decide) hc.array4 h
+  u32 := codeIn_of_ipWindow 0x6A (ip_wq P _ _ (by decide)) (by decide) hc.u32 h
+  physical := codeIn_of_ipWindow 0x3048 (ip_wq P _ _ (by decide)) (by decide) hc.physical h
+  stub := codeIn_of_ipWindow 0xC6EE (ip_wq P _ _ (by decide)) (by decide) hc.stub h
+  body := codeIn_of_ipWindow 0xC6F6 (ip_wq P _ _ (by decide)) (by decide) hc.body h
   ends := hc.ends.of_same fun i hi => ht i (by simp [regionEndsData] at hi; omega)
   starts := hc.starts.of_same fun i hi => by
     have := ht (16 + i) (by simp [regionStartsData] at hi; omega)

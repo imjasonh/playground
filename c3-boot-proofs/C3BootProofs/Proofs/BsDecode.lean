@@ -427,11 +427,11 @@ theorem bs_magic {R G b : Word} (Ly : BLay R G b) {Mx : Word → BitVec 8}
     (BSD + BitVec.ofNat 32 (off + 8)) (G + 0xC) k
     (fun i hi => by rw [mem1]; exact code.magic i hi)
     (fun i hi => by
-      rw [mem1, show (BitVec.ofNat 32 readerMagicAddress + 0x1BC : Word) = BitVec.ofNat 32 readerArray4Address
+      rw [mem1, show (BitVec.ofNat 32 readerMagicAddress + 0xFFFFFFBA : Word) = BitVec.ofNat 32 readerArray4Address
         from by decide]
       exact code.array4 i hi)
     (fun i hi => by
-      rw [mem1, show (BitVec.ofNat 32 readerMagicAddress + 0x1BC + 0xFFFFFF96 : Word) =
+      rw [mem1, show (BitVec.ofNat 32 readerMagicAddress + 0xFFFFFFBA + 0xFFFFFF8A : Word) =
         BitVec.ofNat 32 readerBytesAddress from by decide]
       exact code.bytes i hi)
     (by decide) pc1 (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1])
@@ -476,11 +476,11 @@ theorem bs_version {R G b : Word} (Ly : BLay R G b) {Mx : Word → BitVec 8}
     (BSD + BitVec.ofNat 32 (off + 8)) (G + 0xC)
     (fun i hi => by rw [mem1]; exact code.version i hi)
     (fun i hi => by
-      rw [mem1, show (BitVec.ofNat 32 readerVersion1Address + 0x126 : Word) = BitVec.ofNat 32 readerU16Address
+      rw [mem1, show (BitVec.ofNat 32 readerVersion1Address + 0xFFFFD054 : Word) = BitVec.ofNat 32 readerU16Address
         from by decide]
       exact code.u16 i hi)
     (fun i hi => by
-      rw [mem1, show (BitVec.ofNat 32 readerVersion1Address + 0x126 + 0xFFFFFFDA : Word) =
+      rw [mem1, show (BitVec.ofNat 32 readerVersion1Address + 0xFFFFD054 + 0x44 : Word) =
         BitVec.ofNat 32 readerBytesAddress from by decide]
       exact code.bytes i hi)
     (by decide) pc1 (by rw [r1 a0 (by decide), ha0]) (by rw [regs1]; simp +decide [upd]) (even_clear _ hl)
@@ -523,7 +523,7 @@ theorem bs_reserved {R G b : Word} (Ly : BLay R G b) {Mx : Word → BitVec 8}
     (BSD + BitVec.ofNat 32 (off + 8)) (G + 0xC) n
     (fun i hi => by rw [mem1]; exact code.reserved i hi)
     (fun i hi => by
-      rw [mem1, show (BitVec.ofNat 32 readerReservedAddress + 0x9C : Word) = BitVec.ofNat 32 readerBytesAddress
+      rw [mem1, show (BitVec.ofNat 32 readerReservedAddress + 0xFFFFD034 : Word) = BitVec.ofNat 32 readerBytesAddress
         from by decide]
       exact code.bytes i hi)
     (by decide) pc1 (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) hn
@@ -565,11 +565,11 @@ theorem bs_u32 {R G b : Word} (Ly : BLay R G b) {Mx : Word → BitVec 8}
     (BSD + BitVec.ofNat 32 (off + 8)) (G + 0x18) (G + 0xC)
     (fun i hi => by rw [mem1]; exact code.u32 i hi)
     (fun i hi => by
-      rw [mem1, show (BitVec.ofNat 32 readerU32Address + 0xFFFFFAB6 : Word) = BitVec.ofNat 32 readerArray4Address
+      rw [mem1, show (BitVec.ofNat 32 readerU32Address + 0x50 : Word) = BitVec.ofNat 32 readerArray4Address
         from by decide]
       exact code.array4 i hi)
     (fun i hi => by
-      rw [mem1, show (BitVec.ofNat 32 readerU32Address + 0xFFFFFAB6 + 0xFFFFFF96 : Word) =
+      rw [mem1, show (BitVec.ofNat 32 readerU32Address + 0x50 + 0xFFFFFF8A : Word) =
         BitVec.ofNat 32 readerBytesAddress from by decide]
       exact code.bytes i hi)
     (by decide) pc1 (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1])
@@ -617,7 +617,7 @@ theorem bs_u8 {R G b : Word} (Ly : BLay R G b) {Mx : Word → BitVec 8}
     (BSD + BitVec.ofNat 32 (off + 8)) (G + 0xC)
     (fun i hi => by rw [mem1]; exact code.u8 i hi)
     (fun i hi => by
-      rw [mem1, show (BitVec.ofNat 32 readerU8Address + 0xD6 : Word) = BitVec.ofNat 32 readerBytesAddress
+      rw [mem1, show (BitVec.ofNat 32 readerU8Address + 0xFFFFD06E : Word) = BitVec.ofNat 32 readerBytesAddress
         from by decide]
       exact code.bytes i hi)
     (by decide) pc1 (by rw [r1 a0 (by decide), ha0])

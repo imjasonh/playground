@@ -705,7 +705,7 @@ theorem mmRestore_end8 : blockEnd mulMont8Code 0x172 (restoreBlock mmPs8) = some
 theorem subTail_end8 : blockEnd mulMont8Code 0x12C subTail = some 0x13A := by decide
 
 /-- `borrowing_sub`'s offset from `mul_montgomery_form::<8>`. -/
-abbrev mmBsub8 (P : Word) : Word := P + 0xFFFF17E2
+abbrev mmBsub8 (P : Word) : Word := P + 0xFFFEF9D2
 
 /-- **One round of the final subtraction**, from 0x11E: subtract limb `i` of
 the modulus and the borrow from limb `i` of the accumulator, and store the
@@ -756,7 +756,7 @@ theorem sub_iter8 {M : Word → BitVec 8} {P F acc np D b : Word} {n : Machine} 
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd, hz]
     · simp [upd, h0, q0, q1]
-  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFF17E2 (by decide))
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFEF9D2 (by decide))
     mm8_at_124 mm8_at_128 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x124 + 8) (by decide))
     (by rw [k2 sp (by decide) (by decide), rsp]) hF sFB
   rw [g2a0, g2a1, k2 a2 (by decide) (by decide), ra2] at a03 a13
@@ -1405,7 +1405,7 @@ theorem mm_epi8 {P sp0 out xp yp np b : Word} {M0 : Word → BitVec 8} {v : Fin 
   have g1 : ∀ q, reg n1 q = (runBlock mmChoice8 (M, reg n)).2 q := u1.regs
   -- the unused `borrowing_sub`
   obtain ⟨n2, c2, u2, _, _, sp2, fr2, mem2⟩ := u1.self.bsubCall (codeG E.code E.sGC I1G) (codeG E.bsub E.sGB I1G)
-    (even_at P E.hP 0xFFFF17E2 (by decide)) mm8_at_15a mm8_at_15e (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
+    (even_at P E.hP 0xFFFEF9D2 (by decide)) mm8_at_15a mm8_at_15e (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
     (even_at P E.hP (0x15A + 8) (by decide))
     (by rw [g1, hk1 _ (by decide) (by decide) (by decide) (by decide), rsp]) hFa
     (by rw [eF4]; exact E.sGB.sub (c := 0x3C) (l := 4) (by decide))

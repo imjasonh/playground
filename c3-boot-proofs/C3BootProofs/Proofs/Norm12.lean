@@ -80,7 +80,7 @@ theorem nm12_at_96 : fetchRel norm12Code 0x96 = some (.jalr x0 ra 0x0, 2) := by 
 end
 
 /-- `borrowing_sub`'s offset from `norm`. -/
-abbrev nmBsub (P : Word) : Word := P + 0xFFFEE7F0
+abbrev nmBsub (P : Word) : Word := P + 0xFFFEC9E0
 
 /-- The end of a subtraction round, from 0x5A: keep the borrow, store the
 difference, and advance the pointers and the count. -/
@@ -172,7 +172,7 @@ theorem nm_sub_iter {M : Word → BitVec 8} {P F np xp D b : Word} {n : Machine}
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd, hz]
     · simp [upd, h0, q0, q1]
-  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFEE7F0 (by decide))
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFEC9E0 (by decide))
     nm12_at_52 nm12_at_56 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x52 + 8) (by decide))
     (by rw [k2 sp (by decide) (by decide), rsp]) hF sFB
   rw [g2a0, g2a1, k2 a2 (by decide) (by decide), ra2] at a03 a13
@@ -358,7 +358,7 @@ structure NmEnv (M : Word → BitVec 8) (P sp0 out xp np : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P norm12Code
   nz : CodeIn M (P + 0xFFFFFFE6) uint12IsNonzeroCode
-  ref : CodeIn M (P + 0xFFFEF13C) uintRefIsNonzeroCode
+  ref : CodeIn M (P + 0xFFFED32C) uintRefIsNonzeroCode
   mset : CodeIn M (P + 0xCB6) memsetCode
   bsub : CodeIn M (nmBsub P) borrowingSubCode
   sel : CodeIn M (P + 0xFFFFF338) uintSelect12Code
@@ -372,7 +372,7 @@ structure NmEnv (M : Word → BitVec 8) (P sp0 out xp np : Word) : Prop where
   hwo : out.toNat + 48 < 2 ^ 32
   sSC : Sep (nmR sp0) 0xB0 P norm12Code.length
   sSZ : Sep (nmR sp0) 0xB0 (P + 0xFFFFFFE6) uint12IsNonzeroCode.length
-  sSF : Sep (nmR sp0) 0xB0 (P + 0xFFFEF13C) uintRefIsNonzeroCode.length
+  sSF : Sep (nmR sp0) 0xB0 (P + 0xFFFED32C) uintRefIsNonzeroCode.length
   sSM : Sep (nmR sp0) 0xB0 (P + 0xCB6) memsetCode.length
   sSB : Sep (nmR sp0) 0xB0 (nmBsub P) borrowingSubCode.length
   sSL : Sep (nmR sp0) 0xB0 (P + 0xFFFFF338) uintSelect12Code.length
@@ -497,7 +497,7 @@ theorem norm12_correct (m : Machine) {P sp0 out xp np retAddr : Word} (env : NmE
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFFFE6 (by decide))
   have r4 := PEnv.reg1 regs4 u3.self.zero
   have sp4 : reg m4 sp = F := by rw [r4 sp (by decide), v3sp]
-  have eW : P + BitVec.ofNat 32 0xFFFFFFE6 + 0xFFFEF156 = P + 0xFFFEF13C := by rw [BitVec.add_assoc]; rfl
+  have eW : P + BitVec.ofNat 32 0xFFFFFFE6 + 0xFFFED346 = P + 0xFFFED32C := by rw [BitVec.add_assoc]; rfl
   have eG4 : reg m4 sp + 0xFFFFFFFC = R + BitVec.ofNat 32 0x4C := by rw [sp4, eFR]
   obtain ⟨m5, c5, pc5, a05, k5, f5⟩ := uint12IsNonzero_correct m4 (even_at P env.hP 0xFFFFFFE6 (by decide))
     (by rw [mem4]; exact cIn env.nz sSZ frSv) (by rw [mem4, eW]; exact cIn env.ref sSF frSv) pc4

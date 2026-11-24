@@ -187,32 +187,32 @@ stack below `sp0`, the list's `n` bytes at `p`, and the OID's `ql` bytes at
 structure LOEnv (M : Word → BitVec 8) (P sp0 p q : Word) (n ql : Nat) : Prop where
   hP : P.toNat % 2 = 0
   cod : CodeIn M P listsOidCode
-  seq : CodeIn M (P + 0xFFFFF5CA) derSequenceCode
-  nst : CodeIn M (P + 0xFFFFF842) derNestedCode
-  elem : CodeIn M (P + 0xFFFFF762) derElementCode
-  tlv : CodeIn M (P + 0xFFFFF788) derTlvCode
-  oid : CodeIn M (P + 0xFFFFFE9A) derOidCode
-  seqq : CodeIn M (P + 0xFFFFFE3E) sliceEqCode
-  esl : CodeIn M (P + 0xFFFFF5B4) equalSameLengthCode
-  cmp : CodeIn M (P + 0xBEC6) memcmpCode
-  mcs : CodeIn M (P + 0xBF4E) memcpyStubCode
-  mcb : CodeIn M (P + 0xBF56) memcpyBodyCode
+  seq : CodeIn M (P + 0xFFFFCD92) derSequenceCode
+  nst : CodeIn M (P + 0xFFFFD00A) derNestedCode
+  elem : CodeIn M (P + 0xFFFFCF2A) derElementCode
+  tlv : CodeIn M (P + 0xFFFFCF50) derTlvCode
+  oid : CodeIn M (P + 0xFFFFFDEC) derOidCode
+  seqq : CodeIn M (P + 0xFFFFE098) sliceEqCode
+  esl : CodeIn M (P + 0xFFFFCC42) equalSameLengthCode
+  cmp : CodeIn M (P + 0xA000) memcmpCode
+  mcs : CodeIn M (P + 0xA088) memcpyStubCode
+  mcb : CodeIn M (P + 0xA090) memcpyBodyCode
   hsp : sp0.toNat % 4 = 0
   hS : 0x80 ≤ sp0.toNat
   hp : 0 < p.toNat
   hpn : p.toNat + n < 2 ^ 32
   hql : ql < 2 ^ 32
   sGC : Sep (sp0 + 0xFFFFFF80) 0x80 P listsOidCode.length
-  sGQ : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFF5CA) derSequenceCode.length
-  sGN : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFF842) derNestedCode.length
-  sGE : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFF762) derElementCode.length
-  sGT : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFF788) derTlvCode.length
-  sGO : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFFE9A) derOidCode.length
-  sGS : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFFE3E) sliceEqCode.length
-  sGL : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFF5B4) equalSameLengthCode.length
-  sGM : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xBEC6) memcmpCode.length
-  sGU : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xBF4E) memcpyStubCode.length
-  sGB : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xBF56) memcpyBodyCode.length
+  sGQ : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFCD92) derSequenceCode.length
+  sGN : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFD00A) derNestedCode.length
+  sGE : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFCF2A) derElementCode.length
+  sGT : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFCF50) derTlvCode.length
+  sGO : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFFDEC) derOidCode.length
+  sGS : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFE098) sliceEqCode.length
+  sGL : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xFFFFCC42) equalSameLengthCode.length
+  sGM : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xA000) memcmpCode.length
+  sGU : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xA088) memcpyStubCode.length
+  sGB : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0xA090) memcpyBodyCode.length
   sRG : Sep p n (sp0 + 0xFFFFFF80) 0x80
   sQG : Sep q ql (sp0 + 0xFFFFFF80) 0x80
 
@@ -486,24 +486,24 @@ theorem listsOid_correct (m : Machine) {P sp0 p q retAddr : Word} {n ql : Nat}
       St Mx P n o (reg n) → CodeIn Mx P listsOidCode →
       fetchRel listsOidCode o = some (.auipc ra imm, 4) →
       fetchRel listsOidCode (o + 4) = some (.jalr ra ra oo, 4) →
-      P + BitVec.ofNat 32 o + imm + oo = P + 0xBF4E → (o + 8) % 2 = 0 →
-      CodeIn Mx (P + 0xBF4E) memcpyStubCode → CodeIn Mx (P + 0xBF56) memcpyBodyCode →
+      P + BitVec.ofNat 32 o + imm + oo = P + 0xA088 → (o + 8) % 2 = 0 →
+      CodeIn Mx (P + 0xA088) memcpyStubCode → CodeIn Mx (P + 0xA090) memcpyBodyCode →
       reg n sp = F → reg n a0 = dst → reg n a1 = src → reg n a2 = BitVec.ofNat 32 N →
-      Sep dst N (P + 0xBF56) memcpyBodyCode.length → Sep dst N (G + BitVec.ofNat 32 0x10) 16 →
+      Sep dst N (P + 0xA090) memcpyBodyCode.length → Sep dst N (G + BitVec.ofNat 32 0x10) 16 →
       Sep src N (G + BitVec.ofNat 32 0x10) 16 → Sep dst N src N → dst.toNat + N < 2 ^ 32 → src.toNat + N < 2 ^ 32 →
       ∃ n', Steps n n' ∧ St n'.mem P n' (o + 8) (reg n') ∧ reg n' sp = F ∧
         (∀ x, Sep (G + BitVec.ofNat 32 0x10) 16 x 1 → n'.mem x = copyBytes Mx dst src N x) ∧
         ∀ r, r.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' r = reg n r := by
     intro Mx n o imm oo dst src N st hc h1 h2 hb ho hcs hcb rsp ra0 ra1 ra2 sDB sDF sSF sDS hdw hsw
-    obtain ⟨n1, c1, pc1, mem1, regs1⟩ := st.callRa hc h1 h2 (cb := P + 0xBF4E) hb (even_at P env.hP 0xBF4E (by decide))
+    obtain ⟨n1, c1, pc1, mem1, regs1⟩ := st.callRa hc h1 h2 (cb := P + 0xA088) hb (even_at P env.hP 0xA088 (by decide))
     have r1 := PEnv.reg1 regs1 st.zero
     have sp1 : reg n1 sp = F := by rw [r1 sp (by decide), rsp]
-    obtain ⟨n2, c2, pc2, sp2', a02, mem2, k2⟩ := memcpy_correct n1 (P + 0xBF4E) (P + BitVec.ofNat 32 (o + 8))
-      dst src N (by show CodeIn n1.mem _ _; rw [mem1]; exact hcs) (even_at P env.hP 0xBF4E (by decide)) pc1
+    obtain ⟨n2, c2, pc2, sp2', a02, mem2, k2⟩ := memcpy_correct n1 (P + 0xA088) (P + BitVec.ofNat 32 (o + 8))
+      dst src N (by show CodeIn n1.mem _ _; rw [mem1]; exact hcs) (even_at P env.hP 0xA088 (by decide)) pc1
       (by rw [r1 a0 (by decide), ra0]) (by rw [r1 a1 (by decide), ra1]) (by rw [r1 a2 (by decide), ra2])
       (by rw [regs1]; simp +decide [upd]) (even_clear _ (even_at P env.hP (o + 8) ho))
       (by
-        rw [mem1, sp1, eSc, show P + 0xBF4E + 8 = P + 0xBF56 by rw [BitVec.add_assoc]; rfl]
+        rw [mem1, sp1, eSc, show P + 0xA088 + 8 = P + 0xA090 by rw [BitVec.add_assoc]; rfl]
         exact ⟨hcb, sDB, (sGB.sub (c := 0x10) (l := 16) (by decide)), sDF, sSF, sDS,
           aligned_add hGa (k := 0x10) (by decide), by rw [BitVec.toNat_add, ofNat_tn (by decide)]; omega, hdw, hsw⟩)
     refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, by rw [sp2', sp1], fun x hx => ?_, fun r hr => ?_⟩
@@ -540,14 +540,14 @@ theorem listsOid_correct (m : Machine) {P sp0 p q retAddr : Word} {n ql : Nat}
     simp only [runBlock, BInstr.run] at u5
     have k5 : ∀ q, q.val ≠ 0 → q ≠ a0 → q ≠ a1 → reg m5 q = reg nm q := fun q hv h0 h1 => by
       rw [u5.regs, upd_ne hv h1, upd_ne hv h0]
-    obtain ⟨m6, c6, pc6, mem6, regs6⟩ := u5.self.callRa hc lo_at_2a lo_at_2e (cb := P + 0xFFFFF5CA)
-      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFF5CA (by decide))
+    obtain ⟨m6, c6, pc6, mem6, regs6⟩ := u5.self.callRa hc lo_at_2a lo_at_2e (cb := P + 0xFFFFCD92)
+      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFCD92 (by decide))
     have r6 := PEnv.reg1 regs6 u5.self.zero
     have sp6 : reg m6 sp = F := by rw [r6 sp (by decide), k5 sp (by decide) (by decide) (by decide), rsp]
-    have eN : P + 0xFFFFF5CA + 0x278 = P + 0xFFFFF842 := by rw [BitVec.add_assoc]; rfl
-    have hNE : NestEnv m6.mem (P + 0xFFFFF5CA + 0x278) F (F + 0x34) (F + 0xC) := by
+    have eN : P + 0xFFFFCD92 + 0x278 = P + 0xFFFFD00A := by rw [BitVec.add_assoc]; rfl
+    have hNE : NestEnv m6.mem (P + 0xFFFFCD92 + 0x278) F (F + 0x34) (F + 0xC) := by
       rw [mem6, eN]
-      refine ⟨even_at P env.hP 0xFFFFF842 (by decide), cIn env.nst sGN hM,
+      refine ⟨even_at P env.hP 0xFFFFD00A (by decide), cIn env.nst sGN hM,
         by rw [BitVec.add_assoc]; exact cIn env.elem sGE hM, by rw [BitVec.add_assoc]; exact cIn env.tlv sGT hM,
         hFa, by omega, aligned_add hFa (k := 0x34) (by decide), aligned_add hFa (k := 0xC) (by decide),
         by rw [eNF]; exact sGN.sub (by decide),
@@ -561,7 +561,7 @@ theorem listsOid_correct (m : Machine) {P sp0 p q retAddr : Word} {n ql : Nat}
            exact offs (.inr (by decide)) (by decide) (by decide),
         by rw [eD8, eDC, lp, ln, ofNat_tn hn', eNF]; exact sR.subR (by decide),
         by rw [eD8, lp]; exact hp', by rw [eD8, eDC, lp, ln, ofNat_tn hn']; exact hpn'⟩
-    obtain ⟨m7, c7, pc7, sp7, k7, f7⟩ := derSequence_correct m6 (even_at P env.hP 0xFFFFF5CA (by decide))
+    obtain ⟨m7, c7, pc7, sp7, k7, f7⟩ := derSequence_correct m6 (even_at P env.hP 0xFFFFCD92 (by decide))
       (by rw [mem6]; exact cIn env.seq sGQ hM) hNE pc6 sp6
       (by rw [r6 a0 (by decide), u5.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [rsp]; rfl)
       (by rw [r6 a1 (by decide), u5.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [rsp]; rfl)
@@ -729,16 +729,16 @@ theorem listsOid_correct (m : Machine) {P sp0 p q retAddr : Word} {n ql : Nat}
       simp only [runBlock, BInstr.run] at u14
       have k14 : ∀ q, q.val ≠ 0 → q ≠ a0 → q ≠ a1 → reg m14 q = reg m11 q := fun q hv h0 h1 => by
         rw [u14.regs, upd_ne hv h1, upd_ne hv h0]
-      obtain ⟨m15, c15, pc15, mem15, regs15⟩ := u14.self.callRa hc13 lo_at_52 lo_at_56 (cb := P + 0xFFFFFE9A)
-        (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFFE9A (by decide))
+      obtain ⟨m15, c15, pc15, mem15, regs15⟩ := u14.self.callRa hc13 lo_at_52 lo_at_56 (cb := P + 0xFFFFFDEC)
+        (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFFDEC (by decide))
       have r15 := PEnv.reg1 regs15 u14.self.zero
       have sp15 : reg m15 sp = F := by rw [r15 sp (by decide), k14 sp (by decide) (by decide) (by decide), sp11]
       have sIn : Sep (p' + BitVec.ofNat 32 t.header) t.len G 0x80 := sR.sub (by omega)
       have eD2 : F + 0x24 + 8 = F + 0x2C := by rw [BitVec.add_assoc]; rfl
       have eD2C : F + 0x24 + 0xC = F + 0x30 := by rw [BitVec.add_assoc]; rfl
-      have oenv : OidEnv m15.mem (P + 0xFFFFFE9A) F (F + 0x1C) (F + 0x24) := by
+      have oenv : OidEnv m15.mem (P + 0xFFFFFDEC) F (F + 0x1C) (F + 0x24) := by
         rw [mem15]
-        refine ⟨even_at P env.hP 0xFFFFFE9A (by decide), cIn env.oid sGO M13G,
+        refine ⟨even_at P env.hP 0xFFFFFDEC (by decide), cIn env.oid sGO M13G,
           by rw [BitVec.add_assoc]; exact cIn env.elem sGE M13G, by rw [BitVec.add_assoc]; exact cIn env.tlv sGT M13G,
           hFa, by omega, aligned_add hFa (k := 0x1C) (by decide), aligned_add hFa (k := 0x24) (by decide),
           by rw [eNF]; exact sGO.sub (by decide), by rw [eNF, BitVec.add_assoc]; exact sGE.sub (by decide),
@@ -848,8 +848,8 @@ theorem listsOid_correct (m : Machine) {P sp0 p q retAddr : Word} {n ql : Nat}
         simp only [runBlock, BInstr.run] at u20
         have k20 : ∀ q, q.val ≠ 0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → reg m20 q = reg m17 q := fun q hv h1 h2 h3 => by
           rw [u20.regs, upd_ne hv h3, upd_ne hv h2, u19.regs, upd_ne hv h1]
-        obtain ⟨m21, c21, pc21, mem21, regs21⟩ := u20.self.callRa hc16 lo_at_64 lo_at_68 (cb := P + 0xFFFFFE3E)
-          (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFFE3E (by decide))
+        obtain ⟨m21, c21, pc21, mem21, regs21⟩ := u20.self.callRa hc16 lo_at_64 lo_at_68 (cb := P + 0xFFFFE098)
+          (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFE098 (by decide))
         have r21' := PEnv.reg1 regs21 u20.self.zero
         have sp21 : reg m21 sp = F := by
           rw [r21' sp (by decide), k20 sp (by decide) (by decide) (by decide) (by decide), sp17]
@@ -857,8 +857,8 @@ theorem listsOid_correct (m : Machine) {P sp0 p q retAddr : Word} {n ql : Nat}
           fun q hq => by
             have h : q ≠ ra ∧ q.val ≠ 0 ∧ q ≠ a1 ∧ q ≠ a2 ∧ q ≠ a3 ∧ q ≠ a0 := by revert hq; revert q; decide
             rw [r21' q h.1, k20 q h.2.1 h.2.2.1 h.2.2.2.1 h.2.2.2.2.1, k17 q h.2.1 h.2.2.2.2.2]; exact K16 q hq
-        obtain ⟨m22, c22, pc22, a022, k22, f22⟩ := sliceEq_correct m21 (base := P + 0xFFFFFE3E)
-          (p := p' + BitVec.ofNat 32 t.header + BitVec.ofNat 32 o.header) (q := q) (pl := o.len) (ql := ql) (even_at P env.hP 0xFFFFFE3E (by decide)) (by rw [mem21]; exact cIn env.seqq sGS m16G)
+        obtain ⟨m22, c22, pc22, a022, k22, f22⟩ := sliceEq_correct m21 (base := P + 0xFFFFE098)
+          (p := p' + BitVec.ofNat 32 t.header + BitVec.ofNat 32 o.header) (q := q) (pl := o.len) (ql := ql) (even_at P env.hP 0xFFFFE098 (by decide)) (by rw [mem21]; exact cIn env.seqq sGS m16G)
           (by rw [mem21, BitVec.add_assoc]; exact cIn env.esl sGL m16G)
           (by rw [mem21, BitVec.add_assoc]; exact cIn env.cmp sGM m16G) pc21
           (by rw [r21' a0 (by decide), k20 a0 (by decide) (by decide) (by decide) (by decide), v17, l17])

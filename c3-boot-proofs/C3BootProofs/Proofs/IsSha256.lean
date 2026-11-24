@@ -191,17 +191,17 @@ at `isOid`, apart from what each must not touch. -/
 structure ISEnv (M : Word → BitVec 8) (P sp0 d p : Word) (n : Nat) : Prop where
   hP : P.toNat % 2 = 0
   cod : CodeIn M P isSha256Code
-  alg : CodeIn M (P + 0x18A) derAlgorithmCode
-  seq : CodeIn M (P + 0x18A + 0xFFFFF532) derSequenceCode
-  nst : CodeIn M (P + 0x18A + 0xFFFFF7AA) derNestedCode
-  elem : CodeIn M (P + 0x18A + 0xFFFFF6CA) derElementCode
-  tlv : CodeIn M (P + 0x18A + 0xFFFFF6F0) derTlvCode
-  oid : CodeIn M (P + 0x18A + 0xFFFFFE02) derOidCode
-  mcs : CodeIn M (P + 0x18A + 0xBEB6) memcpyStubCode
-  mcb : CodeIn M (P + 0x18A + 0xBEBE) memcpyBodyCode
-  seqq : CodeIn M (P + 0xFFFFFF30) sliceEqCode
-  esl : CodeIn M (P + 0xFFFFFF30 + 0xFFFFF776) equalSameLengthCode
-  cmp : CodeIn M (P + 0xFFFFFF30 + 0xC088) memcmpCode
+  alg : CodeIn M (P + 0xFFFFFDAC) derAlgorithmCode
+  seq : CodeIn M (P + 0xFFFFFDAC + 0xFFFFD080) derSequenceCode
+  nst : CodeIn M (P + 0xFFFFFDAC + 0xFFFFD2F8) derNestedCode
+  elem : CodeIn M (P + 0xFFFFFDAC + 0xFFFFD218) derElementCode
+  tlv : CodeIn M (P + 0xFFFFFDAC + 0xFFFFD23E) derTlvCode
+  oid : CodeIn M (P + 0xFFFFFDAC + 0xDA) derOidCode
+  mcs : CodeIn M (P + 0xFFFFFDAC + 0xA376) memcpyStubCode
+  mcb : CodeIn M (P + 0xFFFFFDAC + 0xA37E) memcpyBodyCode
+  seqq : CodeIn M (P + 0xFFFFE132) sliceEqCode
+  esl : CodeIn M (P + 0xFFFFE132 + 0xFFFFEBAA) equalSameLengthCode
+  cmp : CodeIn M (P + 0xFFFFE132 + 0xBF68) memcmpCode
   hoid : memBytes M isOid 9 = sha256OidData
   hsp : sp0.toNat % 4 = 0
   hS : 0xA0 ≤ sp0.toNat
@@ -211,28 +211,28 @@ structure ISEnv (M : Word → BitVec 8) (P sp0 d p : Word) (n : Nat) : Prop wher
   hp : 0 < p.toNat
   hpn : p.toNat + n < 2 ^ 32
   sGC : Sep (sp0 + 0xFFFFFF60) 0xA0 P isSha256Code.length
-  sGA : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0x18A) derAlgorithmCode.length
-  sGQ : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0x18A + 0xFFFFF532) derSequenceCode.length
-  sGN : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0x18A + 0xFFFFF7AA) derNestedCode.length
-  sGE : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0x18A + 0xFFFFF6CA) derElementCode.length
-  sGT : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0x18A + 0xFFFFF6F0) derTlvCode.length
-  sGO : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0x18A + 0xFFFFFE02) derOidCode.length
-  sGU : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0x18A + 0xBEB6) memcpyStubCode.length
-  sGB : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0x18A + 0xBEBE) memcpyBodyCode.length
-  sGS : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFF30) sliceEqCode.length
-  sGL : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFF30 + 0xFFFFF776) equalSameLengthCode.length
-  sGM : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFF30 + 0xC088) memcmpCode.length
+  sGA : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFDAC) derAlgorithmCode.length
+  sGQ : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFDAC + 0xFFFFD080) derSequenceCode.length
+  sGN : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFDAC + 0xFFFFD2F8) derNestedCode.length
+  sGE : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFDAC + 0xFFFFD218) derElementCode.length
+  sGT : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFDAC + 0xFFFFD23E) derTlvCode.length
+  sGO : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFDAC + 0xDA) derOidCode.length
+  sGU : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFDAC + 0xA376) memcpyStubCode.length
+  sGB : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFFDAC + 0xA37E) memcpyBodyCode.length
+  sGS : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFE132) sliceEqCode.length
+  sGL : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFE132 + 0xFFFFEBAA) equalSameLengthCode.length
+  sGM : Sep (sp0 + 0xFFFFFF60) 0xA0 (P + 0xFFFFE132 + 0xBF68) memcmpCode.length
   sDP : Sep (d + 8) 8 P isSha256Code.length
-  sDC : Sep (d + 8) 8 (P + 0x18A) derAlgorithmCode.length
-  sDN : Sep (d + 8) 8 (P + 0x18A + 0xFFFFF7AA) derNestedCode.length
-  sDE : Sep (d + 8) 8 (P + 0x18A + 0xFFFFF6CA) derElementCode.length
-  sDT : Sep (d + 8) 8 (P + 0x18A + 0xFFFFF6F0) derTlvCode.length
-  sDO : Sep (d + 8) 8 (P + 0x18A + 0xFFFFFE02) derOidCode.length
-  sDU : Sep (d + 8) 8 (P + 0x18A + 0xBEB6) memcpyStubCode.length
-  sDB : Sep (d + 8) 8 (P + 0x18A + 0xBEBE) memcpyBodyCode.length
-  sDS : Sep (d + 8) 8 (P + 0xFFFFFF30) sliceEqCode.length
-  sDL : Sep (d + 8) 8 (P + 0xFFFFFF30 + 0xFFFFF776) equalSameLengthCode.length
-  sDM : Sep (d + 8) 8 (P + 0xFFFFFF30 + 0xC088) memcmpCode.length
+  sDC : Sep (d + 8) 8 (P + 0xFFFFFDAC) derAlgorithmCode.length
+  sDN : Sep (d + 8) 8 (P + 0xFFFFFDAC + 0xFFFFD2F8) derNestedCode.length
+  sDE : Sep (d + 8) 8 (P + 0xFFFFFDAC + 0xFFFFD218) derElementCode.length
+  sDT : Sep (d + 8) 8 (P + 0xFFFFFDAC + 0xFFFFD23E) derTlvCode.length
+  sDO : Sep (d + 8) 8 (P + 0xFFFFFDAC + 0xDA) derOidCode.length
+  sDU : Sep (d + 8) 8 (P + 0xFFFFFDAC + 0xA376) memcpyStubCode.length
+  sDB : Sep (d + 8) 8 (P + 0xFFFFFDAC + 0xA37E) memcpyBodyCode.length
+  sDS : Sep (d + 8) 8 (P + 0xFFFFE132) sliceEqCode.length
+  sDL : Sep (d + 8) 8 (P + 0xFFFFE132 + 0xFFFFEBAA) equalSameLengthCode.length
+  sDM : Sep (d + 8) 8 (P + 0xFFFFE132 + 0xBF68) memcmpCode.length
   sDG : Sep (d + 8) 8 (sp0 + 0xFFFFFF60) 0xA0
   sRG : Sep p n (sp0 + 0xFFFFFF60) 0xA0
   sRD : Sep p n (d + 8) 8
@@ -405,8 +405,8 @@ theorem isSha256_correct (m : Machine) {P sp0 d p retAddr : Word} {n : Nat} (env
   obtain ⟨m3, c3, u3⟩ := St.block [.alu .add a1 x0 a0, .alu .add a0 x0 sp] u2.self hcS (off' := 0x10) (by decide)
     (by simp [BlockOk, BInstr.ok])
   simp only [runBlock, BInstr.run] at u3
-  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa hcS is_at_10 is_at_14 (cb := P + 0x18A)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x18A (by decide))
+  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa hcS is_at_10 is_at_14 (cb := P + 0xFFFFFDAC)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFFDAC (by decide))
   have r4' := PEnv.reg1 regs4 u3.self.zero
   have r3 : ∀ q, q.val ≠ 0 → q ≠ a0 → q ≠ a1 → reg m3 q = reg m2 q := fun q hv h0 h1 => by
     rw [u3.regs, upd_ne hv h0, upd_ne hv h1]
@@ -425,8 +425,8 @@ theorem isSha256_correct (m : Machine) {P sp0 d p retAddr : Word} {n : Nat} (env
       rw [add_ofNat_assoc]; exact frSv _ (sDG.sub (c := 4 + j) (l := 1) (by omega)).symm
   have sOG : Sep F 0x1C (F + 0xFFFFFF90) 0x70 := by
     rw [eAG, ← hGF]; exact offs (c := 0x70) (n := 0x1C) (d := 0) (k := 0x70) (.inr (by omega)) (by omega) (by omega)
-  have aenv : AlgEnv Msv (P + 0x18A) F F d p n :=
-    { hP := even_at P env.hP 0x18A (by decide), cod := cIn env.alg sGA frSv, seq := cIn env.seq sGQ frSv,
+  have aenv : AlgEnv Msv (P + 0xFFFFFDAC) F F d p n :=
+    { hP := even_at P env.hP 0xFFFFFDAC (by decide), cod := cIn env.alg sGA frSv, seq := cIn env.seq sGQ frSv,
       nst := cIn env.nst sGN frSv, elem := cIn env.elem sGE frSv, tlv := cIn env.tlv sGT frSv,
       oid := cIn env.oid sGO frSv, mcs := cIn env.mcs sGU frSv, mcb := cIn env.mcb sGB frSv,
       hsp := hFa, hS := by omega, hout := hFa, how := by omega, hd := env.hd, hdp := hdp, hdn := hdn,
@@ -537,16 +537,16 @@ theorem isSha256_correct (m : Machine) {P sp0 d p retAddr : Word} {n : Nat} (env
       rw [u8.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [r7, sp6]
     have sp8 : reg m8 sp = F := by
       rw [v8 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), sp6]
-    obtain ⟨m9, c9, pc9, mem9, regs9⟩ := u8.self.callRa hc5 is_at_32 is_at_36 (cb := P + 0xFFFFFF30)
-      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFFF30 (by decide))
+    obtain ⟨m9, c9, pc9, mem9, regs9⟩ := u8.self.callRa hc5 is_at_32 is_at_36 (cb := P + 0xFFFFE132)
+      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFE132 (by decide))
     have r9' := PEnv.reg1 regs9 u8.self.zero
     have sp9 : reg m9 sp = F := by rw [r9' sp (by decide), sp8]
     have cIn5 : ∀ {b : Word} {code' : List Nat}, CodeIn m.mem b code' → Sep G 0xA0 b code'.length →
         Sep (d + 8) 8 b code'.length → CodeIn m5.mem b code' := fun hc hs hd i hi => by
       rw [M5o _ (hs.subR (c := i) (l := 1) (by omega)) (hd.subR (c := i) (l := 1) (by omega))]; exact hc i hi
     have hol : ol < 2 ^ 32 := by omega
-    obtain ⟨m10, c10, pc10, a010, k10, f10⟩ := sliceEq_correct m9 (base := P + 0xFFFFFF30) (p := op) (q := isOid)
-      (pl := ol) (ql := 9) (even_at P env.hP 0xFFFFFF30 (by decide)) (by rw [mem9]; exact cIn5 env.seqq sGS env.sDS)
+    obtain ⟨m10, c10, pc10, a010, k10, f10⟩ := sliceEq_correct m9 (base := P + 0xFFFFE132) (p := op) (q := isOid)
+      (pl := ol) (ql := 9) (even_at P env.hP 0xFFFFE132 (by decide)) (by rw [mem9]; exact cIn5 env.seqq sGS env.sDS)
       (by rw [mem9]; exact cIn5 env.esl sGL env.sDL) (by rw [mem9]; exact cIn5 env.cmp sGM env.sDM) pc9
       (by rw [r9' a0 (by decide), a08]) (by rw [r9' a1 (by decide), a18]) (by rw [r9' a2 (by decide), a28])
       (by rw [r9' a3 (by decide), a38]) hol (by decide) (by rw [regs9]; simp +decide only [upd_app, ↓reduceIte])

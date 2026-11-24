@@ -98,8 +98,8 @@ structure NZEnv (M : Word → BitVec 8) (P sp0 out x : Word) : Prop where
   uce : CodeIn M (P + 0xFFFFFEF6 + 0xFFFFFAF4) uint12CtEqCode
   spl : CodeIn M (P + 0xFFFFFEF6 + 0xFFFFFAF4 + 0x80) splitAt12Code
   lce : CodeIn M (P + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFF9DBC) limbCtEqCode
-  uiz : CodeIn M (P + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFEF3C4) uintRefIsZeroCode
-  unz : CodeIn M (P + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFEF3C4 + 0x1A) uintRefIsNonzeroCode
+  uiz : CodeIn M (P + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFED5B4) uintRefIsZeroCode
+  unz : CodeIn M (P + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFED5B4 + 0x1A) uintRefIsNonzeroCode
   bb : CodeIn M (P + 0xFFFFFEF6 + 0xFFFF99AA) blackBoxU8Code
   cn : CodeIn M (P + 0xFFFFDAB2) choiceNotCode
   cnb : CodeIn M (P + 0xFFFFDAB2 + 0xFFFFBDEE) blackBoxU8Code
@@ -116,8 +116,8 @@ structure NZEnv (M : Word → BitVec 8) (P sp0 out x : Word) : Prop where
   sGU : Sep (sp0 + 0xFFFFFF9C) 0x64 (P + 0xFFFFFEF6 + 0xFFFFFAF4) uint12CtEqCode.length
   sGS : Sep (sp0 + 0xFFFFFF9C) 0x64 (P + 0xFFFFFEF6 + 0xFFFFFAF4 + 0x80) splitAt12Code.length
   sGL : Sep (sp0 + 0xFFFFFF9C) 0x64 (P + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFF9DBC) limbCtEqCode.length
-  sGZ : Sep (sp0 + 0xFFFFFF9C) 0x64 (P + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFEF3C4) uintRefIsZeroCode.length
-  sGN : Sep (sp0 + 0xFFFFFF9C) 0x64 (P + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFEF3C4 + 0x1A) uintRefIsNonzeroCode.length
+  sGZ : Sep (sp0 + 0xFFFFFF9C) 0x64 (P + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFED5B4) uintRefIsZeroCode.length
+  sGN : Sep (sp0 + 0xFFFFFF9C) 0x64 (P + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFED5B4 + 0x1A) uintRefIsNonzeroCode.length
   sGB : Sep (sp0 + 0xFFFFFF9C) 0x64 (P + 0xFFFFFEF6 + 0xFFFF99AA) blackBoxU8Code.length
   sGN' : Sep (sp0 + 0xFFFFFF9C) 0x64 (P + 0xFFFFDAB2) choiceNotCode.length
   sGB' : Sep (sp0 + 0xFFFFFF9C) 0x64 (P + 0xFFFFDAB2 + 0xFFFFBDEE) blackBoxU8Code.length
@@ -463,8 +463,8 @@ structure NZ2Env (M : Word → BitVec 8) (P sp0 out x : Word) : Prop where
   uce : CodeIn M (P + 0xFFFFFD20 + 0xFFFFFB5E) uint8CtEqCode
   spl : CodeIn M (P + 0xFFFFFD20 + 0xFFFFFB5E + 0x80) splitAt8Code
   lce : CodeIn M (P + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFFBCE6) limbCtEqCode
-  uiz : CodeIn M (P + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFF12EE) uintRefIsZeroCode
-  unz : CodeIn M (P + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFF12EE + 0x1A) uintRefIsNonzeroCode
+  uiz : CodeIn M (P + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFEF4DE) uintRefIsZeroCode
+  unz : CodeIn M (P + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFEF4DE + 0x1A) uintRefIsNonzeroCode
   bb : CodeIn M (P + 0xFFFFFD20 + 0xFFFFB93E) blackBoxU8Code
   cn : CodeIn M (P + 0xFFFFF870) choiceNotCode
   cnb : CodeIn M (P + 0xFFFFF870 + 0xFFFFBDEE) blackBoxU8Code
@@ -481,8 +481,8 @@ structure NZ2Env (M : Word → BitVec 8) (P sp0 out x : Word) : Prop where
   sGU : Sep (sp0 + 0xFFFFFF7C) 0x84 (P + 0xFFFFFD20 + 0xFFFFFB5E) uint8CtEqCode.length
   sGS : Sep (sp0 + 0xFFFFFF7C) 0x84 (P + 0xFFFFFD20 + 0xFFFFFB5E + 0x80) splitAt8Code.length
   sGL : Sep (sp0 + 0xFFFFFF7C) 0x84 (P + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFFBCE6) limbCtEqCode.length
-  sGZ : Sep (sp0 + 0xFFFFFF7C) 0x84 (P + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFF12EE) uintRefIsZeroCode.length
-  sGN : Sep (sp0 + 0xFFFFFF7C) 0x84 (P + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFF12EE + 0x1A) uintRefIsNonzeroCode.length
+  sGZ : Sep (sp0 + 0xFFFFFF7C) 0x84 (P + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFEF4DE) uintRefIsZeroCode.length
+  sGN : Sep (sp0 + 0xFFFFFF7C) 0x84 (P + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFEF4DE + 0x1A) uintRefIsNonzeroCode.length
   sGB : Sep (sp0 + 0xFFFFFF7C) 0x84 (P + 0xFFFFFD20 + 0xFFFFB93E) blackBoxU8Code.length
   sGN' : Sep (sp0 + 0xFFFFFF7C) 0x84 (P + 0xFFFFF870) choiceNotCode.length
   sGB' : Sep (sp0 + 0xFFFFFF7C) 0x84 (P + 0xFFFFF870 + 0xFFFFBDEE) blackBoxU8Code.length

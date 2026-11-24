@@ -432,8 +432,8 @@ theorem c_frp {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 8}
 abbrev UCE : Word := BitVec.ofNat 32 uint12CtEqAddress
 theorem uce_spl : UCE + 0x80 = BitVec.ofNat 32 splitAt12Address := by decide
 theorem uce_lce : UCE + 0xFFFF9DBC = BitVec.ofNat 32 limbCtEqAddress := by decide
-theorem uce_uiz : UCE + 0xFFFEF3C4 = BitVec.ofNat 32 uintRefIsZeroAddress := by decide
-theorem uce_unz : UCE + 0xFFFEF3C4 + 0x1A = BitVec.ofNat 32 uintRefIsNonzeroAddress := by decide
+theorem uce_uiz : UCE + 0xFFFED5B4 = BitVec.ofNat 32 uintRefIsZeroAddress := by decide
+theorem uce_unz : UCE + 0xFFFED5B4 + 0x1A = BitVec.ofNat 32 uintRefIsNonzeroAddress := by decide
 
 /-- A call to `Uint<12>::ct_eq`: `a0` is 1 when the 12 words at `pa` and `pb` are equal, else 0. -/
 theorem c_uce {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 8} {n : Machine} {off : Nat}
@@ -487,7 +487,7 @@ theorem c_tml {base : Word} {code : List Nat} {Mx : Word → BitVec 8} {n : Mach
 
 abbrev TAT : Word := BitVec.ofNat 32 tagAndThenAddress
 theorem tat_tfu : TAT + 0x3E = BitVec.ofNat 32 tagFromU8Address := by decide
-theorem tat_stub : TAT + 0x119B4 = MCS := by decide
+theorem tat_stub : TAT + 0x137C4 = MCS := by decide
 
 /-- A call to `Result<u8, Error>::and_then(Tag::from_u8)` on an `Ok`. -/
 theorem c_tat {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 8} {n : Machine} {off : Nat}
@@ -507,7 +507,7 @@ theorem c_tat {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 8}
   have sp1 : reg n1 sp = S := by rw [r1 sp (by decide)]; exact hsp
   have hSa := F.al; have hSl := F.lo; have hSh := F.hi
   obtain ⟨fA, fW, hFC⟩ := F.mc
-  have E : McEnv n1.mem (TAT + 0x119B4 + 8) out rp (reg n1 sp + 0xFFFFFFF0) 0x34 := by
+  have E : McEnv n1.mem (TAT + 0x137C4 + 8) out rp (reg n1 sp + 0xFFFFFFF0) 0x34 := by
     rw [sp1, mem1, tat_stub, eo, er]
     exact ⟨K.body, F.sepHi hco (by decide) (by decide), hFC, F.mcN hco, F.mcN hcr, sepS S hd (by omega) (by omega),
       fA, fW, by rw [F.at _ (by omega)]; omega, by rw [F.at _ (by omega)]; omega⟩
@@ -572,11 +572,11 @@ theorem c_tag {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 8}
     fun q h0 h1 h2 h3 hr => by rw [k2 q h0 h1 h2 h3, r1 q hr], fr2⟩
 
 abbrev UOR : Word := BitVec.ofNat 32 unwrapOr384Address
-theorem uor_cs : UOR + 0x1070C = BitVec.ofNat 32 condSelect384Address := by decide
-theorem uor_stub : UOR + 0x1070C + 0x101A = MCS := by decide
-theorem uor_body : UOR + 0x1070C + 0x101A + 8 = MCS + 8 := by decide
-theorem uor_cta : UOR + 0x1070C + 0x2EC = BitVec.ofNat 32 uint12CtAssignAddress := by decide
-theorem uor_sca : UOR + 0x1070C + 0x2EC + 0xFFFF9B66 = BitVec.ofNat 32 sliceCtAssignAddress := by decide
+theorem uor_cs : UOR + 0x1251C = BitVec.ofNat 32 condSelect384Address := by decide
+theorem uor_stub : UOR + 0x1251C + 0x101A = MCS := by decide
+theorem uor_body : UOR + 0x1251C + 0x101A + 8 = MCS + 8 := by decide
+theorem uor_cta : UOR + 0x1251C + 0x2EC = BitVec.ofNat 32 uint12CtAssignAddress := by decide
+theorem uor_sca : UOR + 0x1251C + 0x2EC + 0xFFFF9B66 = BitVec.ofNat 32 sliceCtAssignAddress := by decide
 
 /-- A call to `CtOption<AffinePoint<NistP384>>::into`: the point at `s` when
 its choice byte at `s + 0x64` is 1, else the identity at `p384AffineIdentityAddress`, then

@@ -44,10 +44,10 @@ code, it returns 1 in `a0` when the 97 bytes at `p` and `q` are equal and 0
 when not, restores `sp` and `ra`, and leaves memory outside its frame as it
 was. -/
 theorem eqArr97_correct (m : Machine) {base retAddr p q : Word} (hc : CodeIn m.mem base eqArr97Code)
-    (hm : CodeIn m.mem (base + 0x7ADC) memcmpCode) (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
+    (hm : CodeIn m.mem (base + 0xC04C) memcmpCode) (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
     (ha0 : reg m a0 = p) (ha1 : reg m a1 = q) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
     (hsp : (reg m sp).toNat % 4 = 0) (hS : Sep (reg m sp + 0xFFFFFFF0) 16 base eqArr97Code.length)
-    (hSm : Sep (reg m sp + 0xFFFFFFF0) 16 (base + 0x7ADC) memcmpCode.length)
+    (hSm : Sep (reg m sp + 0xFFFFFFF0) 16 (base + 0xC04C) memcmpCode.length)
     (hP : Sep p 97 (reg m sp + 0xFFFFFFF0) 16) (hQ : Sep q 97 (reg m sp + 0xFFFFFFF0) 16) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = reg m sp ∧ reg m' ra = reg m ra ∧
       reg m' a0 = (if memBytes m.mem p 97 = memBytes m.mem q 97 then 1 else 0) ∧
@@ -63,15 +63,15 @@ theorem eqArr97_correct (m : Machine) {base retAddr p q : Word} (hc : CodeIn m.m
   rw [show aluEval .add (reg m sp) 0xFFFFFFF0 = G from hG] at t1
   have u1sp : upd (reg m) sp G sp = G := by simp +decide [upd]
   have S12 : Sep (G + 0xC) 4 base eqArr97Code.length := hS.sub (c := 0xC) (l := 4) (by decide)
-  have S12m : Sep (G + 0xC) 4 (base + 0x7ADC) memcmpCode.length := hSm.sub (c := 0xC) (l := 4) (by decide)
+  have S12m : Sep (G + 0xC) 4 (base + 0xC04C) memcmpCode.length := hSm.sub (c := 0xC) (l := 4) (by decide)
   obtain ⟨m2, e2, t2⟩ := t1.sw hc eq_at_2 (off' := 4) (by decide)
     (by rw [u1sp]; exact aligned_add hGa (k := 0xC) (by decide))
   rw [u1sp, show upd (reg m) sp G ra = reg m ra by simp +decide [upd]] at t2
   have hc2 := hc.store32 (v := reg m ra) S12
   have hm2 := hm.store32 (v := reg m ra) S12m
   obtain ⟨m3, e3, t3⟩ := t2.aluImm hc2 eq_at_4 (off' := 8) (by decide)
-  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := t3.callRa (cb := base + 0x7ADC) hc2 eq_at_8 eq_at_c
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hbase 0x7ADC (by decide))
+  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := t3.callRa (cb := base + 0xC04C) hc2 eq_at_8 eq_at_c
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hbase 0xC04C (by decide))
   have r4 : ∀ r, reg m4 r = upd (upd (upd (reg m) sp G) a2 (aluEval .add (upd (reg m) sp G x0) 0x61)) ra
       (base + BitVec.ofNat 32 (8 + 8)) r := regs4
   obtain ⟨m5, c5, pc5, a05, k5, mem5⟩ := memcmp_correct m4 (p := p) (q := q) (n := 97)
@@ -273,13 +273,13 @@ set_option maxRecDepth 20000 in
 item in `a1` and in `a0` the count before it, and counts the item. When the
 iterator yields nothing it returns 0 in both and leaves the count alone. -/
 theorem fulcioEnumNext_correct (m : Machine) {base retAddr it : Word} (hc : CodeIn m.mem base fulcioEnumNextCode)
-    (hn : CodeIn m.mem (base + 0x1C8) fulcioIterNextCode) (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
+    (hn : CodeIn m.mem (base + 0x52) fulcioIterNextCode) (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
     (ha0 : reg m a0 = it) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
     (hsp : (reg m sp).toNat % 4 = 0) (hit : it.toNat % 4 = 0) (hptr : (memLoad32 m.mem it).toNat % 4 = 0)
     (hS : Sep (reg m sp + 0xFFFFFFF0) 16 base fulcioEnumNextCode.length)
-    (hSn : Sep (reg m sp + 0xFFFFFFF0) 16 (base + 0x1C8) fulcioIterNextCode.length)
+    (hSn : Sep (reg m sp + 0xFFFFFFF0) 16 (base + 0x52) fulcioIterNextCode.length)
     (hI : Sep it 12 (reg m sp + 0xFFFFFFF0) 16) (hIc : Sep it 12 base fulcioEnumNextCode.length)
-    (hIn : Sep it 12 (base + 0x1C8) fulcioIterNextCode.length)
+    (hIn : Sep it 12 (base + 0x52) fulcioIterNextCode.length)
     (hP : Sep (memLoad32 m.mem it) 4 (reg m sp + 0xFFFFFFF0) 16) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = reg m sp ∧ reg m' a1 = fnRes m.mem it ∧
       reg m' a0 = (if fnRes m.mem it = 0 then 0 else memLoad32 m.mem (it + 8)) ∧
@@ -327,8 +327,8 @@ theorem fulcioEnumNext_correct (m : Machine) {base retAddr it : Word} (hc : Code
   have eR : fnRes M2 it = fnRes m.mem it := fnRes_congr l0 l4 lp
   -- the call to `next`
   obtain ⟨m4, e4, t4⟩ := t3.alu hc3 fe_at_6 (off' := 8) (by decide)
-  obtain ⟨m5, c5, pc5, mem5, regs5⟩ := t4.callRa (cb := base + 0x1C8) hc3 fe_at_8 fe_at_c
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hbase 0x1C8 (by decide))
+  obtain ⟨m5, c5, pc5, mem5, regs5⟩ := t4.callRa (cb := base + 0x52) hc3 fe_at_8 fe_at_c
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hbase 0x52 (by decide))
   obtain ⟨m6, c6, pc6, a06, k6, mem6⟩ := fulcioIterNext_correct m5 (it := it) (retAddr := base + BitVec.ofNat 32 0x10)
     (by rw [mem5]; exact hn3) pc5 (by rw [regs5]; simp +decide [upd, ha0])
     (by rw [regs5]; simp +decide [upd]) (even_clear _ (even_at base hbase 0x10 (by decide))) hit
@@ -510,12 +510,12 @@ the iterator at `it` over `L` elements and `n` in `a1`, it skips `n` items
 the way `fnStop` says, storing the advanced pointer, and then returns
 `next`'s result when it skipped them all and 0 when it stopped early. -/
 theorem fulcioIterNth_correct (m : Machine) {base retAddr it : Word} {n L : Nat}
-    (hc : CodeIn m.mem base fulcioIterNthCode) (hn : CodeIn m.mem (base + 0x1A2) fulcioIterNextCode)
+    (hc : CodeIn m.mem base fulcioIterNthCode) (hn : CodeIn m.mem (base + 0x2C) fulcioIterNextCode)
     (hbase : base.toNat % 2 = 0) (hpc : m.pc = base) (ha0 : reg m a0 = it) (ha1 : reg m a1 = BitVec.ofNat 32 n)
     (hn32 : n < 2 ^ 32) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hit : it.toNat % 4 = 0)
     (hp0 : (memLoad32 m.mem it).toNat % 4 = 0)
     (hend : memLoad32 m.mem (it + 4) = memLoad32 m.mem it + BitVec.ofNat 32 (32 * L)) (hL : 32 * L < 2 ^ 32)
-    (hS : Sep it 4 base fulcioIterNthCode.length) (hSn : Sep it 4 (base + 0x1A2) fulcioIterNextCode.length)
+    (hS : Sep it 4 base fulcioIterNthCode.length) (hSn : Sep it 4 (base + 0x2C) fulcioIterNextCode.length)
     (hE : Sep it 4 (memLoad32 m.mem it) (32 * L)) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
       reg m' a0 = (if (fnStop m.mem (memLoad32 m.mem (it + 4)) n (memLoad32 m.mem it)).2 then
@@ -531,7 +531,7 @@ theorem fulcioIterNth_correct (m : Machine) {base retAddr it : Word} {n L : Nat}
   have hz : reg m 0 = 0 := (show St m.mem base m 0 (reg m) from ⟨by rw [hpc]; simp, rfl, fun _ => rfl⟩).zero
   -- memory with the iterator's pointer at `p`
   have codeP : ∀ (p : Word), CodeIn (memStore32 m.mem it p) base fulcioIterNthCode ∧
-      CodeIn (memStore32 m.mem it p) (base + 0x1A2) fulcioIterNextCode :=
+      CodeIn (memStore32 m.mem it p) (base + 0x2C) fulcioIterNextCode :=
     fun p => ⟨hc.store32 hS, hn.store32 hSn⟩
   have elt : ∀ (p : Word) (j : Nat), j < L → memLoad32 (memStore32 m.mem it p) (p0 + BitVec.ofNat 32 (32 * j)) =
       memLoad32 m.mem (p0 + BitVec.ofNat 32 (32 * j)) := fun p j hj =>
@@ -550,11 +550,11 @@ theorem fulcioIterNth_correct (m : Machine) {base retAddr it : Word} {n L : Nat}
     intro n1 p t h0 hr hpa
     obtain ⟨n2, d2, t2⟩ := t.auipc (codeP p).1 fh_at_24 (off' := 0x28) (by decide)
     obtain ⟨n3, d3, pc3, mem3, regs3⟩ := t2.jalr (codeP p).1 fh_at_28
-    have hpc3 : n3.pc = base + 0x1A2 := by
+    have hpc3 : n3.pc = base + 0x2C := by
       rw [pc3]; simp +decide only [upd, ite_true, ite_false]
-      rw [show base + BitVec.ofNat 32 0x24 + 0x0 + 0x17E = base + 0x1A2 by
+      rw [show base + BitVec.ofNat 32 0x24 + 0x0 + 0x8 = base + 0x2C by
         rw [BitVec.add_assoc, BitVec.add_assoc]; rfl]
-      exact even_clear _ (even_at base hbase 0x1A2 (by decide))
+      exact even_clear _ (even_at base hbase 0x2C (by decide))
     obtain ⟨n4, c4, pc4, a04, k4, mem4⟩ := fulcioIterNext_correct n3 (it := it) (retAddr := retAddr)
       (by rw [mem3]; exact (codeP p).2) hpc3 (by rw [regs3]; simp +decide [upd, h0])
       (by rw [regs3]; simp +decide [upd, hr]) hret hit

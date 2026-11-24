@@ -170,7 +170,7 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have n7sp : reg n7 sp = sp0 + 0xFFFFFFD0 := by rw [r7 sp (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide), sp2]
   have b5 : CodeIn M5 (siBsub P) borrowingSubCode := codeS env.bsub env.sSB I5
-  have hcb0 : P + BitVec.ofNat 32 0x28 + 0xFFFF1000 + 0xFFFFF890 = siBsub P := by
+  have hcb0 : P + BitVec.ofNat 32 0x28 + 0xFFFEF000 + 0xFFFFFA80 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨n8, c8, w0, w0a0, w0a1, w0sp, fr0, mem0⟩ := si_bsub v7.self c5 b5 env.hP si_at_28 si_at_2c hcb0
     (even_at P env.hP 0x30 (by decide)) n7sp hF hsB
@@ -186,7 +186,7 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
     rw [fr0 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), n7s1]
   have s2_0 : reg n8 (18 : Fin 32) = out := by
     rw [fr0 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), n7s2]
-  have hcb1 : P + BitVec.ofNat 32 0x3C + 0xFFFF1000 + 0xFFFFF87C = siBsub P := by
+  have hcb1 : P + BitVec.ofNat 32 0x3C + 0xFFFEF000 + 0xFFFFFA6C = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p1, cp1, w1, K1, a0_1, a1_1, sp1, fr1, mem1⟩ := si_round (K := (19 : Fin 32)) (i := 1)
     w0 (codeS env.code env.sSC I8) (codeS env.bsub env.sSB I8) env.hP
@@ -199,7 +199,7 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_1 : reg p1 (8 : Fin 32) = lp := by rw [fr1 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_0]
   have s1_1 : reg p1 (9 : Fin 32) = rp := by rw [fr1 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_0]
   have s2_1 : reg p1 (18 : Fin 32) = out := by rw [fr1 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_0]
-  have hcb2 : P + BitVec.ofNat 32 0x50 + 0xFFFF1000 + 0xFFFFF868 = siBsub P := by
+  have hcb2 : P + BitVec.ofNat 32 0x50 + 0xFFFEF000 + 0xFFFFFA58 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p2, cp2, w2, K2, a0_2, a1_2, sp2, fr2, mem2⟩ := si_round (K := (20 : Fin 32)) (i := 2)
     w1 (codeS env.code env.sSC Ip1) (codeS env.bsub env.sSB Ip1) env.hP
@@ -212,7 +212,7 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_2 : reg p2 (8 : Fin 32) = lp := by rw [fr2 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_1]
   have s1_2 : reg p2 (9 : Fin 32) = rp := by rw [fr2 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_1]
   have s2_2 : reg p2 (18 : Fin 32) = out := by rw [fr2 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_1]
-  have hcb3 : P + BitVec.ofNat 32 0x64 + 0xFFFF1000 + 0xFFFFF854 = siBsub P := by
+  have hcb3 : P + BitVec.ofNat 32 0x64 + 0xFFFEF000 + 0xFFFFFA44 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p3, cp3, w3, K3, a0_3, a1_3, sp3, fr3, mem3⟩ := si_round (K := (21 : Fin 32)) (i := 3)
     w2 (codeS env.code env.sSC Ip2) (codeS env.bsub env.sSB Ip2) env.hP
@@ -225,7 +225,7 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_3 : reg p3 (8 : Fin 32) = lp := by rw [fr3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_2]
   have s1_3 : reg p3 (9 : Fin 32) = rp := by rw [fr3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_2]
   have s2_3 : reg p3 (18 : Fin 32) = out := by rw [fr3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_2]
-  have hcb4 : P + BitVec.ofNat 32 0x78 + 0xFFFF1000 + 0xFFFFF840 = siBsub P := by
+  have hcb4 : P + BitVec.ofNat 32 0x78 + 0xFFFEF000 + 0xFFFFFA30 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p4, cp4, w4, K4, a0_4, a1_4, sp4, fr4, mem4⟩ := si_round (K := (22 : Fin 32)) (i := 4)
     w3 (codeS env.code env.sSC Ip3) (codeS env.bsub env.sSB Ip3) env.hP
@@ -238,7 +238,7 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_4 : reg p4 (8 : Fin 32) = lp := by rw [fr4 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_3]
   have s1_4 : reg p4 (9 : Fin 32) = rp := by rw [fr4 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_3]
   have s2_4 : reg p4 (18 : Fin 32) = out := by rw [fr4 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_3]
-  have hcb5 : P + BitVec.ofNat 32 0x8C + 0xFFFF1000 + 0xFFFFF82C = siBsub P := by
+  have hcb5 : P + BitVec.ofNat 32 0x8C + 0xFFFEF000 + 0xFFFFFA1C = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p5, cp5, w5, K5, a0_5, a1_5, sp5, fr5, mem5⟩ := si_round (K := (24 : Fin 32)) (i := 5)
     w4 (codeS env.code env.sSC Ip4) (codeS env.bsub env.sSB Ip4) env.hP
@@ -251,7 +251,7 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_5 : reg p5 (8 : Fin 32) = lp := by rw [fr5 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_4]
   have s1_5 : reg p5 (9 : Fin 32) = rp := by rw [fr5 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_4]
   have s2_5 : reg p5 (18 : Fin 32) = out := by rw [fr5 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_4]
-  have hcb6 : P + BitVec.ofNat 32 0xA0 + 0xFFFF1000 + 0xFFFFF818 = siBsub P := by
+  have hcb6 : P + BitVec.ofNat 32 0xA0 + 0xFFFEF000 + 0xFFFFFA08 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p6, cp6, w6, K6, a0_6, a1_6, sp6, fr6, mem6⟩ := si_round (K := (23 : Fin 32)) (i := 6)
     w5 (codeS env.code env.sSC Ip5) (codeS env.bsub env.sSB Ip5) env.hP
@@ -264,7 +264,7 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_6 : reg p6 (8 : Fin 32) = lp := by rw [fr6 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_5]
   have s1_6 : reg p6 (9 : Fin 32) = rp := by rw [fr6 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_5]
   have s2_6 : reg p6 (18 : Fin 32) = out := by rw [fr6 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_5]
-  have hcb7 : P + BitVec.ofNat 32 0xB4 + 0xFFFF1000 + 0xFFFFF804 = siBsub P := by
+  have hcb7 : P + BitVec.ofNat 32 0xB4 + 0xFFFEF000 + 0xFFFFF9F4 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p7, cp7, w7, K7, a0_7, a1_7, sp7, fr7, mem7⟩ := si_round (K := (25 : Fin 32)) (i := 7)
     w6 (codeS env.code env.sSC Ip6) (codeS env.bsub env.sSB Ip6) env.hP
@@ -277,7 +277,7 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_7 : reg p7 (8 : Fin 32) = lp := by rw [fr7 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_6]
   have s1_7 : reg p7 (9 : Fin 32) = rp := by rw [fr7 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_6]
   have s2_7 : reg p7 (18 : Fin 32) = out := by rw [fr7 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_6]
-  have hcb8 : P + BitVec.ofNat 32 0xC8 + 0xFFFF0000 + 0x7F0 = siBsub P := by
+  have hcb8 : P + BitVec.ofNat 32 0xC8 + 0xFFFEF000 + 0xFFFFF9E0 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p8, cp8, w8, K8, a0_8, a1_8, sp8, fr8, mem8⟩ := si_round (K := (26 : Fin 32)) (i := 8)
     w7 (codeS env.code env.sSC Ip7) (codeS env.bsub env.sSB Ip7) env.hP

@@ -26,9 +26,9 @@ open C3.RV32 C3.Image
 /-- The span of code that `part` runs: from `Reader::bytes`, the lowest of
 the functions it reaches, to the end of `part`, relative to `part`'s
 address. -/
-abbrev partWindow (base : Word) : Word := base + 0xFFFFC0FE
+abbrev partWindow (base : Word) : Word := base + 0xFFFFCC80
 
-abbrev partWindowLen : Nat := 0x3F72
+abbrev partWindowLen : Nat := 0x33F0
 
 /-- What `part` saves, and where in the frame, before `s4`. -/
 abbrev partSavePs : List (Fin 32 × Word) := [(ra, 0x1C), (s0, 0x18), (s1, 0x14), (s2, 0x10), (s3, 0x0C)]
@@ -106,21 +106,21 @@ theorem part_call_u32 {M : Word → BitVec 8} {base : Word} {m : Machine} {off :
     {f : Fin 32 → Word} {G self : Word} (s : St M base m off f) (hc : CodeIn M base manifestPartCode)
     {imm o : Word} (h1 : fetchRel manifestPartCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel manifestPartCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : base + BitVec.ofNat 32 off + imm + o = base + 0xFFFFC6B2)
+    (hb : base + BitVec.ofNat 32 off + imm + o = base + 0xFFFFCCA6)
     (hl : (base + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0) (hbase : base.toNat % 2 = 0)
-    (hu : CodeIn M (base + 0xFFFFC6B2) readerU32Code)
-    (ha : CodeIn M (base + 0xFFFFC6B2 + 0xFFFFFAB6) readerArray4Code)
-    (hbb : CodeIn M (base + 0xFFFFC6B2 + 0xFFFFFAB6 + 0xFFFFFF96) readerBytesCode)
+    (hu : CodeIn M (base + 0xFFFFCCA6) readerU32Code)
+    (ha : CodeIn M (base + 0xFFFFCCA6 + 0x50) readerArray4Code)
+    (hbb : CodeIn M (base + 0xFFFFCCA6 + 0x50 + 0xFFFFFF8A) readerBytesCode)
     (hsp : f sp = G) (ha0 : f a0 = G) (ha1 : f a1 = self)
     (hG : G.toNat % 4 = 0) (hself : self.toNat % 4 = 0)
     (hbuf : memLoad32 M self ≠ 0 ∧ (memLoad32 M self).toNat + (memLoad32 M (self + 4)).toNat ≤ 2 ^ 32)
-    (hSu : Sep (G + 0xFFFFFFD0) 48 (base + 0xFFFFC6B2) readerU32Code.length)
-    (hSa : Sep (G + 0xFFFFFFD0) 48 (base + 0xFFFFC6B2 + 0xFFFFFAB6) readerArray4Code.length)
-    (hSb : Sep (G + 0xFFFFFFD0) 48 (base + 0xFFFFC6B2 + 0xFFFFFAB6 + 0xFFFFFF96) readerBytesCode.length)
-    (hOu : Sep G 8 (base + 0xFFFFC6B2) readerU32Code.length)
-    (hEu : Sep (self + 8) 4 (base + 0xFFFFC6B2) readerU32Code.length)
-    (hEa : Sep (self + 8) 4 (base + 0xFFFFC6B2 + 0xFFFFFAB6) readerArray4Code.length)
-    (hEb : Sep (self + 8) 4 (base + 0xFFFFC6B2 + 0xFFFFFAB6 + 0xFFFFFF96) readerBytesCode.length)
+    (hSu : Sep (G + 0xFFFFFFD0) 48 (base + 0xFFFFCCA6) readerU32Code.length)
+    (hSa : Sep (G + 0xFFFFFFD0) 48 (base + 0xFFFFCCA6 + 0x50) readerArray4Code.length)
+    (hSb : Sep (G + 0xFFFFFFD0) 48 (base + 0xFFFFCCA6 + 0x50 + 0xFFFFFF8A) readerBytesCode.length)
+    (hOu : Sep G 8 (base + 0xFFFFCCA6) readerU32Code.length)
+    (hEu : Sep (self + 8) 4 (base + 0xFFFFCCA6) readerU32Code.length)
+    (hEa : Sep (self + 8) 4 (base + 0xFFFFCCA6 + 0x50) readerArray4Code.length)
+    (hEb : Sep (self + 8) 4 (base + 0xFFFFCCA6 + 0x50 + 0xFFFFFF8A) readerBytesCode.length)
     (hRS : Sep self 12 (G + 0xFFFFFFD0) 48)
     (hBS : Sep (memLoad32 M self) (memLoad32 M (self + 4)).toNat (G + 0xFFFFFFD0) 48)
     (hBE : Sep (memLoad32 M self) (memLoad32 M (self + 4)).toNat (self + 8) 4) :
@@ -140,8 +140,8 @@ theorem part_call_u32 {M : Word → BitVec 8} {base : Word} {m : Machine} {off :
       subst this; simp [hz]
     · simp [upd, hr, h]
   have r2ra : reg m2 ra = base + BitVec.ofNat 32 (off + 8) := by rw [regs2, hL]; simp +decide [upd]
-  have hev : (base + 0xFFFFC6B2).toNat % 2 = 0 := even_at base hbase 0xFFFFC6B2 (by decide)
-  have hp2 : m2.pc = base + 0xFFFFC6B2 := by
+  have hev : (base + 0xFFFFCCA6).toNat % 2 = 0 := even_at base hbase 0xFFFFCCA6 (by decide)
+  have hp2 : m2.pc = base + 0xFFFFCCA6 := by
     rw [pc2, show upd f ra (base + BitVec.ofNat 32 off + imm) ra = base + BitVec.ofNat 32 off + imm from
       by simp +decide [upd], hb]; exact even_clear _ hev
   have sp2 : reg m2 sp = G := by rw [r2 sp (by decide), hsp]
@@ -152,7 +152,7 @@ theorem part_call_u32 {M : Word → BitVec 8} {base : Word} {m : Machine} {off :
       rw [BitVec.add_assoc]; exact BitVec.add_zero G] at this
     exact this
   have hm : m2.mem = M := mem2
-  obtain ⟨m3, c3, pc3, sp3, fr3, mem3⟩ := readerU32_correct m2 (base + 0xFFFFC6B2)
+  obtain ⟨m3, c3, pc3, sp3, fr3, mem3⟩ := readerU32_correct m2 (base + 0xFFFFCCA6)
     (base + BitVec.ofNat 32 (off + 8)) G self
     (fun i hi => by rw [hm]; exact hu i hi) (fun i hi => by rw [hm]; exact ha i hi)
     (fun i hi => by rw [hm]; exact hbb i hi) hev hp2 (by rw [r2 a0 (by decide), ha0])
@@ -325,9 +325,9 @@ restored, every register but `a0` through `a5` and `t0` unchanged, and
 memory outside those 80 bytes exactly as `partMem` says. -/
 theorem manifestPart_correct (m : Machine) (base retAddr out self lo hi : Word)
     (hcode : CodeAt m base manifestPartCode)
-    (hu : CodeAt m (base + 0xFFFFC6B2) readerU32Code)
-    (ha : CodeAt m (base + 0xFFFFC6B2 + 0xFFFFFAB6) readerArray4Code)
-    (hb : CodeAt m (base + 0xFFFFC6B2 + 0xFFFFFAB6 + 0xFFFFFF96) readerBytesCode)
+    (hu : CodeAt m (base + 0xFFFFCCA6) readerU32Code)
+    (ha : CodeAt m (base + 0xFFFFCCA6 + 0x50) readerArray4Code)
+    (hb : CodeAt m (base + 0xFFFFCCA6 + 0x50 + 0xFFFFFF8A) readerBytesCode)
     (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
     (ha0 : reg m a0 = out) (ha1 : reg m a1 = self) (ha2 : reg m a2 = lo) (ha3 : reg m a3 = hi)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
@@ -353,19 +353,19 @@ theorem manifestPart_correct (m : Machine) (base retAddr out self lo hi : Word)
   rw [hSdef] at hSW hRS hOS hBS ⊢
   have hGa : G.toNat % 4 = 0 := hGdef ▸ aligned_add hsp (k := 0xFFFFFFE0) (by decide)
   -- The code window at `W`.
-  obtain ⟨W, hWdef⟩ : ∃ W, base + 0xFFFFC0FE = W := ⟨_, rfl⟩
+  obtain ⟨W, hWdef⟩ : ∃ W, base + 0xFFFFCC80 = W := ⟨_, rfl⟩
   have hSW' : Sep S 80 W partWindowLen := by rw [← hWdef]; exact hSW
   have hOW' : Sep out 12 W partWindowLen := by rw [← hWdef]; exact hOW
   have hEW' : Sep (self + 8) 4 W partWindowLen := by rw [← hWdef]; exact hEW
   have wa : ∀ (b : Word) (c : Nat), b = W + BitVec.ofNat 32 c → ∀ i,
       b + BitVec.ofNat 32 i = W + BitVec.ofNat 32 (c + i) := fun b c h i => by rw [h, add_ofNat_assoc]
-  have bP : base = W + BitVec.ofNat 32 0x3F02 := by
-    rw [← hWdef, BitVec.add_assoc, show (0xFFFFC0FE : Word) + BitVec.ofNat 32 0x3F02 = 0 from rfl]
+  have bP : base = W + BitVec.ofNat 32 0x3380 := by
+    rw [← hWdef, BitVec.add_assoc, show (0xFFFFCC80 : Word) + BitVec.ofNat 32 0x3380 = 0 from rfl]
     exact (BitVec.add_zero base).symm
-  have bU : base + 0xFFFFC6B2 = W + BitVec.ofNat 32 0x5B4 := by rw [← hWdef, BitVec.add_assoc]; rfl
-  have bA : base + 0xFFFFC6B2 + 0xFFFFFAB6 = W + BitVec.ofNat 32 0x6A := by
+  have bU : base + 0xFFFFCCA6 = W + BitVec.ofNat 32 0x26 := by rw [← hWdef, BitVec.add_assoc]; rfl
+  have bA : base + 0xFFFFCCA6 + 0x50 = W + BitVec.ofNat 32 0x76 := by
     rw [← hWdef]; simp only [BitVec.add_assoc]; rfl
-  have bB : base + 0xFFFFC6B2 + 0xFFFFFAB6 + 0xFFFFFF96 = W + BitVec.ofNat 32 0 := by
+  have bB : base + 0xFFFFCCA6 + 0x50 + 0xFFFFFF8A = W + BitVec.ofNat 32 0 := by
     rw [← hWdef]; simp only [BitVec.add_assoc]; rfl
   have wS : ∀ k, k < partWindowLen → Sep S 80 (W + BitVec.ofNat 32 k) 1 :=
     fun k hk => hSW'.subR (c := k) (l := 1) (by omega)
@@ -373,9 +373,9 @@ theorem manifestPart_correct (m : Machine) (base retAddr out self lo hi : Word)
     fun k hk => hEW'.subR (c := k) (l := 1) (by omega)
   have codeAll : ∀ Mx : Word → BitVec 8, (∀ k, k < partWindowLen →
       Mx (W + BitVec.ofNat 32 k) = m.mem (W + BitVec.ofNat 32 k)) →
-      CodeIn Mx base manifestPartCode ∧ CodeIn Mx (base + 0xFFFFC6B2) readerU32Code ∧
-      CodeIn Mx (base + 0xFFFFC6B2 + 0xFFFFFAB6) readerArray4Code ∧
-      CodeIn Mx (base + 0xFFFFC6B2 + 0xFFFFFAB6 + 0xFFFFFF96) readerBytesCode := by
+      CodeIn Mx base manifestPartCode ∧ CodeIn Mx (base + 0xFFFFCCA6) readerU32Code ∧
+      CodeIn Mx (base + 0xFFFFCCA6 + 0x50) readerArray4Code ∧
+      CodeIn Mx (base + 0xFFFFCCA6 + 0x50 + 0xFFFFFF8A) readerBytesCode := by
     intro Mx hx
     have tr : ∀ (b : Word) (c : Nat) (code : List Nat), b = W + BitVec.ofNat 32 c →
         c + code.length ≤ partWindowLen → CodeAt m b code → CodeIn Mx b code :=
@@ -584,7 +584,7 @@ theorem manifestPart_correct (m : Machine) (base retAddr out self lo hi : Word)
   -- 0x16: the first `Reader::u32`, for the offset.
   have hRS48 : Sep self 12 (G + 0xFFFFFFD0) 48 := by
     rw [hSG]; have := hRS.subR (c := 0) (l := 48) (by omega); rwa [add_ofNat_zero] at this
-  have hOu : Sep G 8 (base + 0xFFFFC6B2) readerU32Code.length := by
+  have hOu : Sep G 8 (base + 0xFFFFCCA6) readerU32Code.length := by
     have := fr 0 8 (by omega) _ _ SU; rwa [g0] at this
   have hBS48 : Sep ptr len.toNat (G + 0xFFFFFFD0) 48 := by
     rw [hSG]; have := hBS.subR (c := 0) (l := 48) (by omega); rwa [add_ofNat_zero] at this

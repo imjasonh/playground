@@ -90,9 +90,9 @@ end
 `ptr` are all zero and 1 otherwise. It tail-calls `UintRef::is_nonzero`,
 which writes the word below `sp`. -/
 theorem uint12IsNonzero_correct (m : Machine) {base retAddr ptr : Word} (hP : base.toNat % 2 = 0)
-    (hc : CodeIn m.mem base uint12IsNonzeroCode) (hu : CodeIn m.mem (base + 0xFFFEF156) uintRefIsNonzeroCode)
+    (hc : CodeIn m.mem base uint12IsNonzeroCode) (hu : CodeIn m.mem (base + 0xFFFED346) uintRefIsNonzeroCode)
     (hpc : m.pc = base) (ha0 : reg m a0 = ptr) (hptr : ptr.toNat % 4 = 0) (hsp : (reg m sp).toNat % 4 = 0)
-    (hsep : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xFFFEF156) uintRefIsNonzeroCode.length)
+    (hsep : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xFFFED346) uintRefIsNonzeroCode.length)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
       reg m' a0 = (if ∀ i : Nat, i < 12 → memLoad32 m.mem (ptr + BitVec.ofNat 32 (4 * i)) = 0 then 0 else 1) ∧
@@ -105,11 +105,11 @@ theorem uint12IsNonzero_correct (m : Machine) {base retAddr ptr : Word} (hP : ba
   obtain ⟨n3, d3, pc3, mem3, regs3⟩ := u2.jalr hc unz_at_6
   have k : ∀ r, r ≠ a1 → r ≠ t1 → reg n3 r = reg m r := fun r h1 h2 => by
     rw [regs3, updz (upd_zero _ _ _) h2, updz hz h1]
-  have pcU : n3.pc = base + 0xFFFEF156 := by
+  have pcU : n3.pc = base + 0xFFFED346 := by
     rw [pc3]; simp +decide only [upd_app, ↓reduceIte]
-    rw [show base + BitVec.ofNat 32 2 + 0xFFFEF000 + 0x154 = base + 0xFFFEF156 by
+    rw [show base + BitVec.ofNat 32 2 + 0xFFFED000 + 0x344 = base + 0xFFFED346 by
       rw [BitVec.add_assoc, BitVec.add_assoc]; rfl]
-    exact even_clear _ (even_at base hP 0xFFFEF156 (by decide))
+    exact even_clear _ (even_at base hP 0xFFFED346 (by decide))
   have sp3 : reg n3 sp = reg m sp := k sp (by decide) (by decide)
   obtain ⟨m4, c4, pc4, a04, k4, f4⟩ := uintRefIsNonzero_correct n3 (len := 12) (by rw [mem3]; exact hu) pcU
     (by rw [k a0 (by decide) (by decide), ha0])
@@ -561,12 +561,12 @@ must not touch. -/
 structure NgEnv (M : Word → BitVec 8) (P sp0 out xp : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P p384NegCode
-  nz : CodeIn M (P + 0x1129C) uint12IsNonzeroCode
+  nz : CodeIn M (P + 0x130AC) uint12IsNonzeroCode
   ref : CodeIn M (P + 0x3F2) uintRefIsNonzeroCode
-  mset : CodeIn M (P + 0x11F6C) memsetCode
+  mset : CodeIn M (P + 0x13D7C) memsetCode
   bsub : CodeIn M (ngBsub P) borrowingSubCode
-  stub : CodeIn M (P + 0x11FD4) memcpyStubCode
-  body : CodeIn M (P + 0x11FDC) memcpyBodyCode
+  stub : CodeIn M (P + 0x13DE4) memcpyStubCode
+  body : CodeIn M (P + 0x13DEC) memcpyBodyCode
   pmod : CodeIn M p3M p384ModulusData
   hsp : sp0.toNat % 4 = 0
   hS : 0x54 ≤ sp0.toNat
@@ -574,15 +574,15 @@ structure NgEnv (M : Word → BitVec 8) (P sp0 out xp : Word) : Prop where
   hxp : xp.toNat % 4 = 0
   hwo : out.toNat + 48 < 2 ^ 32
   sSC : Sep (ngR sp0) 0x54 P p384NegCode.length
-  sSZ : Sep (ngR sp0) 0x54 (P + 0x1129C) uint12IsNonzeroCode.length
+  sSZ : Sep (ngR sp0) 0x54 (P + 0x130AC) uint12IsNonzeroCode.length
   sSF : Sep (ngR sp0) 0x54 (P + 0x3F2) uintRefIsNonzeroCode.length
-  sSM : Sep (ngR sp0) 0x54 (P + 0x11F6C) memsetCode.length
+  sSM : Sep (ngR sp0) 0x54 (P + 0x13D7C) memsetCode.length
   sSB : Sep (ngR sp0) 0x54 (ngBsub P) borrowingSubCode.length
-  sSU : Sep (ngR sp0) 0x54 (P + 0x11FD4) memcpyStubCode.length
-  sSY : Sep (ngR sp0) 0x54 (P + 0x11FDC) memcpyBodyCode.length
+  sSU : Sep (ngR sp0) 0x54 (P + 0x13DE4) memcpyStubCode.length
+  sSY : Sep (ngR sp0) 0x54 (P + 0x13DEC) memcpyBodyCode.length
   sSP : Sep (ngR sp0) 0x54 p3M 48
   sOC : Sep out 48 P p384NegCode.length
-  sOY : Sep out 48 (P + 0x11FDC) memcpyBodyCode.length
+  sOY : Sep out 48 (P + 0x13DEC) memcpyBodyCode.length
   sOS : Sep out 48 (ngR sp0) 0x54
   sXS : Sep xp 48 (ngR sp0) 0x54
 
@@ -693,12 +693,12 @@ theorem p384Neg_correct (m : Machine) {P sp0 out xp retAddr : Word} (env : NgEnv
   -- `is_nonzero`
   have hcS := cIn env.code sSC frSv
   obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa hcS ng_at_16 ng_at_1a
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x1129C (by decide))
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x130AC (by decide))
   have r4 := PEnv.reg1 regs4 u3.self.zero
   have sp4 : reg m4 sp = F := by rw [r4 sp (by decide), v3sp]
-  have eW : P + BitVec.ofNat 32 0x1129C + 0xFFFEF156 = P + 0x3F2 := by rw [BitVec.add_assoc]; rfl
+  have eW : P + BitVec.ofNat 32 0x130AC + 0xFFFED346 = P + 0x3F2 := by rw [BitVec.add_assoc]; rfl
   have eG4 : reg m4 sp + 0xFFFFFFFC = R + BitVec.ofNat 32 0 := by rw [sp4, eFR]
-  obtain ⟨m5, c5, pc5, a05, k5, f5⟩ := uint12IsNonzero_correct m4 (even_at P env.hP 0x1129C (by decide))
+  obtain ⟨m5, c5, pc5, a05, k5, f5⟩ := uint12IsNonzero_correct m4 (even_at P env.hP 0x130AC (by decide))
     (by rw [mem4]; exact cIn env.nz sSZ frSv) (by rw [mem4, eW]; exact cIn env.ref sSF frSv) pc4
     (by rw [r4 a0 (by decide), v3a0]) env.hxp (by rw [sp4]; exact hFa)
     (by rw [eG4, eW]; exact sSF.sub (by decide)) (by rw [regs4]; simp +decide [upd])
@@ -738,8 +738,8 @@ theorem p384Neg_correct (m : Machine) {P sp0 out xp retAddr : Word} (env : NgEnv
         subst this; simp [upd]; exact u5.zero.symm
       simp only [upd_app, h0, h1, h2, h3, h4, h5, ite_false]
   have hFw48 : F.toNat + 4 * 12 < 2 ^ 32 := by omega
-  obtain ⟨m7, c7, u7, a07, k7⟩ := u6.self.memsetW (B := P + 0x11F6C) (w := 12) (dst := F)
-    (even_at P env.hP 0x11F6C (by decide)) (cIn env.code sSC fr5) (cIn env.mset sSM fr5) ng_at_2c ng_at_30
+  obtain ⟨m7, c7, u7, a07, k7⟩ := u6.self.memsetW (B := P + 0x13D7C) (w := 12) (dst := F)
+    (even_at P env.hP 0x13D7C (by decide)) (cIn env.code sSC fr5) (cIn env.mset sSM fr5) ng_at_2c ng_at_30
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP (0x2C + 8) (by decide)) (by decide) hFw48
     (by decide) hFa (toF0 (by decide) sSM) v6a0 v6a1 v6a2
   obtain ⟨Mz, hMz⟩ : ∃ Mz, fillWords m5.mem F 0 12 = Mz := ⟨_, rfl⟩
@@ -855,9 +855,9 @@ theorem p384Neg_correct (m : Machine) {P sp0 out xp retAddr : Word} (env : NgEnv
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd]; exact z13.symm
     simp only [upd_app, h0, h1, h2, h3, ite_false]
-  have e8 : P + 0x11FD4 + 8 = P + 0x11FDC := by rw [BitVec.add_assoc]; rfl
-  obtain ⟨n15, c15, u15, a015, k15⟩ := u14.self.memcpyW (B := P + 0x11FD4) (w := 12) (dst := out) (src := F)
-    (even_at P env.hP 0x11FD4 (by decide)) hc13 (cIn env.stub sSU fr13) (by rw [e8]; exact cIn env.body sSY fr13)
+  have e8 : P + 0x13DE4 + 8 = P + 0x13DEC := by rw [BitVec.add_assoc]; rfl
+  obtain ⟨n15, c15, u15, a015, k15⟩ := u14.self.memcpyW (B := P + 0x13DE4) (w := 12) (dst := out) (src := F)
+    (even_at P env.hP 0x13DE4 (by decide)) hc13 (cIn env.stub sSU fr13) (by rw [e8]; exact cIn env.body sSY fr13)
     ng_at_8c ng_at_90 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP (0x8C + 8) (by decide))
     (by decide) env.hwo (by decide) env.hout hFa (by rw [← hF]; exact sOS.subR (by decide))
     (by rw [e8]; exact env.sOY) v14a0 v14a1 v14a2

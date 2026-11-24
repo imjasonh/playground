@@ -211,7 +211,7 @@ theorem ra4_prologue {m : Machine} {base : Word} (hc : CodeIn m.mem base readerA
 
 theorem ra4_call {m : Machine} {base bbase F self : Word} {f : Fin 32 → Word}
     {M : Word → BitVec 8} (hc : CodeIn M base readerArray4Code)
-    (hbc : CodeIn M bbase readerBytesCode) (hb : bbase = base + 0xFFFFFF96)
+    (hbc : CodeIn M bbase readerBytesCode) (hb : bbase = base + 0xFFFFFF8A)
     (hbase : base.toNat % 2 = 0) (t : St M base m 0x14 f) (hra : f ra = base + BitVec.ofNat 32 0x10 + 0)
     (ha0 : f a0 = F + 0x0C) (ha1 : f a1 = self) (ha2 : f a2 = 4) (hF : F.toNat % 4 = 0)
     (hself : self.toNat % 4 = 0) (hslot : Sep (F + 0x0C) 8 bbase readerBytesCode.length)
@@ -220,10 +220,10 @@ theorem ra4_call {m : Machine} {base bbase F self : Word} {f : Fin 32 → Word}
       ∀ r, r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ ra → reg m' r = f r := by
   have hz := t.zero
   obtain ⟨m1, e1, pc1, mem1, regs1⟩ := t.call hc ra4_at_14
-  have hsum : base + BitVec.ofNat 32 0x10 + 0 + 0xFFFFFF86 = bbase := by
+  have hsum : base + BitVec.ofNat 32 0x10 + 0 + 0xFFFFFF7A = bbase := by
     rw [hb, BitVec.add_assoc, BitVec.add_assoc]; rfl
   have hev : bbase.toNat % 2 = 0 := by
-    rw [hb, BitVec.toNat_add, show (0xFFFFFF96 : Word).toNat = 0xFFFFFF96 from rfl]; omega
+    rw [hb, BitVec.toNat_add, show (0xFFFFFF8A : Word).toNat = 0xFFFFFF8A from rfl]; omega
   have target : m1.pc = bbase := by rw [pc1, hra, hsum, even_clear _ hev]
   have hret0 : base + BitVec.ofNat 32 0x14 + 4 = base + BitVec.ofNat 32 0x18 :=
     add_ofNat_assoc base 0x14 4
@@ -351,7 +351,7 @@ with `sp`, `ra`, `s0`, and `s1` restored, every register but `a0` through
 `a5` unchanged, and memory outside the frame exactly as `array4Mem` says. -/
 theorem readerArray4_correct (m : Machine) (base bbase retAddr out self : Word)
     (hcode : CodeAt m base readerArray4Code) (hbcode : CodeAt m bbase readerBytesCode)
-    (hb : bbase = base + 0xFFFFFF96) (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
+    (hb : bbase = base + 0xFFFFFF8A) (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
     (ha0 : reg m a0 = out) (ha1 : reg m a1 = self) (hra : reg m ra = retAddr)
     (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
     (hout : out.toNat % 4 = 0) (hself : self.toNat % 4 = 0)

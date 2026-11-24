@@ -343,7 +343,7 @@ theorem c2_uce {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 8
   exact ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, a02, fr2, sp2, fun q hq hr => by rw [k2 q hq, r1 q hr]⟩
 
 abbrev UOR2 : Word := BitVec.ofNat 32 unwrapOr256Address
-theorem uor2_cs : UOR2 + 0xE460 = CS2 := by decide
+theorem uor2_cs : UOR2 + 0x10270 = CS2 := by decide
 
 /-- A call to `CtOption<AffinePoint<NistP256>>::into`: the point at `s` when
 its choice byte at `s + 0x44` is 1, else the identity at `p256AffineIdXAddress`, then

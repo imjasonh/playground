@@ -64,21 +64,21 @@ the 0x54 bytes of stack below `sp0`, and the scalar's 48 bytes at `x`. -/
 structure SZEnv (M : Word → BitVec 8) (P sp0 x : Word) : Prop where
   hP : P.toNat % 2 = 0
   cod : CodeIn M P scalarIsZero384Code
-  mset : CodeIn M (P + 0x11C02) memsetCode
-  cteq : CodeIn M (P + 0xAA66) limbCtEqCode
+  mset : CodeIn M (P + 0x13A12) memsetCode
+  cteq : CodeIn M (P + 0xC876) limbCtEqCode
   isz : CodeIn M (P + 0x6E) uintRefIsZeroCode
   isnz : CodeIn M (P + 0x6E + 0x1A) uintRefIsNonzeroCode
-  bb : CodeIn M (P + 0xAB60) blackBoxU8Code
+  bb : CodeIn M (P + 0xC970) blackBoxU8Code
   hsp : sp0.toNat % 4 = 0
   hS : 0x54 ≤ sp0.toNat
   hx : x.toNat % 4 = 0
   hxw : x.toNat + 48 < 2 ^ 32
   sGC : Sep (sp0 + 0xFFFFFFAC) 0x54 P scalarIsZero384Code.length
-  sGM : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0x11C02) memsetCode.length
-  sGQ : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xAA66) limbCtEqCode.length
+  sGM : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0x13A12) memsetCode.length
+  sGQ : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xC876) limbCtEqCode.length
   sGZ : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0x6E) uintRefIsZeroCode.length
   sGN : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0x6E + 0x1A) uintRefIsNonzeroCode.length
-  sGB : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xAB60) blackBoxU8Code.length
+  sGB : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xC970) blackBoxU8Code.length
   sXG : Sep x 48 (sp0 + 0xFFFFFFAC) 0x54
 
 abbrev szPs : List (Fin 32 × Word) := [(ra, 0x3C), ((8 : Fin 32), 0x38), ((9 : Fin 32), 0x34), ((18 : Fin 32), 0x30)]
@@ -178,10 +178,10 @@ theorem scalarIsZero384_correct (m : Machine) {P sp0 x retAddr : Word} (env : SZ
   obtain ⟨m3, c3, u3⟩ := St.block [.alu .add (8 : Fin 32) x0 a0, .alu .add a0 x0 sp, .aluImm .add a2 x0 0x30,
     .aluImm .add a1 x0 0] u2.self hcS (off' := 0x14) (by decide) (by simp [BlockOk, BInstr.ok])
   simp only [runBlock, BInstr.run] at u3
-  have sFM : Sep F (4 * 12) (P + 0x11C02) memsetCode.length := (inF sGM).sub (c := 0) (l := 48) (by decide) |>
+  have sFM : Sep F (4 * 12) (P + 0x13A12) memsetCode.length := (inF sGM).sub (c := 0) (l := 48) (by decide) |>
     fun h => by rwa [add_ofNat_zero] at h
-  obtain ⟨m4, c4, u4, _, k4⟩ := u3.self.memsetW (B := P + 0x11C02) (w := 12) (dst := F)
-    (even_at P env.hP 0x11C02 (by decide)) hcS (cIn env.mset sGM frSvG) siz_at_14 siz_at_18
+  obtain ⟨m4, c4, u4, _, k4⟩ := u3.self.memsetW (B := P + 0x13A12) (w := 12) (dst := F)
+    (even_at P env.hP 0x13A12 (by decide)) hcS (cIn env.mset sGM frSvG) siz_at_14 siz_at_18
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP (0x14 + 8) (by decide)) (by decide)
     (by omega) (by decide) hFa sFM
     (by rw [u3.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [sp2]; exact zw F)
@@ -212,11 +212,11 @@ theorem scalarIsZero384_correct (m : Machine) {P sp0 x retAddr : Word} (env : SZ
   have r5 : ∀ q, q.val ≠ 0 → q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ (9 : Fin 32) → q ≠ (18 : Fin 32) →
       reg m5 q = reg m4 q := fun q hv h0 h1 h2 h3 h9 h18 => by
     rw [u5.regs, upd_ne hv h0, upd_ne hv h3, upd_ne hv h2, upd_ne hv h1, upd_ne hv h18, upd_ne hv h9]
-  obtain ⟨m6, c6, pc6, mem6, regs6⟩ := u5.self.callRa hc4 siz_at_2c siz_at_30 (cb := P + 0xAA66)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xAA66 (by decide))
+  obtain ⟨m6, c6, pc6, mem6, regs6⟩ := u5.self.callRa hc4 siz_at_2c siz_at_30 (cb := P + 0xC876)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xC876 (by decide))
   have r6 := PEnv.reg1 regs6 u5.self.zero
-  obtain ⟨m7, c7, pc7, a07, k7, mem7⟩ := limbCtEq_correct m6 (base := P + 0xAA66) (p := x) (q := F) (n := 12) (n' := 12)
-    (even_at P env.hP 0xAA66 (by decide)) (by rw [mem6]; exact cIn env.cteq sGQ frZ) pc6
+  obtain ⟨m7, c7, pc7, a07, k7, mem7⟩ := limbCtEq_correct m6 (base := P + 0xC876) (p := x) (q := F) (n := 12) (n' := 12)
+    (even_at P env.hP 0xC876 (by decide)) (by rw [mem6]; exact cIn env.cteq sGQ frZ) pc6
     (by rw [r6 a0 (by decide), u5.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [v48]; exact zw x)
     (by rw [r6 a1 (by decide), u5.regs]; simp +decide only [upd_app, ↓reduceIte])
     (by rw [r6 a2 (by decide), u5.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [v4sp]; exact zw F)
@@ -377,14 +377,14 @@ theorem scalarIsZero384_correct (m : Machine) {P sp0 x retAddr : Word} (env : SZ
   have sp4 : reg n4 sp = sp0 := by
     rw [regs4, u3.regs, updz u2.self.zero (by decide), u2.regs]; simp +decide only [upd_app, ↓reduceIte]
     rw [ev_add, rsp1, eS]
-  have pc4' : n4.pc = P + 0xAB60 := by
+  have pc4' : n4.pc = P + 0xC970 := by
     rw [pc4, u3.regs]; simp +decide only [upd, ↓reduceIte]
-    rw [show P + BitVec.ofNat 32 0x66 + 0xB000 + 0xFFFFFAFA = P + 0xAB60 by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl]
-    exact even_clear _ (even_at P env.hP 0xAB60 (by decide))
+    rw [show P + BitVec.ofNat 32 0x66 + 0xD000 + 0xFFFFF90A = P + 0xC970 by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl]
+    exact even_clear _ (even_at P env.hP 0xC970 (by decide))
   have m4G : ∀ y, Sep G 0x54 y 1 → n4.mem y = m.mem y := fun y hy => by
     rw [mem4, f14' y (inZ hy)]; exact frZ y hy
   have eT : sp0 + 0xFFFFFFFF = G + BitVec.ofNat 32 0x53 := by rw [← hG, BitVec.add_assoc]; rfl
-  obtain ⟨m', c', pc', a0', k', f'⟩ := blackBoxU8_correct n4 (base := P + 0xAB60) (retAddr := retAddr)
+  obtain ⟨m', c', pc', a0', k', f'⟩ := blackBoxU8_correct n4 (base := P + 0xC970) (retAddr := retAddr)
     (cIn env.bb sGB m4G) pc4'
     (by rw [k4 ra (by decide) (by decide), hreg ra 0x3C (by decide), hra]) hret
     (by rw [sp4, eT]; exact sGB.sub (c := 0x53) (l := 1) (by decide))

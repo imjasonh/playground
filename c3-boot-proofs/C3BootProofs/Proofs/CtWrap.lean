@@ -65,11 +65,11 @@ theorem cce_val (x : Word) :
 low bits of `a` and `b` agree and 0 otherwise. It writes only the 0x11 bytes
 below `sp`. -/
 theorem choiceCtEq_correct (m : Machine) {base retAddr a b : Word} (hP : base.toNat % 2 = 0)
-    (hc : CodeIn m.mem base choiceCtEqCode) (hb : CodeIn m.mem (base + 0x7C6E) blackBoxU8Code)
+    (hc : CodeIn m.mem base choiceCtEqCode) (hb : CodeIn m.mem (base + 0x9A7E) blackBoxU8Code)
     (hpc : m.pc = base) (ha0 : reg m a0 = a) (ha1 : reg m a1 = b)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
     (sGC : Sep (reg m sp + 0xFFFFFFEF) 0x11 base choiceCtEqCode.length)
-    (sGB : Sep (reg m sp + 0xFFFFFFEF) 0x11 (base + 0x7C6E) blackBoxU8Code.length) :
+    (sGB : Sep (reg m sp + 0xFFFFFFEF) 0x11 (base + 0x9A7E) blackBoxU8Code.length) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' a0 = (if (a ^^^ b) &&& 1 = 0 then 1 else 0) ∧
       (∀ q, q ≠ a0 → q ≠ t1 → reg m' q = reg m q) ∧
       ∀ x, Sep (reg m sp + 0xFFFFFFEF) 0x11 x 1 → m'.mem x = m.mem x := by
@@ -100,8 +100,8 @@ theorem choiceCtEq_correct (m : Machine) {base retAddr a b : Word} (hP : base.to
   have hc2 := cS frS hc sGC
   obtain ⟨n3, d3, u3⟩ := u2.self.alu hc2 cce_at_4 (off' := 6) (by decide)
   obtain ⟨n4, d4, u4⟩ := u3.self.aluImm hc2 cce_at_6 (off' := 0xA) (by decide)
-  obtain ⟨n5, c5, pc5, mem5, regs5⟩ := u4.self.callRa hc2 cce_at_a cce_at_e (cb := base + 0x7C6E)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hP 0x7C6E (by decide))
+  obtain ⟨n5, c5, pc5, mem5, regs5⟩ := u4.self.callRa hc2 cce_at_a cce_at_e (cb := base + 0x9A7E)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hP 0x9A7E (by decide))
   have r5 := PEnv.reg1 regs5 u4.self.zero
   have sp5 : reg n5 sp = F := by
     rw [r5 sp (by decide), u4.regs, upd_ne (by decide) (by decide), u3.regs, upd_ne (by decide) (by decide), u2.regs]
@@ -113,7 +113,7 @@ theorem choiceCtEq_correct (m : Machine) {base retAddr a b : Word} (hP : base.to
     rw [k2 a0 (by decide), k2 a1 (by decide), ha0, ha1]
   have k5 : ∀ q, q ≠ a0 → q ≠ ra → q ≠ sp → reg n5 q = reg m q := fun q h0 hr hs => by
     rw [r5 q hr, u4.regs, upd_ne' h0 u3.self.zero, u3.regs, upd_ne' h0 u2.self.zero, u2.regs, updz hz hs]
-  obtain ⟨n6, c6, pc6, a06, k6, f6⟩ := blackBoxU8_correct n5 (base := base + 0x7C6E) (retAddr := base + 0x12)
+  obtain ⟨n6, c6, pc6, a06, k6, f6⟩ := blackBoxU8_correct n5 (base := base + 0x9A7E) (retAddr := base + 0x12)
     (by rw [mem5]; exact cS frS hb sGB) pc5 (by rw [regs5]; simp +decide [upd])
     (even_clear _ (even_at base hP (0xA + 8) (by decide)))
     (by rw [sp5, eB1]; exact sGB.sub (c := 0) (l := 1) (by decide))
@@ -138,11 +138,11 @@ theorem choiceCtEq_correct (m : Machine) {base retAddr a b : Word} (hP : base.to
   obtain ⟨n10, d10, u10⟩ := u9.aluImm hc6 cce_at_1a (off' := 0x1C) (by decide)
   obtain ⟨n11, d11, u11⟩ := u10.self.auipc hc6 cce_at_1c (off' := 0x20) (by decide)
   obtain ⟨n12, d12, pc12, mem12, regs12⟩ := u11.self.jalr hc6 cce_at_20
-  have pc12' : n12.pc = base + 0x7C6E := by
+  have pc12' : n12.pc = base + 0x9A7E := by
     rw [pc12, u11.regs]; simp +decide only [upd, ↓reduceIte]
-    rw [show base + BitVec.ofNat 32 0x1C + 0x8000 + 0xFFFFFC52 = base + 0x7C6E by
+    rw [show base + BitVec.ofNat 32 0x1C + 0xA000 + 0xFFFFFA62 = base + 0x9A7E by
       rw [BitVec.add_assoc, BitVec.add_assoc]; rfl]
-    exact even_clear _ (even_at base hP 0x7C6E (by decide))
+    exact even_clear _ (even_at base hP 0x9A7E (by decide))
   have k12 : ∀ q, q ≠ t1 → q ≠ sp → q ≠ ra → q ≠ a0 → reg n12 q = reg n6 q := fun q h6 hs hr h0 => by
     rw [regs12, u11.regs, upd_ne' h6 u10.self.zero, u10.regs, upd_ne' hs (upd_zero _ _ _), upd_ne' hr u8.self.zero,
       u8.regs, upd_ne' h0 u7.self.zero, u7.regs, upd_ne' h0 u6.zero]
@@ -160,7 +160,7 @@ theorem choiceCtEq_correct (m : Machine) {base retAddr a b : Word} (hP : base.to
     rw [u7.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [a06, v5]
   have mG : ∀ x, Sep G 0x11 x 1 → n12.mem x = m.mem x := fun x hx => by
     rw [mem12, f6 x (hx.sub (c := 0) (l := 1) (by decide)), frS x hx]
-  obtain ⟨m', c', pc', a0', k', f'⟩ := blackBoxU8_correct n12 (base := base + 0x7C6E) (retAddr := retAddr)
+  obtain ⟨m', c', pc', a0', k', f'⟩ := blackBoxU8_correct n12 (base := base + 0x9A7E) (retAddr := retAddr)
     (cS mG hb sGB) pc12' ra12 hret (by rw [sp12, eB2]; exact sGB.sub (c := 0x10) (l := 1) (by decide))
   refine ⟨m', .cons d1 (.cons d2 (.cons d3 (.cons d4 (c5.trans (c6.trans (.cons d7 (.cons d8 (.cons d9 (.cons d10
     (.cons d11 (.cons d12 c'))))))))))), pc', ?_, fun q h0 h6 => ?_, fun x hx => ?_⟩
@@ -181,8 +181,8 @@ structure MSEnv (M : Word → BitVec 8) (P sp0 pa pb : Word) : Prop where
   uce : CodeIn M (P + 0xFFFFFAF4) uint12CtEqCode
   spl : CodeIn M (P + 0xFFFFFAF4 + 0x80) splitAt12Code
   lce : CodeIn M (P + 0xFFFFFAF4 + 0xFFFF9DBC) limbCtEqCode
-  uiz : CodeIn M (P + 0xFFFFFAF4 + 0xFFFEF3C4) uintRefIsZeroCode
-  unz : CodeIn M (P + 0xFFFFFAF4 + 0xFFFEF3C4 + 0x1A) uintRefIsNonzeroCode
+  uiz : CodeIn M (P + 0xFFFFFAF4 + 0xFFFED5B4) uintRefIsZeroCode
+  unz : CodeIn M (P + 0xFFFFFAF4 + 0xFFFED5B4 + 0x1A) uintRefIsNonzeroCode
   bb : CodeIn M (P + 0xFFFF99AA) blackBoxU8Code
   hsp : sp0.toNat % 4 = 0
   hS : 0x54 ≤ sp0.toNat
@@ -192,8 +192,8 @@ structure MSEnv (M : Word → BitVec 8) (P sp0 pa pb : Word) : Prop where
   sGU : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFAF4) uint12CtEqCode.length
   sGS : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFAF4 + 0x80) splitAt12Code.length
   sGL : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFAF4 + 0xFFFF9DBC) limbCtEqCode.length
-  sGZ : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFAF4 + 0xFFFEF3C4) uintRefIsZeroCode.length
-  sGN : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFAF4 + 0xFFFEF3C4 + 0x1A) uintRefIsNonzeroCode.length
+  sGZ : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFAF4 + 0xFFFED5B4) uintRefIsZeroCode.length
+  sGN : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFFFAF4 + 0xFFFED5B4 + 0x1A) uintRefIsNonzeroCode.length
   sGB : Sep (sp0 + 0xFFFFFFAC) 0x54 (P + 0xFFFF99AA) blackBoxU8Code.length
   sAG : Sep pa 48 (sp0 + 0xFFFFFFAC) 0x54
   sBG : Sep pb 48 (sp0 + 0xFFFFFFAC) 0x54

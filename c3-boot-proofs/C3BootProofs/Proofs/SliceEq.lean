@@ -48,11 +48,11 @@ theorem memBytes_eq_iff {M : Word → BitVec 8} {p q : Word} {n : Nat} :
 equal the `n` bytes at `q` and 0 otherwise. It saves `ra` in the word below
 `sp`. -/
 theorem equalSameLength_correct (m : Machine) {base retAddr p q : Word} {n : Nat} (hP : base.toNat % 2 = 0)
-    (hc : CodeIn m.mem base equalSameLengthCode) (hm : CodeIn m.mem (base + 0xC912) memcmpCode) (hpc : m.pc = base)
+    (hc : CodeIn m.mem base equalSameLengthCode) (hm : CodeIn m.mem (base + 0xD3BE) memcmpCode) (hpc : m.pc = base)
     (ha0 : reg m a0 = p) (ha1 : reg m a1 = q) (ha2 : reg m a2 = BitVec.ofNat 32 n) (hn : n < 2 ^ 32)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
     (sSC : Sep (reg m sp + 0xFFFFFFFC) 4 base equalSameLengthCode.length)
-    (sSM : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xC912) memcmpCode.length)
+    (sSM : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xD3BE) memcmpCode.length)
     (sSP : Sep (reg m sp + 0xFFFFFFFC) 4 p n) (sSQ : Sep (reg m sp + 0xFFFFFFFC) 4 q n) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
       reg m' a0 = (if memBytes m.mem p n = memBytes m.mem q n then 1 else 0) ∧
@@ -70,10 +70,10 @@ theorem equalSameLength_correct (m : Machine) {base retAddr p q : Word} {n : Nat
   have hc2 := CodeIn.store32 (v := retAddr) hc sSC
   have frS : ∀ x, Sep (reg m sp + 0xFFFFFFFC) 4 x 1 → memStore32 m.mem (reg m sp + 0xFFFFFFFC) retAddr x = m.mem x :=
     fun x hx => memStore32_get_sep hx
-  have hm2 : CodeIn (memStore32 m.mem (reg m sp + 0xFFFFFFFC) retAddr) (base + 0xC912) memcmpCode := fun i hi => by
+  have hm2 : CodeIn (memStore32 m.mem (reg m sp + 0xFFFFFFFC) retAddr) (base + 0xD3BE) memcmpCode := fun i hi => by
     rw [frS _ (sSM.subR (c := i) (l := 1) (by omega))]; exact hm i hi
   obtain ⟨n3, c3, pc3, mem3, regs3⟩ := u2.self.callRa hc2 esl_at_4 esl_at_8
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hP 0xC912 (by decide))
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hP 0xD3BE (by decide))
   have r3 := PEnv.reg1 regs3 u2.self.zero
   have k2 : ∀ q, q ≠ sp → reg n2 q = reg m q := fun q h => by rw [u2.regs, updz hz h]
   obtain ⟨n4, c4, pc4, a04, k4, mem4⟩ := memcmp_correct n3 (n := n) (by rw [mem3]; exact hm2) pc3
@@ -137,13 +137,13 @@ theorem equalSameLength_correct (m : Machine) {base retAddr p q : Word} {n : Nat
 /-- **The compiled `<[u8] as PartialEq>::eq`** returns 1 when the `pl` bytes
 at `p` equal the `ql` bytes at `q`, lengths included, and 0 otherwise. -/
 theorem sliceEq_correct (m : Machine) {base retAddr p q : Word} {pl ql : Nat} (hP : base.toNat % 2 = 0)
-    (hc : CodeIn m.mem base sliceEqCode) (he : CodeIn m.mem (base + 0xFFFFF776) equalSameLengthCode)
-    (hm : CodeIn m.mem (base + 0xC088) memcmpCode) (hpc : m.pc = base)
+    (hc : CodeIn m.mem base sliceEqCode) (he : CodeIn m.mem (base + 0xFFFFEBAA) equalSameLengthCode)
+    (hm : CodeIn m.mem (base + 0xBF68) memcmpCode) (hpc : m.pc = base)
     (ha0 : reg m a0 = p) (ha1 : reg m a1 = BitVec.ofNat 32 pl) (ha2 : reg m a2 = q)
     (ha3 : reg m a3 = BitVec.ofNat 32 ql) (hpl : pl < 2 ^ 32) (hql : ql < 2 ^ 32)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
-    (sSE : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xFFFFF776) equalSameLengthCode.length)
-    (sSM : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xC088) memcmpCode.length)
+    (sSE : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xFFFFEBAA) equalSameLengthCode.length)
+    (sSM : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xBF68) memcmpCode.length)
     (sSP : Sep (reg m sp + 0xFFFFFFFC) 4 p pl) (sSQ : Sep (reg m sp + 0xFFFFFFFC) 4 q ql) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
       reg m' a0 = (if memBytes m.mem p pl = memBytes m.mem q ql then 1 else 0) ∧
@@ -160,11 +160,11 @@ theorem sliceEq_correct (m : Machine) {base retAddr p q : Word} {pl ql : Nat} (h
     simp only [runBlock, BInstr.run] at u2
     obtain ⟨n3, d3, u3⟩ := u2.auipc hc seq_at_a (off' := 0xE) (by decide)
     obtain ⟨n4, d4, pc4, mem4, regs4⟩ := u3.jalr hc seq_at_e
-    have pcE : n4.pc = base + 0xFFFFF776 := by
+    have pcE : n4.pc = base + 0xFFFFEBAA := by
       rw [pc4]; simp +decide only [upd_app, ↓reduceIte]
-      rw [show base + BitVec.ofNat 32 0xA + 0xFFFFF000 + 0x76C = base + 0xFFFFF776 by
+      rw [show base + BitVec.ofNat 32 0xA + 0xFFFFF000 + 0xFFFFFBA0 = base + 0xFFFFEBAA by
         rw [BitVec.add_assoc, BitVec.add_assoc]; rfl]
-      exact even_clear _ (even_at base hP 0xFFFFF776 (by decide))
+      exact even_clear _ (even_at base hP 0xFFFFEBAA (by decide))
     have g4 : ∀ r, reg n4 r = _ := regs4
     have kq : ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a4 → r ≠ t1 → reg n4 r = reg m r := fun r h1 h2 h4 ht => by
       rw [g4]
@@ -174,15 +174,15 @@ theorem sliceEq_correct (m : Machine) {base retAddr p q : Word} {pl ql : Nat} (h
       simp only [upd_app, h0, h1, h2, h4, ht, ite_false]
     have sp4 : reg n4 sp = reg m sp := kq sp (by decide) (by decide) (by decide) (by decide)
     obtain ⟨m5, c5, pc5, a05, k5, f5⟩ := equalSameLength_correct n4 (p := p) (q := q) (n := pl)
-      (even_at base hP 0xFFFFF776 (by decide)) (by rw [mem4]; exact he)
-      (by rw [mem4, show base + BitVec.ofNat 32 0xFFFFF776 + 0xC912 = base + 0xC088 by rw [BitVec.add_assoc]; rfl]; exact hm) pcE
+      (even_at base hP 0xFFFFEBAA (by decide)) (by rw [mem4]; exact he)
+      (by rw [mem4, show base + BitVec.ofNat 32 0xFFFFEBAA + 0xD3BE = base + 0xBF68 by rw [BitVec.add_assoc]; rfl]; exact hm) pcE
       (by rw [kq a0 (by decide) (by decide) (by decide) (by decide), ha0])
       (by rw [g4]; simp +decide only [upd_app, ↓reduceIte]; rw [ha2]; exact zw _)
       (by rw [g4]; simp +decide only [upd_app, ↓reduceIte]; rw [ha1]
           show (0 : Word) + (reg m 0 + BitVec.ofNat 32 pl) = _; rw [hz, zw, zw])
       hpl (by rw [kq ra (by decide) (by decide) (by decide) (by decide), hra]) hret (by rw [sp4]; exact hsp)
       (by rw [sp4]; exact sSE)
-      (by rw [sp4, show base + BitVec.ofNat 32 0xFFFFF776 + 0xC912 = base + 0xC088 by rw [BitVec.add_assoc]; rfl]; exact sSM)
+      (by rw [sp4, show base + BitVec.ofNat 32 0xFFFFEBAA + 0xD3BE = base + 0xBF68 by rw [BitVec.add_assoc]; rfl]; exact sSM)
       (by rw [sp4]; exact sSP) (by rw [sp4]; exact sSQ)
     rw [mem4] at a05
     rw [mem4, sp4] at f5

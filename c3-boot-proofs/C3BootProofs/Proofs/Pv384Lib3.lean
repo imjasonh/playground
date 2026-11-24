@@ -170,16 +170,16 @@ theorem pv_pd {B : Word} {m : Machine} {off : Nat} {imm o : Word} {co cx : Nat} 
       oh _ _ (by decide) (by decide), oh _ _ (by decide) (by decide)⟩
     · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x11C82 = BitVec.ofNat 32 p384MulAddress by decide]
       exact E.E.E.C.K.p3mul
-    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x12426 = BitVec.ofNat 32 p384SqrAddress by decide]
+    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x14236 = BitVec.ofNat 32 p384SqrAddress by decide]
       exact E.C4.sqr
     · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x110E0 = MM by decide]; exact E.E.E.C.K.mm
-    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x11D8E = BitVec.ofNat 32 sqMont12Address by decide]
+    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x13B9E = BitVec.ofNat 32 sqMont12Address by decide]
       exact E.C4.sqm
     · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x53A = BitVec.ofNat 32 p384AddAddress by decide]
       exact E.E.E.C.K.p3add
     · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x650 = BitVec.ofNat 32 p384SubAddress by decide]
       exact E.C4.sub
-    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x1235E = BitVec.ofNat 32 p384DoubleAddress by decide]
+    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x1416E = BitVec.ofNat 32 p384DoubleAddress by decide]
       exact E.C4.dbl
     · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x12BEC = MSET by decide]; exact E.E.E.C.K.mset
     · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x726 = BSUB by decide]; exact E.E.E.C.K.bsub
@@ -262,7 +262,7 @@ theorem pv_pa {B : Word} {m : Machine} {off : Nat} {imm o : Word} {cl cr : Nat} 
       exact E.E.E.C.K.p3add
     · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x3F2 = BitVec.ofNat 32 p384SubAddress by decide]
       exact E.C4.sub
-    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x12100 = BitVec.ofNat 32 p384DoubleAddress by decide]
+    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x13F10 = BitVec.ofNat 32 p384DoubleAddress by decide]
       exact E.C4.dbl
     · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x1298E = MSET by decide]; exact E.E.E.C.K.mset
     · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x4C8 = BSUB by decide]; exact E.E.E.C.K.bsub

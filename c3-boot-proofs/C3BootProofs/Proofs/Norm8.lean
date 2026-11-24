@@ -87,9 +87,9 @@ end
 `ptr` are all zero and 1 otherwise. It tail-calls `UintRef::is_nonzero`,
 which writes the word below `sp`. -/
 theorem uint8IsNonzero_correct (m : Machine) {base retAddr ptr : Word} (hP : base.toNat % 2 = 0)
-    (hc : CodeIn m.mem base uint8IsNonzeroCode) (hu : CodeIn m.mem (base + 0xFFFF120E) uintRefIsNonzeroCode)
+    (hc : CodeIn m.mem base uint8IsNonzeroCode) (hu : CodeIn m.mem (base + 0xFFFEF3FE) uintRefIsNonzeroCode)
     (hpc : m.pc = base) (ha0 : reg m a0 = ptr) (hptr : ptr.toNat % 4 = 0) (hsp : (reg m sp).toNat % 4 = 0)
-    (hsep : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xFFFF120E) uintRefIsNonzeroCode.length)
+    (hsep : Sep (reg m sp + 0xFFFFFFFC) 4 (base + 0xFFFEF3FE) uintRefIsNonzeroCode.length)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
       reg m' a0 = (if ∀ i : Nat, i < 8 → memLoad32 m.mem (ptr + BitVec.ofNat 32 (4 * i)) = 0 then 0 else 1) ∧
@@ -102,11 +102,11 @@ theorem uint8IsNonzero_correct (m : Machine) {base retAddr ptr : Word} (hP : bas
   obtain ⟨n3, d3, pc3, mem3, regs3⟩ := u2.jalr hc u8nz_at_6
   have k : ∀ r, r ≠ a1 → r ≠ t1 → reg n3 r = reg m r := fun r h1 h2 => by
     rw [regs3, updz (upd_zero _ _ _) h2, updz hz h1]
-  have pcU : n3.pc = base + 0xFFFF120E := by
+  have pcU : n3.pc = base + 0xFFFEF3FE := by
     rw [pc3]; simp +decide only [upd_app, ↓reduceIte]
-    rw [show base + BitVec.ofNat 32 2 + 0xFFFF1000 + 0x20C = base + 0xFFFF120E by
+    rw [show base + BitVec.ofNat 32 2 + 0xFFFEF000 + 0x3FC = base + 0xFFFEF3FE by
       rw [BitVec.add_assoc, BitVec.add_assoc]; rfl]
-    exact even_clear _ (even_at base hP 0xFFFF120E (by decide))
+    exact even_clear _ (even_at base hP 0xFFFEF3FE (by decide))
   have sp3 : reg n3 sp = reg m sp := k sp (by decide) (by decide)
   obtain ⟨m4, c4, pc4, a04, k4, f4⟩ := uintRefIsNonzero_correct n3 (len := 8) (by rw [mem3]; exact hu) pcU
     (by rw [k a0 (by decide) (by decide), ha0])
@@ -126,7 +126,7 @@ theorem n8_res {X Dv p B : Nat} (hX : X < 2 ^ 256) (hD : Dv < 2 ^ 256) (hp : p <
   · rw [Nat.mod_eq_of_lt (by omega)]; omega
 
 /-- `borrowing_sub`'s offset from `norm`. -/
-abbrev n8Bsub (P : Word) : Word := P + 0xFFFF0766
+abbrev n8Bsub (P : Word) : Word := P + 0xFFFEE956
 
 /-- The end of a subtraction round, from 0x5A: keep the borrow, store the
 difference, and advance the pointers and the count. -/
@@ -218,7 +218,7 @@ theorem n8_sub_iter {M : Word → BitVec 8} {P F np xp D b : Word} {n : Machine}
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd, hz]
     · simp [upd, h0, q0, q1]
-  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFF0766 (by decide))
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFEE956 (by decide))
     nm8_at_52 nm8_at_56 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x52 + 8) (by decide))
     (by rw [k2 sp (by decide) (by decide), rsp]) hF sFB
   rw [g2a0, g2a1, k2 a2 (by decide) (by decide), ra2] at a03 a13
@@ -404,7 +404,7 @@ structure Nm8Env (M : Word → BitVec 8) (P sp0 out xp np : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P norm8Code
   nz : CodeIn M (P + 0xFFFFFEA4) uint8IsNonzeroCode
-  ref : CodeIn M (P + 0xFFFF10B2) uintRefIsNonzeroCode
+  ref : CodeIn M (P + 0xFFFEF2A2) uintRefIsNonzeroCode
   mset : CodeIn M (P + 0x2C2C) memsetCode
   bsub : CodeIn M (n8Bsub P) borrowingSubCode
   sel : CodeIn M (P + 0xFFFFF112) uintSelect8Code
@@ -418,7 +418,7 @@ structure Nm8Env (M : Word → BitVec 8) (P sp0 out xp np : Word) : Prop where
   hwo : out.toNat + 32 < 2 ^ 32
   sSC : Sep (n8R sp0) 0x90 P norm8Code.length
   sSZ : Sep (n8R sp0) 0x90 (P + 0xFFFFFEA4) uint8IsNonzeroCode.length
-  sSF : Sep (n8R sp0) 0x90 (P + 0xFFFF10B2) uintRefIsNonzeroCode.length
+  sSF : Sep (n8R sp0) 0x90 (P + 0xFFFEF2A2) uintRefIsNonzeroCode.length
   sSM : Sep (n8R sp0) 0x90 (P + 0x2C2C) memsetCode.length
   sSB : Sep (n8R sp0) 0x90 (n8Bsub P) borrowingSubCode.length
   sSL : Sep (n8R sp0) 0x90 (P + 0xFFFFF112) uintSelect8Code.length
@@ -543,7 +543,7 @@ theorem norm8_correct (m : Machine) {P sp0 out xp np retAddr : Word} (env : Nm8E
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFFEA4 (by decide))
   have r4 := PEnv.reg1 regs4 u3.self.zero
   have sp4 : reg m4 sp = F := by rw [r4 sp (by decide), v3sp]
-  have eW : P + BitVec.ofNat 32 0xFFFFFEA4 + 0xFFFF120E = P + 0xFFFF10B2 := by rw [BitVec.add_assoc]; rfl
+  have eW : P + BitVec.ofNat 32 0xFFFFFEA4 + 0xFFFEF3FE = P + 0xFFFEF2A2 := by rw [BitVec.add_assoc]; rfl
   have eG4 : reg m4 sp + 0xFFFFFFFC = R + BitVec.ofNat 32 0x3C := by rw [sp4, eFR]
   obtain ⟨m5, c5, pc5, a05, k5, f5⟩ := uint8IsNonzero_correct m4 (even_at P env.hP 0xFFFFFEA4 (by decide))
     (by rw [mem4]; exact cIn env.nz sSZ frSv) (by rw [mem4, eW]; exact cIn env.ref sSF frSv) pc4

@@ -590,14 +590,14 @@ structure FRdEnv (M : Word → BitVec 8) (P G out len : Word) (romStack : Nat) (
     (romCode : List Nat) : Prop where
   hP : P = (img% flashReadAddress)
   code : CodeIn M P flashReadCode
-  mset : CodeIn M (P + (img% memsetAddress - flashReadAddress)) memsetCode
+  mset : CodeIn M (P + (img% memsetAddress + 0x100000000 - flashReadAddress)) memsetCode
   fw : CodeIn M (P + 0xFFFFFFE8) romFlashReadWordsCode
   hG : G.toNat % 4 = 0
   hR : romStack % 4 = 0
   hGt : G.toNat + 0x150 + romStack ≤ 2 ^ 32
   hlen : out.toNat + len.toNat < 2 ^ 32
   sGC : Sep G (0x150 + romStack) P flashReadCode.length
-  sGM : Sep G (0x150 + romStack) (P + (img% memsetAddress - flashReadAddress)) memsetCode.length
+  sGM : Sep G (0x150 + romStack) (P + (img% memsetAddress + 0x100000000 - flashReadAddress)) memsetCode.length
   sGW : Sep G (0x150 + romStack) (P + 0xFFFFFFE8) romFlashReadWordsCode.length
   sOC : Sep out len.toNat P flashReadCode.length
   sOW : Sep out len.toNat (P + 0xFFFFFFE8) romFlashReadWordsCode.length
@@ -1063,7 +1063,7 @@ theorem flashRead_correct {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} 
     rw [show (0x140 : Word) = BitVec.ofNat 32 0x140 from rfl, fG, show 16 + R + 0x140 = 0x150 + R by omega]
   have sFC : Sep F 0x140 P flashReadCode.length := by
     rw [← hF]; exact env.sGC.sub (c := 16 + R) (l := 0x140) (by omega)
-  have sFM : Sep F 0x140 (P + (img% memsetAddress - flashReadAddress)) memsetCode.length := by
+  have sFM : Sep F 0x140 (P + (img% memsetAddress + 0x100000000 - flashReadAddress)) memsetCode.length := by
     rw [← hF]; exact env.sGM.sub (c := 16 + R) (l := 0x140) (by omega)
   have inF : ∀ x, Sep G (0x150 + R) x 1 → Sep F 0x140 x 1 := fun x hx => by
     rw [← hF]; exact hx.sub (c := 16 + R) (l := 0x140) (by omega)
@@ -1221,13 +1221,13 @@ theorem flashRead_correct {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} 
   have x8 : reg n8 (20 : Fin 32) = 0x100 := by
     rw [v8.newReg (by decide)]; show reg n7 0 + 0x100 = _; rw [v7.self.zero]; rfl
   -- 0x46: `memset` clears the bounce buffer
-  obtain ⟨n9, c9, pc9, mem9, regs9⟩ := v8.self.callRa hcp11 frd_at_46 frd_at_4a (cb := P + (img% memsetAddress - flashReadAddress))
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hPe (img% memsetAddress - flashReadAddress) (by decide))
+  obtain ⟨n9, c9, pc9, mem9, regs9⟩ := v8.self.callRa hcp11 frd_at_46 frd_at_4a (cb := P + (img% memsetAddress + 0x100000000 - flashReadAddress))
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hPe (img% memsetAddress + 0x100000000 - flashReadAddress) (by decide))
   have r9 := PEnv.reg1 regs9 v8.self.zero
   have hFC : (F + 0xC).toNat = F.toNat + 0xC := by
     rw [BitVec.toNat_add, show (0xC : Word).toNat = 0xC from rfl, Nat.mod_eq_of_lt (by omega)]
-  obtain ⟨n10, c10, pc10, mem10, a0_10, K10⟩ := memset_correct n9 (P + (img% memsetAddress - flashReadAddress)) (P + BitVec.ofNat 32 (0x46 + 8))
-    (F + 0xC) 0 0x100 (fun i hi => by show n9.mem _ = _; rw [mem9]; exact hcM i hi) (even_at P hPe (img% memsetAddress - flashReadAddress) (by decide))
+  obtain ⟨n10, c10, pc10, mem10, a0_10, K10⟩ := memset_correct n9 (P + (img% memsetAddress + 0x100000000 - flashReadAddress)) (P + BitVec.ofNat 32 (0x46 + 8))
+    (F + 0xC) 0 0x100 (fun i hi => by show n9.mem _ = _; rw [mem9]; exact hcM i hi) (even_at P hPe (img% memsetAddress + 0x100000000 - flashReadAddress) (by decide))
     pc9 (by rw [r9 _ (by decide), k8 _ (by decide), k7 _ (by decide), k6 _ (by decide), x5])
     (by rw [r9 _ (by decide), k8 _ (by decide), k7 _ (by decide), k6 _ (by decide), k5 _ (by decide), x4])
     (by rw [r9 _ (by decide), k8 _ (by decide), k7 _ (by decide), x6]; try rfl)

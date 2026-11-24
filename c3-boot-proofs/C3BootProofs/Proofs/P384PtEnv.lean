@@ -258,18 +258,18 @@ The result's writes keep `out` apart from the code they could reach. -/
 structure D3Env (M : Word → BitVec 8) (P sp0 out sf : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P p384PtDoubleCode
-  mulw : CodeIn M (P + 0x11C82) p384MulCode
-  sqw : CodeIn M (P + 0x12426) p384SqrCode
-  mm : CodeIn M (P + 0x110E0) mulMont12Code
-  sq : CodeIn M (P + 0x11D8E) sqMont12Code
+  mulw : CodeIn M (P + 0x13A92) p384MulCode
+  sqw : CodeIn M (P + 0x14236) p384SqrCode
+  mm : CodeIn M (P + 0x12EF0) mulMont12Code
+  sq : CodeIn M (P + 0x13B9E) sqMont12Code
   add : CodeIn M (P + 0x53A) p384AddCode
   sub : CodeIn M (P + 0x650) p384SubCode
-  dbl : CodeIn M (P + 0x1235E) p384DoubleCode
-  mset : CodeIn M (P + 0x12BEC) memsetCode
+  dbl : CodeIn M (P + 0x1416E) p384DoubleCode
+  mset : CodeIn M (P + 0x149FC) memsetCode
   bsub : CodeIn M (P + 0x726) borrowingSubCode
-  sel : CodeIn M (P + 0x1126E) uintSelect12Code
-  stub : CodeIn M (P + 0x12C54) memcpyStubCode
-  body : CodeIn M (P + 0x12C5C) memcpyBodyCode
+  sel : CodeIn M (P + 0x1307E) uintSelect12Code
+  stub : CodeIn M (P + 0x14A64) memcpyStubCode
+  body : CodeIn M (P + 0x14A6C) memcpyBodyCode
   pmod : CodeIn M p3M p384ModulusData
   bconst : CodeIn M p3bA p384BData
   hsp : sp0.toNat % 4 = 0
@@ -278,24 +278,24 @@ structure D3Env (M : Word → BitVec 8) (P sp0 out sf : Word) : Prop where
   hout : out.toNat % 4 = 0
   hwo : out.toNat + 144 < 2 ^ 32
   sC : Sep (d3S sp0) 0x540 P p384PtDoubleCode.length
-  sMw : Sep (d3S sp0) 0x540 (P + 0x11C82) p384MulCode.length
-  sSw : Sep (d3S sp0) 0x540 (P + 0x12426) p384SqrCode.length
-  sMm : Sep (d3S sp0) 0x540 (P + 0x110E0) mulMont12Code.length
-  sSq : Sep (d3S sp0) 0x540 (P + 0x11D8E) sqMont12Code.length
+  sMw : Sep (d3S sp0) 0x540 (P + 0x13A92) p384MulCode.length
+  sSw : Sep (d3S sp0) 0x540 (P + 0x14236) p384SqrCode.length
+  sMm : Sep (d3S sp0) 0x540 (P + 0x12EF0) mulMont12Code.length
+  sSq : Sep (d3S sp0) 0x540 (P + 0x13B9E) sqMont12Code.length
   sA : Sep (d3S sp0) 0x540 (P + 0x53A) p384AddCode.length
   sSb : Sep (d3S sp0) 0x540 (P + 0x650) p384SubCode.length
-  sD : Sep (d3S sp0) 0x540 (P + 0x1235E) p384DoubleCode.length
-  sMs : Sep (d3S sp0) 0x540 (P + 0x12BEC) memsetCode.length
+  sD : Sep (d3S sp0) 0x540 (P + 0x1416E) p384DoubleCode.length
+  sMs : Sep (d3S sp0) 0x540 (P + 0x149FC) memsetCode.length
   sBs : Sep (d3S sp0) 0x540 (P + 0x726) borrowingSubCode.length
-  sSel : Sep (d3S sp0) 0x540 (P + 0x1126E) uintSelect12Code.length
-  sU : Sep (d3S sp0) 0x540 (P + 0x12C54) memcpyStubCode.length
-  sB : Sep (d3S sp0) 0x540 (P + 0x12C5C) memcpyBodyCode.length
+  sSel : Sep (d3S sp0) 0x540 (P + 0x1307E) uintSelect12Code.length
+  sU : Sep (d3S sp0) 0x540 (P + 0x14A64) memcpyStubCode.length
+  sB : Sep (d3S sp0) 0x540 (P + 0x14A6C) memcpyBodyCode.length
   sP : Sep (d3S sp0) 0x540 p3M 48
   sK : Sep (d3S sp0) 0x540 p3bA 48
   sF : Sep sf 144 (d3S sp0) 0x540
   sO : Sep out 144 (d3S sp0) 0x540
   oC : Sep out 144 P p384PtDoubleCode.length
-  oB : Sep out 144 (P + 0x12C5C) memcpyBodyCode.length
+  oB : Sep out 144 (P + 0x14A6C) memcpyBodyCode.length
 
 /-- The registers that no call or argument instruction of the point doubling
 changes: all but `ra`, `t0` through `t6`, and `a0` through `a7`. -/
@@ -431,17 +431,17 @@ doubling with its result in the frame. -/
 theorem D3Env.mEnv (env : D3Env M0 P sp0 out sf) {M : Word → BitVec 8}
     (fr : ∀ x, Sep (d3S sp0) 0x540 x 1 → M x = M0 x) {d : Nat} {a b : Word}
     (hd : D3Dst d) (sa : D3Src sp0 a) (sb : D3Src sp0 b) :
-    P3MEnv M (P + 0x11C82) (d3G sp0) (d3G sp0 + BitVec.ofNat 32 d) a b := by
+    P3MEnv M (P + 0x13A92) (d3G sp0) (d3G sp0 + BitVec.ofNat 32 d) a b := by
   have cT := @D3Env.codeT _ _ _ _ _ env M fr
-  have e0 : P + 0x11C82 + 0xFFFFF45E = P + 0x110E0 := by rw [BitVec.add_assoc]; rfl
-  have e1 : P + 0x110E0 + 0x1B0C = P + 0x12BEC := by rw [BitVec.add_assoc]; rfl
-  have e2 : mmBsub (P + 0x110E0) = P + 0x726 := by show P + 0x110E0 + 0xFFFEF646 = _; rw [BitVec.add_assoc]; rfl
-  have e3 : P + 0x110E0 + 0x18E = P + 0x1126E := by rw [BitVec.add_assoc]; rfl
-  have e4 : P + 0x110E0 + 0x1B74 = P + 0x12C54 := by rw [BitVec.add_assoc]; rfl
-  have e5 : P + 0x110E0 + 0x1B7C = P + 0x12C5C := by rw [BitVec.add_assoc]; rfl
-  refine ⟨even_at P env.hP 0x11C82 (by decide), cT env.mulw env.sMw, cT env.pmod env.sP, ?_⟩
+  have e0 : P + 0x13A92 + 0xFFFFF45E = P + 0x12EF0 := by rw [BitVec.add_assoc]; rfl
+  have e1 : P + 0x12EF0 + 0x1B0C = P + 0x149FC := by rw [BitVec.add_assoc]; rfl
+  have e2 : mmBsub (P + 0x12EF0) = P + 0x726 := by show P + 0x12EF0 + 0xFFFED836 = _; rw [BitVec.add_assoc]; rfl
+  have e3 : P + 0x12EF0 + 0x18E = P + 0x1307E := by rw [BitVec.add_assoc]; rfl
+  have e4 : P + 0x12EF0 + 0x1B74 = P + 0x14A64 := by rw [BitVec.add_assoc]; rfl
+  have e5 : P + 0x12EF0 + 0x1B7C = P + 0x14A6C := by rw [BitVec.add_assoc]; rfl
+  refine ⟨even_at P env.hP 0x13A92 (by decide), cT env.mulw env.sMw, cT env.pmod env.sP, ?_⟩
   rw [e0]
-  refine ⟨even_at P env.hP 0x110E0 (by decide), cT env.mm env.sMm, by rw [e1]; exact cT env.mset env.sMs,
+  refine ⟨even_at P env.hP 0x12EF0 (by decide), cT env.mm env.sMm, by rw [e1]; exact cT env.mset env.sMs,
     by rw [e2]; exact cT env.bsub env.sBs, by rw [e3]; exact cT env.sel env.sSel,
     by rw [e4]; exact cT env.stub env.sU, by rw [e5]; exact cT env.body env.sB,
     env.hGa, d3_hS_mm env, hd.al env, sa.1, sb.1, by decide, hd.wr env,
@@ -455,17 +455,17 @@ theorem D3Env.mEnv (env : D3Env M0 P sp0 out sf) {M : Word → BitVec 8}
 theorem D3Env.qEnv (env : D3Env M0 P sp0 out sf) {M : Word → BitVec 8}
     (fr : ∀ x, Sep (d3S sp0) 0x540 x 1 → M x = M0 x) {d : Nat} {a : Word}
     (hd : D3Dst d) (sa : D3Src sp0 a) :
-    P3QEnv M (P + 0x12426) (d3G sp0) (d3G sp0 + BitVec.ofNat 32 d) a := by
+    P3QEnv M (P + 0x14236) (d3G sp0) (d3G sp0 + BitVec.ofNat 32 d) a := by
   have cT := @D3Env.codeT _ _ _ _ _ env M fr
-  have e0 : P + 0x12426 + 0xFFFFF968 = P + 0x11D8E := by rw [BitVec.add_assoc]; rfl
-  have e1 : P + 0x11D8E + 0xE5E = P + 0x12BEC := by rw [BitVec.add_assoc]; rfl
-  have e2 : sqBsub (P + 0x11D8E) = P + 0x726 := by show P + 0x11D8E + 0xFFFEE998 = _; rw [BitVec.add_assoc]; rfl
-  have e3 : P + 0x11D8E + 0xFFFFF4E0 = P + 0x1126E := by rw [BitVec.add_assoc]; rfl
-  have e4 : P + 0x11D8E + 0xEC6 = P + 0x12C54 := by rw [BitVec.add_assoc]; rfl
-  have e5 : P + 0x11D8E + 0xECE = P + 0x12C5C := by rw [BitVec.add_assoc]; rfl
-  refine ⟨even_at P env.hP 0x12426 (by decide), cT env.sqw env.sSw, cT env.pmod env.sP, ?_⟩
+  have e0 : P + 0x14236 + 0xFFFFF968 = P + 0x13B9E := by rw [BitVec.add_assoc]; rfl
+  have e1 : P + 0x13B9E + 0xE5E = P + 0x149FC := by rw [BitVec.add_assoc]; rfl
+  have e2 : sqBsub (P + 0x13B9E) = P + 0x726 := by show P + 0x13B9E + 0xFFFECB88 = _; rw [BitVec.add_assoc]; rfl
+  have e3 : P + 0x13B9E + 0xFFFFF4E0 = P + 0x1307E := by rw [BitVec.add_assoc]; rfl
+  have e4 : P + 0x13B9E + 0xEC6 = P + 0x14A64 := by rw [BitVec.add_assoc]; rfl
+  have e5 : P + 0x13B9E + 0xECE = P + 0x14A6C := by rw [BitVec.add_assoc]; rfl
+  refine ⟨even_at P env.hP 0x14236 (by decide), cT env.sqw env.sSw, cT env.pmod env.sP, ?_⟩
   rw [e0]
-  refine ⟨even_at P env.hP 0x11D8E (by decide), cT env.sq env.sSq, by rw [e1]; exact cT env.mset env.sMs,
+  refine ⟨even_at P env.hP 0x13B9E (by decide), cT env.sq env.sSq, by rw [e1]; exact cT env.mset env.sMs,
     by rw [e2]; exact cT env.bsub env.sBs, by rw [e3]; exact cT env.sel env.sSel,
     by rw [e4]; exact cT env.stub env.sU, by rw [e5]; exact cT env.body env.sB,
     env.hGa, d3_hS_mm env, hd.al env, sa.1, by decide, hd.wr env,
@@ -487,10 +487,10 @@ theorem D3Env.aEnv (env : D3Env M0 P sp0 out sf) {M : Word → BitVec 8}
     (hd : D3Dst d) (sa : D3Src sp0 a) (sb : D3Src sp0 b) :
     P3Env M (P + 0x53A) (d3G sp0) (d3G sp0 + BitVec.ofNat 32 d) a b := by
   have cT := @D3Env.codeT _ _ _ _ _ env M fr
-  have e1 : P + 0x53A + 0x126B2 = P + 0x12BEC := by rw [BitVec.add_assoc]; rfl
+  have e1 : P + 0x53A + 0x144C2 = P + 0x149FC := by rw [BitVec.add_assoc]; rfl
   have e2 : p3Bsub (P + 0x53A) = P + 0x726 := by show P + 0x53A + 0x1EC = _; rw [BitVec.add_assoc]; rfl
-  have e4 : P + 0x53A + 0x1271A = P + 0x12C54 := by rw [BitVec.add_assoc]; rfl
-  have e5 : P + 0x53A + 0x12722 = P + 0x12C5C := by rw [BitVec.add_assoc]; rfl
+  have e4 : P + 0x53A + 0x1452A = P + 0x14A64 := by rw [BitVec.add_assoc]; rfl
+  have e5 : P + 0x53A + 0x14532 = P + 0x14A6C := by rw [BitVec.add_assoc]; rfl
   refine ⟨even_at P env.hP 0x53A (by decide), cT env.add env.sA, by rw [e1]; exact cT env.mset env.sMs,
     by rw [e2]; exact cT env.bsub env.sBs, by rw [e4]; exact cT env.stub env.sU,
     by rw [e5]; exact cT env.body env.sB, cT env.pmod env.sP,
@@ -506,10 +506,10 @@ theorem D3Env.sEnv (env : D3Env M0 P sp0 out sf) {M : Word → BitVec 8}
     (hd : D3Dst d) (sa : D3Src sp0 a) (sb : D3Src sp0 b) :
     PSEnv M (P + 0x650) (d3G sp0) (d3G sp0 + BitVec.ofNat 32 d) a b := by
   have cT := @D3Env.codeT _ _ _ _ _ env M fr
-  have e1 : P + 0x650 + 0x1259C = P + 0x12BEC := by rw [BitVec.add_assoc]; rfl
+  have e1 : P + 0x650 + 0x143AC = P + 0x149FC := by rw [BitVec.add_assoc]; rfl
   have e2 : psBsub (P + 0x650) = P + 0x726 := by show P + 0x650 + 0xD6 = _; rw [BitVec.add_assoc]; rfl
-  have e4 : P + 0x650 + 0x12604 = P + 0x12C54 := by rw [BitVec.add_assoc]; rfl
-  have e5 : P + 0x650 + 0x1260C = P + 0x12C5C := by rw [BitVec.add_assoc]; rfl
+  have e4 : P + 0x650 + 0x14414 = P + 0x14A64 := by rw [BitVec.add_assoc]; rfl
+  have e5 : P + 0x650 + 0x1441C = P + 0x14A6C := by rw [BitVec.add_assoc]; rfl
   refine ⟨even_at P env.hP 0x650 (by decide), cT env.sub env.sSb, by rw [e1]; exact cT env.mset env.sMs,
     by rw [e2]; exact cT env.bsub env.sBs, by rw [e4]; exact cT env.stub env.sU,
     by rw [e5]; exact cT env.body env.sB, cT env.pmod env.sP,
@@ -523,14 +523,14 @@ theorem D3Env.sEnv (env : D3Env M0 P sp0 out sf) {M : Word → BitVec 8}
 theorem D3Env.dEnv (env : D3Env M0 P sp0 out sf) {M : Word → BitVec 8}
     (fr : ∀ x, Sep (d3S sp0) 0x540 x 1 → M x = M0 x) {d : Nat} {a : Word}
     (hd : D3Dst d) (sa : D3Src sp0 a) :
-    PDEnv M (P + 0x1235E) (d3G sp0) (d3G sp0 + BitVec.ofNat 32 d) a := by
+    PDEnv M (P + 0x1416E) (d3G sp0) (d3G sp0 + BitVec.ofNat 32 d) a := by
   have cT := @D3Env.codeT _ _ _ _ _ env M fr
-  have e1 : P + 0x1235E + 0x88E = P + 0x12BEC := by rw [BitVec.add_assoc]; rfl
-  have e2 : pdBsub (P + 0x1235E) = P + 0x726 := by show P + 0x1235E + 0xFFFEE3C8 = _; rw [BitVec.add_assoc]; rfl
-  have e3 : P + 0x1235E + 0xFFFFEF10 = P + 0x1126E := by rw [BitVec.add_assoc]; rfl
-  have e4 : P + 0x1235E + 0x8F6 = P + 0x12C54 := by rw [BitVec.add_assoc]; rfl
-  have e5 : P + 0x1235E + 0x8FE = P + 0x12C5C := by rw [BitVec.add_assoc]; rfl
-  refine ⟨even_at P env.hP 0x1235E (by decide), cT env.dbl env.sD, by rw [e1]; exact cT env.mset env.sMs,
+  have e1 : P + 0x1416E + 0x88E = P + 0x149FC := by rw [BitVec.add_assoc]; rfl
+  have e2 : pdBsub (P + 0x1416E) = P + 0x726 := by show P + 0x1416E + 0xFFFEC5B8 = _; rw [BitVec.add_assoc]; rfl
+  have e3 : P + 0x1416E + 0xFFFFEF10 = P + 0x1307E := by rw [BitVec.add_assoc]; rfl
+  have e4 : P + 0x1416E + 0x8F6 = P + 0x14A64 := by rw [BitVec.add_assoc]; rfl
+  have e5 : P + 0x1416E + 0x8FE = P + 0x14A6C := by rw [BitVec.add_assoc]; rfl
+  refine ⟨even_at P env.hP 0x1416E (by decide), cT env.dbl env.sD, by rw [e1]; exact cT env.mset env.sMs,
     by rw [e2]; exact cT env.bsub env.sBs, by rw [e4]; exact cT env.stub env.sU,
     by rw [e5]; exact cT env.body env.sB, by rw [e3]; exact cT env.sel env.sSel, cT env.pmod env.sP,
     env.hGa, d3_hS_db env, hd.al env, sa.1, hd.wr env,
@@ -597,7 +597,7 @@ Montgomery product of the operands. -/
 theorem d3_mul (env : D3Env M0 P sp0 out sf) (I : D3Inv M0 P sp0 V Ms M n off) (hVsp : V sp = d3G sp0)
     (h1 : fetchRel p384PtDoubleCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel p384PtDoubleCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x11C82) (hoff : off % 2 = 0)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x13A92) (hoff : off % 2 = 0)
     (hd : D3Dst d) (ha0 : reg n a0 = d3G sp0 + BitVec.ofNat 32 d)
     (sa : D3Src sp0 a) (ha1 : reg n a1 = a) (sb : D3Src sp0 b) (ha2 : reg n a2 = b)
     (hA : limbVal (wordsAt M a 12) = A) (hB : limbVal (wordsAt M b 12) = B) (hBp : B < p384) :
@@ -605,7 +605,7 @@ theorem d3_mul (env : D3Env M0 P sp0 out sf) (I : D3Inv M0 P sp0 V Ms M n off) (
       (∀ x, Sep (d3S sp0) 0xF0 x 1 → Sep (d3G sp0 + BitVec.ofNat 32 d) 48 x 1 → M' x = M x) ∧
       limbVal (wordsAt M' (d3G sp0 + BitVec.ofNat 32 d) 12) = p3fm A B := by
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := I.st.callRa (env.codeT I.fr env.code env.sC) h1 h2 hb
-    (even_at P env.hP 0x11C82 (by decide))
+    (even_at P env.hP 0x13A92 (by decide))
   have r1 := PEnv.reg1 regs1 I.st.zero
   have spn : reg n sp = d3G sp0 := by rw [I.keep sp rfl, hVsp]
   obtain ⟨n', c', pc', sp', k', val', fr'⟩ := p384Mul_correct n1 (by rw [mem1]; exact env.mEnv I.fr hd sa sb) pc1
@@ -625,7 +625,7 @@ set_option maxHeartbeats 1000000 in
 theorem d3_sqr (env : D3Env M0 P sp0 out sf) (I : D3Inv M0 P sp0 V Ms M n off) (hVsp : V sp = d3G sp0)
     (h1 : fetchRel p384PtDoubleCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel p384PtDoubleCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x12426) (hoff : off % 2 = 0)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x14236) (hoff : off % 2 = 0)
     (hd : D3Dst d) (ha0 : reg n a0 = d3G sp0 + BitVec.ofNat 32 d)
     (sa : D3Src sp0 a) (ha1 : reg n a1 = a)
     (hA : limbVal (wordsAt M a 12) = A) (hAp : A < p384) :
@@ -633,7 +633,7 @@ theorem d3_sqr (env : D3Env M0 P sp0 out sf) (I : D3Inv M0 P sp0 V Ms M n off) (
       (∀ x, Sep (d3S sp0) 0xF0 x 1 → Sep (d3G sp0 + BitVec.ofNat 32 d) 48 x 1 → M' x = M x) ∧
       limbVal (wordsAt M' (d3G sp0 + BitVec.ofNat 32 d) 12) = p3fm A A := by
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := I.st.callRa (env.codeT I.fr env.code env.sC) h1 h2 hb
-    (even_at P env.hP 0x12426 (by decide))
+    (even_at P env.hP 0x14236 (by decide))
   have r1 := PEnv.reg1 regs1 I.st.zero
   have spn : reg n sp = d3G sp0 := by rw [I.keep sp rfl, hVsp]
   obtain ⟨n', c', pc', sp', k', val', fr'⟩ := p384Sqr_correct n1 (by rw [mem1]; exact env.qEnv I.fr hd sa) pc1
@@ -707,7 +707,7 @@ set_option maxHeartbeats 1000000 in
 theorem d3_dbl (env : D3Env M0 P sp0 out sf) (I : D3Inv M0 P sp0 V Ms M n off) (hVsp : V sp = d3G sp0)
     (h1 : fetchRel p384PtDoubleCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel p384PtDoubleCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x1235E) (hoff : off % 2 = 0)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x1416E) (hoff : off % 2 = 0)
     (hd : D3Dst d) (ha0 : reg n a0 = d3G sp0 + BitVec.ofNat 32 d)
     (sa : D3Src sp0 a) (ha1 : reg n a1 = a)
     (hA : limbVal (wordsAt M a 12) = A) (hAp : A < p384) :
@@ -715,7 +715,7 @@ theorem d3_dbl (env : D3Env M0 P sp0 out sf) (I : D3Inv M0 P sp0 V Ms M n off) (
       (∀ x, Sep (d3S sp0) 0xF0 x 1 → Sep (d3G sp0 + BitVec.ofNat 32 d) 48 x 1 → M' x = M x) ∧
       limbVal (wordsAt M' (d3G sp0 + BitVec.ofNat 32 d) 12) = p3fd A := by
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := I.st.callRa (env.codeT I.fr env.code env.sC) h1 h2 hb
-    (even_at P env.hP 0x1235E (by decide))
+    (even_at P env.hP 0x1416E (by decide))
   have r1 := PEnv.reg1 regs1 I.st.zero
   have spn : reg n sp = d3G sp0 := by rw [I.keep sp rfl, hVsp]
   obtain ⟨n', c', pc', sp', k', val', fr'⟩ := p384Double_correct n1 (by rw [mem1]; exact env.dEnv I.fr hd sa) pc1
@@ -734,7 +734,7 @@ set_option maxHeartbeats 1000000 in
 theorem d3_cpy (env : D3Env M0 P sp0 out sf) (I : D3Inv M0 P sp0 V Ms M n off) {s : Nat}
     (h1 : fetchRel p384PtDoubleCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel p384PtDoubleCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x12C54) (hoff : off % 2 = 0)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x14A64) (hoff : off % 2 = 0)
     (hd : D3Dst d) (hs : D3Dst s) (hds : d + 48 ≤ s ∨ s + 48 ≤ d)
     (ha0 : reg n a0 = d3G sp0 + BitVec.ofNat 32 d)
     (ha1 : reg n a1 = d3G sp0 + BitVec.ofNat 32 s) (ha2 : reg n a2 = 0x30) :
@@ -742,15 +742,15 @@ theorem d3_cpy (env : D3Env M0 P sp0 out sf) (I : D3Inv M0 P sp0 V Ms M n off) {
       (∀ x, Sep (d3S sp0) 0xF0 x 1 → Sep (d3G sp0 + BitVec.ofNat 32 d) 48 x 1 → M' x = M x) ∧
       wordsAt M' (d3G sp0 + BitVec.ofNat 32 d) 12 = wordsAt M (d3G sp0 + BitVec.ofNat 32 s) 12 := by
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := I.st.callRa (env.codeT I.fr env.code env.sC) h1 h2 hb
-    (even_at P env.hP 0x12C54 (by decide))
+    (even_at P env.hP 0x14A64 (by decide))
   have r1 := PEnv.reg1 regs1 I.st.zero
-  have e : P + 0x12C54 + 8 = P + 0x12C5C := by rw [BitVec.add_assoc]; rfl
+  have e : P + 0x14A64 + 8 = P + 0x14A6C := by rw [BitVec.add_assoc]; rfl
   have hGw := env.hGw; have hS := env.hS
-  obtain ⟨n', c', pc', mem', a0', regs'⟩ := memcpy_aligned n1 (P + 0x12C54) (P + BitVec.ofNat 32 (off + 8))
+  obtain ⟨n', c', pc', mem', a0', regs'⟩ := memcpy_aligned n1 (P + 0x14A64) (P + BitVec.ofNat 32 (off + 8))
     (d3G sp0 + BitVec.ofNat 32 d) (d3G sp0 + BitVec.ofNat 32 s) 12
     (fun i hi => by rw [mem1]; exact env.codeT I.fr env.stub env.sU i hi)
     (fun i hi => by rw [mem1, e]; exact env.codeT I.fr env.body env.sB i hi)
-    (even_at P env.hP 0x12C54 (by decide)) pc1
+    (even_at P env.hP 0x14A64 (by decide)) pc1
     (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2]; rfl)
     (by rw [regs1]; simp +decide [upd]) (d3_ret_even env hoff) (by decide) (hd.wr env) (by decide)
     (hd.al env) (hs.al env)
@@ -1009,19 +1009,19 @@ theorem d3_pro (m : Machine) {P sp0 out sf : Word} (env : D3Env m.mem P sp0 out 
     rw [frSv _ (hs.subR (c := i) (l := 1) (by omega))]; exact hc i hi
   have r1 : ∀ r, reg n1 r = (runBlock d3ProA (m.mem, reg m)).2 r := u1.regs
   obtain ⟨n2, c2, pc2, mem2, regs2⟩ := u1.self.callRa (cSv env.code env.sC) p3pd_at_2e p3pd_at_32
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x12C54 (by decide))
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x14A64 (by decide))
   have r2 := PEnv.reg1 regs2 u1.self.zero
-  have e : P + 0x12C54 + 8 = P + 0x12C5C := by rw [BitVec.add_assoc]; rfl
+  have e : P + 0x14A64 + 8 = P + 0x14A6C := by rw [BitVec.add_assoc]; rfl
   have hsfw : (d3G sp0 + BitVec.ofNat 32 0x10).toNat + 4 * 36 < 2 ^ 32 := by
     have := (D3Dst.wr (d := 0x10) env ⟨by decide, by decide, by decide⟩); rw [BitVec.toNat_add, BitVec.toNat_ofNat] at this ⊢
     have := sp0.isLt; omega
   have sDst : Sep (d3G sp0 + BitVec.ofNat 32 0x10) (4 * 36) sf (4 * 36) := by
     rw [d3G_S]; exact (env.sF.symm.sub (c := 0xF0 + 0x10) (l := 144) (by decide))
-  obtain ⟨n3, c3, pc3, mem3, a03, regs3⟩ := memcpy_aligned n2 (P + 0x12C54) (P + BitVec.ofNat 32 (0x2E + 8))
+  obtain ⟨n3, c3, pc3, mem3, a03, regs3⟩ := memcpy_aligned n2 (P + 0x14A64) (P + BitVec.ofNat 32 (0x2E + 8))
     (d3G sp0 + BitVec.ofNat 32 0x10) sf 36
     (fun i hi => by rw [mem2]; exact cSv env.stub env.sU i hi)
     (fun i hi => by rw [mem2, e]; exact cSv env.body env.sB i hi)
-    (even_at P env.hP 0x12C54 (by decide)) pc2
+    (even_at P env.hP 0x14A64 (by decide)) pc2
     (by rw [r2 a0 (by decide), r1, Ea0]; rfl) (by rw [r2 a1 (by decide), r1, Ek a1 (by decide) (by decide)
         (by decide) (by decide) (by decide), ha1])
     (by rw [r2 a2 (by decide), r1, Ea2]; rfl)
@@ -1092,17 +1092,17 @@ theorem d3_epi {M0 M Ms : Word → BitVec 8} {P sp0 out sf : Word} {V : Fin 32 �
       subst this; simp [upd]; exact I.st.zero.symm
     · simp only [upd_app, hq0, h0, h1, h2, ite_false]
   obtain ⟨m2, c2, pc2, mem2, regs2⟩ := u1.self.callRa cM p3pd_at_230 p3pd_at_234
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x12C54 (by decide))
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x14A64 (by decide))
   have r2 := PEnv.reg1 regs2 u1.self.zero
-  have e : P + 0x12C54 + 8 = P + 0x12C5C := by rw [BitVec.add_assoc]; rfl
+  have e : P + 0x14A64 + 8 = P + 0x14A6C := by rw [BitVec.add_assoc]; rfl
   have hwo := env.hwo
   have sOut : Sep out (4 * 36) (d3G sp0 + BitVec.ofNat 32 0x10) (4 * 36) := by
     rw [d3G_S]; exact env.sO.subR (c := 0xF0 + 0x10) (l := 144) (by decide)
-  obtain ⟨m3, c3, pc3, mem3, a03, regs3⟩ := memcpy_aligned m2 (P + 0x12C54) (P + BitVec.ofNat 32 (0x230 + 8))
+  obtain ⟨m3, c3, pc3, mem3, a03, regs3⟩ := memcpy_aligned m2 (P + 0x14A64) (P + BitVec.ofNat 32 (0x230 + 8))
     out (d3G sp0 + BitVec.ofNat 32 0x10) 36
     (fun i hi => by rw [mem2]; exact env.codeT I.fr env.stub env.sU i hi)
     (fun i hi => by rw [mem2, e]; exact env.codeT I.fr env.body env.sB i hi)
-    (even_at P env.hP 0x12C54 (by decide)) pc2
+    (even_at P env.hP 0x14A64 (by decide)) pc2
     (by rw [r2 a0 (by decide), u1.regs]; simp +decide only [upd_app, ↓reduceIte]
         rw [I.keep 20 rfl, hV20]; exact BitVec.zero_add _)
     (by rw [r2 a1 (by decide), u1.regs]; simp +decide only [upd_app, ↓reduceIte]

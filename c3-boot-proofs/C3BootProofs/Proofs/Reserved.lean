@@ -176,7 +176,7 @@ execution that reaches the return address with `sp` restored, `a0` as
 memory outside those 16 bytes as `reservedMem` says. -/
 theorem readerReserved_correct (m : Machine) (base retAddr self n : Word)
     (hcode : CodeAt m base readerReservedCode)
-    (hbcode : CodeAt m (base + 0x9C) readerBytesCode)
+    (hbcode : CodeAt m (base + 0xFFFFD034) readerBytesCode)
     (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
     (ha0 : reg m a0 = self) (ha1 : reg m a1 = n) (hn : n ≠ 0) (hra : reg m ra = retAddr)
     (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
@@ -184,9 +184,9 @@ theorem readerReserved_correct (m : Machine) (base retAddr self n : Word)
     (hbuf : memLoad32 m.mem self ≠ 0 ∧
       (memLoad32 m.mem self).toNat + (memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32)
     (hSr : Sep (reg m sp + 0xFFFFFFF0) 16 base readerReservedCode.length)
-    (hSb : Sep (reg m sp + 0xFFFFFFF0) 16 (base + 0x9C) readerBytesCode.length)
+    (hSb : Sep (reg m sp + 0xFFFFFFF0) 16 (base + 0xFFFFD034) readerBytesCode.length)
     (hEr : Sep (self + 8) 4 base readerReservedCode.length)
-    (hEb : Sep (self + 8) 4 (base + 0x9C) readerBytesCode.length)
+    (hEb : Sep (self + 8) 4 (base + 0xFFFFD034) readerBytesCode.length)
     (hRS : Sep self 12 (reg m sp + 0xFFFFFFF0) 16)
     (hBS : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (reg m sp + 0xFFFFFFF0) 16)
     (hBE : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (self + 8) 4) :
@@ -242,10 +242,10 @@ theorem readerReserved_correct (m : Machine) (base retAddr self n : Word)
       by_cases h5 : r = sp
       · subst h5; simp +decide [upd]
       simp [upd, hr, h1, h2, h3, h4, h5]
-  have hevb : (base + 0x9C).toNat % 2 = 0 := even_at base hbase 0x9C (by decide)
-  have hpc7 : m7.pc = base + 0x9C := by
+  have hevb : (base + 0xFFFFD034).toNat % 2 = 0 := even_at base hbase 0xFFFFD034 (by decide)
+  have hpc7 : m7.pc = base + 0xFFFFD034 := by
     rw [pc7]; simp +decide only [upd, ite_true, ite_false]
-    rw [show base + BitVec.ofNat 32 0x0A + 0 + 0x92 = base + 0x9C by
+    rw [show base + BitVec.ofNat 32 0x0A + 0xFFFFD000 + 0x2A = base + 0xFFFFD034 by
       rw [BitVec.add_assoc, BitVec.add_assoc]; rfl, even_clear _ hevb]
   have hm7 : m7.mem = M1 := mem7
   have hSself : Sep G 16 self 12 := hRS.symm
@@ -258,7 +258,7 @@ theorem readerReserved_correct (m : Machine) (base retAddr self n : Word)
     rw [show self + 4 = self + BitVec.ofNat 32 4 from rfl, ld1 4 (by omega)]; exact hlen
   have l1e : memLoad32 M1 (self + 8) = memLoad32 m.mem (self + 8) := ld1 8 (by omega)
   have hG4 : (G + 4).toNat % 4 = 0 := aligned_add hGa (k := 4) (by decide)
-  obtain ⟨m8, c8, pc8, mem8, fr8⟩ := readerBytes_correct m7 (base + 0x9C)
+  obtain ⟨m8, c8, pc8, mem8, fr8⟩ := readerBytes_correct m7 (base + 0xFFFFD034)
     (base + BitVec.ofNat 32 0x12) (G + 4) self n
     (fun i hi => by rw [hm7, M1out _ (hSb.subR (c := i) (l := 1) (by omega))]; exact hbcode i hi)
     hpc7 (by rw [r7]; simp +decide) (by rw [r7]; simp +decide) (by rw [r7]; simp +decide)

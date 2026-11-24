@@ -60,28 +60,28 @@ apart from what each must not touch. -/
 structure IIEnv (M : Word → BitVec 8) (P sp0 d : Word) : Prop where
   hP : P.toNat % 2 = 0
   cod : CodeIn M P derIntegerIsCode
-  int : CodeIn M (P + 0xFFFFF8B0) derIntegerCode
-  elem : CodeIn M (P + 0xFFFFF8B0 + 0x5E) derElementCode
-  tlv : CodeIn M (P + 0xFFFFF8B0 + 0x5E + 0x26) derTlvCode
-  seq : CodeIn M (P + 0xFFFFFFEA) sliceEqCode
-  esl : CodeIn M (P + 0xFFFFFFEA + 0xFFFFF776) equalSameLengthCode
-  mcm : CodeIn M (P + 0xFFFFFFEA + 0xC088) memcmpCode
+  int : CodeIn M (P + 0xFFFFCFB8) derIntegerCode
+  elem : CodeIn M (P + 0xFFFFCFB8 + 0x5E) derElementCode
+  tlv : CodeIn M (P + 0xFFFFCFB8 + 0x5E + 0x26) derTlvCode
+  seq : CodeIn M (P + 0xFFFFE184) sliceEqCode
+  esl : CodeIn M (P + 0xFFFFE184 + 0xFFFFEBAA) equalSameLengthCode
+  mcm : CodeIn M (P + 0xFFFFE184 + 0xBF68) memcmpCode
   hsp : sp0.toNat % 4 = 0
   hS : 0x40 ≤ sp0.toNat
   hd : d.toNat % 4 = 0
   sGC : Sep (sp0 + 0xFFFFFFC0) 0x40 P derIntegerIsCode.length
-  sGI : Sep (sp0 + 0xFFFFFFC0) 0x40 (P + 0xFFFFF8B0) derIntegerCode.length
-  sGE : Sep (sp0 + 0xFFFFFFC0) 0x40 (P + 0xFFFFF8B0 + 0x5E) derElementCode.length
-  sGT : Sep (sp0 + 0xFFFFFFC0) 0x40 (P + 0xFFFFF8B0 + 0x5E + 0x26) derTlvCode.length
-  sGQ : Sep (sp0 + 0xFFFFFFC0) 0x40 (P + 0xFFFFFFEA) sliceEqCode.length
-  sGL : Sep (sp0 + 0xFFFFFFC0) 0x40 (P + 0xFFFFFFEA + 0xFFFFF776) equalSameLengthCode.length
-  sGM : Sep (sp0 + 0xFFFFFFC0) 0x40 (P + 0xFFFFFFEA + 0xC088) memcmpCode.length
+  sGI : Sep (sp0 + 0xFFFFFFC0) 0x40 (P + 0xFFFFCFB8) derIntegerCode.length
+  sGE : Sep (sp0 + 0xFFFFFFC0) 0x40 (P + 0xFFFFCFB8 + 0x5E) derElementCode.length
+  sGT : Sep (sp0 + 0xFFFFFFC0) 0x40 (P + 0xFFFFCFB8 + 0x5E + 0x26) derTlvCode.length
+  sGQ : Sep (sp0 + 0xFFFFFFC0) 0x40 (P + 0xFFFFE184) sliceEqCode.length
+  sGL : Sep (sp0 + 0xFFFFFFC0) 0x40 (P + 0xFFFFE184 + 0xFFFFEBAA) equalSameLengthCode.length
+  sGM : Sep (sp0 + 0xFFFFFFC0) 0x40 (P + 0xFFFFE184 + 0xBF68) memcmpCode.length
   sDC : Sep (d + 8) 8 P derIntegerIsCode.length
-  sDI : Sep (d + 8) 8 (P + 0xFFFFF8B0) derIntegerCode.length
-  sDT : Sep (d + 8) 8 (P + 0xFFFFF8B0 + 0x5E + 0x26) derTlvCode.length
-  sDQ : Sep (d + 8) 8 (P + 0xFFFFFFEA) sliceEqCode.length
-  sDL : Sep (d + 8) 8 (P + 0xFFFFFFEA + 0xFFFFF776) equalSameLengthCode.length
-  sDM : Sep (d + 8) 8 (P + 0xFFFFFFEA + 0xC088) memcmpCode.length
+  sDI : Sep (d + 8) 8 (P + 0xFFFFCFB8) derIntegerCode.length
+  sDT : Sep (d + 8) 8 (P + 0xFFFFCFB8 + 0x5E + 0x26) derTlvCode.length
+  sDQ : Sep (d + 8) 8 (P + 0xFFFFE184) sliceEqCode.length
+  sDL : Sep (d + 8) 8 (P + 0xFFFFE184 + 0xFFFFEBAA) equalSameLengthCode.length
+  sDM : Sep (d + 8) 8 (P + 0xFFFFE184 + 0xBF68) memcmpCode.length
   sDG : Sep (d + 8) 8 (sp0 + 0xFFFFFFC0) 0x40
   sRG : Sep (memLoad32 M (d + 8)) (memLoad32 M (d + 0xC)).toNat (sp0 + 0xFFFFFFC0) 0x40
   sDR : Sep (d + 8) 8 (memLoad32 M (d + 8)) (memLoad32 M (d + 0xC)).toNat
@@ -201,8 +201,8 @@ theorem derIntegerIs_correct (m : Machine) {P sp0 d retAddr : Word} (env : IIEnv
   obtain ⟨m3, c3, u3⟩ := St.block [.alu .add (9 : Fin 32) x0 a1, .alu .add a1 x0 a0, .aluImm .add a0 sp 0x8]
     u2.self hcS (off' := 0xE) (by decide) (by simp [BlockOk, BInstr.ok])
   simp only [runBlock, BInstr.run] at u3
-  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.callRa hcS ii_at_e ii_at_12 (cb := P + 0xFFFFF8B0)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFF8B0 (by decide))
+  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.callRa hcS ii_at_e ii_at_12 (cb := P + 0xFFFFCFB8)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFCFB8 (by decide))
   have r4 := PEnv.reg1 regs4 u3.zero
   have k4 : ∀ q, q ≠ ra → q ≠ a0 → q ≠ a1 → q ≠ (9 : Fin 32) → q ≠ sp → reg m4 q = reg m q :=
     fun q hr h0 h1 h9 hs => by
@@ -225,9 +225,9 @@ theorem derIntegerIs_correct (m : Machine) {P sp0 d retAddr : Word} (env : IIEnv
       exact sDG.symm.subR (by omega))
   have eL : memBytes Msv rp rl.toNat = memBytes m.mem rp rl.toNat :=
     memBytes_congr fun i hi => frSvG _ (sRG.symm.subR (c := i) (l := 1) (by omega))
-  have hI : DerCallEnv m4.mem derIntegerCode (P + 0xFFFFF8B0) 0x5E F (F + 8) d 8 := by
+  have hI : DerCallEnv m4.mem derIntegerCode (P + 0xFFFFCFB8) 0x5E F (F + 8) d 8 := by
     rw [mem4]
-    refine ⟨even_at P env.hP 0xFFFFF8B0 (by decide), by rw [BitVec.add_assoc]; exact even_at P env.hP 0xFFFFF90E (by decide),
+    refine ⟨even_at P env.hP 0xFFFFCFB8 (by decide), by rw [BitVec.add_assoc]; exact even_at P env.hP 0xFFFFD016 (by decide),
       cIn env.int sGI frSvG, cIn env.elem sGE frSvG, cIn env.tlv sGT frSvG, hFa, by omega,
       aligned_add hFa (k := 8) (by decide), env.hd, by rw [eFG]; exact inI sGI, by rw [eFG]; exact inI sGE,
       by rw [eFG]; exact inI sGT, (inF sGI).sub (by decide), env.sDI, env.sDT, ?_, ?_, ?_, by rw [eD8]; exact hrp0,
@@ -389,8 +389,8 @@ theorem derIntegerIs_correct (m : Machine) {P sp0 d retAddr : Word} (env : IIEnv
     obtain ⟨n10, c10, u10⟩ := St.block [.aluImm .add a2 sp 0x13, .aluImm .add a3 x0 1, .alu .add a0 x0 (8 : Fin 32)]
       u9.self hc9 (off' := 0x28) (by decide) (by simp [BlockOk, BInstr.ok])
     simp only [runBlock, BInstr.run] at u10
-    obtain ⟨n11, c11, pc11, mem11, regs11⟩ := u10.callRa hc9 ii_at_28 ii_at_2c (cb := P + 0xFFFFFFEA)
-      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFFFEA (by decide))
+    obtain ⟨n11, c11, pc11, mem11, regs11⟩ := u10.callRa hc9 ii_at_28 ii_at_2c (cb := P + 0xFFFFE184)
+      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFE184 (by decide))
     have r11 := PEnv.reg1 regs11 u10.zero
     have k11 : ∀ q', q' ≠ ra → q' ≠ a0 → q' ≠ a2 → q' ≠ a3 → reg n11 q' = reg n8 q' := fun q' hr h0 h2 h3 => by
       rw [r11 q' hr, updz ((updz (upd_zero _ _ _) (by decide)).trans (upd_zero _ _ _)) h0, updz (upd_zero _ _ _) h3,
@@ -407,8 +407,8 @@ theorem derIntegerIs_correct (m : Machine) {P sp0 d retAddr : Word} (env : IIEnv
       rw [frM _ (hs.subR (c := i) (l := 1) (by omega)), derAdvance_outside _ (hd.subR (c := i) (l := 1) (by omega))]
       exact hcb i hi
     have s88 : reg n8 8 = q := by rw [u8.regs, upd_ne' (by decide) u7.self.zero, u7.regs, v6']
-    obtain ⟨n12, c12, pc12, a012, k12, mem12⟩ := sliceEq_correct n11 (base := P + 0xFFFFFFEA) (p := q) (pl := t.len)
-      (q := F + 0x13) (ql := 1) (even_at P env.hP 0xFFFFFFEA (by decide)) (by rw [mem11]; exact hcM env.seq sGQ env.sDQ)
+    obtain ⟨n12, c12, pc12, a012, k12, mem12⟩ := sliceEq_correct n11 (base := P + 0xFFFFE184) (p := q) (pl := t.len)
+      (q := F + 0x13) (ql := 1) (even_at P env.hP 0xFFFFE184 (by decide)) (by rw [mem11]; exact hcM env.seq sGQ env.sDQ)
       (by rw [mem11]; exact hcM env.esl sGL env.sDL) (by rw [mem11]; exact hcM env.mcm sGM env.sDM) pc11
       (by rw [r11 a0 (by decide)]; simp +decide only [upd_app, ↓reduceIte]; rw [u9.regs, s88]; exact zw q)
       (by rw [k11 a1 (by decide) (by decide) (by decide) (by decide), v8, hl])

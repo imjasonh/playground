@@ -204,7 +204,7 @@ structure PkEnv (M : Word → BitVec 8) : Prop where
   pko : CodeIn M PKO ed25519PublicKeyOkCode
   ltl : CodeIn M (BitVec.ofNat 32 lessThanLeAddress) lessThanLeCode
   aeq : CodeIn M (BitVec.ofNat 32 arr32EqCryptoAddress) arr32EqCryptoCode
-  mcmp : CodeIn M (BitVec.ofNat 32 arr32EqCryptoAddress + 0xFA86) memcmpCode
+  mcmp : CodeIn M (BitVec.ofNat 32 arr32EqCryptoAddress + 0x11896) memcmpCode
 
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 32000000 in

@@ -162,9 +162,9 @@ structure ESEnv (M : Word → BitVec 8) (P sp0 out p : Word) (n : Nat) : Prop wh
   int : CodeIn M (P + 0xFFFFFE90) derIntegerCode
   zip : CodeIn M (P + 0xFFFFFE6E) zipSkipNextCode
   sc : CodeIn M (P + 0x10C) derScalar48Code
-  mset : CodeIn M (P + 0xC672) memsetCode
-  mcs : CodeIn M (P + 0xC6DA) memcpyStubCode
-  mcb : CodeIn M (P + 0xC6E2) memcpyBodyCode
+  mset : CodeIn M (P + 0xCFE4) memsetCode
+  mcs : CodeIn M (P + 0xD04C) memcpyStubCode
+  mcb : CodeIn M (P + 0xD054) memcpyBodyCode
   hsp : sp0.toNat % 4 = 0
   hS : 0x170 ≤ sp0.toNat
   how : out.toNat + 97 < 2 ^ 32
@@ -179,12 +179,12 @@ structure ESEnv (M : Word → BitVec 8) (P sp0 out p : Word) (n : Nat) : Prop wh
   sGI : Sep (sp0 + 0xFFFFFE90) 0x170 (P + 0xFFFFFE90) derIntegerCode.length
   sGZ : Sep (sp0 + 0xFFFFFE90) 0x170 (P + 0xFFFFFE6E) zipSkipNextCode.length
   sGS : Sep (sp0 + 0xFFFFFE90) 0x170 (P + 0x10C) derScalar48Code.length
-  sGM : Sep (sp0 + 0xFFFFFE90) 0x170 (P + 0xC672) memsetCode.length
-  sGU : Sep (sp0 + 0xFFFFFE90) 0x170 (P + 0xC6DA) memcpyStubCode.length
-  sGB : Sep (sp0 + 0xFFFFFE90) 0x170 (P + 0xC6E2) memcpyBodyCode.length
+  sGM : Sep (sp0 + 0xFFFFFE90) 0x170 (P + 0xCFE4) memsetCode.length
+  sGU : Sep (sp0 + 0xFFFFFE90) 0x170 (P + 0xD04C) memcpyStubCode.length
+  sGB : Sep (sp0 + 0xFFFFFE90) 0x170 (P + 0xD054) memcpyBodyCode.length
   sOC : Sep out 97 P ecdsaSignature48Code.length
-  sOB : Sep out 97 (P + 0xC6E2) memcpyBodyCode.length
-  sOU : Sep out 97 (P + 0xC6DA) memcpyStubCode.length
+  sOB : Sep out 97 (P + 0xD054) memcpyBodyCode.length
+  sOU : Sep out 97 (P + 0xD04C) memcpyStubCode.length
   sOG : Sep out 97 (sp0 + 0xFFFFFE90) 0x170
   sDG : Sep p n (sp0 + 0xFFFFFE90) 0x170
 
@@ -571,24 +571,24 @@ theorem ecdsaSignature48_correct (m : Machine) {P sp0 out p retAddr : Word} {n :
       St Mx P n o (reg n) → CodeIn Mx P ecdsaSignature48Code →
       fetchRel ecdsaSignature48Code o = some (.auipc ra imm, 4) →
       fetchRel ecdsaSignature48Code (o + 4) = some (.jalr ra ra oo, 4) →
-      P + BitVec.ofNat 32 o + imm + oo = P + 0xC6DA → (o + 8) % 2 = 0 →
-      CodeIn Mx (P + 0xC6DA) memcpyStubCode → CodeIn Mx (P + 0xC6E2) memcpyBodyCode →
+      P + BitVec.ofNat 32 o + imm + oo = P + 0xD04C → (o + 8) % 2 = 0 →
+      CodeIn Mx (P + 0xD04C) memcpyStubCode → CodeIn Mx (P + 0xD054) memcpyBodyCode →
       reg n sp = F → reg n a0 = dst → reg n a1 = src → reg n a2 = BitVec.ofNat 32 N →
-      Sep dst N (P + 0xC6E2) memcpyBodyCode.length → Sep dst N (G + BitVec.ofNat 32 0x90) 16 →
+      Sep dst N (P + 0xD054) memcpyBodyCode.length → Sep dst N (G + BitVec.ofNat 32 0x90) 16 →
       Sep src N (G + BitVec.ofNat 32 0x90) 16 → Sep dst N src N → dst.toNat + N < 2 ^ 32 → src.toNat + N < 2 ^ 32 →
       ∃ n', Steps n n' ∧ St n'.mem P n' (o + 8) (reg n') ∧ reg n' sp = F ∧
         (∀ x, Sep (G + BitVec.ofNat 32 0x90) 16 x 1 → n'.mem x = copyBytes Mx dst src N x) ∧
         ∀ r, r.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' r = reg n r := by
     intro Mx n o imm oo dst src N st hc h1 h2 hb ho hcs hcb rsp ra0 ra1 ra2 sDB sDF sSF sDS hdw hsw
-    obtain ⟨n1, c1, pc1, mem1, regs1⟩ := st.callRa hc h1 h2 (cb := P + 0xC6DA) hb (even_at P env.hP 0xC6DA (by decide))
+    obtain ⟨n1, c1, pc1, mem1, regs1⟩ := st.callRa hc h1 h2 (cb := P + 0xD04C) hb (even_at P env.hP 0xD04C (by decide))
     have r1 := PEnv.reg1 regs1 st.zero
     have sp1 : reg n1 sp = F := by rw [r1 sp (by decide), rsp]
-    obtain ⟨n2, c2, pc2, sp2', a02, mem2, k2⟩ := memcpy_correct n1 (P + 0xC6DA) (P + BitVec.ofNat 32 (o + 8))
-      dst src N (by show CodeIn n1.mem _ _; rw [mem1]; exact hcs) (even_at P env.hP 0xC6DA (by decide)) pc1
+    obtain ⟨n2, c2, pc2, sp2', a02, mem2, k2⟩ := memcpy_correct n1 (P + 0xD04C) (P + BitVec.ofNat 32 (o + 8))
+      dst src N (by show CodeIn n1.mem _ _; rw [mem1]; exact hcs) (even_at P env.hP 0xD04C (by decide)) pc1
       (by rw [r1 a0 (by decide), ra0]) (by rw [r1 a1 (by decide), ra1]) (by rw [r1 a2 (by decide), ra2])
       (by rw [regs1]; simp +decide [upd]) (even_clear _ (even_at P env.hP (o + 8) ho))
       (by
-        rw [mem1, sp1, eSc, show P + 0xC6DA + 8 = P + 0xC6E2 by rw [BitVec.add_assoc]; rfl]
+        rw [mem1, sp1, eSc, show P + 0xD04C + 8 = P + 0xD054 by rw [BitVec.add_assoc]; rfl]
         exact ⟨hcb, sDB, (sGB.sub (c := 0x90) (l := 16) (by decide)), sDF, sSF, sDS,
           aligned_add hGa (k := 0x90) (by decide), by rw [BitVec.toNat_add, ofNat_tn (by decide)]; omega, hdw, hsw⟩)
     refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, by rw [sp2', sp1], fun x hx => ?_, fun r hr => ?_⟩
@@ -1254,11 +1254,11 @@ theorem ecdsaSignature48_correct (m : Machine) {P sp0 out p retAddr : Word} {n :
               rw [back32 _ ((sGC.sub (c := 0x90) (l := 16) (by decide)).subR (c := i) (l := 1) (by omega))
                 ((cOut (c := 2) (n := 47) (by decide) env.sOC).subR (c := i) (l := 1) (by omega))]
               exact hc27 i hi
-            have hcU32 : CodeIn m32.mem (P + 0xC6DA) memcpyStubCode := fun i hi => by
+            have hcU32 : CodeIn m32.mem (P + 0xD04C) memcpyStubCode := fun i hi => by
               rw [back32 _ ((sGU.sub (c := 0x90) (l := 16) (by decide)).subR (c := i) (l := 1) (by omega))
                 ((cOut (c := 2) (n := 47) (by decide) env.sOU).subR (c := i) (l := 1) (by omega))]
               exact cIn env.mcs sGU M27O i hi
-            have hcB32 : CodeIn m32.mem (P + 0xC6E2) memcpyBodyCode := fun i hi => by
+            have hcB32 : CodeIn m32.mem (P + 0xD054) memcpyBodyCode := fun i hi => by
               rw [back32 _ ((sGB.sub (c := 0x90) (l := 16) (by decide)).subR (c := i) (l := 1) (by omega))
                 ((cOut (c := 2) (n := 47) (by decide) env.sOB).subR (c := i) (l := 1) (by omega))]
               exact cIn env.mcb sGB M27O i hi

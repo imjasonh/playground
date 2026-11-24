@@ -897,11 +897,11 @@ callees', the 0x80 bytes of stack below `sp0`, the result `out`, the option
 structure UOEnv (M : Word → BitVec 8) (P sp0 out s d : Word) : Prop where
   hP : P.toNat % 2 = 0
   cod : CodeIn M P unwrapOr384Code
-  cs : CodeIn M (P + 0x1070C) condSelect384Code
-  stub : CodeIn M (P + 0x1070C + 0x101A) memcpyStubCode
-  body : CodeIn M (P + 0x1070C + 0x101A + 8) memcpyBodyCode
-  cta : CodeIn M (P + 0x1070C + 0x2EC) uint12CtAssignCode
-  sca : CodeIn M (P + 0x1070C + 0x2EC + 0xFFFF9B66) sliceCtAssignCode
+  cs : CodeIn M (P + 0x1251C) condSelect384Code
+  stub : CodeIn M (P + 0x1251C + 0x101A) memcpyStubCode
+  body : CodeIn M (P + 0x1251C + 0x101A + 8) memcpyBodyCode
+  cta : CodeIn M (P + 0x1251C + 0x2EC) uint12CtAssignCode
+  sca : CodeIn M (P + 0x1251C + 0x2EC + 0xFFFF9B66) sliceCtAssignCode
   hsp : sp0.toNat % 4 = 0
   hS : 0x80 ≤ sp0.toNat
   hs : s.toNat % 4 = 0
@@ -909,17 +909,17 @@ structure UOEnv (M : Word → BitVec 8) (P sp0 out s d : Word) : Prop where
   hdw : d.toNat + 0x61 < 2 ^ 32
   how : out.toNat + 0x61 < 2 ^ 32
   sGC : Sep (sp0 + 0xFFFFFF80) 0x80 P unwrapOr384Code.length
-  sGK : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0x1070C) condSelect384Code.length
-  sGS : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0x1070C + 0x101A) memcpyStubCode.length
-  sGB : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0x1070C + 0x101A + 8) memcpyBodyCode.length
-  sGT : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0x1070C + 0x2EC) uint12CtAssignCode.length
-  sGA : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0x1070C + 0x2EC + 0xFFFF9B66) sliceCtAssignCode.length
+  sGK : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0x1251C) condSelect384Code.length
+  sGS : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0x1251C + 0x101A) memcpyStubCode.length
+  sGB : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0x1251C + 0x101A + 8) memcpyBodyCode.length
+  sGT : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0x1251C + 0x2EC) uint12CtAssignCode.length
+  sGA : Sep (sp0 + 0xFFFFFF80) 0x80 (P + 0x1251C + 0x2EC + 0xFFFF9B66) sliceCtAssignCode.length
   sOC : Sep out 0x61 P unwrapOr384Code.length
-  sOK : Sep out 0x61 (P + 0x1070C) condSelect384Code.length
-  sOB : Sep out 0x61 (P + 0x1070C + 0x101A + 8) memcpyBodyCode.length
-  sOU : Sep out 0x61 (P + 0x1070C + 0x101A) memcpyStubCode.length
-  sOT : Sep out 0x61 (P + 0x1070C + 0x2EC) uint12CtAssignCode.length
-  sOA : Sep out 0x61 (P + 0x1070C + 0x2EC + 0xFFFF9B66) sliceCtAssignCode.length
+  sOK : Sep out 0x61 (P + 0x1251C) condSelect384Code.length
+  sOB : Sep out 0x61 (P + 0x1251C + 0x101A + 8) memcpyBodyCode.length
+  sOU : Sep out 0x61 (P + 0x1251C + 0x101A) memcpyStubCode.length
+  sOT : Sep out 0x61 (P + 0x1251C + 0x2EC) uint12CtAssignCode.length
+  sOA : Sep out 0x61 (P + 0x1251C + 0x2EC + 0xFFFF9B66) sliceCtAssignCode.length
   sOG : Sep out 0x61 (sp0 + 0xFFFFFF80) 0x80
   sSG : Sep s 0x65 (sp0 + 0xFFFFFF80) 0x80
   sDG : Sep d 0x61 (sp0 + 0xFFFFFF80) 0x80
@@ -1047,12 +1047,12 @@ theorem unwrapOr384_correct (m : Machine) {P sp0 out s d retAddr : Word} (env : 
       | (rw [r2 a1 (by decide), ha1, ev_add, ev_add, zw, zw])
       | (rw [r2 a1 (by decide), ha1, ev_add, zw, cv])
   obtain ⟨v38, v39, v318, v319, v3a1, v3a2, v3a3, v3a0, v3sp⟩ := v3
-  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa hc2 uo4_at_1c uo4_at_20 (cb := P + 0x1070C)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x1070C (by decide))
+  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa hc2 uo4_at_1c uo4_at_20 (cb := P + 0x1251C)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x1251C (by decide))
   have r4 := PEnv.reg1 regs4 u3.self.zero
-  have env1 : CSEnv m4.mem (P + 0x1070C) F out d s := by
+  have env1 : CSEnv m4.mem (P + 0x1251C) F out d s := by
     rw [mem4]
-    exact ⟨even_at P env.hP 0x1070C (by decide), cIn env.cs sGK frSv, cIn env.stub sGS frSv, cIn env.body sGB frSv,
+    exact ⟨even_at P env.hP 0x1251C (by decide), cIn env.cs sGK frSv, cIn env.stub sGS frSv, cIn env.body sGB frSv,
       cIn env.cta sGT frSv, cIn env.sca sGA frSv, hFa, by omega, env.hs, by have := env.hdw; omega,
       by have := env.how; omega, inK sGK, inK sGS, inK sGB, inK sGT, inK sGA, rs env.sOK (by decide),
       rs env.sOB (by decide), inK' (rs sOG (by decide)), inK' (rs sDG (by decide)), inK' (rs sSG (by decide))⟩
@@ -1078,16 +1078,16 @@ theorem unwrapOr384_correct (m : Machine) {P sp0 out s d retAddr : Word} (env : 
   simp only [runBlock, BInstr.run] at u6
   have k6 : ∀ q, q.val ≠ 0 → q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → reg m6 q = reg m5 q := fun q hv h0 h1 h2 h3 => by
     rw [u6.regs, upd_ne hv h3, upd_ne hv h0, upd_ne hv h2, upd_ne hv h1]
-  obtain ⟨m7, c7, pc7, mem7, regs7⟩ := u6.self.callRa hc5 uo4_at_32 uo4_at_36 (cb := P + 0x1070C)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x1070C (by decide))
+  obtain ⟨m7, c7, pc7, mem7, regs7⟩ := u6.self.callRa hc5 uo4_at_32 uo4_at_36 (cb := P + 0x1251C)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x1251C (by decide))
   have r7 := PEnv.reg1 regs7 u6.self.zero
   have fr5c : ∀ {b : Word} {code' : List Nat}, CodeIn m.mem b code' → Sep G 0x80 b code'.length →
       Sep out 0x61 b code'.length → CodeIn m5.mem b code' := fun hc hs ho i hi => by
     rw [fr5 _ (hs.subR (c := i) (l := 1) (by omega)) ((rs ho (by decide)).subR (c := i) (l := 1) (by omega))]
     exact hc i hi
-  have env2 : CSEnv m7.mem (P + 0x1070C) F (out + 0x30) (d + 0x30) (s + 0x30) := by
+  have env2 : CSEnv m7.mem (P + 0x1251C) F (out + 0x30) (d + 0x30) (s + 0x30) := by
     rw [mem7]
-    exact ⟨even_at P env.hP 0x1070C (by decide), fr5c env.cs sGK env.sOK, fr5c env.stub sGS env.sOU,
+    exact ⟨even_at P env.hP 0x1251C (by decide), fr5c env.cs sGK env.sOK, fr5c env.stub sGS env.sOU,
       fr5c env.body sGB env.sOB, fr5c env.cta sGT env.sOT, fr5c env.sca sGA env.sOA, hFa, by omega,
       aligned_add env.hs (by decide),
       by rw [e30, BitVec.toNat_add, BitVec.toNat_ofNat]; have := env.hdw; omega,
@@ -1261,10 +1261,10 @@ callees', the 0x70 bytes of stack below `sp0`, the result `out`, the option
 structure UO2Env (M : Word → BitVec 8) (P sp0 out s d : Word) : Prop where
   hP : P.toNat % 2 = 0
   cod : CodeIn M P unwrapOr256Code
-  cs : CodeIn M (P + 0xE460) condSelect256Code
-  stub : CodeIn M (P + 0xE460 + 0x323E) memcpyStubCode
-  body : CodeIn M (P + 0xE460 + 0x323E + 8) memcpyBodyCode
-  sca : CodeIn M (P + 0xE460 + 0xFFFFC076) sliceCtAssignCode
+  cs : CodeIn M (P + 0x10270) condSelect256Code
+  stub : CodeIn M (P + 0x10270 + 0x323E) memcpyStubCode
+  body : CodeIn M (P + 0x10270 + 0x323E + 8) memcpyBodyCode
+  sca : CodeIn M (P + 0x10270 + 0xFFFFC076) sliceCtAssignCode
   hsp : sp0.toNat % 4 = 0
   hS : 0x70 ≤ sp0.toNat
   hs : s.toNat % 4 = 0
@@ -1272,15 +1272,15 @@ structure UO2Env (M : Word → BitVec 8) (P sp0 out s d : Word) : Prop where
   hdw : d.toNat + 0x41 < 2 ^ 32
   how : out.toNat + 0x41 < 2 ^ 32
   sGC : Sep (sp0 + 0xFFFFFF90) 0x70 P unwrapOr256Code.length
-  sGK : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xE460) condSelect256Code.length
-  sGS : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xE460 + 0x323E) memcpyStubCode.length
-  sGB : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xE460 + 0x323E + 8) memcpyBodyCode.length
-  sGA : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0xE460 + 0xFFFFC076) sliceCtAssignCode.length
+  sGK : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0x10270) condSelect256Code.length
+  sGS : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0x10270 + 0x323E) memcpyStubCode.length
+  sGB : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0x10270 + 0x323E + 8) memcpyBodyCode.length
+  sGA : Sep (sp0 + 0xFFFFFF90) 0x70 (P + 0x10270 + 0xFFFFC076) sliceCtAssignCode.length
   sOC : Sep out 0x41 P unwrapOr256Code.length
-  sOK : Sep out 0x41 (P + 0xE460) condSelect256Code.length
-  sOB : Sep out 0x41 (P + 0xE460 + 0x323E + 8) memcpyBodyCode.length
-  sOU : Sep out 0x41 (P + 0xE460 + 0x323E) memcpyStubCode.length
-  sOA : Sep out 0x41 (P + 0xE460 + 0xFFFFC076) sliceCtAssignCode.length
+  sOK : Sep out 0x41 (P + 0x10270) condSelect256Code.length
+  sOB : Sep out 0x41 (P + 0x10270 + 0x323E + 8) memcpyBodyCode.length
+  sOU : Sep out 0x41 (P + 0x10270 + 0x323E) memcpyStubCode.length
+  sOA : Sep out 0x41 (P + 0x10270 + 0xFFFFC076) sliceCtAssignCode.length
   sOG : Sep out 0x41 (sp0 + 0xFFFFFF90) 0x70
   sSG : Sep s 0x45 (sp0 + 0xFFFFFF90) 0x70
   sDG : Sep d 0x41 (sp0 + 0xFFFFFF90) 0x70
@@ -1408,12 +1408,12 @@ theorem unwrapOr256_correct (m : Machine) {P sp0 out s d retAddr : Word} (env : 
       | (rw [r2 a1 (by decide), ha1, ev_add, ev_add, zw, zw])
       | (rw [r2 a1 (by decide), ha1, ev_add, zw, cv])
   obtain ⟨v38, v39, v318, v319, v3a1, v3a2, v3a3, v3a0, v3sp⟩ := v3
-  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa hc2 uo2_at_1c uo2_at_20 (cb := P + 0xE460)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xE460 (by decide))
+  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa hc2 uo2_at_1c uo2_at_20 (cb := P + 0x10270)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x10270 (by decide))
   have r4 := PEnv.reg1 regs4 u3.self.zero
-  have env1 : CS2Env m4.mem (P + 0xE460) F out d s := by
+  have env1 : CS2Env m4.mem (P + 0x10270) F out d s := by
     rw [mem4]
-    exact ⟨even_at P env.hP 0xE460 (by decide), cIn env.cs sGK frSv, cIn env.stub sGS frSv, cIn env.body sGB frSv,
+    exact ⟨even_at P env.hP 0x10270 (by decide), cIn env.cs sGK frSv, cIn env.stub sGS frSv, cIn env.body sGB frSv,
       cIn env.sca sGA frSv, hFa, by omega, env.hs, by have := env.hdw; omega,
       by have := env.how; omega, inK sGK, inK sGS, inK sGB, inK sGA, rs env.sOK (by decide),
       rs env.sOB (by decide), inK' (rs sOG (by decide)), inK' (rs sDG (by decide)), inK' (rs sSG (by decide))⟩
@@ -1439,16 +1439,16 @@ theorem unwrapOr256_correct (m : Machine) {P sp0 out s d retAddr : Word} (env : 
   simp only [runBlock, BInstr.run] at u6
   have k6 : ∀ q, q.val ≠ 0 → q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → reg m6 q = reg m5 q := fun q hv h0 h1 h2 h3 => by
     rw [u6.regs, upd_ne hv h3, upd_ne hv h0, upd_ne hv h2, upd_ne hv h1]
-  obtain ⟨m7, c7, pc7, mem7, regs7⟩ := u6.self.callRa hc5 uo2_at_32 uo2_at_36 (cb := P + 0xE460)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xE460 (by decide))
+  obtain ⟨m7, c7, pc7, mem7, regs7⟩ := u6.self.callRa hc5 uo2_at_32 uo2_at_36 (cb := P + 0x10270)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x10270 (by decide))
   have r7 := PEnv.reg1 regs7 u6.self.zero
   have fr5c : ∀ {b : Word} {code' : List Nat}, CodeIn m.mem b code' → Sep G 0x70 b code'.length →
       Sep out 0x41 b code'.length → CodeIn m5.mem b code' := fun hc hs ho i hi => by
     rw [fr5 _ (hs.subR (c := i) (l := 1) (by omega)) ((rs ho (by decide)).subR (c := i) (l := 1) (by omega))]
     exact hc i hi
-  have env2 : CS2Env m7.mem (P + 0xE460) F (out + 0x20) (d + 0x20) (s + 0x20) := by
+  have env2 : CS2Env m7.mem (P + 0x10270) F (out + 0x20) (d + 0x20) (s + 0x20) := by
     rw [mem7]
-    exact ⟨even_at P env.hP 0xE460 (by decide), fr5c env.cs sGK env.sOK, fr5c env.stub sGS env.sOU,
+    exact ⟨even_at P env.hP 0x10270 (by decide), fr5c env.cs sGK env.sOK, fr5c env.stub sGS env.sOU,
       fr5c env.body sGB env.sOB, fr5c env.sca sGA env.sOA, hFa, by omega,
       aligned_add env.hs (by decide),
       by rw [e20, BitVec.toNat_add, BitVec.toNat_ofNat]; have := env.hdw; omega,

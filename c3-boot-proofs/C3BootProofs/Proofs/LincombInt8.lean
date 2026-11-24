@@ -172,7 +172,7 @@ theorem lc8_at_182 : fetchRel lincomb8Code 0x182 = some (.jalr x0 ra 0x0, 2) := 
 end
 
 /-- `borrowing_sub`'s offset from `lincomb_int`. -/
-abbrev lcBsub8 (P : Word) : Word := P + 0xFFFF157E
+abbrev lcBsub8 (P : Word) : Word := P + 0xFFFEF76E
 
 /-- The start of one limb of the difference: load the limbs and the borrow. -/
 def lcHead8 : List BInstr := [.lw a0 (22 : Fin 32) 0x0, .lw a1 (23 : Fin 32) 0x0, .alu .add a2 x0 (24 : Fin 32)]
@@ -190,7 +190,7 @@ structure LcLoopAt8 (o : Nat) (imm jo : Word) : Prop where
   hHead : blockEnd lincomb8Code o lcHead8 = some (o + 0xA)
   h1 : fetchRel lincomb8Code (o + 0xA) = some (.auipc ra imm, 4)
   h2 : fetchRel lincomb8Code (o + 0xA + 4) = some (.jalr ra ra jo, 4)
-  hcb : BitVec.ofNat 32 (o + 0xA) + imm + jo = 0xFFFF157E
+  hcb : BitVec.ofNat 32 (o + 0xA) + imm + jo = 0xFFFEF76E
   hTail : blockEnd lincomb8Code (o + 0xA + 8) lcTail8 = some (o + 0x1E)
   hBr : fetchRel lincomb8Code (o + 0x1E) = some (.branch .bne (9 : Fin 32) x0 0xFFFFFFE2, 2)
   hBt : BitVec.ofNat 32 (o + 0x1E) + 0xFFFFFFE2 = BitVec.ofNat 32 o
@@ -290,7 +290,7 @@ theorem lc_sub_iter8 {M : Word → BitVec 8} {P F lp rp D b imm jo : Word} {n : 
   rw [r23, add_lit_zero] at Ea1
   rw [r24] at Ea2
   have g1 : ∀ q, reg n1 q = (runBlock lcHead8 (M, reg n)).2 q := u1.regs
-  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u1.self.bsubCall hc hb (even_at P hP 0xFFFF157E (by decide))
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u1.self.bsubCall hc hb (even_at P hP 0xFFFEF76E (by decide))
     L.h1 L.h2 (by rw [BitVec.add_assoc, BitVec.add_assoc, ← BitVec.add_assoc (BitVec.ofNat 32 (o + 0xA)), L.hcb]) (even_at P hP (o + 0xA + 8) (by
       have := L.hev; omega))
     (by rw [g1, Ek sp (by decide) (by decide) (by decide), rsp]) hF sFB

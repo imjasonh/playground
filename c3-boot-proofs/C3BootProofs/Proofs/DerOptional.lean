@@ -86,24 +86,24 @@ of 0x30 bytes below `sp0`, the 0x18-byte result at `out`, and the reader at
 structure OptEnv (M : Word → BitVec 8) (P sp0 out d : Word) : Prop where
   hP : P.toNat % 2 = 0
   cod : CodeIn M P derOptionalCode
-  tlv : CodeIn M (P + 0xFFFFF810) derTlvCode
-  mcs : CodeIn M (P + 0xBFD6) memcpyStubCode
-  mcb : CodeIn M (P + 0xBFDE) memcpyBodyCode
+  tlv : CodeIn M (P + 0xFFFFD382) derTlvCode
+  mcs : CodeIn M (P + 0xA4BA) memcpyStubCode
+  mcb : CodeIn M (P + 0xA4C2) memcpyBodyCode
   hsp : sp0.toNat % 4 = 0
   hS : 0x30 ≤ sp0.toNat
   hout : out.toNat % 4 = 0
   hd : d.toNat % 4 = 0
   how : out.toNat + 0x18 < 2 ^ 32
   sFC : Sep (sp0 + 0xFFFFFFD0) 0x30 P derOptionalCode.length
-  sFT : Sep (sp0 + 0xFFFFFFD0) 0x30 (P + 0xFFFFF810) derTlvCode.length
-  sFS : Sep (sp0 + 0xFFFFFFD0) 0x30 (P + 0xBFD6) memcpyStubCode.length
-  sFB : Sep (sp0 + 0xFFFFFFD0) 0x30 (P + 0xBFDE) memcpyBodyCode.length
+  sFT : Sep (sp0 + 0xFFFFFFD0) 0x30 (P + 0xFFFFD382) derTlvCode.length
+  sFS : Sep (sp0 + 0xFFFFFFD0) 0x30 (P + 0xA4BA) memcpyStubCode.length
+  sFB : Sep (sp0 + 0xFFFFFFD0) 0x30 (P + 0xA4C2) memcpyBodyCode.length
   sOC : Sep out 0x18 P derOptionalCode.length
-  sOB : Sep out 0x18 (P + 0xBFDE) memcpyBodyCode.length
+  sOB : Sep out 0x18 (P + 0xA4C2) memcpyBodyCode.length
   sDC : Sep (d + 8) 8 P derOptionalCode.length
-  sDT : Sep (d + 8) 8 (P + 0xFFFFF810) derTlvCode.length
-  sDS : Sep (d + 8) 8 (P + 0xBFD6) memcpyStubCode.length
-  sDB : Sep (d + 8) 8 (P + 0xBFDE) memcpyBodyCode.length
+  sDT : Sep (d + 8) 8 (P + 0xFFFFD382) derTlvCode.length
+  sDS : Sep (d + 8) 8 (P + 0xA4BA) memcpyStubCode.length
+  sDB : Sep (d + 8) 8 (P + 0xA4C2) memcpyBodyCode.length
   sOF : Sep out 0x18 (sp0 + 0xFFFFFFD0) 0x30
   sDF : Sep (d + 8) 8 (sp0 + 0xFFFFFFD0) 0x30
   sOD : Sep out 0x18 (d + 8) 8
@@ -152,7 +152,7 @@ theorem derOptional_correct (m : Machine) {P sp0 out d retAddr : Word} {tag : Na
   have inF : ∀ {x : Word}, Sep G 0x30 x 1 → Sep F 0x20 x 1 := fun hx => by
     rw [← hGF]; exact hx.sub (c := 0x10) (l := 0x20) (by decide)
   have sFC' : Sep F 0x20 P derOptionalCode.length := by rw [← hGF]; exact sFC.sub (c := 0x10) (l := 0x20) (by decide)
-  have sFT' : Sep F 0x20 (P + 0xFFFFF810) derTlvCode.length := by
+  have sFT' : Sep F 0x20 (P + 0xFFFFD382) derTlvCode.length := by
     rw [← hGF]; exact sFT.sub (c := 0x10) (l := 0x20) (by decide)
   have sDF' : Sep (d + 8) 8 F 0x20 := by rw [← hGF]; exact sDF.subR (c := 0x10) (l := 0x20) (by decide)
   have sOF' : Sep out 0x18 F 0x20 := by rw [← hGF]; exact sOF.subR (c := 0x10) (l := 0x20) (by decide)
@@ -337,14 +337,14 @@ theorem derOptional_correct (m : Machine) {P sp0 out d retAddr : Word} {tag : Na
       rw [BitVec.toNat_setWidth, Nat.mod_eq_of_lt (by have := (m.mem rp).isLt; omega), ofNat_tn (by omega), ht]
     rw [heq]; exact bne_self_eq_false _)
   obtain ⟨n9, d9, u9⟩ := u8.self.aluImm hcS dopt_at_16 (off' := 0x18) (by decide)
-  obtain ⟨n10, c10, pc10, mem10, regs10⟩ := u9.self.callRa hcS dopt_at_18 dopt_at_1c (cb := P + 0xFFFFF810)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFF810 (by decide))
+  obtain ⟨n10, c10, pc10, mem10, regs10⟩ := u9.self.callRa hcS dopt_at_18 dopt_at_1c (cb := P + 0xFFFFD382)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xFFFFD382 (by decide))
   have r10 := PEnv.reg1 regs10 u9.self.zero
   have hF4 : F + 4 = F + BitVec.ofNat 32 4 := rfl
   have v9 : ∀ q, q ≠ a0 → reg n9 q = reg n7 q := fun q h => by
     rw [u9.regs, upd_ne' h u8.self.zero, u8.regs]
   obtain ⟨n11, c11, pc11, mem11, k11⟩ := derTlv_correct n10 (out := F + 4) (d := d)
-    (even_at P env.hP 0xFFFFF810 (by decide))
+    (even_at P env.hP 0xFFFFD382 (by decide))
     (by rw [mem10]; exact cIn env.tlv sFT' frSv) pc10
     (by rw [r10 a0 (by decide), u9.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [ev_add, u8.regs, sp7])
     (by rw [r10 a1 (by decide), v9 a1 (by decide), r7 a1 (by decide) (by decide) (by decide) (by decide), ha1])
@@ -444,8 +444,8 @@ theorem derOptional_correct (m : Machine) {P sp0 out d retAddr : Word} {tag : Na
           upd_ne' (by decide) u11.zero, sp11]; rfl
       · rw [u16.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [u15.self.zero]; rfl
     obtain ⟨v16a0, v16a1, v16a2⟩ := v16
-    obtain ⟨n17, c17, pc17, mem17, regs17⟩ := u16.self.callRa hc11 dopt_at_2c dopt_at_30 (cb := P + 0xBFD6)
-      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xBFD6 (by decide))
+    obtain ⟨n17, c17, pc17, mem17, regs17⟩ := u16.self.callRa hc11 dopt_at_2c dopt_at_30 (cb := P + 0xA4BA)
+      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xA4BA (by decide))
     have r17 := PEnv.reg1 regs17 u16.self.zero
     have sp17 : reg n17 sp = F := by
       rw [r17 sp (by decide), r16 sp (by decide) (by decide) (by decide), sp11]
@@ -460,22 +460,22 @@ theorem derOptional_correct (m : Machine) {P sp0 out d retAddr : Word} {tag : Na
       rwa [add_ofNat_zero] at this
     have sDS : Sep (out + 4) 0x14 (F + 4) 0x14 := by
       rw [hF4G]; exact (sOF.sub (c := 4) (l := 0x14) (by decide)).subR (c := 0x14) (l := 0x14) (by decide)
-    have hcB : CodeIn (derTlvMem Msv (F + 4) d rp rl (.ok t)) (P + 0xBFDE) memcpyBodyCode := fun i hi => by
+    have hcB : CodeIn (derTlvMem Msv (F + 4) d rp rl (.ok t)) (P + 0xA4C2) memcpyBodyCode := fun i hi => by
       rw [derCall_outside (.ok t) frSv (inF (sFB.subR (c := i) (l := 1) (by omega))),
         derAdvance_outside (.ok t) (env.sDB.subR (c := i) (l := 1) (by omega))]
       exact env.mcb i hi
-    have hcS' : CodeIn (derTlvMem Msv (F + 4) d rp rl (.ok t)) (P + 0xBFD6) memcpyStubCode := fun i hi => by
+    have hcS' : CodeIn (derTlvMem Msv (F + 4) d rp rl (.ok t)) (P + 0xA4BA) memcpyStubCode := fun i hi => by
       rw [derCall_outside (.ok t) frSv (inF (sFS.subR (c := i) (l := 1) (by omega))),
         derAdvance_outside (.ok t) (env.sDS.subR (c := i) (l := 1) (by omega))]
       exact env.mcs i hi
-    obtain ⟨n18, c18, pc18, sp18, a018, mem18, k18⟩ := memcpy_correct n17 (P + 0xBFD6)
+    obtain ⟨n18, c18, pc18, sp18, a018, mem18, k18⟩ := memcpy_correct n17 (P + 0xA4BA)
       (P + BitVec.ofNat 32 (0x2C + 8)) (out + 4) (F + 4) 0x14
       (fun i hi => by show n17.mem _ = _; rw [mem17]; exact hcS' i hi)
-      (even_at P env.hP 0xBFD6 (by decide)) pc17
+      (even_at P env.hP 0xA4BA (by decide)) pc17
       (by rw [r17 a0 (by decide), v16a0]) (by rw [r17 a1 (by decide), v16a1]) (by rw [r17 a2 (by decide), v16a2])
       (by rw [regs17]; simp +decide only [upd_app, ↓reduceIte]) (even_clear _ (even_at P env.hP (0x2C + 8) (by decide)))
       (by
-        rw [mem17, sp17, eGF, show P + 0xBFD6 + 8 = P + 0xBFDE by rw [BitVec.add_assoc]; rfl]
+        rw [mem17, sp17, eGF, show P + 0xA4BA + 8 = P + 0xA4C2 by rw [BitVec.add_assoc]; rfl]
         exact ⟨hcB, env.sOB.sub (c := 4) (l := 0x14) (by decide),
           by have := sFB.sub (c := 0) (l := 16) (by decide); rwa [add_ofNat_zero] at this,
           sDst, sSrc, sDS, hGa, by omega,

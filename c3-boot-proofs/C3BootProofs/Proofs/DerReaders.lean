@@ -137,9 +137,9 @@ theorem dbt_at_56 : fetchRel derBooleanTrueCode 0x56 = some (.jalr x0 ra 0x0, 2)
 end
 
 /-- **The compiled `Der::set`** is `Der::nested` for tag 0x31, which it
-tail-calls at `Q + 0xFFFFF940`. -/
+tail-calls at `Q + 0xFFFFD0B0`. -/
 theorem derSet_correct (m : Machine) {Q sp0 out d retAddr : Word} (hQ : Q.toNat % 2 = 0)
-    (hc : CodeIn m.mem Q derSetCode) (env : NestEnv m.mem (Q + 0xFFFFF940) sp0 out d)
+    (hc : CodeIn m.mem Q derSetCode) (env : NestEnv m.mem (Q + 0xFFFFD0B0) sp0 out d)
     (hpc : m.pc = Q) (hsp : reg m sp = sp0) (ha0 : reg m a0 = out) (ha1 : reg m a1 = d)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧ (∀ q, oidKeep q = true → reg m' q = reg m q) ∧
@@ -155,10 +155,10 @@ theorem derSet_correct (m : Machine) {Q sp0 out d retAddr : Word} (hQ : Q.toNat 
   obtain ⟨n3, d3, pc3, mem3, regs3⟩ := u2.jalr hc dset_at_8
   have k3 : ∀ q, q ≠ a2 → q ≠ t1 → reg n3 q = reg m q := fun q h2 ht => by
     rw [regs3, updz (upd_zero _ _ _) ht, updz hz h2]
-  have pcN : n3.pc = Q + 0xFFFFF940 := by
+  have pcN : n3.pc = Q + 0xFFFFD0B0 := by
     rw [pc3]; simp +decide only [upd_app, ↓reduceIte]
-    rw [show Q + BitVec.ofNat 32 4 + 0x0 + 0xFFFFF93C = Q + 0xFFFFF940 by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl]
-    exact even_clear _ (even_at Q hQ 0xFFFFF940 (by decide))
+    rw [show Q + BitVec.ofNat 32 4 + 0xFFFFD000 + 0xAC = Q + 0xFFFFD0B0 by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl]
+    exact even_clear _ (even_at Q hQ 0xFFFFD0B0 (by decide))
   obtain ⟨m4, c4, pc4, sp4, k4, f4⟩ := derNested_correct n3 (tag := 0x31) (by rw [mem3]; exact env) pcN
     (by rw [k3 sp (by decide) (by decide), hsp]) (by rw [k3 a0 (by decide) (by decide), ha0])
     (by rw [k3 a1 (by decide) (by decide), ha1])
@@ -226,7 +226,7 @@ unread bytes start at `rp` and number `rl`, it stores the contents of
 `derElement 4` of those bytes at `out`, or its error, and moves the reader
 past the element. -/
 theorem derOctetString_correct (m : Machine) {P sp0 out d retAddr : Word}
-    (env : DerCallEnv m.mem derOctetStringCode P 0xFFFFF792 sp0 out d 8)
+    (env : DerCallEnv m.mem derOctetStringCode P 0xFFFFCF5A sp0 out d 8)
     (hpc : m.pc = P) (hsp : reg m sp = sp0) (ha0 : reg m a0 = out) (ha1 : reg m a1 = d)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧ (∀ q, oidKeep q = true → reg m' q = reg m q) ∧
@@ -367,7 +367,7 @@ unread bytes start at `rp` and number `rl` and don't overlap the reader, it
 stores `derBitsOf` of `derElement 3` of those bytes at `out`, and moves the
 reader past the element. -/
 theorem derBitString_correct (m : Machine) {P sp0 out d retAddr : Word}
-    (env : DerCallEnv m.mem derBitStringCode P 0xFFFFF1FC sp0 out d 8)
+    (env : DerCallEnv m.mem derBitStringCode P 0xFFFFD3A0 sp0 out d 8)
     (sDR : Sep (d + 8) 8 (memLoad32 m.mem (d + 8)) (memLoad32 m.mem (d + 0xC)).toNat)
     (hpc : m.pc = P) (hsp : reg m sp = sp0) (ha0 : reg m a0 = out) (ha1 : reg m a1 = d)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) :
@@ -997,7 +997,7 @@ set_option maxHeartbeats 4000000 in
 /-- `Der::boolean_true`'s prologue and call, as `derCall_pro` for its moves:
 the reader comes in `a0`, and `s0` holds 1. -/
 theorem derBool_pro (m : Machine) {P sp0 d : Word}
-    (env : DerCallEnv m.mem derBooleanTrueCode P 0xFFFFF4F2 sp0 d d 0)
+    (env : DerCallEnv m.mem derBooleanTrueCode P 0xFFFFCE92 sp0 d d 0)
     (hpc : m.pc = P) (hsp : reg m sp = sp0) (ha0 : reg m a0 = d) :
     ∃ m5 Msv, Steps m m5 ∧
       St (derTlvMem Msv (sp0 + 0xFFFFFFE0 + 4) d (memLoad32 m.mem (d + 8)) (memLoad32 m.mem (d + 0xC))
@@ -1103,7 +1103,7 @@ returns `derBoolOf` of `derElement 1` of those bytes in `a0` and moves the
 reader past the element. It has no result in memory, so its environment's
 result is the reader itself with no bytes. -/
 theorem derBooleanTrue_correct (m : Machine) {P sp0 d retAddr : Word}
-    (env : DerCallEnv m.mem derBooleanTrueCode P 0xFFFFF4F2 sp0 d d 0)
+    (env : DerCallEnv m.mem derBooleanTrueCode P 0xFFFFCE92 sp0 d d 0)
     (sDR : Sep (d + 8) 8 (memLoad32 m.mem (d + 8)) (memLoad32 m.mem (d + 0xC)).toNat)
     (hpc : m.pc = P) (hsp : reg m sp = sp0) (ha0 : reg m a0 = d)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) :

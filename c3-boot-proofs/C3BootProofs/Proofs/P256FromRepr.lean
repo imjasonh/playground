@@ -633,7 +633,7 @@ theorem frq_pro (m : Machine) {sp0 out inp : Word} (hcF : CodeIn m.mem FRQ p256F
     simp only [frqPro, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; simp [h0, h8, h18]
   -- `Array::default`
   obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3'.callRa hc2 frq_at_14 frq_at_18
-    (show FRQ + BitVec.ofNat 32 0x14 + 0x7000 + 0xFFFFFF18 = BitVec.ofNat 32 shaZero32Address by decide) (by decide)
+    (show FRQ + BitVec.ofNat 32 0x14 + 0x9000 + 0xFFFFFD28 = BitVec.ofNat 32 shaZero32Address by decide) (by decide)
   have r4 : ∀ q, q ≠ ra → reg m4 q = reg m3 q := fun q h => by rw [regs4]; exact updz u3'.zero h
   have eZ : S + BitVec.ofNat 32 0xC0 + 0xFFFFFFC0 = S + BitVec.ofNat 32 0x80 := by rw [BitVec.add_assoc]; rfl
   obtain ⟨m5, c5, pc5, sp5, K5, fr5⟩ := shaZero32_correct m4 (d := S + BitVec.ofNat 32 0xE8)
@@ -882,7 +882,7 @@ theorem frq_tailA {M0 : Word → BitVec 8} (E : FRQEnv M0) (n : Machine) {S b : 
     exact ⟨Gc 4, Gc 0x48, rfl, BitVec.zero_add _, trivial⟩
   -- `mul_montgomery_form::<8>`
   obtain ⟨m6, c6, pc6, mem6, regs6⟩ := u5'.callRa hc4 frq_at_f4 frq_at_f8
-    (show FRQ + BitVec.ofNat 32 0xF4 + 0xA000 + 0x25C = BitVec.ofNat 32 mulMont8Address by decide) (by decide)
+    (show FRQ + BitVec.ofNat 32 0xF4 + 0xC000 + 0x6C = BitVec.ofNat 32 mulMont8Address by decide) (by decide)
   have r6 : ∀ q, q ≠ ra → reg m6 q = reg n5 q := PEnv.reg1 regs6 u5'.zero
   have M6 : ∀ x, Sep S 0x140 x 1 → m6.mem x = M0 x := fun x hx => by rw [mem6]; exact M4 x hx
   have eS : S + BitVec.ofNat 32 0xC0 + 0xFFFFFF40 = S := by rw [BitVec.add_assoc]; exact BitVec.add_zero S
@@ -1028,7 +1028,7 @@ theorem frq_tailB {M0 : Word → BitVec 8} (E : FRQEnv M0) (n : Machine) {S out 
     simp only [List.filterMap_cons, List.filterMap_nil, BInstr.dst]; simp [h0]
   -- `black_box`
   obtain ⟨m2, c2, pc2, mem2, regs2⟩ := u1'.callRa hc0 frq_at_fe frq_at_102
-    (show FRQ + BitVec.ofNat 32 0xFE + 0x7000 + 0xFFFFFE58 = BitVec.ofNat 32 blackBoxU8Address by decide) (by decide)
+    (show FRQ + BitVec.ofNat 32 0xFE + 0x9000 + 0xFFFFFC68 = BitVec.ofNat 32 blackBoxU8Address by decide) (by decide)
   have r2 : ∀ q, q ≠ ra → reg m2 q = reg n1 q := PEnv.reg1 regs2 u1'.zero
   have sp2 : reg m2 sp = S + BitVec.ofNat 32 0xC0 := by rw [r2 sp (by decide), K1 sp (by decide), hsp]
   have eB : S + BitVec.ofNat 32 0xC0 + 0xFFFFFFFF = S + BitVec.ofNat 32 0xBF := by rw [BitVec.add_assoc]; rfl
@@ -1108,7 +1108,7 @@ theorem frq_tailB {M0 : Word → BitVec 8} (E : FRQEnv M0) (n : Machine) {S out 
   obtain ⟨ha6, hb6, hc6, hd6⟩ := rv6
   -- `conditional_select`
   obtain ⟨m7, c7, pc7, mem7, regs7⟩ := u6'.callRa hc5 frq_at_126 frq_at_12a
-    (show FRQ + BitVec.ofNat 32 0x126 + 0xB000 + 0xFFFFFCFC = BitVec.ofNat 32 condSelect256Address by decide)
+    (show FRQ + BitVec.ofNat 32 0x126 + 0xD000 + 0xFFFFFB0C = BitVec.ofNat 32 condSelect256Address by decide)
     (by decide)
   have r7 : ∀ q, q ≠ ra → reg m7 q = reg n6 q := PEnv.reg1 regs7 u6'.zero
   have M7 : ∀ x, Sep S 0x140 x 1 → Sep out 33 x 1 → m7.mem x = M0 x := fun x hx ho => by rw [mem7]; exact M5' x hx ho

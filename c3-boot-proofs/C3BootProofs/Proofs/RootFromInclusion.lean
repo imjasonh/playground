@@ -257,9 +257,9 @@ theorem rf_hash {M0 M1 Mx : Word → BitVec 8} {out L Pp sp0 R G X Y o o2 : Word
     (hT : BitVec.ofNat 32 rootFromInclusionAddress + BitVec.ofNat 32 off + 0x0 + o =
       BitVec.ofNat 32 merkleNodeHashAddress)
     (hb : blockEnd rootFromInclusionCode (off + 8) rfCopy = some (off + 0x10))
-    (h3 : fetchRel rootFromInclusionCode (off + 0x10) = some (.auipc ra 0x8000, 4))
+    (h3 : fetchRel rootFromInclusionCode (off + 0x10) = some (.auipc ra 0x9000, 4))
     (h4 : fetchRel rootFromInclusionCode (off + 0x10 + 4) = some (.jalr ra ra o2, 4))
-    (hT2 : BitVec.ofNat 32 rootFromInclusionAddress + BitVec.ofNat 32 (off + 0x10) + 0x8000 + o2 =
+    (hT2 : BitVec.ofNat 32 rootFromInclusionAddress + BitVec.ofNat 32 (off + 0x10) + 0x9000 + o2 =
       BitVec.ofNat 32 memcpyStubAddress)
     (hoff : off % 2 = 0)
     (ha0 : reg nn a0 = G + 0x20) (ha1 : reg nn a1 = X) (ha2 : reg nn a2 = Y) (hsp : reg nn sp = G)
@@ -993,7 +993,7 @@ theorem rf_ok {M0 M1 Mz : Word → BitVec 8} {out L Pp sp0 R G : Word} {n : Nat}
   have R1 : ∀ q, reg n1 q = (runBlock rfOk (Mz, reg nz)).2 q := u1.regs
   have u1' : St Mz Q n1 0x12A (reg n1) := ⟨u1.pc, by rw [u1.mem]; rfl, fun _ => rfl⟩
   obtain ⟨n2, c2, pc2, mem2, regs2⟩ := u1'.callRa hc rf_at_12a rf_at_12e
-    (show Q + BitVec.ofNat 32 0x12A + 0x8000 + 0xFFFFFD48 = BitVec.ofNat 32 memcpyStubAddress by decide) (by decide)
+    (show Q + BitVec.ofNat 32 0x12A + 0x9000 + 0x4A6 = BitVec.ofNat 32 memcpyStubAddress by decide) (by decide)
   have r2 : ∀ q, q ≠ ra → reg n2 q = reg n1 q := fun q h => by rw [regs2]; exact updz u1'.zero h
   have sp1 : reg n1 sp = G := by
     rw [R1]; simp +decide only [runBlock, BInstr.run, rfOk, upd_app, ↓reduceIte]; exact hsp
@@ -1286,7 +1286,7 @@ theorem rootFromInclusion_correct (m : Machine) {out L Pp sp0 retAddr : Word} {n
       rw [updz (by simp [upd]) h11, updz (by simp [upd]) h12, updz (by simp [upd]) h10, updz (by simp [upd]) h22,
         updz (by simp [upd]) h21, updz hz6 h10]
     obtain ⟨n8, c8, pc8, mem8, regs8⟩ := u7'.callRa hc1 rf_at_54 rf_at_58
-      (show Q + BitVec.ofNat 32 0x54 + 0x8000 + 0xFFFFFE1E = BitVec.ofNat 32 memcpyStubAddress by decide) (by decide)
+      (show Q + BitVec.ofNat 32 0x54 + 0x9000 + 0x57C = BitVec.ofNat 32 memcpyStubAddress by decide) (by decide)
     have r8 : ∀ q, q ≠ ra → reg n8 q = reg n7 q := fun q h => by rw [regs8]; exact updz u7'.zero h
     have sp6 : reg n6 sp = G := by rw [k6 sp (by decide) (by decide), sp1]
     have eF16 : G + 0xFFFFFFF0 = R + BitVec.ofNat 32 0x280 := by rw [hGR, BitVec.add_assoc]; rfl

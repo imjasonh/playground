@@ -1833,7 +1833,7 @@ theorem lm_mask {M : Word → BitVec 8} {P F : Word} {n : Machine} {sh : Nat} (h
 /-! ## The subtraction `x - m`, from 0x254 to 0x272 -/
 
 /-- `borrowing_sub`'s offset from `lincomb_int_reduce_shift_mod`. -/
-abbrev lmBsub (P : Word) : Word := P + 0xFFFEEE06
+abbrev lmBsub (P : Word) : Word := P + 0xFFFECFF6
 
 /-- The end of a subtraction round, from 0x264: keep the borrow, store the
 difference, and advance the pointers and the count. -/
@@ -1925,7 +1925,7 @@ theorem lm_sub_iter {M : Word → BitVec 8} {P F np xp D b : Word} {n : Machine}
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd, hz]
     · simp [upd, h0, q0, q1]
-  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFEEE06 (by decide))
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFECFF6 (by decide))
     lm12_at_25c lm12_at_260 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x25C + 8) (by decide))
     (by rw [k2 sp (by decide) (by decide), rsp]) hF sFB
   rw [g2a0, g2a1, k2 a2 (by decide) (by decide), ra2] at a03 a13
@@ -2169,7 +2169,7 @@ theorem lm_s1_iter {M : Word → BitVec 8} {P F np xp D b : Word} {n : Machine} 
     · simp [upd, h0, q2]
   have r2a2 : reg n2m a2 = b := by
     rw [u2m.regs, upd_same (by decide), u2'.zero, k2 20 (by decide) (by decide), rb]; exact BitVec.zero_add _
-  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2m.self.bsubCall hc hb (even_at P hP 0xFFFEEE06 (by decide))
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2m.self.bsubCall hc hb (even_at P hP 0xFFFECFF6 (by decide))
     lm12_at_1b4 lm12_at_1b8 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x1B4 + 8) (by decide))
     (by rw [k2m sp (by decide), k2 sp (by decide) (by decide), rsp]) hF sFB
   rw [k2m a0 (by decide), k2m a1 (by decide), r2a2, g2a0, g2a1] at a03 a13
@@ -2402,7 +2402,7 @@ theorem lm_s2_iter {M : Word → BitVec 8} {P F np xp D b : Word} {n : Machine} 
     · simp [upd, h0, q2]
   have r2a2 : reg n2m a2 = b := by
     rw [u2m.regs, upd_same (by decide), u2'.zero, k2 20 (by decide) (by decide), rb]; exact BitVec.zero_add _
-  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2m.self.bsubCall hc hb (even_at P hP 0xFFFEEE06 (by decide))
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2m.self.bsubCall hc hb (even_at P hP 0xFFFECFF6 (by decide))
     lm12_at_1f4 lm12_at_1f8 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x1F4 + 8) (by decide))
     (by rw [k2m sp (by decide), k2 sp (by decide) (by decide), rsp]) hF sFB
   rw [k2m a0 (by decide), k2m a1 (by decide), r2a2, g2a0, g2a1] at a03 a13
@@ -3196,7 +3196,7 @@ theorem lm_ph3 {M0 M : Word → BitVec 8} {P G res ap bp cp dp mp mip : Word} {n
   have frG4 : ∀ x, Sep G 0x330 x 1 → t4.mem x = M0 x := fun x hx => by
     rw [frM4 x (sF 0xB8 48 (by decide) hx), frG2 x hx]
   have hc4 := cOf frG4 env.code env.sC
-  have eB : lmBsub P = lcBsub (lmLc P) := by show P + 0xFFFEEE06 = P + 0xFFFFFA24 + 0xFFFEF3E2; rw [BitVec.add_assoc]; rfl
+  have eB : lmBsub P = lcBsub (lmLc P) := by show P + 0xFFFECFF6 = P + 0xFFFFFA24 + 0xFFFED5D2; rw [BitVec.add_assoc]; rfl
   have hb4 : CodeIn t4.mem (lmBsub P) borrowingSubCode := by rw [eB]; exact cOf frG4 env.bsub env.sBs
   have sBs : Sep G 0x330 (lmBsub P) borrowingSubCode.length := by rw [eB]; exact env.sBs
   have st4 : St t4.mem P t4 0x1A4 (reg t4) := ⟨pct4, rfl, fun _ => rfl⟩
@@ -3880,7 +3880,7 @@ theorem lm_ph5 {M0 M : Word → BitVec 8} {P G res ap bp cp dp mp mip : Word} {n
   have e38 : F + 0x38 = G + BitVec.ofNat 32 0x218 := fG 0x38
   have eE8 : F + 0xE8 = G + BitVec.ofNat 32 0x2C8 := fG 0xE8
   have eM4 : F + 0xFFFFFFFC = G + BitVec.ofNat 32 0x1DC := by rw [eF, BitVec.add_assoc]; rfl
-  have eB : lmBsub P = lcBsub (lmLc P) := by show P + 0xFFFEEE06 = P + 0xFFFFFA24 + 0xFFFEF3E2; rw [BitVec.add_assoc]; rfl
+  have eB : lmBsub P = lcBsub (lmLc P) := by show P + 0xFFFECFF6 = P + 0xFFFFFA24 + 0xFFFED5D2; rw [BitVec.add_assoc]; rfl
   have sBs : Sep G 0x330 (lmBsub P) borrowingSubCode.length := by rw [eB]; exact env.sBs
   -- `s3` = the high word, and `memset(F + 0xE8, 0, 48)`
   obtain ⟨n1, c1, u1⟩ := St.block lmF0 s hc lmF0_end (by
@@ -3964,7 +3964,7 @@ theorem lm_ph5 {M0 M : Word → BitVec 8} {P G res ap bp cp dp mp mip : Word} {n
   have hc6 := cOf frG6 env.code env.sC
   have hb6 : CodeIn M6 (lmBsub P) borrowingSubCode := by rw [eB]; exact cOf frG6 env.bsub env.sBs
   have sp6 : reg n6 sp = F := by rw [g6, f2k sp (by decide), sp5]
-  obtain ⟨n7, c7, u7, -, -, sp7, k7, fr7⟩ := u6.self.bsubCall hc6 hb6 (even_at P env.hP 0xFFFEEE06 (by decide))
+  obtain ⟨n7, c7, u7, -, -, sp7, k7, fr7⟩ := u6.self.bsubCall hc6 hb6 (even_at P env.hP 0xFFFECFF6 (by decide))
     lm12_at_294 lm12_at_298 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP (0x294 + 8) (by decide))
     sp6 hFa (by rw [eM4]; exact sub _ _ (by decide) sBs)
   have frG7 : ∀ x, Sep G 0x330 x 1 → n7.mem x = M0 x := fun x hx => by
