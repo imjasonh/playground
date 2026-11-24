@@ -1,5 +1,7 @@
 import C3BootProofs.Proofs.ReaderU32Cur
-import C3BootProofs.Proofs.Keys
+import C3BootProofs.Proofs.ImageHelpers
+import C3BootProofs.Proofs.SmallFns
+import C3BootProofs.Proofs.ReaderArray
 
 /-!
 # `c3_verify::bundle::field`
@@ -57,7 +59,7 @@ theorem bfl_at_10 : fetchRel bundleFieldCode 0x10 = some (.alu .add (9 : Fin 32)
 theorem bfl_at_12 : fetchRel bundleFieldCode 0x12 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem bfl_at_14 : fetchRel bundleFieldCode 0x14 = some (.aluImm .add a0 sp 0x4, 2) := by decide
 theorem bfl_at_16 : fetchRel bundleFieldCode 0x16 = some (.auipc ra 0xFFFFD000, 4) := by decide
-theorem bfl_at_1a : fetchRel bundleFieldCode 0x1A = some (.jalr ra ra 0xFFFFFB42, 4) := by decide
+theorem bfl_at_1a : fetchRel bundleFieldCode 0x1A = some (.jalr ra ra 0xFFFFFF9A, 4) := by decide
 theorem bfl_at_1e : fetchRel bundleFieldCode 0x1E = some (.load .lbu a0 sp 0x4, 4) := by decide
 theorem bfl_at_22 : fetchRel bundleFieldCode 0x22 = some (.branch .beq a0 x0 0x8, 2) := by decide
 theorem bfl_at_24 : fetchRel bundleFieldCode 0x24 = some (.load .lbu a0 sp 0x5, 4) := by decide
@@ -73,8 +75,8 @@ theorem bfl_at_3c : fetchRel bundleFieldCode 0x3C = some (.load .lw (9 : Fin 32)
 theorem bfl_at_3e : fetchRel bundleFieldCode 0x3E = some (.load .lw (18 : Fin 32) sp 0x10, 2) := by decide
 theorem bfl_at_40 : fetchRel bundleFieldCode 0x40 = some (.load .lw (19 : Fin 32) sp 0xC, 2) := by decide
 theorem bfl_at_42 : fetchRel bundleFieldCode 0x42 = some (.aluImm .add sp sp 0x20, 2) := by decide
-theorem bfl_at_44 : fetchRel bundleFieldCode 0x44 = some (.auipc (6 : Fin 32) 0xFFFFC000, 4) := by decide
-theorem bfl_at_48 : fetchRel bundleFieldCode 0x48 = some (.jalr x0 (6 : Fin 32) 0x560, 4) := by decide
+theorem bfl_at_44 : fetchRel bundleFieldCode 0x44 = some (.auipc (6 : Fin 32) 0xFFFFD000, 4) := by decide
+theorem bfl_at_48 : fetchRel bundleFieldCode 0x48 = some (.jalr x0 (6 : Fin 32) 0xFFFFFF46, 4) := by decide
 theorem bfl_at_4c : fetchRel bundleFieldCode 0x4C = some (.aluImm .add a0 x0 0x5, 2) := by decide
 theorem bfl_at_4e : fetchRel bundleFieldCode 0x4E = some (.store .sw (8 : Fin 32) x0 0x0, 4) := by decide
 theorem bfl_at_52 : fetchRel bundleFieldCode 0x52 = some (.store .sb (8 : Fin 32) a0 0x4, 4) := by decide

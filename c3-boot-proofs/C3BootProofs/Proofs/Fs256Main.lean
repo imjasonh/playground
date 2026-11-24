@@ -1,6 +1,6 @@
 import C3BootProofs.Proofs.P2Lib
 import C3BootProofs.Proofs.Fs256At
-import C3BootProofs.Proofs.Rp384
+import C3BootProofs.Proofs.Fs384Main
 
 /-!
 # `VerifyingKey<NistP256>::from_sec1_bytes`
@@ -1503,9 +1503,9 @@ def gsAlpha (X : Nat) : Nat := subRes (subRes (p2fm (p2fm X X) X + p2fm p2A X) +
 def gsF1 : List BInstr := [.aluImm .add a0 sp 0x224, .aluImm .add a1 sp 0x244, .aluImm .add a2 sp 0x244]
 def gsF2 : List BInstr := [.aluImm .add a0 sp 0x8C, .aluImm .add a1 sp 0x284, .aluImm .add a2 sp 0x284]
 def gsF3 : List BInstr := [.aluImm .add a0 sp 0x11C, .aluImm .add a1 sp 0x8C, .aluImm .add a2 sp 0x284]
-def gsF4 : List BInstr := [.lui a1 0x3FCC4000, .aluImm .add a1 a1 0x2C8, .aluImm .add a0 sp 0x8C, .aluImm .add a2 sp 0x284]
+def gsF4 : List BInstr := [.lui a1 0x3FCC4000, .aluImm .add a1 a1 0x138, .aluImm .add a0 sp 0x8C, .aluImm .add a2 sp 0x284]
 def gsF5 : List BInstr := [.aluImm .add a0 sp 0x264, .aluImm .add a1 sp 0x11C, .aluImm .add a2 sp 0x8C]
-def gsF6 : List BInstr := [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0x368, .aluImm .add a0 sp 0x11C, .aluImm .add a1 sp 0x264]
+def gsF6 : List BInstr := [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0x1D8, .aluImm .add a0 sp 0x11C, .aluImm .add a1 sp 0x264]
 def gsF7 : List BInstr := [.aluImm .add a0 sp 0x8C, .aluImm .add a1 sp 0x284, .aluImm .add a2 x0 0x20]
 def gsF8 : List BInstr := [.aluImm .add a0 sp 0xAC, .aluImm .add a1 sp 0x244, .aluImm .add a2 x0 0x20]
 theorem gsF1_end : blockEnd p256FromSec1Code 0x374 gsF1 = some 0x37A := by decide

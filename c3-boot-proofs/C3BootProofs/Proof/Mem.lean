@@ -122,4 +122,8 @@ theorem sep_of_le {a b : Word} {n k : Nat} (h : a.toNat + n ≤ b.toNat) (hb : b
   rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat] at this
   omega
 
+/-- A range below `0x40000000` and a range at or above it are apart. -/
+theorem lowSep {a b : Word} {n k : Nat} (ha : a.toNat + n ≤ 0x40000000) (hb : 0x40000000 ≤ b.toNat)
+    (hbk : b.toNat + k ≤ 2 ^ 32) : Sep a n b k := sep_of_le (by omega) hbk
+
 end C3.RV32

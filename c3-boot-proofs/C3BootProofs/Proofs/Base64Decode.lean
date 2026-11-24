@@ -1,4 +1,7 @@
-import C3BootProofs.Proofs.X509ReadTime
+import C3BootProofs.Proofs.DateTime
+import C3BootProofs.Proofs.ListsOid
+import C3BootProofs.Proofs.DerOid
+import C3BootProofs.Spec.X509
 import C3BootProofs.Proofs.CtAssign
 import C3BootProofs.Proofs.CtInto
 import C3BootProofs.Spec.Base64
@@ -222,7 +225,7 @@ theorem bdi_at_142 : fetchRel base64DecodeIntoCode 0x142 = some (.alu .add (19 :
 theorem bdi_at_144 : fetchRel base64DecodeIntoCode 0x144 = some (.alu .add (18 : Fin 32) x0 (6 : Fin 32), 2) := by decide
 theorem bdi_at_146 : fetchRel base64DecodeIntoCode 0x146 = some (.alu .add (27 : Fin 32) x0 a4, 2) := by decide
 theorem bdi_at_148 : fetchRel base64DecodeIntoCode 0x148 = some (.auipc ra 0x5000, 4) := by decide
-theorem bdi_at_14c : fetchRel base64DecodeIntoCode 0x14C = some (.jalr ra ra 0xFFFFFC6A, 4) := by decide
+theorem bdi_at_14c : fetchRel base64DecodeIntoCode 0x14C = some (.jalr ra ra 0x5DC, 4) := by decide
 theorem bdi_at_150 : fetchRel base64DecodeIntoCode 0x150 = some (.aluImm .add (30 : Fin 32) x0 0xA, 2) := by decide
 theorem bdi_at_152 : fetchRel base64DecodeIntoCode 0x152 = some (.alu .add a4 x0 (27 : Fin 32), 2) := by decide
 theorem bdi_at_154 : fetchRel base64DecodeIntoCode 0x154 = some (.alu .add (6 : Fin 32) x0 (18 : Fin 32), 2) := by decide

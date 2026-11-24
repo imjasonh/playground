@@ -1,4 +1,6 @@
-import C3BootProofs.Proofs.ParseCur
+import C3BootProofs.Proofs.Parse
+import C3BootProofs.Proofs.MagicCur
+import C3BootProofs.Proofs.PartCur
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Crc32
 
@@ -183,31 +185,31 @@ theorem bsd_at_46 : fetchRel bootstateDecodeCode 0x46 = some (.store .sw sp x0 0
 theorem bsd_at_48 : fetchRel bootstateDecodeCode 0x48 = some (.lui a1 0x53423000, 4) := by decide
 theorem bsd_at_4c : fetchRel bootstateDecodeCode 0x4C = some (.aluImm .add a1 a1 0x343, 4) := by decide
 theorem bsd_at_50 : fetchRel bootstateDecodeCode 0x50 = some (.aluImm .add a0 sp 0xC, 2) := by decide
-theorem bsd_at_52 : fetchRel bootstateDecodeCode 0x52 = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem bsd_at_56 : fetchRel bootstateDecodeCode 0x56 = some (.jalr ra ra 0xFFFFFEEA, 4) := by decide
+theorem bsd_at_52 : fetchRel bootstateDecodeCode 0x52 = some (.auipc ra 0xFFFFB000, 4) := by decide
+theorem bsd_at_56 : fetchRel bootstateDecodeCode 0x56 = some (.jalr ra ra 0x1B4, 4) := by decide
 theorem bsd_at_5a : fetchRel bootstateDecodeCode 0x5A = some (.alu .add (9 : Fin 32) x0 a0, 2) := by decide
 theorem bsd_at_5c : fetchRel bootstateDecodeCode 0x5C = some (.aluImm .and a0 a0 0xFF, 4) := by decide
 theorem bsd_at_60 : fetchRel bootstateDecodeCode 0x60 = some (.aluImm .add a0 a0 0xFFFFFF01, 4) := by decide
 theorem bsd_at_64 : fetchRel bootstateDecodeCode 0x64 = some (.branch .bne a0 x0 0x108, 4) := by decide
 theorem bsd_at_68 : fetchRel bootstateDecodeCode 0x68 = some (.aluImm .add a0 sp 0xC, 2) := by decide
-theorem bsd_at_6a : fetchRel bootstateDecodeCode 0x6A = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem bsd_at_6e : fetchRel bootstateDecodeCode 0x6E = some (.jalr ra ra 0xFFFFFF24, 4) := by decide
+theorem bsd_at_6a : fetchRel bootstateDecodeCode 0x6A = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem bsd_at_6e : fetchRel bootstateDecodeCode 0x6E = some (.jalr ra ra 0x48, 4) := by decide
 theorem bsd_at_72 : fetchRel bootstateDecodeCode 0x72 = some (.alu .add (9 : Fin 32) x0 a0, 2) := by decide
 theorem bsd_at_74 : fetchRel bootstateDecodeCode 0x74 = some (.aluImm .and a0 a0 0xFF, 4) := by decide
 theorem bsd_at_78 : fetchRel bootstateDecodeCode 0x78 = some (.aluImm .add a0 a0 0xFFFFFF01, 4) := by decide
 theorem bsd_at_7c : fetchRel bootstateDecodeCode 0x7C = some (.branch .bne a0 x0 0xF0, 2) := by decide
 theorem bsd_at_7e : fetchRel bootstateDecodeCode 0x7E = some (.aluImm .add a0 sp 0xC, 2) := by decide
 theorem bsd_at_80 : fetchRel bootstateDecodeCode 0x80 = some (.aluImm .add a1 x0 0x2, 2) := by decide
-theorem bsd_at_82 : fetchRel bootstateDecodeCode 0x82 = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem bsd_at_86 : fetchRel bootstateDecodeCode 0x86 = some (.jalr ra ra 0xFFFFFF70, 4) := by decide
+theorem bsd_at_82 : fetchRel bootstateDecodeCode 0x82 = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem bsd_at_86 : fetchRel bootstateDecodeCode 0x86 = some (.jalr ra ra 0x94, 4) := by decide
 theorem bsd_at_8a : fetchRel bootstateDecodeCode 0x8A = some (.alu .add (9 : Fin 32) x0 a0, 2) := by decide
 theorem bsd_at_8c : fetchRel bootstateDecodeCode 0x8C = some (.aluImm .and a0 a0 0xFF, 4) := by decide
 theorem bsd_at_90 : fetchRel bootstateDecodeCode 0x90 = some (.aluImm .add a0 a0 0xFFFFFF01, 4) := by decide
 theorem bsd_at_94 : fetchRel bootstateDecodeCode 0x94 = some (.branch .bne a0 x0 0xD8, 2) := by decide
 theorem bsd_at_96 : fetchRel bootstateDecodeCode 0x96 = some (.aluImm .add a0 sp 0x18, 2) := by decide
 theorem bsd_at_98 : fetchRel bootstateDecodeCode 0x98 = some (.aluImm .add a1 sp 0xC, 2) := by decide
-theorem bsd_at_9a : fetchRel bootstateDecodeCode 0x9A = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem bsd_at_9e : fetchRel bootstateDecodeCode 0x9E = some (.jalr ra ra 0x5A8, 4) := by decide
+theorem bsd_at_9a : fetchRel bootstateDecodeCode 0x9A = some (.auipc ra 0xFFFFB000, 4) := by decide
+theorem bsd_at_9e : fetchRel bootstateDecodeCode 0x9E = some (.jalr ra ra 0xD6, 4) := by decide
 theorem bsd_at_a2 : fetchRel bootstateDecodeCode 0xA2 = some (.load .lbu a0 sp 0x18, 4) := by decide
 theorem bsd_at_a6 : fetchRel bootstateDecodeCode 0xA6 = some (.branch .beq a0 x0 0x16, 2) := by decide
 theorem bsd_at_a8 : fetchRel bootstateDecodeCode 0xA8 = some (.load .lbu (9 : Fin 32) sp 0x19, 4) := by decide
@@ -219,8 +221,8 @@ theorem bsd_at_b6 : fetchRel bootstateDecodeCode 0xB6 = some (.store .sb (8 : Fi
 theorem bsd_at_ba : fetchRel bootstateDecodeCode 0xBA = some (.jal x0 0xBC, 2) := by decide
 theorem bsd_at_bc : fetchRel bootstateDecodeCode 0xBC = some (.load .lw (22 : Fin 32) sp 0x1C, 2) := by decide
 theorem bsd_at_be : fetchRel bootstateDecodeCode 0xBE = some (.aluImm .add a0 sp 0xC, 2) := by decide
-theorem bsd_at_c0 : fetchRel bootstateDecodeCode 0xC0 = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem bsd_at_c4 : fetchRel bootstateDecodeCode 0xC4 = some (.jalr ra ra 0xFFFFFEF8, 4) := by decide
+theorem bsd_at_c0 : fetchRel bootstateDecodeCode 0xC0 = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem bsd_at_c4 : fetchRel bootstateDecodeCode 0xC4 = some (.jalr ra ra 0x1C, 4) := by decide
 theorem bsd_at_c8 : fetchRel bootstateDecodeCode 0xC8 = some (.aluImm .and a0 a0 0x1, 2) := by decide
 theorem bsd_at_ca : fetchRel bootstateDecodeCode 0xCA = some (.alu .add (18 : Fin 32) x0 a1, 2) := by decide
 theorem bsd_at_cc : fetchRel bootstateDecodeCode 0xCC = some (.branch .beq a0 x0 0x6, 2) := by decide
@@ -231,24 +233,24 @@ theorem bsd_at_d6 : fetchRel bootstateDecodeCode 0xD6 = some (.aluImm .add a1 x0
 theorem bsd_at_d8 : fetchRel bootstateDecodeCode 0xD8 = some (.aluImm .add (9 : Fin 32) x0 0x5, 2) := by decide
 theorem bsd_at_da : fetchRel bootstateDecodeCode 0xDA = some (.branch .bltu a1 a0 0x92, 4) := by decide
 theorem bsd_at_de : fetchRel bootstateDecodeCode 0xDE = some (.aluImm .add a0 sp 0xC, 2) := by decide
-theorem bsd_at_e0 : fetchRel bootstateDecodeCode 0xE0 = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem bsd_at_e4 : fetchRel bootstateDecodeCode 0xE4 = some (.jalr ra ra 0xFFFFFED8, 4) := by decide
+theorem bsd_at_e0 : fetchRel bootstateDecodeCode 0xE0 = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem bsd_at_e4 : fetchRel bootstateDecodeCode 0xE4 = some (.jalr ra ra 0xFFFFFFFC, 4) := by decide
 theorem bsd_at_e8 : fetchRel bootstateDecodeCode 0xE8 = some (.aluImm .and a0 a0 0x1, 2) := by decide
 theorem bsd_at_ea : fetchRel bootstateDecodeCode 0xEA = some (.alu .add (19 : Fin 32) x0 a1, 2) := by decide
 theorem bsd_at_ec : fetchRel bootstateDecodeCode 0xEC = some (.branch .beq a0 x0 0x6, 2) := by decide
 theorem bsd_at_ee : fetchRel bootstateDecodeCode 0xEE = some (.alu .add (9 : Fin 32) x0 (19 : Fin 32), 2) := by decide
 theorem bsd_at_f0 : fetchRel bootstateDecodeCode 0xF0 = some (.jal x0 0x7C, 2) := by decide
 theorem bsd_at_f2 : fetchRel bootstateDecodeCode 0xF2 = some (.aluImm .add a0 sp 0xC, 2) := by decide
-theorem bsd_at_f4 : fetchRel bootstateDecodeCode 0xF4 = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem bsd_at_f8 : fetchRel bootstateDecodeCode 0xF8 = some (.jalr ra ra 0xFFFFFEC4, 4) := by decide
+theorem bsd_at_f4 : fetchRel bootstateDecodeCode 0xF4 = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem bsd_at_f8 : fetchRel bootstateDecodeCode 0xF8 = some (.jalr ra ra 0xFFFFFFE8, 4) := by decide
 theorem bsd_at_fc : fetchRel bootstateDecodeCode 0xFC = some (.aluImm .and a0 a0 0x1, 2) := by decide
 theorem bsd_at_fe : fetchRel bootstateDecodeCode 0xFE = some (.alu .add (20 : Fin 32) x0 a1, 2) := by decide
 theorem bsd_at_100 : fetchRel bootstateDecodeCode 0x100 = some (.branch .beq a0 x0 0x6, 2) := by decide
 theorem bsd_at_102 : fetchRel bootstateDecodeCode 0x102 = some (.alu .add (9 : Fin 32) x0 (20 : Fin 32), 2) := by decide
 theorem bsd_at_104 : fetchRel bootstateDecodeCode 0x104 = some (.jal x0 0x68, 2) := by decide
 theorem bsd_at_106 : fetchRel bootstateDecodeCode 0x106 = some (.aluImm .add a0 sp 0xC, 2) := by decide
-theorem bsd_at_108 : fetchRel bootstateDecodeCode 0x108 = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem bsd_at_10c : fetchRel bootstateDecodeCode 0x10C = some (.jalr ra ra 0xFFFFFEB0, 4) := by decide
+theorem bsd_at_108 : fetchRel bootstateDecodeCode 0x108 = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem bsd_at_10c : fetchRel bootstateDecodeCode 0x10C = some (.jalr ra ra 0xFFFFFFD4, 4) := by decide
 theorem bsd_at_110 : fetchRel bootstateDecodeCode 0x110 = some (.aluImm .and a0 a0 0x1, 2) := by decide
 theorem bsd_at_112 : fetchRel bootstateDecodeCode 0x112 = some (.alu .add (21 : Fin 32) x0 a1, 2) := by decide
 theorem bsd_at_114 : fetchRel bootstateDecodeCode 0x114 = some (.branch .beq a0 x0 0x6, 2) := by decide
@@ -256,8 +258,8 @@ theorem bsd_at_116 : fetchRel bootstateDecodeCode 0x116 = some (.alu .add (9 : F
 theorem bsd_at_118 : fetchRel bootstateDecodeCode 0x118 = some (.jal x0 0x54, 2) := by decide
 theorem bsd_at_11a : fetchRel bootstateDecodeCode 0x11A = some (.aluImm .add a0 sp 0xC, 2) := by decide
 theorem bsd_at_11c : fetchRel bootstateDecodeCode 0x11C = some (.aluImm .add a1 x0 0xC, 2) := by decide
-theorem bsd_at_11e : fetchRel bootstateDecodeCode 0x11E = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem bsd_at_122 : fetchRel bootstateDecodeCode 0x122 = some (.jalr ra ra 0xFFFFFED4, 4) := by decide
+theorem bsd_at_11e : fetchRel bootstateDecodeCode 0x11E = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem bsd_at_122 : fetchRel bootstateDecodeCode 0x122 = some (.jalr ra ra 0xFFFFFFF8, 4) := by decide
 theorem bsd_at_126 : fetchRel bootstateDecodeCode 0x126 = some (.aluImm .and a1 a0 0xFF, 4) := by decide
 theorem bsd_at_12a : fetchRel bootstateDecodeCode 0x12A = some (.aluImm .add a1 a1 0xFFFFFF01, 4) := by decide
 theorem bsd_at_12e : fetchRel bootstateDecodeCode 0x12E = some (.branch .beq a1 x0 0x6, 2) := by decide

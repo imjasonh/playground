@@ -91,11 +91,6 @@ follows the Rust code it names:
 - `BootState.lean`: the boot-state record's transitions and the trial plan
   (`c3_verify::bootstate`).
 - `Boot.lean`: `decideBoot`, the boot decision (`c3_verify::boot::decide`).
-- `TrustRoot.lean`: key-set chains and trust-root blobs: each link signed by
-  two distinct keys of the set before it at a strictly higher level, and the
-  blob signed the same way by the chain's last set (`c3_verify::chain`,
-  `keys`, and `trustroot`). Signature verification is a parameter; the
-  Ed25519 proofs are the plan's cryptography phase.
 - `Formats.lean`: decoders for the boot-state record (including CRC-32 and
   the newer-copy rule), the slot manifest, and the image header and segment
   table (`c3_verify::bootstate`, `manifest`, and `image`).
@@ -392,7 +387,6 @@ trace, it proves the following:
 | `rollback` | If a step ends with the level at L, every jump in that step or a later one goes to a slot whose level is at least L |
 | `boots_safe` | Every jump goes to a slot accepted at the level the bootloader read, after the level reached that slot's burn target |
 | `availability` | When some slot is accepted, a boot can run to a jump |
-| `trust_root_monotone` | When the slot results come from the trust-root checks, every jump goes to a slot whose chain is authorized from the genesis keys, whose blob the chain's last key set signed, whose chain level is at most the blob's level, whose image security version equals the blob's level, and whose blob level is at least the eFuse level |
 
 A boot that halts, including the bootloader's halt when an eFuse bit fails
 to program, is an `interrupted` step, which may leave any bits and any
@@ -403,8 +397,7 @@ interrupted boot may leave any record. `c3-verify`'s `boot::tests` pin that
 order.
 
 `C3BootProofs/Audit.lean` pins each theorem's axioms (`propext` and
-`Quot.sound`) and proves that admissible traces with a jump exist, including
-one whose slot results come from the trust-root checks. Some core lemmas
+`Quot.sound`) and proves that admissible traces with a jump exist. Some core lemmas
 pull in `Classical.choice`: `beq_self_eq_true` does for `BitVec`, so the
 proofs use `beq_iff_eq.mpr rfl` instead. The audit catches any that slip
 in.
@@ -429,17 +422,6 @@ inputs: every `SECURE_VERSION` value, every level-rule input, every burn
 target, and the boot decision for 216 records, 4 eFuse levels, and 25 pairs
 of slot results. `c3-boot/verify/examples/spec_vectors.rs` prints the Rust
 code's answers in the same format, and CI requires the two to be identical.
-
-`c3-boot/ota/examples/trust_vectors.rs` builds 20,000 key-set chains and
-trust-root blobs with real Ed25519 signatures. Each signature list starts
-honest, and about a third get one fault: a corrupted signature, a wrong
-signer or message, a repeated or out-of-range index, too few signatures, or
-the wrong order. Key sets, levels, and security versions vary too. It prints
-each case with `c3-verify`'s verdict. `lake exe trust-check` reads those
-lines and evaluates `acceptContents`, counting a signature valid exactly
-when it is uncorrupted and made by that key over that message. CI requires
-the verdicts to match; about a third of the cases are accepted. The
-trust-root blob's byte format is outside this comparison.
 
 `Spec/Sigstore.lean` specifies the Sigstore check of an update:
 `sigstoreVerify` is the decision `c3_verify::sigstore::verify` makes, in
@@ -534,8 +516,6 @@ lake build
 lake exe spec-vectors > /tmp/lean.txt
 (cd ../c3-boot && cargo run --release -q -p c3-verify --example spec_vectors) > /tmp/rust.txt
 diff /tmp/lean.txt /tmp/rust.txt
-(cd ../c3-boot && cargo run -q -p c3-ota --example trust_vectors) > /tmp/rust-trust.txt
-lake exe trust-check < /tmp/rust-trust.txt | diff - /tmp/rust-trust.txt
 (cd ../c3-boot && cargo run -q -p c3-verify --example decode_vectors) > /tmp/rust-decode.txt
 lake exe decode-check < /tmp/rust-decode.txt | diff - /tmp/rust-decode.txt
 (cd ../c3-boot && cargo run -q -p c3-verify --example sigstore_vectors &&

@@ -198,6 +198,10 @@ def blockList (M : Word → BitVec 8) (bp : Word) (k : Nat) : List Bytes :=
 theorem memBytes_length (M : Word → BitVec 8) (p : Word) (n : Nat) : (memBytes M p n).length = n := by
   unfold memBytes; rw [List.length_map, List.length_range]
 
+theorem memBytes_eq_of {M M' : Word → BitVec 8} {p : Word} {n : Nat}
+    (h : ∀ i, i < n → M (p + BitVec.ofNat 32 i) = M' (p + BitVec.ofNat 32 i)) : memBytes M p n = memBytes M' p n := by
+  unfold memBytes; apply List.map_congr_left; intro i hi; rw [h i (List.mem_range.mp hi)]
+
 theorem memBytes_getD {M : Word → BitVec 8} {p : Word} {n i : Nat} (hi : i < n) :
     (memBytes M p n).getD i 0 = (M (p + BitVec.ofNat 32 i)).toNat := by
   unfold memBytes

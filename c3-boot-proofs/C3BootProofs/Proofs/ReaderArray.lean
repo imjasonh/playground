@@ -53,6 +53,20 @@ theorem memStore32_congr {M M' : Word → BitVec 8} {a x v : Word} (h : M x = M'
   unfold memStore32
   exact memStore8_congr (memStore8_congr (memStore8_congr (memStore8_congr h)))
 
+/-- `Reader::bytes`'s memory at `x` depends only on `x` and the reader. -/
+theorem bytesMem_congr {M M' : Word → BitVec 8} {out self n x : Word} (hx : M x = M' x)
+    (hs : ∀ j, j < 12 → M (self + BitVec.ofNat 32 j) = M' (self + BitVec.ofNat 32 j)) :
+    bytesMem M out self n x = bytesMem M' out self n x := by
+  have ld : ∀ c, c + 4 ≤ 12 → memLoad32 M (self + BitVec.ofNat 32 c) = memLoad32 M' (self + BitVec.ofNat 32 c) :=
+    fun c hc => (memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact (hs (c + j) (by omega)).symm).symm
+  have l0 : memLoad32 M self = memLoad32 M' self := by have := ld 0 (by omega); rwa [add_ofNat_zero] at this
+  have l4 : memLoad32 M (self + 4) = memLoad32 M' (self + 4) := ld 4 (by omega)
+  have l8 : memLoad32 M (self + 8) = memLoad32 M' (self + 8) := ld 8 (by omega)
+  unfold bytesMem; rw [l0, l4, l8]
+  cases bytesResult (memLoad32 M' self) (memLoad32 M' (self + 4)) (memLoad32 M' (self + 8)) n with
+  | none => exact memStore8_congr (memStore32_congr hx)
+  | some pe => exact memStore32_congr (memStore32_congr (memStore32_congr hx))
+
 theorem CodeIn.ofBytesMem {M : Word → BitVec 8} {b out self n : Word} {code : List Nat}
     (hc : CodeIn M b code) (h1 : Sep out 8 b code.length) (h2 : Sep (self + 8) 4 b code.length) :
     CodeIn (bytesMem M out self n) b code := by
@@ -115,7 +129,7 @@ theorem ra4_at_0a : fetchRel readerArray4Code 0x0A = some (.aluImm .add a0 sp 0x
 theorem ra4_at_0c : fetchRel readerArray4Code 0x0C = some (.aluImm .add a2 x0 4, 2) := by decide
 theorem ra4_at_0e : fetchRel readerArray4Code 0x0E = some (.aluImm .add s1 x0 4, 2) := by decide
 theorem ra4_at_10 : fetchRel readerArray4Code 0x10 = some (.auipc ra 0, 4) := by decide
-theorem ra4_at_14 : fetchRel readerArray4Code 0x14 = some (.jalr ra ra 0xFFFFFF86, 4) := by decide
+theorem ra4_at_14 : fetchRel readerArray4Code 0x14 = some (.jalr ra ra 0xFFFFFF7A, 4) := by decide
 theorem ra4_at_18 : fetchRel readerArray4Code 0x18 = some (.load .lw a1 sp 0x0C, 2) := by decide
 theorem ra4_at_1a : fetchRel readerArray4Code 0x1A = some (.branch .beq a1 x0 0x0E, 2) := by decide
 theorem ra4_at_1c : fetchRel readerArray4Code 0x1C = some (.load .lw a0 sp 0x10, 2) := by decide
