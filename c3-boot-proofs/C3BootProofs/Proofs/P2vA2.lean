@@ -190,7 +190,7 @@ theorem p2v_a2 {B pk dg rp sq : Word} {v : Nat → Word} {n0 : Machine}
   have E2 : P2vCode n2.mem := E1.fr F fr2
   have V2 : P2vSaves B n2.mem v := V1.keepL K2 (by decide)
   rw [gsOk_congr (p2v_pt fR1 k_in)] at Ok2 Er2
-  rw [gsVal_sv fR1 k_in (o := 1) (by decide), gsVal_sv fR1 k_in (o := 0x21) (by decide)] at Ok2
+  rw [gsVal_p2v fR1 k_in (o := 1) (by decide), gsVal_p2v fR1 k_in (o := 0x21) (by decide)] at Ok2
   have g2_3 : reg n2 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [rk2 (3 : Fin 32) (by decide), g1_3]
   have g2_4 : reg n2 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [rk2 (4 : Fin 32) (by decide), g1_4]
   have g2_8 : reg n2 (8 : Fin 32) = rp := by rw [rk2 (8 : Fin 32) (by decide), g1_8]

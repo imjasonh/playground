@@ -38,6 +38,7 @@ def port(text):
     """Renames the engine's `sigstore::verify` names to this function's."""
     text = text.replace("sigstoreVerifyCode", "p256VerifyPrehashCode")
     text = re.sub(r"\bSV\b", "P2V", text)
+    text = text.replace("gsVal_sv ", "gsVal_p2v ")
 
     def ident(m):
         w = m.group(0)

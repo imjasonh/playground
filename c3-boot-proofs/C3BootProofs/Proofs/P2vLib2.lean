@@ -5,6 +5,8 @@ namespace C3.RV32.P2v
 
 open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv
 
+set_option maxRecDepth 100000
+
 
 /-- The functions that `p256VerifyPrehash`'s steps share. -/
 structure P2vCode (M : Word → BitVec 8) : Prop where
@@ -33,9 +35,71 @@ theorem P2vIn.sepLo {B rp : Word} {rl : Nat} (h : P2vIn B rp rl) {c n : Nat} (hc
     rw [BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq; simp; omega] at this
   exact this.symm
 
-theorem p2v_base' (B : Word) (c : Nat) : B + BitVec.ofNat 32 (0x21A0 + c) = B + 0x21A0 + BitVec.ofNat 32 c :=
+theorem P2vIn.r {B p : Word} {len : Nat} (h : P2vIn B p len) {i : Nat} (hi : i < len) : P2vR B (p + BitVec.ofNat 32 i) :=
+  (h.sep.sub (c := i) (l := 1) (by omega)).symm
+
+theorem P2vIn.r0 {B p : Word} {len : Nat} (h : P2vIn B p len) (hn : 0 < len) : P2vR B p := by
+  have := h.r hn; rwa [show p + BitVec.ofNat 32 0 = p from BitVec.add_zero p] at this
+
+/-- Proves that two sums of a base address and constants are equal. -/
+macro "p2v_addr" : tactic =>
+  `(tactic| (apply BitVec.eq_of_toNat_eq
+             simp only [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]
+               <;> omega))
+
+theorem p2v_at {B : Word} (F : Fr B 0x3590) (c : Nat) (hc : c ≤ 0x13F0) :
+    (B + 0x21A0 + BitVec.ofNat 32 c).toNat = B.toNat + 0x21A0 + c := by
+  have := F.at (0x21A0 + c) (by omega); rw [← add_ofNat_assoc] at this; exact this.trans (by omega)
+
+theorem p2v_al {B : Word} (F : Fr B 0x3590) {c : Nat} (hc : c ≤ 0x13F0) (ac : c % 4 = 0) :
+    (B + 0x21A0 + BitVec.ofNat 32 c).toNat % 4 = 0 := by
+  have := F.al; rw [p2v_at F c hc]; omega
+
+theorem p2v_base (B : Word) (c : Nat) : B + BitVec.ofNat 32 (0x21A0 + c) = B + 0x21A0 + BitVec.ofNat 32 c :=
   (add_ofNat_assoc B 0x21A0 c).symm
 
+/-- A byte outside the stack is outside every part of the frame. -/
+theorem p2vR_hi {B x : Word} {c l : Nat} (hx : P2vR B x) (h : c + l ≤ 0x13F0) :
+    Sep (B + 0x21A0 + BitVec.ofNat 32 c) l x 1 := by
+  have := hx.sub (c := 0x1A0 + 0x21A0 + c) (l := l) (by omega)
+  rwa [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0x21A0 + c) = B + 0x21A0 + BitVec.ofNat 32 c by
+    rw [BitVec.add_assoc, BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq
+    rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+      show (0xFFFFFE60 : Word).toNat = 0xFFFFFE60 from rfl, show (0x21A0 : Word).toNat = 0x21A0 from rfl]
+    omega] at this
+
+/-- A byte outside the stack is outside the `k` bytes below the frame. -/
+theorem p2vR_lo {B x : Word} {k : Nat} (hx : P2vR B x) (hk : k ≤ 0x2340) (hk0 : 0 < k) :
+    Sep (B + 0x21A0 + BitVec.ofNat 32 (2 ^ 32 - k)) k x 1 := by
+  have := hx.sub (c := 0x1A0 + 0x21A0 - k) (l := k) (by omega)
+  rwa [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0x21A0 - k) = B + 0x21A0 + BitVec.ofNat 32 (2 ^ 32 - k) by
+    rw [BitVec.add_assoc, BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq
+    rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+      show (0xFFFFFE60 : Word).toNat = 0xFFFFFE60 from rfl, show (0x21A0 : Word).toNat = 0x21A0 from rfl]
+    omega] at this
+
+/-- A callee frame `k` bytes below the frame's base. -/
+theorem p2v_lo (B : Word) (k : Nat) (hk : k ≤ 0x21A0) :
+    B + 0x21A0 + BitVec.ofNat 32 (2 ^ 32 - k) = B + BitVec.ofNat 32 (0x21A0 - k) := by
+  rw [BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.reduceToNat, Nat.reducePow]; omega
+
+theorem p2v_spX (B : Word) (k : Nat) (hk : k ≤ 0x21A0) :
+    B + 0x21A0 + BitVec.ofNat 32 (2 ^ 32 - k) = B + BitVec.ofNat 32 (0x21A0 - k) := p2v_lo B k hk
+
+theorem p2vR_spX {B x : Word} {k : Nat} (hx : P2vR B x) (hk : k ≤ 0x2340) (hk0 : 0 < k) (hk' : k ≤ 0x21A0) :
+    Sep (B + BitVec.ofNat 32 (0x21A0 - k)) k x 1 := by
+  have := p2vR_lo (k := k) hx hk hk0
+  rwa [p2v_lo B k hk'] at this
+
+theorem p2v_sp2d0 (B : Word) : B + 0x21A0 = B + BitVec.ofNat 32 0x1ED0 + 0x2D0 := by
+  rw [BitVec.add_assoc]; rfl
+
+theorem p2v_sp10 (B : Word) : B + 0x21A0 + 0xFFFFFFF0 = B + BitVec.ofNat 32 0x2190 := by
+  rw [BitVec.add_assoc]; rfl
+
+theorem p2v_base' (B : Word) (c : Nat) : B + BitVec.ofNat 32 (0x21A0 + c) = B + 0x21A0 + BitVec.ofNat 32 c :=
+  (add_ofNat_assoc B 0x21A0 c).symm
 
 theorem p2v_pt {B rp : Word} {rl : Nat} {M M0 : Word → BitVec 8} (fR : ∀ x, P2vR B x → M x = M0 x)
     (h : P2vIn B rp rl) : ∀ i, i < rl → M (rp + BitVec.ofNat 32 i) = M0 (rp + BitVec.ofNat 32 i) :=
@@ -63,7 +127,6 @@ theorem dataR {B q : Word} {ql : Nat} (F : Fr B 0x3590) (h1 : (img% dataWindowAd
     omega
   rw [e] at hs
   exact hs
-
 
 /-- `M'` agrees with `M` on the frame, except for the ranges in `L`. -/
 def P2vKeepL (B : Word) (M M' : Word → BitVec 8) (L : List (Nat × Nat)) : Prop :=
@@ -117,13 +180,6 @@ theorem br_bne_t {a b : Word} (h : a ≠ b) : branchTaken .bne a b = true := by 
 
 theorem br_bne_f {a b : Word} (h : a = b) : branchTaken .bne a b = false := by simp [branchTaken, h]
 
-
-/-- A callee frame `k` bytes below the frame's base. -/
-theorem p2v_lo (B : Word) (k : Nat) (hk : k ≤ 0x21A0) :
-    B + 0x21A0 + BitVec.ofNat 32 (2 ^ 32 - k) = B + BitVec.ofNat 32 (0x21A0 - k) := by
-  rw [BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq
-  simp only [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.reduceToNat, Nat.reducePow]; omega
-
 /-- Bytes a step of `p256VerifyPrehash` doesn't write: outside the stack, or
 the constants between `dataWindowAddress` and 0x3FCC4E60. -/
 def P2vRo (B q : Word) (ql : Nat) : Prop :=
@@ -142,7 +198,6 @@ theorem P2vRo.fit {B q : Word} {ql : Nat} (h : P2vRo B q ql) : q.toNat + ql < 2 
 
 theorem p2v_sp4 (B : Word) : B + 0x21A0 + 0xFFFFFFFC = B + BitVec.ofNat 32 0x219C := by
   rw [BitVec.add_assoc]; rfl
-
 
 /-- The read-only region `ed25519_verify`'s constants live in lies outside
 the frame's region. -/
@@ -169,49 +224,6 @@ theorem p2v_msF {n : Machine} {B : Word} {off : Nat} {imm o v : Word} {c N : Nat
   have hFh := F.hi
   exact c_memset s C.self C.K h1 h2 hb hev ha0 ha1 ha2 (by rw [p2v_at F _ (by omega)]; omega)
     (by rw [← p2v_base']; exact F.sepHi (by omega) (by decide) (by decide))
-
-theorem P2vIn.r {B p : Word} {len : Nat} (h : P2vIn B p len) {i : Nat} (hi : i < len) : P2vR B (p + BitVec.ofNat 32 i) :=
-  (h.sep.sub (c := i) (l := 1) (by omega)).symm
-
-theorem P2vIn.r0 {B p : Word} {len : Nat} (h : P2vIn B p len) (hn : 0 < len) : P2vR B p := by
-  have := h.r hn; rwa [show p + BitVec.ofNat 32 0 = p from BitVec.add_zero p] at this
-
-/-- Proves that two sums of a base address and constants are equal. -/
-macro "p2v_addr" : tactic =>
-  `(tactic| (apply BitVec.eq_of_toNat_eq
-             simp only [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]
-               <;> omega))
-
-theorem p2v_at {B : Word} (F : Fr B 0x3590) (c : Nat) (hc : c ≤ 0x13F0) :
-    (B + 0x21A0 + BitVec.ofNat 32 c).toNat = B.toNat + 0x21A0 + c := by
-  have := F.at (0x21A0 + c) (by omega); rw [← add_ofNat_assoc] at this; exact this.trans (by omega)
-
-theorem p2v_al {B : Word} (F : Fr B 0x3590) {c : Nat} (hc : c ≤ 0x13F0) (ac : c % 4 = 0) :
-    (B + 0x21A0 + BitVec.ofNat 32 c).toNat % 4 = 0 := by
-  have := F.al; rw [p2v_at F c hc]; omega
-
-theorem p2v_base (B : Word) (c : Nat) : B + BitVec.ofNat 32 (0x21A0 + c) = B + 0x21A0 + BitVec.ofNat 32 c :=
-  (add_ofNat_assoc B 0x21A0 c).symm
-
-/-- A byte outside the stack is outside every part of the frame. -/
-theorem p2vR_hi {B x : Word} {c l : Nat} (hx : P2vR B x) (h : c + l ≤ 0x13F0) :
-    Sep (B + 0x21A0 + BitVec.ofNat 32 c) l x 1 := by
-  have := hx.sub (c := 0x1A0 + 0x21A0 + c) (l := l) (by omega)
-  rwa [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0x21A0 + c) = B + 0x21A0 + BitVec.ofNat 32 c by
-    rw [BitVec.add_assoc, BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq
-    rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
-      show (0xFFFFFE60 : Word).toNat = 0xFFFFFE60 from rfl, show (0x21A0 : Word).toNat = 0x21A0 from rfl]
-    omega] at this
-
-/-- A byte outside the stack is outside the `k` bytes below the frame. -/
-theorem p2vR_lo {B x : Word} {k : Nat} (hx : P2vR B x) (hk : k ≤ 0x2340) (hk0 : 0 < k) :
-    Sep (B + 0x21A0 + BitVec.ofNat 32 (2 ^ 32 - k)) k x 1 := by
-  have := hx.sub (c := 0x1A0 + 0x21A0 - k) (l := k) (by omega)
-  rwa [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0x21A0 - k) = B + 0x21A0 + BitVec.ofNat 32 (2 ^ 32 - k) by
-    rw [BitVec.add_assoc, BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq
-    rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
-      show (0xFFFFFE60 : Word).toNat = 0xFFFFFE60 from rfl, show (0x21A0 : Word).toNat = 0x21A0 from rfl]
-    omega] at this
 
 theorem P2vSaves.keep {B : Word} {M M' : Word → BitVec 8} {v : Nat → Word} {c w : Nat} (V : P2vSaves B M v)
     (K : P2vKeep B M M' c w) (h : c + w ≤ 0x13BC) : P2vSaves B M' v := fun k hk => by
@@ -409,14 +421,6 @@ theorem p2v_mcRo2 {B : Word} {m : Machine} {off : Nat} {imm o p : Word} {c N : N
   · rw [← add_ofNat_assoc, fr2 _ (by rw [add_ofNat_assoc]; exact FS.lowB hb16 (by decide) (by omega)),
       C3.RV32.Dq.cp_at hj (by omega)]
 
-theorem p2v_spX (B : Word) (k : Nat) (hk : k ≤ 0x21A0) :
-    B + 0x21A0 + BitVec.ofNat 32 (2 ^ 32 - k) = B + BitVec.ofNat 32 (0x21A0 - k) := p2v_lo B k hk
-
-theorem p2vR_spX {B x : Word} {k : Nat} (hx : P2vR B x) (hk : k ≤ 0x2340) (hk0 : 0 < k) (hk' : k ≤ 0x21A0) :
-    Sep (B + BitVec.ofNat 32 (0x21A0 - k)) k x 1 := by
-  have := p2vR_lo (k := k) hx hk hk0
-  rwa [p2v_lo B k hk'] at this
-
 /-- The first 32 bytes of `L`, each cut to a byte. -/
 def b32 (L : Bytes) : Bytes := (List.range 32).map fun j => (BitVec.ofNat 8 (L.getD j 0)).toNat
 
@@ -435,10 +439,6 @@ theorem join32 {M : Word → BitVec 8} {B : Word} {L : Bytes} {c : Nat}
   · have := h1 j (by omega)
     rw [show c + 1 + j = c + (j + 1) by omega, show 1 + j = j + 1 by omega] at this
     rw [this]
-
-
-theorem p2v_sp10 (B : Word) : B + 0x21A0 + 0xFFFFFFF0 = B + BitVec.ofNat 32 0x2190 := by
-  rw [BitVec.add_assoc]; rfl
 
 theorem P2vRo.lo {B q : Word} {ql : Nat} (h : P2vRo B q ql) : q.toNat + ql ≤ 0x40000000 := by
   rcases h with h | ⟨_, h2⟩

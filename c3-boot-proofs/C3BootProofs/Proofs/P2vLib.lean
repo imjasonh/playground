@@ -132,7 +132,7 @@ theorem p2v_pro {M : Word → BitVec 8} {n : Machine} {B : Word} (C : CodeIn M P
   have g : ∀ q, reg n1 q = (runBlock p2vA1 (M, reg n)).2 q := fun q => by rw [u1.regs]
   have z : ∀ x : Word, (0 : Word) + x = x := fun x => BitVec.zero_add x
   refine ⟨n1, c1, ⟨u1.pc, m1, fun _ => rfl⟩, ?_, ?_, ?_, ?_, ?_, fun q hq => ?_⟩
-  · rw [g]; simp +decide only [runBlock, BInstr.run, p2vA1, upd, ↓reduceIte]; rw [rsp, hA, hS]
+  · rw [g]; simp +decide only [runBlock, BInstr.run, p2vA1, upd, ↓reduceIte]; rw [rsp, hA, hS]; rfl
   · rw [g]; simp +decide only [runBlock, BInstr.run, p2vA1, upd, ↓reduceIte, aluEval, z]
   · rw [g]; simp +decide only [runBlock, BInstr.run, p2vA1, upd, ↓reduceIte, aluEval, z]
   · rw [g]; simp +decide only [runBlock, BInstr.run, p2vA1, upd, ↓reduceIte, aluEval, z]

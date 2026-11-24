@@ -7,6 +7,7 @@ import C3BootProofs.Proofs.Bytes2Scalar256
 import C3BootProofs.Proofs.ScalarFromSlice256
 import C3BootProofs.Proofs.Norm8
 import C3BootProofs.Proofs.ByteCompare
+import C3BootProofs.Proofs.Select
 
 /-!
 # `p256VerifyPrehash`: the calls of the P-256 ECDSA check
@@ -78,13 +79,13 @@ theorem p2v_szF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
       (B + 0x21A0 + BitVec.ofNat 32 oc) := by
     rw [mem1]
     exact ⟨by decide, EC.sz,
-      by rw [show BitVec.ofNat 32 scalarIsZero256Address + 0x11A20 = BitVec.ofNat 32 memsetAddress by decide]; exact EC.ms,
-      by rw [show BitVec.ofNat 32 scalarIsZero256Address + 0xA884 = BitVec.ofNat 32 limbCtEqAddress by decide]; exact EC.lce,
+      by rw [show BitVec.ofNat 32 scalarIsZero256Address + 0x13830 = BitVec.ofNat 32 memsetAddress by decide]; exact EC.ms,
+      by rw [show BitVec.ofNat 32 scalarIsZero256Address + 0xC694 = BitVec.ofNat 32 limbCtEqAddress by decide]; exact EC.lce,
       by rw [show BitVec.ofNat 32 scalarIsZero256Address + 0xFFFFFE8C = BitVec.ofNat 32 uintRefIsZeroAddress by decide]
          exact EC.uiz,
       by rw [show BitVec.ofNat 32 scalarIsZero256Address + 0xFFFFFE8C + 0x1A = BitVec.ofNat 32 uintRefIsNonzeroAddress by
            decide]; exact EC.unz,
-      by rw [show BitVec.ofNat 32 scalarIsZero256Address + 0xA97E = BitVec.ofNat 32 blackBoxU8Address by decide]; exact EC.bb,
+      by rw [show BitVec.ofNat 32 scalarIsZero256Address + 0xC78E = BitVec.ofNat 32 blackBoxU8Address by decide]; exact EC.bb,
       by rw [hS]; omega, by rw [hS]; omega, p2v_al F (by omega) ho4, by rw [p2v_at F _ (by omega)]; omega,
       FS.lowHi (by decide) rfl (by decide) (by decide), FS.lowHi (by decide) rfl (by decide) (by decide),
       FS.lowHi (by decide) rfl (by decide) (by decide), FS.lowHi (by decide) rfl (by decide) (by decide),
@@ -195,9 +196,9 @@ theorem p2v_nz2F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
            decide]; exact EC.spl8,
       by rw [show BitVec.ofNat 32 nonZero256Address + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFFBCE6 =
            BitVec.ofNat 32 limbCtEqAddress by decide]; exact C.K.lce,
-      by rw [show BitVec.ofNat 32 nonZero256Address + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFF12EE =
+      by rw [show BitVec.ofNat 32 nonZero256Address + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFEF4DE =
            BitVec.ofNat 32 uintRefIsZeroAddress by decide]; exact C.K.uiz,
-      by rw [show BitVec.ofNat 32 nonZero256Address + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFF12EE + 0x1A =
+      by rw [show BitVec.ofNat 32 nonZero256Address + 0xFFFFFD20 + 0xFFFFFB5E + 0xFFFEF4DE + 0x1A =
            BitVec.ofNat 32 uintRefIsNonzeroAddress by decide]; exact C.K.refnz,
       by rw [show BitVec.ofNat 32 nonZero256Address + 0xFFFFFD20 + 0xFFFFB93E = BitVec.ofNat 32 blackBoxU8Address by
            decide]; exact C.K.bb,
@@ -303,6 +304,12 @@ theorem lzLimbs_congr {M M0 : Word → BitVec 8} {q : Word} :
   | k + 1, h => by
     simp only [lzLimbs]
     rw [h k (by omega), lzLimbs_congr k fun i hi => h i (by omega)]
+
+theorem _root_.C3.RV32.PanicCode.hi' {M M' : Word → BitVec 8} (h : PanicCode M)
+    (hx : ∀ x : Word, 0x40000000 ≤ x.toNat → M' x = M x) : PanicCode M' := fun p hp => by
+  have hb : 0x40000000 ≤ p.1 ∧ p.1 + p.2.length < 2 ^ 32 := by revert p; decide
+  exact codeHi (h p hp) (by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]; omega)
+    (by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]; omega) hx
 
 theorem _root_.C3.RV32.BYEnv.p2v {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3590) (D : BYEnv M0)
     (fR : ∀ x, P2vR B x → M x = M0 x) : BYEnv M := by
@@ -480,7 +487,7 @@ theorem p2v_unz8F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {
   have r1 := PEnv.reg1 regs1 s.zero
   have hS : (B + (0x21A0 : Word)).toNat = B.toNat + 0x21A0 := F.at 0x21A0 (by decide)
   have sp1 : reg n1 sp = B + 0x21A0 := by rw [r1 sp (by decide), rsp]
-  have eU : BitVec.ofNat 32 uint8IsNonzeroAddress + 0xFFFF120E = BitVec.ofNat 32 uintRefIsNonzeroAddress := by decide
+  have eU : BitVec.ofNat 32 uint8IsNonzeroAddress + 0xFFFEF3FE = BitVec.ofNat 32 uintRefIsNonzeroAddress := by decide
   obtain ⟨n2, c2, pc2, a02, k2, f2⟩ := uint8IsNonzero_correct n1 (base := BitVec.ofNat 32 uint8IsNonzeroAddress)
     (by decide) (by rw [mem1]; exact EC.unz8) (by rw [mem1, eU]; exact C.K.refnz) pc1
     (by rw [r1 a0 (by decide), ha0]) (p2v_al F (by omega) hcx4) (by rw [sp1, hS]; omega)
@@ -644,6 +651,15 @@ theorem accV_zero_iff {M : Word → BitVec 8} {b : Word} :
 theorem limbs0_iff {M : Word → BitVec 8} {b : Word} {v : Nat} (h : accV M b 8 = v) :
     (∀ i, i < 8 → memLoad32 M (b + BitVec.ofNat 32 (4 * i)) = 0) ↔ v = 0 := by
   rw [← h, accV_zero_iff]
+
+/-- `GsOk` reads only the 65 bytes at `inp`. -/
+theorem gsOk_congr {M M0 : Word → BitVec 8} {inp : Word}
+    (h : ∀ i, i < 0x41 → M (inp + BitVec.ofNat 32 i) = M0 (inp + BitVec.ofNat 32 i)) :
+    GsOk M inp ↔ GsOk M0 inp := by
+  have e0 : M inp = M0 inp := by have := h 0 (by decide); rwa [add_ofNat_zero] at this
+  have e1 : gsVal M inp 1 = gsVal M0 inp 1 := by unfold gsVal; rw [mb_sub h (by decide)]
+  have e2 : gsVal M inp 0x21 = gsVal M0 inp 0x21 := by unfold gsVal; rw [mb_sub h (by decide)]
+  unfold GsOk; rw [e0, e1, e2]
 
 theorem gsVal_p2v {M M0 : Word → BitVec 8} {B inp : Word} {o : Nat} (fR : ∀ x, P2vR B x → M x = M0 x)
     (hin : P2vIn B inp 0x41) (ho : o + 32 ≤ 0x41) : gsVal M inp o = gsVal M0 inp o := by

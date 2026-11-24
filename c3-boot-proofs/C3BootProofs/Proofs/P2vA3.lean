@@ -1,6 +1,4 @@
 import C3BootProofs.Proofs.P2vMs0
-import C3BootProofs.Image.Bootloader
-import C3BootProofs.Image.BootloaderData5
 
 /-!
 # `p256VerifyPrehash`: the P-256 check's inputs
