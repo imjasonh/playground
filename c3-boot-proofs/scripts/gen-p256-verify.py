@@ -448,8 +448,52 @@ def stage_ive():
     return g, info
 
 
+RO = "(Or.inr ⟨by decide, by decide⟩)"
+GMONT = "BitVec.ofNat 32 (img% p256GMontAddress)"
+
+
+def stage_ecd():
+    """From 0x690 to the table loop's head at 0x754: `u₁ = z·s⁻¹` and
+    `u₂ = r·s⁻¹`, and the two pairs `(G, u₁)` and `(Q, u₂)` laid out for the
+    tables."""
+    g = Gen("EcD")
+    g.generic_alu = True
+    params = iv_start(g, {18: ("S", 0xFE4), 26: ("S", 0x920)})
+    g.acc[0x980] = (8, "wv")
+    params = [p for p in params if not p.startswith("(a0_980 ")]
+    params.append("(a0_980 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x980) 8 = wv)")
+    params += ["(RS : P2vRoSep B)", "(PM0 : CodeIn M0 (BitVec.ofNat 32 p256ScalarMulAddress) p256ScalarMulCode)",
+               "(WM0 : CodeIn M0 (BitVec.ofNat 32 wideMulAddress) wideMulCode)"]
+    g.block(0x690, 0x69E)
+    g.mc(0x69E, 0x1E0, 0x980, 0x20)
+    g.block(0x6A6, 0x6B2)
+    g.psm(0x6B2, 0x9E0, 0x1C0, 0x1E0)
+    g.block(0x6BA, 0x6C6)
+    g.psm(0x6C6, 0xCE0, 0x180, 0x1E0)
+    g.block(0x6CE, 0x6E4)
+    g.mcRo(0x6E4, 0x980, GMONT, 0x60, RO, acc=8)
+    g.block(0x6EC, 0x6FA)
+    g.mc(0x6FA, 0xC80, 0x120, 0x60)
+    g.block(0x702, 0x710)
+    g.mc(0x710, 0x200, 0x980, 0x80)
+    g.block(0x718, 0x726)
+    g.mc(0x726, 0x280, 0xC80, 0x80)
+    g.block(0x72E, 0x73C)
+    g.mc(0x73C, 0xFE4, 0x200, 0x100)
+    g.block(0x744, 0x754)
+    stmt, proof = finish(g, 0x754, [2, 3, 4, 18, 19, 20, 21, 22, 23, 24, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "p2v_ecd", "title": "`u₁` and `u₂`, and the pairs of the linear combination",
+            "doc": "From 0x690 to the table loop at 0x754: `u₁ = z·s⁻¹` and `u₂ = r·s⁻¹` with the scalar field's "
+            "`mul`, and the pairs `(G, u₁)` and `(Q, u₂)` copied to offset 0xFE4.",
+            "params": params, "stmt": stmt, "proof": proof,
+            "binders": IV_BINDERS.replace("{fs gs ds es : BitVec 8}", "{fs gs ds es : BitVec 8} {wv : Nat}"),
+            "start": 0x690, "import": "C3BootProofs.Proofs.P2vEcPt"}
+    return g, info
+
+
 def stages():
-    return {"A1": stage_a1, "A2": stage_a2, "A3": stage_a3, "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive}
+    return {"A1": stage_a1, "A2": stage_a2, "A3": stage_a3, "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive,
+            "EcD": stage_ecd}
 
 
 HEADER = """import {imp}
@@ -462,7 +506,7 @@ HEADER = """import {imp}
 
 namespace C3.RV32.P2v
 
-open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2
+open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2 C3.RV32.Sv
 
 set_option maxRecDepth 20000
 set_option linter.unusedSimpArgs false
