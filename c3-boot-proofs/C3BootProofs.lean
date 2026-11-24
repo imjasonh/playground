@@ -564,3 +564,4 @@ import C3BootProofs.Models.Ed25519Ladder
 import C3BootProofs.Models.Ed25519Limbs
 import C3BootProofs.Models.Ed25519Model
 import C3BootProofs.Models.Ed25519SvModel
+import C3BootProofs.Models.Ed25519Fermat
