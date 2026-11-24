@@ -9,6 +9,7 @@ require (
 	github.com/container-storage-interface/spec v1.14.0
 	github.com/google/uuid v1.6.0
 	github.com/hanwen/go-fuse/v2 v2.12.1
+	github.com/klauspost/compress v1.20.5
 	github.com/sethvargo/go-envconfig v1.4.3
 	go.ate.dev/substrate v1.0.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.72.0
@@ -21,6 +22,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	golang.org/x/sync v0.25.0
+	google.golang.org/genproto v0.0.0-20261123191846-1e707ab9fbc2
 	google.golang.org/genproto/googleapis/bytestream v0.0.0-20261123191846-1e707ab9fbc2
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12

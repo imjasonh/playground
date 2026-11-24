@@ -213,6 +213,25 @@ func (t *Tracker) Flush(ctx context.Context, cutoff time.Time) []Summary {
 	return done
 }
 
+// Finish closes a single invocation immediately if it is currently tracked,
+// such as when the Build Event Service receives BuildFinished.
+func (t *Tracker) Finish(ctx context.Context, id string) bool {
+	if t == nil || id == "" {
+		return false
+	}
+	t.mu.Lock()
+	r, ok := t.open[id]
+	if ok {
+		delete(t.open, id)
+	}
+	t.mu.Unlock()
+	if !ok {
+		return false
+	}
+	t.record(ctx, r.Summary)
+	return true
+}
+
 func (t *Tracker) record(ctx context.Context, s Summary) {
 	sc := telemetry.InvocationSpanContext(s.ID)
 	attrs := []attribute.KeyValue{

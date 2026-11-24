@@ -1,0 +1,42 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "bes",
+    srcs = [
+        "bep.go",
+        "bes.go",
+    ],
+    importpath = "github.com/imjasonh/playground/ci-substrate/internal/bes",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/invocation",
+        "//internal/telemetry",
+        "//internal/tenant",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_metric//:metric",
+        "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_genproto//googleapis/devtools/build/v1:build",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protowire",
+        "@org_golang_google_protobuf//types/known/emptypb",
+    ],
+)
+
+go_test(
+    name = "bes_test",
+    srcs = ["bes_test.go"],
+    embed = [":bes"],
+    deps = [
+        "//internal/tenant",
+        "@org_golang_google_genproto//googleapis/devtools/build/v1:build",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+        "@org_golang_google_protobuf//encoding/protowire",
+        "@org_golang_google_protobuf//types/known/anypb",
+    ],
+)

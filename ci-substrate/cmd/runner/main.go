@@ -21,12 +21,12 @@ import (
 	_ "github.com/chainguard-dev/clog/gcp/init"
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
 	"github.com/imjasonh/playground/ci-substrate/internal/bot"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
 	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
+	"github.com/imjasonh/playground/ci-substrate/internal/tlscfg"
 )
 
 func main() {
@@ -40,6 +40,10 @@ func main() {
 	inputMode := flag.String("input-mode", string(bot.InputAuto), "how inputs reach the exec root: volume, fuse, copy, or auto")
 	inputsVolume := flag.String("inputs-volume", "", "mounted casfs inputs volume for the volume input mode, such as a Substrate external volume")
 	leaseWait := flag.Duration("lease-wait", 20*time.Second, "how long each Lease call waits for a job")
+	useTLS := flag.Bool("tls", false, "connect to cas and cascache over TLS")
+	tlsCAFile := flag.String("tls-ca-file", "", "PEM CA file for verifying cas and cascache TLS certificates")
+	tlsCertFile := flag.String("tls-cert-file", "", "PEM client certificate file for mTLS")
+	tlsKeyFile := flag.String("tls-key-file", "", "PEM client private key file for mTLS")
 	flag.Parse()
 
 	if *originAddr == "" {
@@ -65,7 +69,17 @@ func main() {
 			slog.Error("flushing telemetry", "err", err)
 		}
 	}()
-	dial := append(telemetry.DialOptions(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	dialCreds, err := (tlscfg.ClientConfig{
+		Enabled:  *useTLS,
+		CAFile:   *tlsCAFile,
+		CertFile: *tlsCertFile,
+		KeyFile:  *tlsKeyFile,
+	}).DialOption()
+	if err != nil {
+		slog.Error("configuring TLS", "err", err)
+		os.Exit(1)
+	}
+	dial := append(telemetry.DialOptions(), dialCreds)
 
 	originConn, err := grpc.NewClient(*originAddr, dial...)
 	if err != nil {

@@ -31,6 +31,7 @@ type harness struct {
 	actions *actioncache.Store
 	sched   *exec.Scheduler
 	exec    repb.ExecutionClient
+	ops     longrunning.OperationsClient
 	worker  workerv1.WorkerServiceClient
 }
 
@@ -58,6 +59,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	srv := grpc.NewServer()
 	repb.RegisterExecutionServer(srv, s)
+	longrunning.RegisterOperationsServer(srv, s)
 	workerv1.RegisterWorkerServiceServer(srv, s)
 	go srv.Serve(lis)
 	t.Cleanup(srv.Stop)
@@ -71,6 +73,7 @@ func newHarness(t *testing.T) *harness {
 		actions: actions,
 		sched:   s,
 		exec:    repb.NewExecutionClient(conn),
+		ops:     longrunning.NewOperationsClient(conn),
 		worker:  workerv1.NewWorkerServiceClient(conn),
 	}
 }
@@ -165,7 +168,11 @@ func TestExecuteRoundTrip(t *testing.T) {
 	if _, err := h.worker.Heartbeat(ctxTok(t, "tok-a"), &workerv1.HeartbeatRequest{BotId: "bot-1", JobId: lease.GetJob().GetId()}); err != nil {
 		t.Fatal(err)
 	}
-	complete(t, h, "tok-a", "bot-1", lease.GetJob().GetId(), &repb.ActionResult{ExitCode: 0, StdoutDigest: digest.FromBytes([]byte("hi"))})
+	stdoutD := digest.FromBytes([]byte("hi"))
+	if err := h.store.Put(stdoutD, []byte("hi")); err != nil {
+		t.Fatal(err)
+	}
+	complete(t, h, "tok-a", "bot-1", lease.GetJob().GetId(), &repb.ActionResult{ExitCode: 0, StdoutDigest: stdoutD})
 
 	last, err := drain(t, stream)
 	if err != nil {
@@ -487,5 +494,117 @@ func TestExecuteRejectsUnknownAction(t *testing.T) {
 	}
 	if _, err := stream.Recv(); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("got %v, want FailedPrecondition", err)
+	}
+}
+
+func TestExecutionPriorityOrdering(t *testing.T) {
+	h := newHarness(t)
+	low := h.putAction(t, &repb.Action{CommandDigest: digest.FromBytes([]byte("low"))})
+	normal := h.putAction(t, &repb.Action{CommandDigest: digest.FromBytes([]byte("normal"))})
+	urgent := h.putAction(t, &repb.Action{CommandDigest: digest.FromBytes([]byte("urgent"))})
+
+	submit := func(action *repb.Digest, prio int32) {
+		t.Helper()
+		s, err := h.exec.Execute(ctxTok(t, "tok-a"), &repb.ExecuteRequest{
+			InstanceName:    "tenant-a",
+			ActionDigest:    action,
+			ExecutionPolicy: &repb.ExecutionPolicy{Priority: prio},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Recv(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	submit(low, 10)
+	submit(normal, 0)
+	submit(urgent, -5)
+
+	want := []string{urgent.GetHash(), normal.GetHash(), low.GetHash()}
+	for i, wantHash := range want {
+		lease, err := h.worker.Lease(ctxTok(t, "tok-a"), &workerv1.LeaseRequest{BotId: "bot-1"})
+		if err != nil || lease.GetJob() == nil {
+			t.Fatalf("lease %d: job=%v err=%v", i, lease.GetJob(), err)
+		}
+		if got := lease.GetJob().GetActionDigest().GetHash(); got != wantHash {
+			t.Fatalf("lease %d got action %s, want %s", i, got, wantHash)
+		}
+		complete(t, h, "tok-a", "bot-1", lease.GetJob().GetId(), &repb.ActionResult{})
+	}
+}
+
+func TestGetAndCancelOperation(t *testing.T) {
+	h := newHarness(t)
+	action := h.putAction(t, &repb.Action{CommandDigest: digest.FromBytes([]byte("cancel-me"))})
+	stream, err := h.exec.Execute(ctxTok(t, "tok-a"), &repb.ExecuteRequest{InstanceName: "tenant-a", ActionDigest: action})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Tenant B cannot inspect or cancel tenant A's operation.
+	if _, err := h.ops.GetOperation(ctxTok(t, "tok-b"), &longrunning.GetOperationRequest{Name: first.GetName()}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("cross-tenant GetOperation = %v, want PermissionDenied", err)
+	}
+	if _, err := h.ops.CancelOperation(ctxTok(t, "tok-b"), &longrunning.CancelOperationRequest{Name: first.GetName()}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("cross-tenant CancelOperation = %v, want PermissionDenied", err)
+	}
+
+	// Tenant A inspects and cancels the running operation.
+	lease, err := h.worker.Lease(ctxTok(t, "tok-a"), &workerv1.LeaseRequest{BotId: "bot-a"})
+	if err != nil || lease.GetJob() == nil {
+		t.Fatalf("lease: %v, %v", lease, err)
+	}
+	got, err := h.ops.GetOperation(ctxTok(t, "tok-a"), &longrunning.GetOperationRequest{Name: first.GetName()})
+	if err != nil || got.GetDone() {
+		t.Fatalf("GetOperation = (%v, %v), want in-progress", got, err)
+	}
+	if _, err := h.ops.CancelOperation(ctxTok(t, "tok-a"), &longrunning.CancelOperationRequest{Name: first.GetName()}); err != nil {
+		t.Fatalf("CancelOperation: %v", err)
+	}
+	last, err := drain(t, stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := status.FromProto(response(t, last).GetStatus()).Code(); got != codes.Canceled {
+		t.Errorf("cancelled status = %v, want Canceled", got)
+	}
+	hb, err := h.worker.Heartbeat(ctxTok(t, "tok-a"), &workerv1.HeartbeatRequest{BotId: "bot-a", JobId: lease.GetJob().GetId()})
+	if err != nil || !hb.GetCancelled() {
+		t.Errorf("Heartbeat after cancel = (%v, %v), want Cancelled=true", hb, err)
+	}
+}
+
+func TestExecuteCacheMissWhenCASBlobEvicted(t *testing.T) {
+	h := newHarness(t)
+	action := h.putAction(t, &repb.Action{CommandDigest: digest.FromBytes([]byte("evicted"))})
+	out := []byte("evictable output")
+	outD := digest.FromBytes(out)
+	if err := h.store.Put(outD, out); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.actions.Put("tenant-a", action, &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{{Path: "out.txt", Digest: outD}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Evict the output blob from CAS; Execute must queue rather than return a stale hit.
+	if err := h.store.Delete(outD); err != nil {
+		t.Fatal(err)
+	}
+	stream, err := h.exec.Execute(ctxTok(t, "tok-a"), &repb.ExecuteRequest{InstanceName: "tenant-a", ActionDigest: action})
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.GetDone() {
+		t.Fatal("Execute returned a cached hit even though its output blob was evicted from CAS")
 	}
 }

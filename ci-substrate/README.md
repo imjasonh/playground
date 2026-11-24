@@ -20,7 +20,7 @@ Dockerfiles and no Helm charts.
 
 | Binary | Role |
 |--------|------|
-| `cas` | Authoritative multi-tenant CAS, action cache, and scheduler (StatefulSet with a PVC). Speaks the Bazel Remote Execution API (`ContentAddressableStorage`, `ActionCache`, `ByteStream`, `Capabilities`, `Execution`) over gRPC, plus the `WorkerService` that runners lease jobs from. |
+| `cas` | Authoritative multi-tenant CAS, action cache, scheduler, Remote Asset, Remote Logstream, and Build Event Service (BES) server (StatefulSet with a PVC). Speaks the Bazel Remote Execution API (`ContentAddressableStorage`, `ActionCache`, `ByteStream`, `Capabilities`, `Execution`, `Operations`), Remote Asset API (`Fetch`, `Push`), Remote Logstream API (`LogStreamService`), and BES (`PublishBuildEvent`) over gRPC, plus the `WorkerService` that runners lease jobs from. See [PRODUCTION.md](PRODUCTION.md) for supported RBE features, flags, and roadmap. |
 | `cascache` | Node-local, read-only CAS proxy (DaemonSet, port 9092). Verified read-through cache in front of `cas`. Its Service sets `internalTrafficPolicy: Local`, so a pod reaches the cascache on its own node. |
 | `runner` | The bot. Leases actions from `cas`, builds the exec root (a `mkdir` on the inputs volume a Substrate actor gets from its node, a FUSE mount of `casfs` where the runner has `/dev/fuse`, or a copy from `cascache` otherwise), runs the command, uploads the outputs `cas` is missing, and reports the `ActionResult` with the input mode it used. It starts each command through `bash`, because a child that enters a FUSE mount the runner serves before it calls `execve` can deadlock the runner during garbage collection. Small output blobs share one `BatchUpdateBlobs` call. Runs as a Deployment per tenant (`deploy/40-runner.yaml`) or as a Substrate actor. |
 | `casfs-csi` | CSI driver (DaemonSet, `deploy/substrate/casfs-csi.yaml`) that mounts a `casfs` inputs volume for each actor on the actor's node and serves it from that node's `cascache` with the tenant's token. The runner in the sandbox never fetches an input and never holds the token. |
@@ -235,10 +235,13 @@ volume before it leases anything.
 
 The demo's other limits:
 
-- `cas` is one replica. Its blobs, action cache, and job records are on a
-  PVC and survive a restart, but there is no replication.
-- `cascache` doesn't evict. The kubelet evicts the pod, and with it the warm
-  set, when the cache passes the `emptyDir` size limit.
+- `cas` is one replica. Its blobs, action cache, assets, and BES summaries are
+  on a PVC and survive a restart, but there is no replication and the
+  in-memory scheduler queue does not survive a restart.
+- `cas` and `cascache` disable LRU eviction by default (`CAS_MAX_BYTES=0`,
+  `CACHE_MAX_BYTES=0`). In the demo manifests, the kubelet evicts `cascache`
+  when it passes the `emptyDir` size limit; set `CAS_MAX_BYTES` and
+  `CACHE_MAX_BYTES` to bound disk usage in place.
 - `cascache` is read-only and serves only the CAS and ByteStream services, so
   Bazel can't use it as `--remote_cache` on its own. Writes and the action
   cache go to `cas`.
@@ -255,12 +258,15 @@ The demo's other limits:
   published FUSE mounts stale (reads fail with `ENOTCONN`) until Substrate
   suspends or restarts the actor, and `NodePublishVolume` detaches the stale
   mount before it mounts again.
-- gRPC is plaintext. The egress gateway injects the token on a plain HTTP
-  hop, so a real install needs mTLS or a mesh between the gateway and the
-  Services.
+- The demo manifests run plaintext gRPC; `cas`, `cascache`, and `runner`
+  support TLS 1.3 and mTLS via certificate flags and environment variables
+  (see [PRODUCTION.md](PRODUCTION.md)).
 - The runner Deployment is privileged, because the container runtime's
   device cgroup otherwise denies `/dev/fuse`. A Substrate actor needs no
   privilege; the driver on its node does the mounting.
+
+For the full matrix of supported RBE/BES features and the remaining roadmap,
+see [PRODUCTION.md](PRODUCTION.md).
 
 ## Milestone map
 

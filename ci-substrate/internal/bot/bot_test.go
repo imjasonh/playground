@@ -14,8 +14,11 @@ import (
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
@@ -320,6 +323,13 @@ func TestRunsActionWithInputsAndOutputs(t *testing.T) {
 			if err := proto.Unmarshal(s.fetch(t, ar.GetOutputDirectories()[0].GetTreeDigest()), tr); err != nil {
 				t.Fatal(err)
 			}
+			if rd := ar.GetOutputDirectories()[0].GetRootDirectoryDigest(); rd == nil {
+				t.Fatal("OutputDirectory.RootDirectoryDigest is unset")
+			} else if rd.GetHash() != tree.Digest(tr.GetRoot()).GetHash() {
+				t.Fatalf("RootDirectoryDigest %s != tree root %s", rd.GetHash(), tree.Digest(tr.GetRoot()).GetHash())
+			} else if _, err := s.client.Fetch(ctx(t), instance, rd); err != nil {
+				t.Fatalf("RootDirectoryDigest not stored in CAS: %v", err)
+			}
 			if len(tr.GetChildren()) != 1 || tr.GetRoot().GetDirectories()[0].GetName() != "deep" {
 				t.Fatalf("tree %v", tr)
 			}
@@ -333,6 +343,9 @@ func TestRunsActionWithInputsAndOutputs(t *testing.T) {
 			// Bazel reads queue, fetch, execution, and upload times from these,
 			// so each stage starts no earlier than the one before ends.
 			md := ar.GetExecutionMetadata()
+			if md.GetVirtualExecutionDuration() == nil {
+				t.Fatal("VirtualExecutionDuration is unset")
+			}
 			stages := []*timestamppb.Timestamp{
 				md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp(),
 				md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp(),
@@ -395,5 +408,38 @@ func TestRejectsEscapingOutputPath(t *testing.T) {
 	resp := s.execute(t, b, action)
 	if resp.GetStatus().GetCode() == 0 {
 		t.Fatalf("action with an escaping output path ran: %v", resp)
+	}
+}
+
+func TestTimeoutReturnsDeadlineExceededWithPartialOutput(t *testing.T) {
+	s := newStack(t)
+	b := s.newBot(t, bot.InputCopy)
+	// Spawn a background grandchild (sleep 60) to verify process-group kill
+	// does not hang waiting for stdout to close after timeout.
+	command := s.uploadProto(t, &repb.Command{
+		Arguments:   []string{"sh", "-c", "echo partial-stdout; echo partial-file > out.txt; (sleep 60 &); sleep 60"},
+		OutputPaths: []string{"out.txt"},
+	})
+	action := s.uploadProto(t, &repb.Action{
+		CommandDigest: command,
+		Timeout:       durationpb.New(200 * time.Millisecond),
+	})
+	resp := s.execute(t, b, action)
+	if got := status.FromProto(resp.GetStatus()).Code(); got != codes.DeadlineExceeded {
+		t.Fatalf("status = %v, want DeadlineExceeded", got)
+	}
+	ar := resp.GetResult()
+	if ar == nil {
+		t.Fatal("timed-out ExecuteResponse has nil ActionResult")
+	}
+	if got := string(s.fetch(t, ar.GetStdoutDigest())); got != "partial-stdout\n" {
+		t.Errorf("partial stdout = %q, want %q", got, "partial-stdout\n")
+	}
+	if len(ar.GetOutputFiles()) != 1 || string(s.fetch(t, ar.GetOutputFiles()[0].GetDigest())) != "partial-file\n" {
+		t.Errorf("partial output file missing: %v", ar.GetOutputFiles())
+	}
+	// Timed-out actions must not be cached in the action cache.
+	if _, ok, err := s.client.GetActionResult(ctx(t), instance, action); err != nil || ok {
+		t.Errorf("timed-out action was cached: ok=%v err=%v", ok, err)
 	}
 }
