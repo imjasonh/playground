@@ -169,6 +169,7 @@ import C3BootProofs.Proofs.JsonKeyEnd
 import C3BootProofs.Proofs.JsonStr
 import C3BootProofs.Proofs.JsonMembers
 import C3BootProofs.Proofs.JsonLiteralEnd
+import C3BootProofs.Proofs.JsonU64
 
 /-!
 # Audit
@@ -8659,3 +8660,9 @@ end C3
 
 /-- info: 'C3.RV32.jsonLiteralEnd_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.jsonLiteralEnd_correct
+
+/-- info: 'C3.RV32.jsonU64_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonU64_correct
+
+/-- info: 'C3.RV32.allAsciiDigit_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.allAsciiDigit_correct
