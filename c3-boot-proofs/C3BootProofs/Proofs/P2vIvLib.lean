@@ -6,6 +6,7 @@ import C3BootProofs.Proofs.UintEq
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Prim
 import C3BootProofs.Proofs.Pv384Lib2
+import C3BootProofs.Proofs.Pv384CIt
 
 /-!
 # `p256VerifyPrehash`: the inversion's calls
@@ -546,5 +547,87 @@ theorem codeIn_p2v {M M0 : Word → BitVec 8} {B b : Word} {c : List Nat} (F : F
     have hb : (B + 0xFFFFFE60).toNat = B.toNat - 0x1A0 := F.below 0x1A0 (by decide) (by decide)
     have := F.hi; rw [hb]; omega) (by have := x.isLt; omega))
 
+
+def p2vScB : List BInstr := [.lw a2 a1 0x0, .aluImm .add a0 a0 0x1, .aluImm .add a1 a1 0x4]
+theorem p2vScB_end : blockEnd p256VerifyPrehashCode 0x3EC p2vScB = some 0x3F2 := by decide
+
+/-- **The scan** at 0x3E8 for a nonzero limb of `g`, from limb `i`: to 0x610
+when all 8 are zero, and to 0x3F8 otherwise. -/
+theorem p2v_scan {Mx : Word → BitVec 8} {B : Word} (F : Fr B 0x3590) (hc : CodeIn Mx P2V p256VerifyPrehashCode) :
+    ∀ j i {m : Machine}, i + j = 8 → St Mx P2V m 0x3E8 (reg m) → reg m a0 = BitVec.ofNat 32 i + 0xFFFFFFFF →
+      reg m a1 = B + 0x21A0 + BitVec.ofNat 32 0x200 + BitVec.ofNat 32 (4 * i) → reg m 27 = BitVec.ofNat 32 0x7 →
+      (∀ k, k < i → memLoad32 Mx (B + 0x21A0 + BitVec.ofNat 32 0x200 + BitVec.ofNat 32 (4 * k)) = 0) →
+      ∃ m', Steps m m' ∧ (∀ q : Fin 32, q ≠ a0 → q ≠ a1 → q ≠ a2 → reg m' q = reg m q) ∧
+        (((∀ k, k < 8 → memLoad32 Mx (B + 0x21A0 + BitVec.ofNat 32 0x200 + BitVec.ofNat 32 (4 * k)) = 0) ∧
+          St Mx P2V m' 0x610 (reg m')) ∨
+         ((¬ ∀ k, k < 8 → memLoad32 Mx (B + 0x21A0 + BitVec.ofNat 32 0x200 + BitVec.ofNat 32 (4 * k)) = 0) ∧
+          St Mx P2V m' 0x3F8 (reg m'))) := by
+  intro j
+  induction j with
+  | zero =>
+    intro i m hij st h0 _ h27 hz
+    obtain rfl : i = 8 := by omega
+    obtain ⟨m1, d1, u1⟩ := st.taken hc 0x610 p2v_at_3e8 (by decide)
+      (by show (reg m a0 == reg m 27) = true; rw [h0, h27, ofNat_pred 7]; rfl)
+    exact ⟨m1, .single d1, fun q _ _ _ => u1.regs q, .inl ⟨hz, u1.self⟩⟩
+  | succ j ih =>
+    intro i m hij st h0 h1 h27 hz
+    have hi : i < 8 := by omega
+    have hne : reg m a0 ≠ reg m 27 := by
+      rw [h0, h27]
+      cases i with
+      | zero => decide
+      | succ i =>
+        rw [ofNat_pred i]; intro e
+        have := congrArg BitVec.toNat e
+        rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)] at this
+        omega
+    obtain ⟨m1, d1, u1⟩ := st.notTaken hc 0x3EC p2v_at_3e8 (by decide)
+      (by show (reg m a0 == reg m 27) = false; simpa using hne)
+    have hal : (B + 0x21A0 + BitVec.ofNat 32 0x200 + BitVec.ofNat 32 (4 * i)).toNat % 4 = 0 := by
+      rw [add_ofNat_assoc]; exact p2v_al F (by omega) (by omega)
+    obtain ⟨m2, c2, u2⟩ := u1.self.block p2vScB hc p2vScB_end
+      ⟨by show (reg m1 a1 + 0x0).toNat % 4 = 0
+          rw [u1.regs, h1, show (0x0 : Word) = BitVec.ofNat 32 0 from rfl, add_ofNat_zero]; exact hal,
+        trivial, trivial, trivial⟩
+    have s2 : St Mx P2V m2 0x3F2 (reg m2) := ⟨u2.pc, u2.mem, fun _ => rfl⟩
+    have e1 : reg m1 = reg m := funext u1.regs
+    have r2a2 : reg m2 a2 = memLoad32 Mx (B + 0x21A0 + BitVec.ofNat 32 0x200 + BitVec.ofNat 32 (4 * i)) := by
+      rw [u2.regs, e1]; simp +decide only [runBlock, BInstr.run, p2vScB, upd, ↓reduceIte, aluEval]
+      rw [h1, show (0x0 : Word) = BitVec.ofNat 32 0 from rfl, add_ofNat_zero]
+    have r2a0 : reg m2 a0 = BitVec.ofNat 32 i := by
+      rw [u2.regs, e1]; simp +decide only [runBlock, BInstr.run, p2vScB, upd, ↓reduceIte, aluEval]
+      rw [h0, BitVec.add_assoc, show (0xFFFFFFFF : Word) + 0x1 = 0 from rfl]; exact BitVec.add_zero _
+    have r2a1 : reg m2 a1 = B + 0x21A0 + BitVec.ofNat 32 0x200 + BitVec.ofNat 32 (4 * (i + 1)) := by
+      rw [u2.regs, e1]; simp +decide only [runBlock, BInstr.run, p2vScB, upd, ↓reduceIte, aluEval]
+      rw [h1, BitVec.add_assoc, show BitVec.ofNat 32 (4 * i) + 0x4 = BitVec.ofNat 32 (4 * (i + 1)) by
+        rw [show (0x4 : Word) = BitVec.ofNat 32 4 from rfl, BitVec.ofNat_add_ofNat, show 4 * i + 4 = 4 * (i + 1) by omega]]
+    have k2 : ∀ q : Fin 32, q ≠ a0 → q ≠ a1 → q ≠ a2 → reg m2 q = reg m q := fun q h0' h1' h2' => by
+      have hq : q ∉ p2vScB.filterMap BInstr.dst := by
+        simp only [p2vScB, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; simp [h0', h1', h2']
+      rw [u2.regs, e1, runBlock_reg _ _ _ q st.zero hq]
+    by_cases hw : memLoad32 Mx (B + 0x21A0 + BitVec.ofNat 32 0x200 + BitVec.ofNat 32 (4 * i)) = 0
+    · obtain ⟨m3, d3, u3⟩ := s2.taken hc 0x3E8 p2v_at_3f2 (by decide)
+        (by show (reg m2 a2 == reg m2 x0) = true; rw [r2a2, hw, s2.zero]; rfl)
+      obtain ⟨m4, c4, k4, h4⟩ := ih (i + 1) (by omega) u3.self (by rw [u3.regs, r2a0, ofNat_pred i])
+        (by rw [u3.regs, r2a1]) (by rw [u3.regs, k2 27 (by decide) (by decide) (by decide), h27])
+        (fun k hk => by
+          rcases Nat.lt_or_ge k i with h | h
+          · exact hz k h
+          · obtain rfl : k = i := by omega
+            exact hw)
+      exact ⟨m4, .cons d1 (c2.trans (.cons d3 c4)), fun q h0' h1' h2' => by
+        rw [k4 q h0' h1' h2', u3.regs, k2 q h0' h1' h2'], h4⟩
+    · obtain ⟨m3, d3, u3⟩ := s2.notTaken hc 0x3F4 p2v_at_3f2 (by decide)
+        (by show (reg m2 a2 == reg m2 x0) = false; rw [r2a2, s2.zero]; simpa using hw)
+      obtain ⟨m4, d4, u4⟩ := u3.self.notTaken hc 0x3F8 p2v_at_3f4 (by decide)
+        (by
+          show (reg m3 27).ult (reg m3 a0) = false
+          rw [u3.regs, u3.regs, k2 27 (by decide) (by decide) (by decide), h27, r2a0]
+          simp only [BitVec.ult, BitVec.toNat_ofNat]
+          rw [Nat.mod_eq_of_lt (show i < 2 ^ 32 by omega)]
+          simp only [decide_eq_false_iff_not]; omega)
+      exact ⟨m4, .cons d1 (c2.trans (.cons d3 (.single d4))), fun q h0' h1' h2' => by
+        rw [u4.regs, u3.regs, k2 q h0' h1' h2'], .inr ⟨fun h => hw (h i hi), u4.self⟩⟩
 
 end C3.RV32.P2v
