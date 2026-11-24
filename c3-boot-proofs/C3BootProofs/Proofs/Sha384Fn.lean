@@ -433,6 +433,67 @@ theorem hf_absorb (C : HfCtx M0 F out p len) {M : Word → BitVec 8} {n : Machin
     · show memLoad32 _ (F + BitVec.ofNat 32 0xCC) = _
       rw [hf_ld (M := n3.mem) fun c h1 h2 => mh c (by omega) (by omega), ← hf_cnt3, cn3, hf_cnt3, c3]
 
+/-- A frame byte outside a fill of the frame. -/
+theorem hf_fb_out (C : HfCtx M0 F out p len) {M : Word → BitVec 8} {d N c : Nat} {v : BitVec 8} (hd : d + N ≤ 0x240)
+    (hc : c < 0x240) (h : c < d ∨ d + N ≤ c) :
+    fillBytes M (F + BitVec.ofNat 32 d) v N (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) :=
+  fillBytes_sep (C.offs (by omega) hd (by omega)) (Nat.le_refl _)
+
+set_option maxRecDepth 40000 in
+set_option maxHeartbeats 16000000 in
+/-- From 0xA8 to 0xD6: the hasher copied to `F + 0xD0`, the two digest
+buffers cleared, and the finalization's pointers set. -/
+theorem hf_copy (C : HfCtx M0 F out p len) {M : Word → BitVec 8} {n : Machine} (D : HfSt M0 Ms F r0 M n 0xA8)
+    {h : Bytes} (H : Hasher3At M F h) :
+    ∃ n', Steps n n' ∧ HfSt M0 Ms F r0 n'.mem n' 0xD6 ∧ reg n' 18 = reg n 18 ∧
+      reg n' 20 = F + BitVec.ofNat 32 0xD0 ∧ reg n' 26 = F + BitVec.ofNat 32 0x150 ∧
+      reg n' 8 = F + BitVec.ofNat 32 0x1D0 ∧ Hasher3At n'.mem (F + BitVec.ofNat 32 0xD0) h := by
+  obtain ⟨n1, c1, D1, hr1⟩ := D.block C (off' := 0xB4) [.aluImm .add a0 sp 0xD0, .alu .add a1 x0 sp,
+      .aluImm .add a2 x0 0xD0, .aluImm .add (20 : Fin 32) sp 0xD0]
+    (blockEnd_cons' hf_at_a8 rfl (blockEnd_cons' hf_at_aa rfl (blockEnd_cons' hf_at_ac rfl
+      (blockEnd_cons' hf_at_b0 rfl rfl))))
+    ⟨trivial, trivial, trivial, trivial, trivial⟩ rfl
+    (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+  have z0 := D.st.zero
+  obtain ⟨n2, c2, D2, k2, cp2⟩ := D1.memcpy C (d := 0xD0) (N := 0xD0) (s := F + BitVec.ofNat 32 0)
+    hf_at_b4 hf_at_b8 (by decide) (by decide)
+    (by rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D.hsp]; rfl)
+    (by rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D.hsp]
+        exact (BitVec.zero_add _).trans (add_ofNat_zero F).symm)
+    (by rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+    (by decide) (C.zF (c := 0) (l := 0xD0) (by decide)).symm
+    (C.offs (c := 0xD0) (n := 0xD0) (d := 0) (k := 0xD0) (Or.inr (by decide)) (by decide) (by decide))
+    (by rw [C.fN (by decide)]; have := C.hhi; omega)
+  have v20 : reg n2 20 = F + BitVec.ofNat 32 0xD0 := by
+    rw [k2 20 (by decide), hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D.hsp]; rfl
+  have v18 : reg n2 18 = reg n 18 := by
+    rw [k2 18 (by decide), hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]
+  obtain ⟨n3, c3, D3, hr3⟩ := D2.block C (off' := 0xBE) [.aluImm .add a0 sp 0x1A0] (bEnd1 hf_at_bc rfl)
+    ⟨trivial, trivial⟩ rfl
+    (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+  obtain ⟨n4, c4, D4, k4, f4⟩ := D3.zero48 C (d := 0x1A0) hf_at_be hf_at_c2 (by decide) (by decide)
+    (by rw [hr3]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D2.hsp]; rfl) (by decide)
+  obtain ⟨n5, c5, D5, hr5⟩ := D4.block C (off' := 0xCE) [.aluImm .add (26 : Fin 32) sp 0x150,
+      .aluImm .add a0 sp 0x1D0, .aluImm .add (8 : Fin 32) sp 0x1D0]
+    (blockEnd_cons' hf_at_c6 rfl (blockEnd_cons' hf_at_ca rfl (blockEnd_cons' hf_at_cc rfl rfl)))
+    ⟨trivial, trivial, trivial, trivial⟩ rfl
+    (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+  obtain ⟨n6, c6, D6, k6, f6⟩ := D5.zero64 C (d := 0x1D0) hf_at_ce hf_at_d2 (by decide) (by decide)
+    (by rw [hr5]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D4.hsp]; rfl) (by decide)
+  have k35 : ∀ q : Fin 32, q.val ∈ [18, 20] → reg n6 q = reg n2 q := fun q hq => by
+    rw [k6 q (by revert hq; revert q; decide), hr5,
+      evb_reg q D4.st.zero (by revert hq; revert q; decide), k4 q (by revert hq; revert q; decide), hr3,
+      evb_reg q D2.st.zero (by revert hq; revert q; decide)]
+  refine ⟨n6, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans c6)))), D6,
+    by rw [k35 18 (by decide), v18], by rw [k35 20 (by decide), v20],
+    by rw [k6 26 (by decide), hr5]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D4.hsp]; rfl,
+    by rw [k6 8 (by decide), hr5]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D4.hsp]; rfl, ?_⟩
+  refine hasher3_copy H fun j hj => ?_
+  have e := hf_cp_in C cp2 (by decide) hj
+  rw [add_ofNat_assoc, Nat.zero_add] at e
+  rw [add_ofNat_assoc, f6 _ (C.zF (l := 1) (by omega)), hf_fb_out C (by decide) (by omega) (Or.inl (by omega)),
+    f4 _ (C.zF (l := 1) (by omega)), hf_fb_out C (by decide) (by omega) (Or.inl (by omega)), e]
+
 end
 
 end C3.RV32
