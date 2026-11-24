@@ -815,4 +815,169 @@ theorem pa_2c0 {e : Nat} (E : PaEnv M0 base s p out n g0 Mp F) (hsp : f sp = F)
 
 end
 
+theorem pa_slot (F : Word) {i : Nat} (hi : i < 17) :
+    aluEval .add (aluEval .sll (BitVec.ofNat 32 i) 3) (aluEval .add F 0x10) = F + BitVec.ofNat 32 (0x10 + 8 * i) := by
+  rw [pa_sll3 i hi, ev_add, ev_add, BitVec.add_comm]; exact add_ofNat_assoc F 16 (8 * i)
+
+theorem pa_slot' (F : Word) {i : Nat} (hi : i < 17) :
+    aluEval .add (aluEval .add F 0x10) (aluEval .sll (BitVec.ofNat 32 i) 3) = F + BitVec.ofNat 32 (0x10 + 8 * i) := by
+  rw [pa_sll3 i hi, ev_add, ev_add]; exact add_ofNat_assoc F 16 (8 * i)
+
+/-- The byte `parse` keeps for an open array (`0`) or object (`1`). -/
+def flagB (ob : Bool) : BitVec 8 := if ob then 1 else 0
+
+/-- The open arrays and objects `stk`, innermost last, in the frame at `F`:
+entry `i` holds the position of the opening byte as a word at `F + 0x10 + 8i`
+and `flagB` at `F + 0x14 + 8i`. -/
+def StkInv (F : Word) (n : Nat) (stk : List (Bool × Nat)) (M : Word → BitVec 8) : Prop :=
+  stk.length ≤ 16 ∧ ∀ i, i < stk.length →
+    memLoad32 M (F + BitVec.ofNat 32 (0x10 + 8 * i)) = BitVec.ofNat 32 (stk.getD i (false, 0)).2 ∧
+    M (F + BitVec.ofNat 32 (0x14 + 8 * i)) = flagB (stk.getD i (false, 0)).1 ∧ (stk.getD i (false, 0)).2 < n
+
+theorem getD_concat_lt {α : Type} (L : List α) (b d : α) {i : Nat} (h : i < L.length) :
+    (L ++ [b]).getD i d = L.getD i d := by
+  simp only [List.getD_eq_getElem?_getD, List.getElem?_append_left h]
+
+theorem getD_concat_len {α : Type} (L : List α) (b d : α) : (L ++ [b]).getD L.length d = b := by
+  simp only [List.getD_eq_getElem?_getD, List.getElem?_append_right (Nat.le_refl _), Nat.sub_self,
+    List.getElem?_cons_zero, Option.getD_some]
+
+theorem list_concat_cases {α : Type} (l : List α) : l = [] ∨ ∃ L b, l = L ++ [b] := by
+  rcases List.eq_nil_or_concat l with h | ⟨L, b, h⟩
+  · exact Or.inl h
+  · exact Or.inr ⟨L, b, by rw [h, List.concat_eq_append]⟩
+
+section
+variable {F : Word} {n : Nat} {M M' : Word → BitVec 8}
+
+theorem StkInv.nil (M : Word → BitVec 8) : StkInv F n [] M := ⟨by decide, fun _ h => absurd h (Nat.not_lt_zero _)⟩
+
+theorem StkInv.pop {init : List (Bool × Nat)} {x : Bool × Nat} (h : StkInv F n (init ++ [x]) M) :
+    StkInv F n init M := by
+  obtain ⟨hl, h⟩ := h
+  rw [List.length_append, List.length_singleton] at hl
+  refine ⟨by omega, fun i hi => ?_⟩
+  have := h i (by rw [List.length_append]; omega)
+  rwa [getD_concat_lt _ _ _ hi] at this
+
+theorem StkInv.top {init : List (Bool × Nat)} {x : Bool × Nat} (h : StkInv F n (init ++ [x]) M) :
+    memLoad32 M (F + BitVec.ofNat 32 (0x10 + 8 * init.length)) = BitVec.ofNat 32 x.2 ∧
+      M (F + BitVec.ofNat 32 (0x14 + 8 * init.length)) = flagB x.1 ∧ x.2 < n ∧ init.length < 16 := by
+  obtain ⟨hl, h⟩ := h
+  rw [List.length_append, List.length_singleton] at hl
+  have := h init.length (by simp only [List.length_append, List.length_singleton]; omega)
+  rw [getD_concat_len] at this
+  exact ⟨this.1, this.2.1, this.2.2, by omega⟩
+
+theorem StkInv.push {stk : List (Bool × Nat)} {pos : Nat} (ob : Bool) (h : StkInv F n stk M)
+    (hl : stk.length < 16) (hp : pos < n) :
+    StkInv F n (stk ++ [(ob, pos)]) (memStore8 (memStore32 M (F + BitVec.ofNat 32 (0x10 + 8 * stk.length))
+      (BitVec.ofNat 32 pos)) (F + BitVec.ofNat 32 (0x14 + 8 * stk.length)) (flagB ob)) := by
+  obtain ⟨_, h⟩ := h
+  refine ⟨by rw [List.length_append, List.length_singleton]; omega, fun i hi => ?_⟩
+  rw [List.length_append, List.length_singleton] at hi
+  rcases Nat.lt_or_ge i stk.length with hi' | hi'
+  · rw [getD_concat_lt _ _ _ hi']
+    obtain ⟨h1, h2, h3⟩ := h i hi'
+    refine ⟨?_, ?_, h3⟩
+    · rw [memLoad32_store8_sep (sep_offsets F (Or.inr (by omega)) (by omega) (by omega)),
+        memLoad32_store32_sep (sep_offsets F (Or.inr (by omega)) (by omega) (by omega))]
+      exact h1
+    · rw [out_store8 _ _ _ _ (sep_offsets F (c := 0x14 + 8 * i) (n := 1) (Or.inl (by omega)) (by omega) (by omega)),
+        out_store32 _ _ _ _ (sep_offsets F (c := 0x14 + 8 * i) (n := 1) (Or.inl (by omega)) (by omega) (by omega))]
+      exact h2
+  · have hi2 : i = stk.length := by omega
+    subst hi2
+    rw [getD_concat_len]
+    refine ⟨?_, memStore8_same .., hp⟩
+    rw [memLoad32_store8_sep (sep_offsets F (Or.inr (by omega)) (by omega) (by omega)),
+      memLoad32_store32_same]
+
+end
+
+/-- The memory at a loop head of `parse`: changed only in the 404 bytes at
+`s`, with the saved registers and the open arrays and objects `stk`. -/
+def FInv (M0 Mp : Word → BitVec 8) (s F : Word) (n : Nat) (stk : List (Bool × Nat)) (M : Word → BitVec 8) :
+    Prop :=
+  Out M0 M s 404 ∧ Slots paCs F Mp M ∧ StkInv F n stk M
+
+section
+variable {M0 Mp M M' : Word → BitVec 8} {s F : Word} {n : Nat} {stk : List (Bool × Nat)}
+
+theorem paCs_bd : ∀ x, x ∈ paCs → 188 ≤ x ∧ x + 4 ≤ 240 := by decide
+
+theorem FInv.slots (hF : s + BitVec.ofNat 32 164 = F) (h : Slots paCs F Mp M) (hO : Out M M' (s + BitVec.ofNat 32 c) k)
+    (hck : c + k ≤ 352) : Slots paCs F Mp M' :=
+  h.out hO fun x hx => by
+    have := paCs_bd x hx
+    rw [← hF, add_ofNat_assoc]; exact sep_offsets s (Or.inl (by omega)) (by omega) (by omega)
+
+theorem FInv.out (hF : s + BitVec.ofNat 32 164 = F) (h : FInv M0 Mp s F n stk M)
+    (hO : Out M M' (s + BitVec.ofNat 32 c) k) (hck : c + k ≤ 180 ∨ 308 ≤ c ∧ c + k ≤ 352) :
+    FInv M0 Mp s F n stk M' := by
+  obtain ⟨h1, h2, hl, h3⟩ := h
+  refine ⟨h1.trans (hO.widen (by omega)), FInv.slots hF h2 hO (by omega), hl, fun i hi => ?_⟩
+  obtain ⟨e1, e2, e3⟩ := h3 i hi
+  have hi16 : i < 16 := by omega
+  refine ⟨?_, ?_, e3⟩
+  · have hs : c + k ≤ 164 + (0x10 + 8 * i) ∨ 164 + (0x10 + 8 * i) + 4 ≤ c := by
+      rcases hck with h | h
+      · exact Or.inl (by omega)
+      · exact Or.inr (by omega)
+    rw [hO.load32 (by rw [← hF, add_ofNat_assoc]; exact sep_offsets s hs (by omega) (by omega))]
+    exact e1
+  · have hs : 164 + (0x14 + 8 * i) + 1 ≤ c ∨ c + k ≤ 164 + (0x14 + 8 * i) := by
+      rcases hck with h | h
+      · exact Or.inr (by omega)
+      · exact Or.inl (by omega)
+    rw [hO _ (by rw [← hF, add_ofNat_assoc]; exact sep_offsets s hs (by omega) (by omega))]
+    exact e2
+
+theorem FInv.outF (hF : s + BitVec.ofNat 32 164 = F) (h : FInv M0 Mp s F n stk M)
+    (hO : Out M M' (F + BitVec.ofNat 32 d) k) (hdk : d + k ≤ 16 ∨ 144 ≤ d ∧ d + k ≤ 188) :
+    FInv M0 Mp s F n stk M' :=
+  h.out hF (c := 164 + d) (by rw [← add_ofNat_assoc, hF]; exact hO) (by omega)
+
+theorem FInv.out0 (hF : s + BitVec.ofNat 32 164 = F) (h : FInv M0 Mp s F n [] M)
+    (hO : Out M M' (s + BitVec.ofNat 32 c) k) (hck : c + k ≤ 352) : FInv M0 Mp s F n [] M' :=
+  ⟨h.1.trans (hO.widen (by omega)), FInv.slots hF h.2.1 hO hck, StkInv.nil _⟩
+
+theorem FInv.push (hF : s + BitVec.ofNat 32 164 = F) {pos : Nat} (ob : Bool) (h : FInv M0 Mp s F n stk M)
+    (hl : stk.length < 16) (hp : pos < n) :
+    FInv M0 Mp s F n (stk ++ [(ob, pos)]) (memStore8 (memStore32 M (F + BitVec.ofNat 32 (0x10 + 8 * stk.length))
+      (BitVec.ofNat 32 pos)) (F + BitVec.ofNat 32 (0x14 + 8 * stk.length)) (flagB ob)) := by
+  obtain ⟨h1, h2, h3⟩ := h
+  have e1 : F + BitVec.ofNat 32 (0x10 + 8 * stk.length) = s + BitVec.ofNat 32 (180 + 8 * stk.length) := by
+    rw [← hF, add_ofNat_assoc, show 164 + (0x10 + 8 * stk.length) = 180 + 8 * stk.length by omega]
+  have e2 : F + BitVec.ofNat 32 (0x14 + 8 * stk.length) = s + BitVec.ofNat 32 (184 + 8 * stk.length) := by
+    rw [← hF, add_ofNat_assoc, show 164 + (0x14 + 8 * stk.length) = 184 + 8 * stk.length by omega]
+  have o1 : Out M (memStore32 M (F + BitVec.ofNat 32 (0x10 + 8 * stk.length)) (BitVec.ofNat 32 pos))
+      (s + BitVec.ofNat 32 (180 + 8 * stk.length)) 4 := by rw [← e1]; exact out_store32 _ _ _
+  have o2 : Out (memStore32 M (F + BitVec.ofNat 32 (0x10 + 8 * stk.length)) (BitVec.ofNat 32 pos))
+      (memStore8 (memStore32 M (F + BitVec.ofNat 32 (0x10 + 8 * stk.length)) (BitVec.ofNat 32 pos))
+        (F + BitVec.ofNat 32 (0x14 + 8 * stk.length)) (flagB ob))
+      (s + BitVec.ofNat 32 (184 + 8 * stk.length)) 1 := by rw [← e2]; exact out_store8 _ _ _
+  exact ⟨(h1.trans (o1.widen (by omega))).trans (o2.widen (by omega)),
+    FInv.slots hF (FInv.slots hF h2 o1 (by omega)) o2 (by omega), h3.push ob hl hp⟩
+
+end
+
+/-- The registers that stay put in both loops of `parse`. -/
+structure PRegs (f g0 : Fin 32 → Word) (F p : Word) (n : Nat) (c : Bool) : Prop where
+  sp : f sp = F
+  s3 : f 19 = modeW c
+  s7 : f 23 = p
+  s8 : f 24 = BitVec.ofNat 32 n
+  fr : ∀ x, x ∉ paE → f x = g0 x
+
+/-- Proves `PRegs` for a chain of `upd`s and `clob`s of registers that
+`PRegs` doesn't name over a function with `PRegs` `h`, given `hz : g0 0 = 0`. -/
+syntax "pregs" term "," term : tactic
+
+macro_rules
+  | `(tactic| pregs $h, $hz) =>
+    `(tactic| exact ⟨by (try rsimp); exact ($h).sp, by (try rsimp); exact ($h).s3, by (try rsimp); exact ($h).s7,
+      by (try rsimp); exact ($h).s8,
+      by ((repeat (first | refine keepUpd0 $hz (by decide) ?_ | refine keepClob (by decide) ?_)); exact ($h).fr)⟩)
+
 end C3.RV32
