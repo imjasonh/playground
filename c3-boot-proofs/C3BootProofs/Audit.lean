@@ -168,6 +168,7 @@ import C3BootProofs.Proofs.AsciiDigits
 import C3BootProofs.Proofs.FlashPart
 import C3BootProofs.Proofs.StripPrefix
 import C3BootProofs.Proofs.EfuseRun
+import C3BootProofs.Proofs.TufHexDecode
 
 /-!
 # Audit
@@ -8655,3 +8656,6 @@ end C3
 
 /-- info: 'C3.RV32.efuseProgramRun_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.efuseProgramRun_correct
+
+/-- info: 'C3.RV32.tufHexDecode_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufHexDecode_correct

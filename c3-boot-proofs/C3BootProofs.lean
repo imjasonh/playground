@@ -321,3 +321,4 @@ import C3BootProofs.Proofs.AsciiDigits
 import C3BootProofs.Proofs.FlashPart
 import C3BootProofs.Proofs.StripPrefix
 import C3BootProofs.Proofs.EfuseRun
+import C3BootProofs.Proofs.TufHexDecode
