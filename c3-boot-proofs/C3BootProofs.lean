@@ -323,3 +323,4 @@ import C3BootProofs.Proofs.JsonFrame
 import C3BootProofs.Proofs.JsonCalls
 import C3BootProofs.Proofs.JsonKeyEnd
 import C3BootProofs.Proofs.JsonStr
+import C3BootProofs.Proofs.JsonMembers
