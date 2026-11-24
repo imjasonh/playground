@@ -564,3 +564,7 @@ import C3BootProofs.Models.Ed25519Ladder
 import C3BootProofs.Models.Ed25519Limbs
 import C3BootProofs.Models.Ed25519Model
 import C3BootProofs.Models.Ed25519SvModel
+import C3BootProofs.Models.EcdsaDbl
+import C3BootProofs.Models.P256BarrettChain
+import C3BootProofs.Models.P256Barrett
+import C3BootProofs.Models.EcdsaModels
