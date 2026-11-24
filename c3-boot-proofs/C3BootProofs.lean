@@ -566,3 +566,4 @@ import C3BootProofs.Models.Ed25519Model
 import C3BootProofs.Models.Ed25519SvModel
 import C3BootProofs.Models.Ed25519Fermat
 import C3BootProofs.Models.Ed25519Laws
+import C3BootProofs.Models.Ed25519FeArith
