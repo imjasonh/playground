@@ -102,6 +102,12 @@ def afterClose (r : Except Nat PStep) (next : List (Bool × Nat) → Nat → Exc
   | .ok (.done a e) => .ok (a, e - a)
   | .ok (.cont stk p) => next stk p
 
+/-- The parse after `check_keys` returned `r`. -/
+def keysThen (r : Except Nat Unit) (R : Except Nat (Nat × Nat)) : Except Nat (Nat × Nat) :=
+  match r with
+  | .error e => .error e
+  | .ok () => R
+
 /-- The value pass at `pos`, with `k` of the document's passes left. -/
 def parseLoop (c : Bool) (d : Bytes) (start : Nat) : Nat → List (Bool × Nat) → Nat → Except Nat (Nat × Nat)
   | 0, _, _ => .error 0x20
