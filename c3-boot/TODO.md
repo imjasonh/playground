@@ -120,24 +120,23 @@ function bytes, and the proofs change once:
    `testdata/tuf/` when Sigstore publishes a root, then retire `c3-ota link`,
    `c3-ota blob`, and the genesis keys.
 
-### Open questions
+### Decisions
 
-- **Chain growth.** Every slot carries each root after the pinned one,
-  about 5.5 KB each, up to 32. Sigstore published 12 roots from root 5 to
-  root 16. Is re-pinning over USB the answer when the chain grows too
-  long, or should the device keep the newest root it verified, which
-  adds trusted writable state?
-- **Expiry.** Roots and `targets.json` expire within months, so each
-  release needs fresh metadata, and a slot signed before expiry stays
-  bootable for good. Only the final root's expiry counts, so an expired
-  root earlier in the chain passes. Is that what we want?
-- **Limits.** `extract` rejects a trusted root with more than 4 usable
-  Fulcio intermediates, 8 Ed25519 logs, or 4 TSAs. Today's file uses 2,
-  1, and 1. Should the device skip extra entries instead of rejecting
-  every update?
-- **Key types.** Roots 1 through 4 use hex ECDSA keys, which the device
-  doesn't decode, and Rekor's P-256 log and any non-P-384 certificate
-  authority are skipped. A change in Sigstore's key types stops OTA until
-  a USB reflash.
-- **Development root.** Generated seeds, as in step 2, or Sigstore's
-  staging repository?
+- **Chain growth.** When the root chain in a slot grows too long, re-pin a
+  newer root with a USB bootloader reflash. The device keeps no writable
+  trusted root.
+- **Expiry.** Keep the current rule: only the final root's and
+  `targets.json`'s expiry count, and a slot signed before expiry stays
+  bootable.
+- **Limits.** Raise the caps to 8 Fulcio intermediates, 16 Ed25519 logs,
+  and 8 TSAs in the cutover rebuild, which regenerates `sigstore::verify`'s
+  proofs anyway, and keep rejecting a trusted root that exceeds them.
+  Skipping entries could drop the one an older release needs. Sigstore
+  keeps rotated-out entries listed, so the count only grows; exceeding the
+  new caps calls for a USB reflash, like a long chain.
+- **Development root.** Use generated seeds, as in step 2.
+
+Key types remain a known limit: roots 1 through 4 use hex ECDSA keys,
+which the device doesn't decode, and Rekor's P-256 log and any non-P-384
+certificate authority are skipped. A change in Sigstore's key types stops
+OTA until a USB reflash.
