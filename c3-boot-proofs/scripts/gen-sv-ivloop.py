@@ -118,13 +118,13 @@ E("    (W : Nat → Word) (st : Iv) : Prop where")
 inv = [("E", "SvCode m.mem"), ("IC", "SvIvCode m.mem"), ("EC", "SvEcCode m.mem"), ("UC", "SvUpCode m.mem"),
        ("V", "SvSaves B m.mem v"), ("sp", "reg m sp = B + 0x21A0"), ("g3", "reg m (3 : Fin 32) = r3"),
        ("g4", "reg m (4 : Fin 32) = r4"), ("g18", "reg m (18 : Fin 32) = out"), ("g19", "reg m (19 : Fin 32) = bp"),
-       ("g21", "reg m (21 : Fin 32) = s5v"), ("g24", "reg m (24 : Fin 32) = BitVec.ofNat 32 0x3FCC4268"),
+       ("g21", "reg m (21 : Fin 32) = s5v"), ("g24", "reg m (24 : Fin 32) = BitVec.ofNat 32 (img% b2sOrder256Address)"),
        ("g26", "reg m (26 : Fin 32) = x26"), ("g27", f"reg m (27 : Fin 32) = {fa(0xA20)}"),
        ("wd", "W64 (reg m (23 : Fin 32)) (reg m (25 : Fin 32)) = st.δ"),
        ("wr", f"memLoad32 m.mem ({fa(0x78)}) = BitVec.ofNat 32 st.rem"), ("rem", "st.rem < 2 ^ 32"),
        ("w60", f"memLoad32 m.mem ({fa(0x60)}) = BitVec.ofNat 32 0x332E3755"),
        ("w70", f"memLoad32 m.mem ({fa(0x70)}) = BitVec.ofNat 32 0x11FF43B1"),
-       ("aN", "accV m.mem (BitVec.ofNat 32 0x3FCC4268) 8 = N")]
+       ("aN", "accV m.mem (BitVec.ofNat 32 (img% b2sOrder256Address)) 8 = N")]
 for a, q in zip(QA, QN):
     inv.append((f"a{a:x}", f"accV m.mem ({fa(a)}) 8 = {q}"))
 for nm, a, b in SG:
@@ -314,7 +314,7 @@ O("  rcases sv_ivb (x21 := 0) (er := []) (es := []) (w5c := 0) (s8v := 0) " + " 
 O("      σd, Ad, ed, ld, " + ", ".join(pat(cb, 5)) + "⟩")
 O("  · exact absurd (sc4 _ _ _ _) h")
 O("  have CH5 : ∀ x, SvR B x → n5.mem x = m.mem x := fun x hx => by rw [fR5 x hx, CH4 x hx]")
-O("  have hNv : accV n4.mem (BitVec.ofNat 32 0x3FCC4268) 8 = N := by")
+O("  have hNv : accV n4.mem (BitVec.ofNat 32 (img% b2sOrder256Address)) 8 = N := by")
 O("    rw [accV_dataR F CH4 (by decide) (by decide), I.aN]")
 O("  have hMI : (BitVec.ofNat 32 0x11FF43B1 : Word).toNat + 2 ^ 32 * (BitVec.ofNat 32 0x332E3755 : Word).toNat = ivMI :=")
 O("    rfl")

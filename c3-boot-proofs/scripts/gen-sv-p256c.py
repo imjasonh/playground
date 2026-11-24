@@ -63,8 +63,8 @@ def fname(key):
 hyp_names = [g.split(' : ', 1)[0] for g in __import__('svchain').groups(hyp_text)]
 
 ML = f"mlMain2 {T0} {T1} {D0} {D1} (max {L0} {L1})"
-P = "accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8"
-R2 = "accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8"
+P = "accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8"
+R2 = "accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8"
 NZW = "(((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF)"
 
 out = []

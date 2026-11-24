@@ -41,7 +41,7 @@ ov = {p: p for p, _ in ive.params if p in GLOBAL or p in ('F', 'hret', 'hO', 'M0
 ov.update({'E0': 'I.E', 'V0': 'I.V', 's0': 's', 'g0_2': 'I.sp', 'g0_18': 'I.g18', 'g0_19': 'I.g19',
            'g0_21': 'I.g21', 'g0_23': 'rfl', 'g0_24': 'I.g24', 'g0_25': 'rfl', 'g0_26': 'I.g26', 'g0_27': 'I.g27',
            'w0_5c': 'rfl', 'w0_60': 'I.w60', 'w0_70': 'I.w70', 'w0_78': 'I.wr', 'hfs': 'I.lf', 'hds': 'I.ld'})
-fixed = {'out': 'out', 'bp': 'bp', 'x26': 'x26', 's8v': 'BitVec.ofNat 32 0x3FCC4268',
+fixed = {'out': 'out', 'bp': 'bp', 'x26': 'x26', 's8v': 'BitVec.ofNat 32 (img% b2sOrder256Address)',
          'w60': 'BitVec.ofNat 32 0x332E3755', 'w70': 'BitVec.ofNat 32 0x11FF43B1', 'rem': 'BitVec.ofNat 32 st.rem'}
 for e in IVW:
     ov[f'w0_{e:x}'] = f"(I.ww 0x{e:X} (by decide))"

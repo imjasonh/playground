@@ -13,9 +13,16 @@ on.
 Usage: python3 scripts/gen-sigstore-verify.py STAGE > C3BootProofs/Proofs/Sv<STAGE>.lean
 """
 
+import contextlib
+import io
 import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import imgnames  # noqa: E402
+
+A = imgnames.address
 
 AT = open("C3BootProofs/Proofs/SvAt.lean").read()
 INSTR = {}
@@ -96,13 +103,17 @@ def fa(e):
     return "B + 0x21A0" if e == 0 else f"B + 0x21A0 + BitVec.ofNat 32 0x{e:X}"
 
 
+def kname(k):
+    return imgnames.data_expr(k) or f"0x{k:X}"
+
+
 def lean_val(v):
     if isinstance(v, str):
         return v
     if v[0] == "S":
         return fa(v[1])
     if v[0] == "C":
-        return f"BitVec.ofNat 32 0x{v[1]:X}"
+        return f"BitVec.ofNat 32 {kname(v[1])}"
     return v[1]
 
 
@@ -1080,7 +1091,7 @@ class Gen:
                 continue
             self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by rw [u{k}.regs, upd_ne (by decide) (by decide), g{k-1}_{r}]")
             new[r] = v
-        self.emit(f"  have g{k}_{rd} : reg n{k} {rname(rd)} = BitVec.ofNat 32 0x{val:X} := by")
+        self.emit(f"  have g{k}_{rd} : reg n{k} {rname(rd)} = BitVec.ofNat 32 {kname(val)} := by")
         self.emit(f"    rw [u{k}.regs]; simp +decide only [upd, ↓reduceIte]")
         self.emit(f"    rw [g{k-1}_{base}, show {lean_val(bv)} + 0x{imm & 0xFFFFFFFF:X} = SVK + BitVec.ofNat 32 0x{i:X} by decide]")
         self.emit(f"    exact (SvData.sv F SD0 fR{k-1}).w32 (by decide) (by decide)")
@@ -2429,7 +2440,7 @@ class Gen:
             if kind == "fg":
                 sgn, mag = sg, f"{A} / 2 ^ {s} % 2 ^ 256"
             else:
-                mv = self.acc[cm][1] if cm is not None else "accV M0 (BitVec.ofNat 32 0x3FCC4268) 8"
+                mv = self.acc[cm][1] if cm is not None else "accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8"
                 L = f"lrsm8 {sg} {A} {mi} {s} ({mv})"
                 sgn, mag = f"({L}).1", f"({L}).2"
             byts[co + 0x24 * j + 0x20] = (f"BitVec.ofNat 8 {sgn}", f"byte_of_toNat bb{j}_{k}")
@@ -3117,10 +3128,10 @@ def stage_l3():
         sub.load(0x248, "lw")
         sub.load(0x24A, "lw")
         sub.block(0x24C, 0x256)
-        return sub.sne(0x256, f"op{ka}", f"ol{ka}", "BitVec.ofNat 32 0x3FCC4840", "8",
+        return sub.sne(0x256, f"op{ka}", f"ol{ka}", "BitVec.ofNat 32 (img% svConstAddress + 0x28)", "8",
                        f"(.inl ({inp}.algOid hr{ka}))", "(.inr ⟨by decide, by decide⟩)")
 
-    oid = f"memBytes M0 op{ka} ol{ka} = memBytes M0 (BitVec.ofNat 32 0x3FCC4840) 8"
+    oid = f"memBytes M0 op{ka} ol{ka} = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x28)) 8"
 
     def fail_alg_params(sub):
         sub.pinned |= {f"prp{ka}", f"pu{ka}"}
@@ -3263,7 +3274,7 @@ def spki_tail(g, op, ol, inp, ka, taken_s6):
     """From 0x3CE: compare the key's algorithm OID with id-ecPublicKey. With
     `taken_s6`, continue to `bnez s6`, which the caller takes."""
     g.block(0x3CE, 0x3DC)
-    ks = g.sne(0x3DC, op, ol, "BitVec.ofNat 32 0x3FCC4914", "7", f"(.inl ({inp}.algOid hr{ka}))",
+    ks = g.sne(0x3DC, op, ol, "BitVec.ofNat 32 (img% svConstAddress + 0xFC)", "7", f"(.inl ({inp}.algOid hr{ka}))",
                "(.inr ⟨by decide, by decide⟩)")
     if taken_s6:
         g.block(0x3E4, 0x3E6)
@@ -3372,9 +3383,9 @@ def stage_l5():
     g.branch(0x3B0, False, f"by rw [g{g.k}_11, g{g.k}_12]; exact br_bne_byte_f (by decide) {hz}")
     g.load(0x3B4, "lw")
     g.block(0x3B8, 0x3C2)
-    ke = g.seqeq(0x3C2, pc, f"pu{ka}.len", "BitVec.ofNat 32 0x3FCC4848", "8", f"(.inl ({inp}.algParamsIn hr{ka}))",
+    ke = g.seqeq(0x3C2, pc, f"pu{ka}.len", "BitVec.ofNat 32 (img% svConstAddress + 0x30)", "8", f"(.inl ({inp}.algParamsIn hr{ka}))",
                  "(.inr ⟨by decide, by decide⟩)")
-    curve = f"memBytes M0 ({pc}) pu{ka}.len = memBytes M0 (BitVec.ofNat 32 0x3FCC4848) 8"
+    curve = f"memBytes M0 ({pc}) pu{ka}.len = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x30)) 8"
     hz = f"hz_{ke}"
 
     def fail_curve(sub):
@@ -3387,7 +3398,7 @@ def stage_l5():
     g.set_a0(ke, 1, f"ite_eq_left {hz}")
     g.block(0x3CA, 0x3CE)
     ks = spki_tail(g, op, ol, inp, ka, False)
-    oid = f"memBytes M0 {op} {ol} = memBytes M0 (BitVec.ofNat 32 0x3FCC4914) 7"
+    oid = f"memBytes M0 {op} {ol} = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0xFC)) 7"
     hz = f"hz_{ks}"
 
     def fail_oid(sub):
@@ -3835,12 +3846,12 @@ def stage_x2z():
     return g, info
 
 
-CRIT = [0x3FCC4889 + 3 * i for i in range(4)]
+CRIT = [A("svConst") + 0x71 + 3 * i for i in range(4)]
 
 
 def crit_allowed():
     x = "memBytes M0 op ol.toNat"
-    return " ∨ ".join(f"memBytes M0 (BitVec.ofNat 32 0x{a:X}) 3 = {x}" for a in CRIT)
+    return " ∨ ".join(f"memBytes M0 (BitVec.ofNat 32 {kname(a)}) 3 = {x}" for a in CRIT)
 
 
 def crit_proof(i, h):
@@ -3905,9 +3916,9 @@ def stage_x2c():
         g.load_data(0x5F8, 3, 0x84 + 8 * i)
         g.block(0x5FC, 0x5FE)
         g.load(0x5FE, "lw")
-        ke = g.seqeq(0x600, f"BitVec.ofNat 32 0x{CRIT[i]:X}", "3", "op", "ol.toNat", "(.inr ⟨by decide, by decide⟩)",
+        ke = g.seqeq(0x600, f"BitVec.ofNat 32 {kname(CRIT[i])}", "3", "op", "ol.toNat", "(.inr ⟨by decide, by decide⟩)",
                      "(.inl oid_in)", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
-        eq = f"memBytes M0 (BitVec.ofNat 32 0x{CRIT[i]:X}) 3 = memBytes M0 op ol.toNat"
+        eq = f"memBytes M0 (BitVec.ofNat 32 {kname(CRIT[i])}) 3 = memBytes M0 op ol.toNat"
         hm = f"hm{i}"
         g.emit(f"  by_cases {hm} : {eq}")
         if i < 3:
@@ -3947,16 +3958,16 @@ def stage_x2c():
     return g, info
 
 
-KU_C, EKU_C, BC_C = 0x3FCC4889, 0x3FCC4892, 0x3FCC488F
-POL = [0x3FCC48B8 + 10 * i for i in range(5)]
+KU_C, EKU_C, BC_C = A("svConst") + 0x71, A("svConst") + 0x7A, A("svConst") + 0x77
+POL = [A("svConst") + 0xA0 + 10 * i for i in range(5)]
 
 
 def oid_is(c):
-    return f"memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x{c:X}) 3"
+    return f"memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 {kname(c)}) 3"
 
 
 def pol_is(i):
-    return f"memBytes M0 (BitVec.ofNat 32 0x{POL[i]:X}) 10 = memBytes M0 op ol.toNat"
+    return f"memBytes M0 (BitVec.ofNat 32 {kname(POL[i])}) 10 = memBytes M0 op ol.toNat"
 
 
 def d_start(g):
@@ -3981,7 +3992,7 @@ def d_test(g, at, c, want, hname):
     g.block(at, at + 4)
     g.load(at + 4, "lw")
     g.block(at + 6, at + 0xE)
-    ke = g.seqeq(at + 0xE, "op", "ol.toNat", f"BitVec.ofNat 32 0x{c:X}", "3", "(.inl oid_in)",
+    ke = g.seqeq(at + 0xE, "op", "ol.toNat", f"BitVec.ofNat 32 {kname(c)}", "3", "(.inl oid_in)",
                  "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
     g.set_a0(ke, 1 if want else 0, f"ite_eq_left {hname}" if want else f"ite_eq_right {hname}")
     g.branch(at + 0x16, not want, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
@@ -4003,7 +4014,7 @@ def d_policy_loop(g, upto):
         g.load_data(0x8AC, POL[i], 0xD4 + 8 * i)
         g.block(0x8B0, 0x8B4)
         g.load(0x8B4, "lw")
-        ke = g.seqeq(0x8B6, f"BitVec.ofNat 32 0x{POL[i]:X}", "10", "op", "ol.toNat", "(.inr ⟨by decide, by decide⟩)",
+        ke = g.seqeq(0x8B6, f"BitVec.ofNat 32 {kname(POL[i])}", "10", "op", "ol.toNat", "(.inr ⟨by decide, by decide⟩)",
                      "(.inl oid_in)", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
         hit = i == upto
         g.set_a0(ke, 1 if hit else 0, f"ite_eq_left hp{i}" if hit else f"ite_eq_right hp{i}")
@@ -4609,7 +4620,7 @@ def eku_start(g):
 
 
 EKU_BINDERS = LOOP_BINDERS.replace(" : Word}", " cp cl rest found : Word}")
-CODESIGN = 0x3FCC4820
+CODESIGN = A("svConst") + 0x8
 
 
 def stage_deku2():
@@ -4631,9 +4642,9 @@ def stage_deku2():
     g.branch(0x76E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({g.slices[(op, ol)]}.pos_ne)")
     g.load(0x772, "lw")
     g.block(0x776, 0x780)
-    ke = g.seqeq(0x780, op, f"{ol}.toNat", f"BitVec.ofNat 32 0x{CODESIGN:X}", "8", f"(.inl {g.slices[(op, ol)]})",
+    ke = g.seqeq(0x780, op, f"{ol}.toNat", f"BitVec.ofNat 32 {kname(CODESIGN)}", "8", f"(.inl {g.slices[(op, ol)]})",
                  "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
-    eq = f"memBytes M0 {op} {ol}.toNat = memBytes M0 (BitVec.ofNat 32 0x{CODESIGN:X}) 8"
+    eq = f"memBytes M0 {op} {ol}.toNat = memBytes M0 (BitVec.ofNat 32 {kname(CODESIGN)}) 8"
     g.emit(f"  have g{ke}_10 : reg n{ke} a0 = if {eq} then BitVec.ofNat 32 1 else BitVec.ofNat 32 0 := a0_{ke}")
     g.regs[10] = ("U", f"if {eq} then BitVec.ofNat 32 1 else BitVec.ofNat 32 0")
     g.block(0x788, 0x78C)
@@ -5219,9 +5230,9 @@ def stage_tsa1():
     g.branch(0x2182, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({g.slices[(op, ol)]}.pos_ne)")
     g.load(0x2186, "lw")
     g.block(0x218A, 0x2194)
-    ks = g.sne(0x2194, op, f"{ol}.toNat", "BitVec.ofNat 32 0x3FCC4859", "9", f"(.inl {g.slices[(op, ol)]})",
+    ks = g.sne(0x2194, op, f"{ol}.toNat", "BitVec.ofNat 32 (img% svConstAddress + 0x41)", "9", f"(.inl {g.slices[(op, ol)]})",
                "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
-    eq = f"memBytes M0 {op} {ol}.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4859) 9"
+    eq = f"memBytes M0 {op} {ol}.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x41)) 9"
     g.prop_check(eq, "hsd", lambda sub: tsa_ne_fail(sub, ks, 0x219C, "hsd"))
     g.set_a0(ks, 0, "ite_eq_left hsd")
     g.branch(0x219C, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
@@ -5410,9 +5421,9 @@ def stage_tsa2():
     g.branch(0x22F8, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({g.slices[(op, ol)]}.pos_ne)")
     g.load(0x22FC, "lw")
     g.block(0x2300, 0x230A)
-    ks = g.sne(0x230A, op, f"{ol}.toNat", "BitVec.ofNat 32 0x3FCC4862", "11", f"(.inl {g.slices[(op, ol)]})",
+    ks = g.sne(0x230A, op, f"{ol}.toNat", "BitVec.ofNat 32 (img% svConstAddress + 0x4A)", "11", f"(.inl {g.slices[(op, ol)]})",
                "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
-    eq = f"memBytes M0 {op} {ol}.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4862) 11"
+    eq = f"memBytes M0 {op} {ol}.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x4A)) 11"
     g.prop_check(eq, "htst", lambda sub: tsa_ne_fail(sub, ks, 0x2312, "htst"))
     g.set_a0(ks, 0, "ite_eq_left htst")
     g.branch(0x2312, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
@@ -5981,8 +5992,8 @@ def stage_tsaa():
 
 ATTRV_BINDERS = ("{B out bp x21 x26 dg p0 L0 cp rem op ol vcp vcl x20 : Word} "
                  + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
-CT_OID = "memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC486E) 9"
-MD_OID = "memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4877) 9"
+CT_OID = "memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x56)) 9"
+MD_OID = "memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x5F)) 9"
 
 
 def attrv_oid_tail(sub):
@@ -6028,7 +6039,7 @@ def stage_tsav(kind):
         params.append(f"(hct : ¬ {CT_OID})")
         params.append(f"(hmd : {'' if kind == 'md' else '¬ '}{MD_OID})")
     g.block(0x25DA, 0x25E8)
-    ke = g.seqeq(0x25E8, "op", "ol.toNat", "BitVec.ofNat 32 0x3FCC486E", "9", "(.inl oid_in)",
+    ke = g.seqeq(0x25E8, "op", "ol.toNat", "BitVec.ofNat 32 (img% svConstAddress + 0x56)", "9", "(.inl oid_in)",
                  "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
     if kind == "ct":
         g.set_a0(ke, 1, "ite_eq_left hct")
@@ -6039,9 +6050,9 @@ def stage_tsav(kind):
         g.branch(0x260A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({g.slices[(op2, ol2)]}.pos_ne)")
         g.load(0x260E, "lw")
         g.block(0x2612, 0x261C)
-        ks = g.sne(0x261C, op2, f"{ol2}.toNat", "BitVec.ofNat 32 0x3FCC4862", "11", f"(.inl {g.slices[(op2, ol2)]})",
+        ks = g.sne(0x261C, op2, f"{ol2}.toNat", "BitVec.ofNat 32 (img% svConstAddress + 0x4A)", "11", f"(.inl {g.slices[(op2, ol2)]})",
                    "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
-        eq = f"memBytes M0 {op2} {ol2}.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4862) 11"
+        eq = f"memBytes M0 {op2} {ol2}.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x4A)) 11"
 
         def ne(sub):
             sub.set_a0(ks, 1, "ite_eq_right htst")
@@ -6059,7 +6070,7 @@ def stage_tsav(kind):
         g.set_a0(ke, 0, "ite_eq_right hct")
         g.branch(0x25F0, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
         g.block(0x2634, 0x2642)
-        km = g.seqeq(0x2642, "op", "ol.toNat", "BitVec.ofNat 32 0x3FCC4877", "9", "(.inl oid_in)",
+        km = g.seqeq(0x2642, "op", "ol.toNat", "BitVec.ofNat 32 (img% svConstAddress + 0x5F)", "9", "(.inl oid_in)",
                      "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
         if kind == "md":
             g.set_a0(km, 1, "ite_eq_left hmd")
@@ -6139,7 +6150,7 @@ def tsax_alg_tail(g, k, inp, s4, eq_ok):
     g.load(0x26A4, "lw")
     g.load(0x26A8, "lw")
     g.block(0x26AC, 0x26B6)
-    ks = g.sne(0x26B6, f"op{k}", f"ol{k}", "BitVec.ofNat 32 0x3FCC4818", "8", f"(.inl ({inp}.algOid hr{k}))",
+    ks = g.sne(0x26B6, f"op{k}", f"ol{k}", "BitVec.ofNat 32 (img% svConstAddress)", "8", f"(.inl ({inp}.algOid hr{k}))",
                "(.inr ⟨by decide, by decide⟩)")
     return ks
 
@@ -6179,7 +6190,7 @@ def stage_tsax():
                         {0x420: (f"op{k}", f"y0_{k}"), 0x424: (f"BitVec.ofNat 32 ol{k}", f"y4_{k}"),
                          0x428: (f"prp{k} + BitVec.ofNat 32 pu{k}.header", f"y8_{k}")})
         ks = tsax_alg_tail(sub, k, inp, None, None)
-        eq = f"memBytes M0 op{k} ol{k} = memBytes M0 (BitVec.ofNat 32 0x3FCC4818) 8"
+        eq = f"memBytes M0 op{k} ol{k} = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress)) 8"
         sub.emit(f"  by_cases hoq : {eq}")
 
         def same(sub2):
@@ -6207,7 +6218,7 @@ def stage_tsax():
                    0x208: (f"({rp}) + {hl}", f"d8_{k}"), 0x20C: (f"({nrl}) - {hl}", f"d12_{k}")})
     g.slices[(f"({rp}) + {hl}", f"({nrl}) - {hl}")] = f"({inp}.restW hte{k})"
     ks = tsax_alg_tail(g, k, inp, "0", None)
-    eq = f"memBytes M0 op{k} ol{k} = memBytes M0 (BitVec.ofNat 32 0x3FCC4818) 8"
+    eq = f"memBytes M0 op{k} ol{k} = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress)) 8"
 
     def ne(sub):
         sub.set_a0(ks, 1, "ite_eq_right hoid")
@@ -6934,7 +6945,7 @@ def stage_tsig():
     g.block(0x2B00, 0x2B0E)
     p1 = lean_val(g.words[0x1028])
     l1w = lean_val(g.words[0x102C])
-    g.parts2(0x2B0E, 0x420, 0x1020, "BitVec.ofNat 32 0x3FCC486D", "1", "(.inr ⟨by decide, by decide⟩)",
+    g.parts2(0x2B0E, 0x420, 0x1020, "BitVec.ofNat 32 (img% svConstAddress + 0x55)", "1", "(.inr ⟨by decide, by decide⟩)",
              p1, f"({l1w}).toNat", "(sa_drop1 sa_in hsa)",
              f"w{g.k}_1024", f"(by rw [w{g.k}_102c, ofNat_toNat_self])", "(by decide)", "(sa_drop1_lt sa_in hsa)")
     kd, oc, ex = g.digest
@@ -7430,8 +7441,8 @@ def stage_cs1():
         g.store(o, "sw")
     g.block(0x2D4A, 0x2D58)
     parts = [("w48", "(w44).toNat", "(.inl l_in)", f"(by rw [w{g.k}_424, ofNat_toNat_self])", "(by have := l_in.lo; omega)"),
-             ("BitVec.ofNat 32 0x3FCC4850", "1", "(.inr ⟨by decide, by decide⟩)", f"w{g.k}_42c", "(by decide)"),
-             ("BitVec.ofNat 32 0x3FCC47D7", "1", "(.inr ⟨by decide, by decide⟩)", f"w{g.k}_434", "(by decide)"),
+             ("BitVec.ofNat 32 (img% svConstAddress + 0x38)", "1", "(.inr ⟨by decide, by decide⟩)", f"w{g.k}_42c", "(by decide)"),
+             ("BitVec.ofNat 32 (img% merklePrefixAddress)", "1", "(.inr ⟨by decide, by decide⟩)", f"w{g.k}_434", "(by decide)"),
              ("kp", "32", "(.inl kp_in)", f"w{g.k}_43c", "(by decide)")]
     g.parts4(0x2D58, 0x1380, 0x420, parts)
     g.digest_word()
@@ -7513,9 +7524,9 @@ def stage_csa():
     g.load(0x2DA2, "lw")
     g.store(0x2DA6, "sw")
     g.block(0x2DA8, 0x2DB4)
-    ke = g.esl(0x2DB4, "w38", "BitVec.ofNat 32 0x3FCC4855", "4", f"(.inl (sg_in.shrink (by omega)))",
+    ke = g.esl(0x2DB4, "w38", "BitVec.ofNat 32 (img% svConstAddress + 0x3D)", "4", f"(.inl (sg_in.shrink (by omega)))",
                "(.inr ⟨by decide, by decide⟩)")
-    eq = "memBytes M0 w38 4 = memBytes M0 (BitVec.ofNat 32 0x3FCC4855) 4"
+    eq = "memBytes M0 w38 4 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x3D)) 4"
 
     def no_dash(sub):
         sub.set_a0(ke, 0, "ite_eq_right hdash")
@@ -7919,7 +7930,7 @@ def stage_csx():
     g = Gen("Csx")
     g.generic_alu = True
     params = cs_start(g) + ["(hrem0 : w5c = 0)", "(EE0 : EvEnv M0)", "(RS : SvRoSep B)",
-                            "(hiv : (s5Hv M0 (BitVec.ofNat 32 0x3FCC4AF8)).toList = Sha512.h0)",
+                            "(hiv : (s5Hv M0 (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)",
                             "(pk_in : SvIn B w34 32)", "(msg_in : SvIn B w24 w20.toNat)", "(hlen : w20.toNat < 2 ^ 31)"]
     g.load(0x2D6E, "lw")
     g.block(0x2D70, 0x2D72)
@@ -8070,20 +8081,20 @@ def stage_rl():
     ro = "(Or.inr ⟨by decide, by decide⟩)"
     g.store(0x300E, "sb")
     g.block(0x3012, 0x3022)
-    g.mcRo(0x3022, 0x460, "BitVec.ofNat 32 0x3FCC42A8", 0x20, ro)
+    g.mcRo(0x3022, 0x460, "BitVec.ofNat 32 (img% shaIVAddress)", 0x20, ro)
     g.store(0x302A, "sw")
     g.store(0x302E, "sw")
     g.hinit()
     g.block(0x3032, 0x3040)
-    g.upd(0x3040, "BitVec.ofNat 32 0x3FCC4106", "0x1", ro, "(by decide)", "")
+    g.upd(0x3040, "BitVec.ofNat 32 (img% svRekorLeafAddress)", "0x1", ro, "(by decide)", "")
     g.block(0x3048, 0x3058)
-    g.upd(0x3058, "BitVec.ofNat 32 0x3FCC46F0", "0x71", ro, "(by decide)", "")
+    g.upd(0x3058, "BitVec.ofNat 32 (img% svRekorPreAddress)", "0x71", ro, "(by decide)", "")
     g.block(0x3060, 0x3068)
     g.carry_hasher()
     g.load(0x3068, "lw")
     g.b64e(0x306A, "w84", "32", "(.inl dgi_in)", f"g{g.k}_11", "")
     g.block(0x3072, 0x3082)
-    g.upd(0x3082, "BitVec.ofNat 32 0x3FCC4761", "0x1B", ro, "(by decide)", "")
+    g.upd(0x3082, "BitVec.ofNat 32 (img% svRekorMid1Address)", "0x1B", ro, "(by decide)", "")
     g.block(0x308A, 0x308E)
     g.carry_hasher()
     g.load(0x308E, "lw")
@@ -8091,7 +8102,7 @@ def stage_rl():
     g.load(0x3090, "lw")
     g.b64e(0x3092, "w68", "(w64).toNat", "(.inl sig_in)", f"(by rw [g{g.k}_11, ofNat_toNat_self])", "have := sig_in.lo")
     g.block(0x309A, 0x30AA)
-    g.upd(0x30AA, "BitVec.ofNat 32 0x3FCC477C", "0x54", ro, "(by decide)", "have := sig_in.lo")
+    g.upd(0x30AA, "BitVec.ofNat 32 (img% svRekorMid2Address)", "0x54", ro, "(by decide)", "have := sig_in.lo")
     g.block(0x30B2, 0x30B6)
     g.carry_hasher()
     g.load(0x30B6, "lw")
@@ -8100,7 +8111,7 @@ def stage_rl():
     g.b64e(0x30BA, "w6c", "(x26).toNat", "(.inl crt_in)", f"(by rw [g{g.k}_11, ofNat_toNat_self])",
            "have := sig_in.lo; have := crt_in.lo")
     g.block(0x30C2, 0x30D0)
-    g.upd(0x30D0, "BitVec.ofNat 32 0x3FCC47D0", "0x7", ro, "(by decide)", "have := sig_in.lo; have := crt_in.lo")
+    g.upd(0x30D0, "BitVec.ofNat 32 (img% svRekorPostAddress)", "0x7", ro, "(by decide)", "have := sig_in.lo; have := crt_in.lo")
     g.block(0x30D8, 0x30E4)
     g.fin(0x30E4, 0x1380)
     kd, oc, ex = g.digest
@@ -8305,7 +8316,7 @@ def ec_start(g):
 
 EC_BINDERS = ("{B out bp x21 x26 : Word} {er es : Bytes} "
               + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
-ORD256 = "BitVec.ofNat 32 0x3FCC4288"
+ORD256 = "BitVec.ofNat 32 (img% p256OrderBeAddress)"
 
 
 def stage_eca1():
@@ -8445,7 +8456,7 @@ def stage_eca3():
         g.block(b0, call)
         g.mc(call, dst, src, n)
     g.block(0x1166, 0x117C)
-    g.mcRo(0x117C, 0xA60, "BitVec.ofNat 32 0x3FCC43A8", 0x20, ro, acc=True)
+    g.mcRo(0x117C, 0xA60, "BitVec.ofNat 32 (img% p256MontOneAddress)", 0x20, ro, acc=True)
     g.block(0x1184, 0x1186)
     g.bb(0x1186)
     g.block(0x118E, 0x11A8)
@@ -8477,7 +8488,7 @@ def stage_eca3():
     k = g.unz8(0x1286, 0x2C0)
     g.set_a0(k, 1, "ite_eq_right hsz")
     g.block(0x128E, 0x12A8)
-    g.mcRo(0x12A8, 0x1380, "BitVec.ofNat 32 0x3FCC4268", 0x20, ro, acc=True)
+    g.mcRo(0x12A8, 0x1380, "BitVec.ofNat 32 (img% b2sOrder256Address)", 0x20, ro, acc=True)
     g.block(0x12B0, 0x12BA)
     g.store(0x12BA, "sb")
     g.block(0x12BE, 0x12CC)
@@ -8486,7 +8497,7 @@ def stage_eca3():
     g.block(0x12D8, 0x12E6)
     g.ms0(0x12E6, 0x1020, 0x24, accs=(0x1020,), byts=(0x1040,))
     g.block(0x12EE, 0x12FE)
-    g.mcRo(0x12FE, 0x420, "BitVec.ofNat 32 0x3FCC42E8", 0x20, ro, acc=True)
+    g.mcRo(0x12FE, 0x420, "BitVec.ofNat 32 (img% p256OneAddress)", 0x20, ro, acc=True)
     g.block(0x1306, 0x1308)
     g.store(0x1308, "sb")
     g.block(0x130C, 0x1312)
@@ -8598,9 +8609,9 @@ def stage_ivb():
     g = Gen("IvB")
     g.generic_alu = True
     params = iv_start(g)
-    g.regs[24] = ("C", 0x3FCC4268)
+    g.regs[24] = ("C", A("b2sOrder256"))
     params = [p for p in params if not p.startswith("(g0_24 ")]
-    params.append("(g0_24 : reg n0 (24 : Fin 32) = BitVec.ofNat 32 0x3FCC4268)")
+    params.append("(g0_24 : reg n0 (24 : Fin 32) = BitVec.ofNat 32 (img% b2sOrder256Address))")
     for r, nm in ((14, "ulo"), (5, "uhi"), (31, "vlo"), (17, "vhi"), (8, "qlo"), (29, "qhi"), (12, "rlo"), (6, "rhi")):
         g.regs[r] = ("U", nm)
         params.append(f"(g0_{r} : reg n0 {rname(r)} = {nm})")
@@ -8661,10 +8672,10 @@ def stage_ive():
     g.block(0x1556, 0x155E)
     g.load(0x155E, "lbu")
     g.block(0x1562, 0x1582)
-    g.nrm8(0x1582, 0xA20, 0x1020, "(zext_01 hfs)", "BitVec.ofNat 32 0x3FCC4268")
+    g.nrm8(0x1582, 0xA20, 0x1020, "(zext_01 hfs)", "BitVec.ofNat 32 (img% b2sOrder256Address)")
     g.block(0x158A, 0x159A)
-    k = g.ueq8(0x159A, 0x1380, "BitVec.ofNat 32 0x3FCC42E8")
-    prop = "fv = accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8"
+    k = g.ueq8(0x159A, 0x1380, "BitVec.ofNat 32 (img% p256OneAddress)")
+    prop = "fv = accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8"
 
     def bad(sub, k=k):
         sub.set_a0(k, 0, "ite_eq_right hf1")
@@ -8714,7 +8725,7 @@ def stage_ecd():
     g.block(0x15FC, 0x1608)
     g.psm(0x1608, 0xA80, 0x2A0, 0x300)
     g.block(0x1610, 0x1622)
-    g.mcRo(0x1622, 0x420, "BitVec.ofNat 32 0x3FCC4690", 0x60, "(Or.inr ⟨by decide, by decide⟩)", acc=8)
+    g.mcRo(0x1622, 0x420, "BitVec.ofNat 32 (img% p256GMontAddress)", 0x60, "(Or.inr ⟨by decide, by decide⟩)", acc=8)
     g.block(0x162A, 0x1638)
     g.mc(0x1638, 0xA20, 0x240, 0x60)
     g.block(0x1640, 0x164A)
@@ -8780,7 +8791,7 @@ def stage_ect(want):
     params = iv_start(g)
     g.regs[20] = ("S", 0xA20)
     params.append("(g0_20 : reg n0 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20)")
-    g.regs.update({22: ("C", 0x3FCC4690), 23: ("S", 0x1480), 24: ("C", 0), 21: ("C", 2), 25: ("C", 0x300)})
+    g.regs.update({22: ("C", A("p256GMont")), 23: ("S", 0x1480), 24: ("C", 0), 21: ("C", 2), 25: ("C", 0x300)})
     params = [p for p in params if not re.match(r"\(g0_(21|22|23|24|25) ", p)]
     for r in (21, 22, 23, 24, 25):
         params.append(f"(g0_{r} : reg n0 {rname(r)} = {lean_val(g.regs[r])})")
@@ -8826,7 +8837,7 @@ def stage_ect(want):
         g.branch(0x16B0, False, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
         for j in range(8):
             g.block(0x16B2, 0x16BA)
-            g.mcRo(0x16BA, 0x420 + 0x60 * j, "BitVec.ofNat 32 0x3FCC4690", 0x60, ro)
+            g.mcRo(0x16BA, 0x420 + 0x60 * j, "BitVec.ofNat 32 (img% p256GMontAddress)", 0x60, ro)
             g.block(0x16C2, 0x16C8)
             if j < 7:
                 g.branch(0x16C8, True, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
@@ -8952,7 +8963,7 @@ def stage_ecw(want="a"):
 Z_BINDERS = ("{B out bp x26 : Word} {rv sv zv X Y Z : Nat} "
              + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
 Z_ACC = {0x2A0: "rv", 0x2C0: "sv", 0x2E0: "zv"}
-INV_PARAMS = "BitVec.ofNat 32 0x3FCC4B38"
+INV_PARAMS = "BitVec.ofNat 32 (img% p256ModulusAddress)"
 
 
 def z_start(g):
@@ -8987,7 +8998,7 @@ def stage_zs():
     g.store(0x1AB4, "sw")
     g.store(0x1AB8, "sw")
     g.block(0x1ABC, 0x1ACA)
-    g.mcRo(0x1ACA, 0x440, "BitVec.ofNat 32 0x3FCC4B78", 0x20, ro, acc=True)
+    g.mcRo(0x1ACA, 0x440, "BitVec.ofNat 32 (img% p256R2Address)", 0x20, ro, acc=True)
     g.block(0x1AD2, 0x1AD4)
     k = g.unz8(0x1AD4, 0x15E8)
     nz = "(if Z = 0 then 0 else 1 : Word)"
@@ -9005,7 +9016,7 @@ def stage_zs():
     g.block(0x1B18, 0x1B26)
     g.ms0(0x1B26, 0x1480, 0x24, accs=(0x1480,), byts=(0x14A0,))
     g.block(0x1B2E, 0x1B3C)
-    g.mcRo(0x1B3C, 0x1020, "BitVec.ofNat 32 0x3FCC4B78", 0x20, ro, acc=True)
+    g.mcRo(0x1B3C, 0x1020, "BitVec.ofNat 32 (img% p256R2Address)", 0x20, ro, acc=True)
     g.store(0x1B44, "sw")
     g.store(0x1B46, "sb")
     g.block(0x1B4A, 0x1B4C)
@@ -9042,7 +9053,7 @@ def zi_start(g):
     for e in (0x460, 0x464):
         g.words[e] = ("C", 0xFFFFFFFF)
         params.append(f"(w0_{e:x} : memLoad32 n0.mem ({fa(e)}) = BitVec.ofNat 32 0xFFFFFFFF)")
-    accs = {**ZI_ACC, 0x420: f"accV M0 ({INV_PARAMS}) 8", 0x440: "accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8"}
+    accs = {**ZI_ACC, 0x420: f"accV M0 ({INV_PARAMS}) 8", 0x440: "accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8"}
     for d, nm in sorted(accs.items()):
         g.acc[d] = (8, nm)
         params.append(f"(a0_{d:x} : accV n0.mem ({fa(d)}) 8 = {nm})")
@@ -9139,8 +9150,8 @@ def stage_zb():
     return g, info
 
 
-ONE256 = "BitVec.ofNat 32 0x3FCC42E8"
-ID_AFFINE = "BitVec.ofNat 32 0x3FCC442C"
+ONE256 = "BitVec.ofNat 32 (img% p256OneAddress)"
+ID_AFFINE = "BitVec.ofNat 32 (img% p256AffineIdXAddress)"
 
 
 def stage_ze():
@@ -9286,4 +9297,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        main()
+    sys.stdout.write(imgnames.add_imports(buf.getvalue()))

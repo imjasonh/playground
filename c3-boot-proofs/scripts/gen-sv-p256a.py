@@ -87,9 +87,9 @@ def fa(e):
 
 IVW = list(range(0x24, 0x5C, 4)) + [0x64, 0x68, 0x6C] + list(range(0x7C, 0x134, 4))
 W0 = "(fun e => memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 e))"
-N = "accV M0 (BitVec.ofNat 32 0x3FCC4268) 8"
-ONE = "accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8"
-QV = ["gsVal M0 x21 1 * 2 ^ 256 % p256", "gsVal M0 x21 0x21 * 2 ^ 256 % p256", "accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8",
+N = "accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8"
+ONE = "accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8"
+QV = ["gsVal M0 x21 1 * 2 ^ 256 % p256", "gsVal M0 x21 0x21 * 2 ^ 256 % p256", "accV M0 (BitVec.ofNat 32 (img% p256MontOneAddress)) 8",
       "beNat (b32 er)", "beNat (b32 es)", f"beNat (memBytes M0 (memLoad32 n0.mem ({fa(0x84)})) 32) % C3.p256.n"]
 ST0 = f"⟨1, ({N} : Int), (beNat (b32 es) : Int), 0, ({ONE} : Int), 0x24F⟩"
 

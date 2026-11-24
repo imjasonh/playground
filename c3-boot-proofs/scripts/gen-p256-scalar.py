@@ -21,9 +21,12 @@ import importlib.util
 import os
 import random
 import re
+import sys
 import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import imgnames  # noqa: E402
 ROOT = os.path.join(HERE, '..')
 _spec = importlib.util.spec_from_file_location('smm', os.path.join(HERE, 'gen-scalar-mont.py'))
 smm = importlib.util.module_from_spec(_spec)
@@ -36,7 +39,7 @@ MASK = 4294967295
 CODE = 'p256ScalarMulCode'
 START, END = 0x28, 0xB6A
 # `psmBsub B`: borrowing_sub, from the function's start
-BSUB = 0x403A2320 - 0x403B2152
+BSUB = imgnames.address('borrowingSub') - imgnames.address('p256ScalarMul')
 MU = [0xEEDF9BFE, 0x012FFD85, 0xDF1A6C21, 0x43190552, 0xFFFFFFFF, 0xFFFFFFFE, 0xFFFFFFFF, 0, 1]
 N = [0xFC632551, 0xF3B9CAC2, 0xA7179E84, 0xBCE6FAAD, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0xFFFFFFFF]
 IN_SLOTS = [0x2C + 4 * i for i in range(16)]

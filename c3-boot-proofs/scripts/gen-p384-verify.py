@@ -9,8 +9,16 @@ proof that tracks the same facts, one `have` per fact per step.
 Usage: python3 scripts/gen-p384-verify.py STAGE > C3BootProofs/Proofs/Pv384<STAGE>.lean
 """
 
+import contextlib
+import io
+import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import imgnames  # noqa: E402
+
+A = imgnames.address
 
 AT = open("C3BootProofs/Proofs/Pv384At.lean").read()
 INSTR = {}
@@ -72,13 +80,17 @@ def add(a, b):
     return None
 
 
+def kname(k):
+    return imgnames.data_expr(k) or f"0x{k:X}"
+
+
 def lean_val(v):
     if isinstance(v, str):
         return v
     if v[0] == "S":
         return "B + 0x420" if v[1] == 0 else f"B + 0x420 + BitVec.ofNat 32 0x{v[1]:X}"
     if v[0] == "C":
-        return f"BitVec.ofNat 32 0x{v[1]:X}"
+        return f"BitVec.ofNat 32 {kname(v[1])}"
     return v[1]
 
 
@@ -518,7 +530,7 @@ class Ops:
             path, base = DATA_PATH[data]
             acc[dst] = (f"dataVal {data} 0x{doff:X} 12", [
                 f"rw [accV_K 12 fun q hq => V{k + 1} q (by omega)]",
-                f"rw [show BitVec.ofNat 32 0x{K:X} + BitVec.ofNat 32 0 = {base} + BitVec.ofNat 32 0x{doff:X} by decide]",
+                f"rw [show BitVec.ofNat 32 {kname(K)} + BitVec.ofNat 32 0 = {base} + BitVec.ofNat 32 0x{doff:X} by decide]",
                 f"exact code_accV (d := {data}) {g.env(k)}.{path} 0x{doff:X} 12 (by decide)",
             ])
             g.call("pv_mcK", off, f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 (by decide) (by decide) (by decide)", dst, N, acc)
@@ -526,13 +538,13 @@ class Ops:
         for o in range(0, N - 47, 0x30):
             if o == 0:
                 acc[dst] = (f"dataVal {data} 0 12", [
-                    f"rw [show BitVec.ofNat 32 0x{K:X} = BitVec.ofNat 32 0x{K:X} + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V{k + 1}",
+                    f"rw [show BitVec.ofNat 32 {kname(K)} = BitVec.ofNat 32 {kname(K)} + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V{k + 1}",
                     f"rw [accV_K 12 fun q hq => V{k + 1} q (by omega)]",
                     f"exact code_accV (d := {data}) {g.env(k)}.D2.{DATA_FIELD[data]} 0 12 (by decide)",
                 ])
             else:
                 acc[dst + o] = (f"dataVal {data} 0x{o:X} 12", [
-                    f"rw [accV_KD (M := n{k}.mem) (K := BitVec.ofNat 32 0x{K:X}) (d := 0x{o:X}) 12 fun q hq => by",
+                    f"rw [accV_KD (M := n{k}.mem) (K := BitVec.ofNat 32 {kname(K)}) (d := 0x{o:X}) 12 fun q hq => by",
                     f"  have := V{k + 1} (0x{o:X} + q) (by omega)",
                     f"  rwa [show 0x{dst:X} + (0x{o:X} + q) = 0x{dst + o:X} + q by omega] at this]",
                     f"exact code_accV (d := {data}) {g.env(k)}.D2.{DATA_FIELD[data]} 0x{o:X} 12 (by decide)",
@@ -1072,7 +1084,7 @@ def stage_c0():
     o = Ops(g)
     o.sb0(0x3B0, 8, 0xD80)
     g.block(0x3B4, 0x3BC); o.ms0(0x3BC, 0x270, 0x34)
-    g.block(0x3C4, 0x3D2); o.mcK(0x3D2, 0x17A4, 0x3FCC4D88, 0x30, "p384ScalarR2Data")
+    g.block(0x3C4, 0x3D2); o.mcK(0x3D2, 0x17A4, A("p384ScalarR2"), 0x30, "p384ScalarR2Data")
     g.block(0x3DA, 0x3DC)
     o.sb0(0x3DC, 23, 0x17D4)
     g.block(0x3E0, 0x3E8)
@@ -1193,7 +1205,7 @@ def stage_d():
     g.block(0x730, 0x73E); o.mc(0x73E, 0x240, 0xE10, 0x30)
     g.block(0x746, 0x752); o.smul(0x752, 0xEA0, 0x210, 0x240, "hW")
     g.block(0x75A, 0x766); o.smul(0x766, 0x1324, 0x1B0, 0x240, "hW")
-    g.block(0x76E, 0x784); o.mcK(0x784, 0xE10, 0x3FCC4600, 0x90, "p384GData")
+    g.block(0x76E, 0x784); o.mcK(0x784, 0xE10, A("p384G"), 0x90, "p384GData")
     g.block(0x78C, 0x79A); o.mc(0x79A, 0x1294, 0x120, 0x90)
     g.block(0x7A2, 0x7B0); o.mc(0x7B0, 0x270, 0xE10, 0xC0)
     g.block(0x7B8, 0x7C6); o.mc(0x7C6, 0x330, 0x1294, 0xC0)
@@ -1262,7 +1274,7 @@ def stage_e(i, part):
         return info
 
     g = Gen(f"E{i}a", env4=True)
-    g.regs = {2: S(0), 18: S(0x17A4 + 0xC0 * i), 19: C(i), 20: C(2), 21: C(0x480), 22: S(0x450), 23: C(0x3FCC4600),
+    g.regs = {2: S(0), 18: S(0x17A4 + 0xC0 * i), 19: C(i), 20: C(2), 21: C(0x480), 22: S(0x450), 23: C(A("p384G")),
               25: S(0xD80)}
     for r in (3, 4):
         g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
@@ -1288,7 +1300,7 @@ def stage_e(i, part):
     g.block(0x7F4, 0x802); o.mc(0x802, 0xD50, 0x17A4 + 0xC0 * i, 0xC0)
     g.block(0x80A, 0x816); o.branch(0x816)
     for j in range(8):
-        g.block(0x818, 0x820); o.mcK(0x820, 0x1294 + 0x90 * j, 0x3FCC4600, 0x90, "p384GData")
+        g.block(0x818, 0x820); o.mcK(0x820, 0x1294 + 0x90 * j, A("p384G"), 0x90, "p384GData")
         g.block(0x828, 0x82E); o.branch(0x82E)
     g.block(0x830, 0x850); o.mc(0x850, 0xE10, 0x1294, 0x480)
     g.block(0x858, 0x868); o.pd(0x868, 0x1714, 0xD50, P, lt)
@@ -1339,7 +1351,7 @@ def stage_f(i):
     g.envt = "PvEnv5"
     g.regs = {2: S(0), 25: S(0xD80)}
     if i == 1:
-        g.regs.update({9: C(1), 18: C(0x3FCC4D28), 19: S(0x1298), 20: C(0xE88FDC45), 21: S(0x17A4 + 0xC0),
+        g.regs.update({9: C(1), 18: C(A("p384Order")), 19: S(0x1298), 20: C(0xE88FDC45), 21: S(0x17A4 + 0xC0),
                        22: C(2), 23: C(0x188), 24: S(0x1924)})
     for r in (3, 4):
         g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
@@ -1444,20 +1456,20 @@ def stage_hs():
     params = params_of(g, 0xBEE)
     o = Ops(g)
     g.block(0xBEE, 0xC02); o.mc(0xC02, 0x1C88, 0xE10, 0x90)
-    g.block(0xC0A, 0xC2A); o.mcK(0xC2A, 0xE10, 0x3FCC4C8C, 0x30, "p384ParamsData", 0)
+    g.block(0xC0A, 0xC2A); o.mcK(0xC2A, 0xE10, A("p384Modulus"), 0x30, "p384ParamsData", 0)
     g.block(0xC32, 0xC3E)
     o.sw(0xC3E, 24, 0xF0, 10, 0xE70)
     o.sw(0xC42, 24, 0xF4, 11, 0xE74)
-    g.block(0xC46, 0xC58); o.mcK(0xC58, 0xE40, 0x3FCC4CEC, 0x30, "p384ParamsData", 0x60)
+    g.block(0xC46, 0xC58); o.mcK(0xC58, 0xE40, A("p384R2"), 0x30, "p384ParamsData", 0x60)
     g.block(0xC60, 0xC62); o.inzf(0xC62, 0x1CE8)
     g.block(0xC6A, 0xC6E, {10: ("P", "(if PZ = 0 then 0 else 1)", "rw [g{p}_10]; exact ite01_ff _")})
     o.sw(0xC6E, 2, 0x10, 10, 0x10)
-    g.block(0xC70, 0xC7E); o.mcK(0xC7E, 0x1714, 0x3FCC4C8C, 0x30, "p384ParamsData", 0)
+    g.block(0xC70, 0xC7E); o.mcK(0xC7E, 0x1714, A("p384Modulus"), 0x30, "p384ParamsData", 0)
     g.block(0xC86, 0xC90); o.sb0(0xC90, 9, 0x1744)
     g.block(0xC94, 0xCA2); o.mc(0xCA2, 0xD50, 0x1CE8, 0x30)
     g.block(0xCAA, 0xCAC); o.sb0(0xCAC, 24, 0xD80)
     g.block(0xCB0, 0xCB8); o.ms0(0xCB8, 0x270, 0x34)
-    g.block(0xCC0, 0xCCE); o.mcK(0xCCE, 0x17A4, 0x3FCC4CEC, 0x30, "p384ParamsData", 0x60)
+    g.block(0xCC0, 0xCCE); o.mcK(0xCCE, 0x17A4, A("p384R2"), 0x30, "p384ParamsData", 0x60)
     g.block(0xCD6, 0xCD8); o.sb0(0xCD8, 9, 0x17D4)
     g.block(0xCDC, 0xCDE); o.sw(0xCDE, 2, 0x40, 10, 0x40)
     g.block(0xCE0, 0xCE4); o.branch(0xCE4)
@@ -1655,11 +1667,11 @@ def stage_b():
     g.block(0x1AE, 0x1BC); o.mc(0x1BC, 0x3F0, 0xE10, 0x60)
     g.block(0x1C4, 0x1D6); o.mc(0x1D6, 0x12C4, 0x88, 0x30)
     g.block(0x1DE, 0x1EC); o.mc(0x1EC, 0x1294, 0x58, 0x30)
-    g.block(0x1F4, 0x20C); o.mcK(0x20C, 0x12F4, 0x3FCC44A0, 0x30, "p384MontOneData")
+    g.block(0x1F4, 0x20C); o.mcK(0x20C, 0x12F4, A("p384MontOne"), 0x30, "p384MontOneData")
     g.block(0x214, 0x216); o.bb(0x216, C(0), "rw [V{k}, g{p}_10]; rfl")
-    g.block(0x21E, 0x238, {9: C(0), 13: C(0)}); o.csel(0x238, 0x120, 0x1294, 0x3FCC44D0)
-    g.block(0x240, 0x24A); o.csel(0x24A, 0x150, 0x12C4, 0x3FCC4500)
-    g.block(0x252, 0x25C); o.csel(0x25C, 0x180, 0x12F4, 0x3FCC4530)
+    g.block(0x21E, 0x238, {9: C(0), 13: C(0)}); o.csel(0x238, 0x120, 0x1294, A("p384Identity"))
+    g.block(0x240, 0x24A); o.csel(0x24A, 0x150, 0x12C4, A("p384Identity") + 0x30)
+    g.block(0x252, 0x25C); o.csel(0x25C, 0x180, 0x12F4, A("p384Identity") + 0x60)
     g.block(0x264, 0x26E); o.sn(0x26E, 0x1294, 0x3F0)
     g.block(0x276, 0x286); o.nz(0x286, 0xE10, 0x1294, "hR0", "hRn")
     g.block(0x28E, 0x29E); o.cu(0x29E, 0x1294, 0xE10)
@@ -1669,13 +1681,13 @@ def stage_b():
     g.block(0x2EE, 0x2FC); o.mc(0x2FC, 0x1B0, 0x1294, 0x30)
     g.block(0x304, 0x30C); o.mc(0x30C, 0x1E0, 0x12C4, 0x30)
     g.block(0x314, 0x31A); o.b2s(0x31A, 0x210)
-    g.block(0x322, 0x338); o.mcK(0x338, 0xE10, 0x3FCC4D28, 0x30, "p384OrderData")
+    g.block(0x322, 0x338); o.mcK(0x338, 0xE10, A("p384Order"), 0x30, "p384OrderData")
     g.block(0x340, 0x350)
     o.sw(0x350, 8, 0xF0, 20, 0xE70)
     o.sw(0x354, 8, 0xF4, 22, 0xE74)
-    g.block(0x358, 0x36A); o.mcK(0x36A, 0xE40, 0x3FCC4D88, 0x30, "p384ScalarR2Data")
+    g.block(0x358, 0x36A); o.mcK(0x36A, 0xE40, A("p384ScalarR2"), 0x30, "p384ScalarR2Data")
     g.block(0x372, 0x374); o.inz(0x374, 0x1E0, "hS0", "hSn")
-    g.block(0x37C, 0x38E, {24: C(1)}); o.mcK(0x38E, 0x1714, 0x3FCC4D28, 0x30, "p384OrderData")
+    g.block(0x37C, 0x38E, {24: C(1)}); o.mcK(0x38E, 0x1714, A("p384Order"), 0x30, "p384OrderData")
     o.sb0(0x396, 23, 0x1744)
     g.block(0x39A, 0x3A8); o.mc(0x3A8, 0xD50, 0x1E0, 0x30)
     info = {
@@ -1740,4 +1752,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        main()
+    sys.stdout.write(imgnames.add_imports(buf.getvalue()))

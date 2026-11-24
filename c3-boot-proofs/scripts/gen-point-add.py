@@ -15,6 +15,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, '..', 'C3BootProofs', 'Proofs') + os.sep
+sys.path.insert(0, HERE)
+import imgnames  # noqa: E402
+
 OUT = sys.argv[1] if len(sys.argv) > 1 else ROOT + 'PointAdd.lean'
 
 REGNUM = {'x0': 0, 'ra': 1, 'sp': 2, 'a0': 10, 'a1': 11, 'a2': 12, 'a3': 13, 'a4': 14, 'a5': 15, 'a6': 16, 'a7': 17}
@@ -44,11 +47,23 @@ offs = sorted(PA)
 G = "sp0 + 0xFFFFFDC0"
 CALLEES = {0xF0BE: 'mul', 0xF884: 'add', 0xF9A6: 'sub', 0xFBA0: 'dbl', 0x122B0: 'cpy'}
 OPF = {'mul': 'fm', 'add': 'fa', 'sub': 'fs', 'dbl': 'fd'}
+BNAME = 'curveB'
+BADDR = imgnames.address(BNAME)
 KEPT = {2, 8, 9, 18, 19, 20, 21}
 
 
 def h(x):
     return f"0x{x:X}"
+
+
+def himm(x):
+    """A `lui` value, by name when it is `BADDR`'s upper part."""
+    return f"(img% hi20 {BNAME}Address)" if x == imgnames.hi20(BADDR) else h(x)
+
+
+def limm(base, x):
+    """An `addi` immediate, by name when it completes `BADDR`."""
+    return f"(img% lo12 {BNAME}Address)" if base[0] == 'imm' and (base[1] + x) % 2 ** 32 == BADDR else h(x)
 
 
 def lit(s):
@@ -66,7 +81,7 @@ def vstr(v):
     if t == 'b':
         return "bAddr"
     if t == 'imm':
-        return h(v[1])
+        return himm(v[1])
     raise Exception(v)
 
 
@@ -115,7 +130,7 @@ def simulate():
                     val = (base[0], base[1] + imm)
                 elif base[0] == 'imm':
                     val = ('imm', (base[1] + imm) % 2 ** 32)
-                    if val[1] == 0x3FCC4368:
+                    if val[1] == BADDR:
                         val = ('b',)
                 else:
                     raise Exception(ins)
@@ -331,7 +346,7 @@ for o in body():
             k -= 1
             rsp = regp(rs)
             k += 1
-            w(f"  obtain ⟨{newV}, h{newV}⟩ : ∃ V, upd {vname} {rname(rd)} (reg n{k-1} {rname(rs)} + {h(imm)}) = V := ⟨_, rfl⟩")
+            w(f"  obtain ⟨{newV}, h{newV}⟩ : ∃ V, upd {vname} {rname(rd)} (reg n{k-1} {rname(rs)} + {limm(base, imm)}) = V := ⟨_, rfl⟩")
             w(f"  rw [h{newV}] at I{k}'")
             w(f"  have I{k} := I{k}'")
             if base[0] in ('lhs', 'rhs'):
@@ -339,7 +354,7 @@ for o in body():
             else:
                 assert base[0] == 'imm'
                 val = ('imm', (base[1] + imm) % 2 ** 32)
-                if val[1] == 0x3FCC4368:
+                if val[1] == BADDR:
                     val = ('b',)
             nk = {}
             for r, (sym, p) in kvp.items():
@@ -387,7 +402,7 @@ for o in body():
         vj += 1
         newV = f"V{vj}"
         w(f"  obtain ⟨n{k}, d{k}, I{k}', e{k}⟩ := pa_luiK env I{k-1} (by decide) pa_at_{o:x} (off' := {h(nxt)}) (by decide) (by decide)")
-        w(f"  obtain ⟨{newV}, h{newV}⟩ : ∃ V, upd {vname} {rname(rd)} {h(imm)} = V := ⟨_, rfl⟩")
+        w(f"  obtain ⟨{newV}, h{newV}⟩ : ∃ V, upd {vname} {rname(rd)} {himm(imm)} = V := ⟨_, rfl⟩")
         w(f"  rw [h{newV}] at I{k}'")
         w(f"  have I{k} := I{k}'")
         nk = {}

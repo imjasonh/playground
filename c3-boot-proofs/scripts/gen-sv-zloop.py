@@ -76,8 +76,8 @@ inv=[("E","SvCode m.mem"),("IC","SvIvCode m.mem"),("EC","SvEcCode m.mem"),("UC",
 ("wd",f"W64 (memLoad32 m.mem ({fa(0x34)})) (memLoad32 m.mem ({fa(0x38)})) = st.δ"),
 ("wr",f"memLoad32 m.mem ({fa(0x78)}) = BitVec.ofNat 32 st.rem"),("rem","st.rem < 2 ^ 32"),
 ("w460",f"memLoad32 m.mem ({fa(0x460)}) = BitVec.ofNat 32 0xFFFFFFFF"),("w464",f"memLoad32 m.mem ({fa(0x464)}) = BitVec.ofNat 32 0xFFFFFFFF"),
-("a420",f"accV m.mem ({fa(0x420)}) 8 = P"),("aP","accV m.mem (BitVec.ofNat 32 0x3FCC4B38) 8 = P"),
-("a440",f"accV m.mem ({fa(0x440)}) 8 = R2"),("aR","accV m.mem (BitVec.ofNat 32 0x3FCC4B78) 8 = R2"),
+("a420",f"accV m.mem ({fa(0x420)}) 8 = P"),("aP","accV m.mem (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 = P"),
+("a440",f"accV m.mem ({fa(0x440)}) 8 = R2"),("aR","accV m.mem (BitVec.ofNat 32 (img% p256R2Address)) 8 = R2"),
 ("a2a0",f"accV m.mem ({fa(0x2A0)}) 8 = rv"),("a2c0",f"accV m.mem ({fa(0x2C0)}) 8 = sv"),("a2e0",f"accV m.mem ({fa(0x2E0)}) 8 = zv"),
 ("a15a8",f"accV m.mem ({fa(0x15A8)}) 8 = X"),("a15c8",f"accV m.mem ({fa(0x15C8)}) 8 = Y")]
 SG=[("f",0x320,0x340),("g",0x1380,0x13A0),("d",0x1480,0x14A0),("e",0x1020,0x1040)]
@@ -185,7 +185,7 @@ O("  · exact absurd (sc4 _ _ _ _) h")
 O("  obtain ⟨Zd, -, -, Zu, Zv, Zq, Zr⟩ := Z2")
 O(f"  have CH3 : ∀ x, SvR B x → n3.mem x = m.mem x := fun x hx => by rw [fR3 x hx, fr2 x hx, fR1 x hx]")
 O(f"  have CH2 : ∀ x, SvR B x → n2.mem x = m.mem x := {CH}")
-O("  have hM : accV n2.mem (BitVec.ofNat 32 0x3FCC4B38) 8 = P := by rw [accV_dataR F CH2 (by decide) (by decide), I.aP]")
+O("  have hM : accV n2.mem (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 = P := by rw [accV_dataR F CH2 (by decide) (by decide), I.aP]")
 O("  have eu : i64Val ((reg n2 (24 : Fin 32)).toNat + 2 ^ 32 *")
 O(f"      (memLoad32 n2.mem ({fa(0x3C)})).toNat) = i64Val (dsIter (min st.rem 62) ⟨st.δ, lowestI st.f, lowestI st.g, 1, 0, 0, 1⟩).u := by")
 O("    rw [← Zu]; rfl")

@@ -55,11 +55,11 @@ a_binders = A[len('theorem sv_p256_inv '):A.index('\n')]
 a_body = A[A.index(' :\n    (¬') + 3:]
 SC12 = a_body[len('    (¬ ('):a_body.index(') ∧ SvErrRet B out v n0) ∨')]
 
-N = "accV M0 (BitVec.ofNat 32 0x3FCC4268) 8"
-PP = "accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8"
-R2 = "accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8"
+N = "accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8"
+PP = "accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8"
+R2 = "accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8"
 QV = {'qx': "gsVal M0 x21 1 * 2 ^ 256 % p256", 'qy': "gsVal M0 x21 0x21 * 2 ^ 256 % p256",
-      'qz': "accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8", 'rv': "beNat (b32 er)", 'sv': "beNat (b32 es)",
+      'qz': "accV M0 (BitVec.ofNat 32 (img% p256MontOneAddress)) 8", 'rv': "beNat (b32 er)", 'sv': "beNat (b32 es)",
       'zv': f"beNat (memBytes M0 (memLoad32 n0.mem ({fa(0x84)})) 32) % C3.p256.n", 'N': N,
       'W': "(fun e => memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 e))",
       'r3': "reg n0 (3 : Fin 32)", 'r4': "reg n0 (4 : Fin 32)"}
@@ -161,20 +161,20 @@ O("    have h := code_accV D0.params 0 8 (by decide)")
 O("    rw [add_ofNat_zero] at h")
 O("    show 0 < accV M0 P2N 8; rw [h]; decide")
 O(f"  have hG : {subst(c_hyps['hG'], QV)} := by")
-O("    have g0 : accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x0) 8 = dataVal p256GMontData 0 8 :=")
+O("    have g0 : accV M0 (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x0) 8 = dataVal p256GMontData 0 8 :=")
 O("      code_accV GD 0 8 (by decide)")
-O("    have g1 : accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x20) 8 = dataVal p256GMontData 0x20 8 :=")
+O("    have g1 : accV M0 (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x20) 8 = dataVal p256GMontData 0x20 8 :=")
 O("      code_accV GD 0x20 8 (by decide)")
-O("    have g2 : accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x40) 8 = dataVal p256GMontData 0x40 8 :=")
+O("    have g2 : accV M0 (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x40) 8 = dataVal p256GMontData 0x40 8 :=")
 O("      code_accV GD 0x40 8 (by decide)")
 O("    rw [g0, g1, g2]; exact ⟨by decide, by decide, by decide⟩")
 O(f"  have hQ : {subst(c_hyps['hQ'], QV)} := by")
-O("    have z : accV M0 (BitVec.ofNat 32 0x3FCC43A8 + BitVec.ofNat 32 0) 8 = dataVal p256MontOneData 0 8 :=")
+O("    have z : accV M0 (BitVec.ofNat 32 (img% p256MontOneAddress) + BitVec.ofNat 32 0) 8 = dataVal p256MontOneData 0 8 :=")
 O("      code_accV OD 0 8 (by decide)")
 O("    rw [add_ofNat_zero] at z")
-O("    exact ⟨Nat.mod_lt _ p256_pos, Nat.mod_lt _ p256_pos, by show accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 < p256; rw [z]; decide⟩")
+O("    exact ⟨Nat.mod_lt _ p256_pos, Nat.mod_lt _ p256_pos, by show accV M0 (BitVec.ofNat 32 (img% p256MontOneAddress)) 8 < p256; rw [z]; decide⟩")
 O(f"  have hidR : {hidR} := by")
-O("    have z : accV M0 (BitVec.ofNat 32 0x3FCC442C + BitVec.ofNat 32 0) 8 = dataVal p256AffineIdXData 0 8 :=")
+O("    have z : accV M0 (BitVec.ofNat 32 (img% p256AffineIdXAddress) + BitVec.ofNat 32 0) 8 = dataVal p256AffineIdXData 0 8 :=")
 O("      code_accV AD 0 8 (by decide)")
 O("    rw [add_ofNat_zero] at z")
 O("    rw [z]; decide")

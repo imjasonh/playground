@@ -15,6 +15,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, '..', 'C3BootProofs', 'Proofs') + os.sep
+sys.path.insert(0, HERE)
+import imgnames  # noqa: E402
+
 OUT = sys.argv[1] if len(sys.argv) > 1 else ROOT + 'P256PtDouble.lean'
 
 REGNUM = {'x0': 0, 'ra': 1, 'sp': 2, 'a0': 10, 'a1': 11, 'a2': 12, 'a3': 13, 'a4': 14, 'a5': 15, 'a6': 16, 'a7': 17}
@@ -45,11 +48,22 @@ G = "d2G sp0"
 CALLEES = {0xF312: 'mul', 0xFDFE: 'sqr', 0xFAD8: 'add', 0xFBFA: 'sub', 0xFDF4: 'dbl', 0x12504: 'cpy'}
 OPF = {'mul': 'fm', 'sqr': 'fm', 'add': 'fa', 'sub': 'fs', 'dbl': 'fd'}
 KEPT = {2, 8, 9, 18, 19, 20, 21, 22}
-BADDR = 0x3FCC4368
+BNAME = 'curveB'
+BADDR = imgnames.address(BNAME)
 
 
 def h(x):
     return f"0x{x:X}"
+
+
+def himm(x):
+    """A `lui` value, by name when it is `BADDR`'s upper part."""
+    return f"(img% hi20 {BNAME}Address)" if x == imgnames.hi20(BADDR) else h(x)
+
+
+def limm(base, x):
+    """An `addi` immediate, by name when it completes `BADDR`."""
+    return f"(img% lo12 {BNAME}Address)" if base[0] == 'imm' and (base[1] + x) % 2 ** 32 == BADDR else h(x)
 
 
 def lit(s):
@@ -69,7 +83,7 @@ def vstr(v):
     if t == 'b':
         return "bAddr"
     if t == 'imm':
-        return h(v[1])
+        return himm(v[1])
     raise Exception(v)
 
 
@@ -329,7 +343,7 @@ for o in body():
             k -= 1
             rsp = regp(rs)
             k += 1
-            w(f"  obtain ⟨{newV}, h{newV}⟩ : ∃ V, upd {vname} {rname(rd)} (reg n{k-1} {rname(rs)} + {h(imm)}) = V := ⟨_, rfl⟩")
+            w(f"  obtain ⟨{newV}, h{newV}⟩ : ∃ V, upd {vname} {rname(rd)} (reg n{k-1} {rname(rs)} + {limm(base, imm)}) = V := ⟨_, rfl⟩")
             w(f"  rw [h{newV}] at I{k}'")
             w(f"  have I{k} := I{k}'")
             if base[0] == 'G':
@@ -390,7 +404,7 @@ for o in body():
         vj += 1
         newV = f"V{vj}"
         w(f"  obtain ⟨n{k}, d{k}, I{k}', e{k}⟩ := d2_luiK env I{k-1} p2pd_at_{o:x} (off' := {h(nxt)}) (by decide) (by decide)")
-        w(f"  obtain ⟨{newV}, h{newV}⟩ : ∃ V, upd {vname} {rname(rd)} {h(imm)} = V := ⟨_, rfl⟩")
+        w(f"  obtain ⟨{newV}, h{newV}⟩ : ∃ V, upd {vname} {rname(rd)} {himm(imm)} = V := ⟨_, rfl⟩")
         w(f"  rw [h{newV}] at I{k}'")
         w(f"  have I{k} := I{k}'")
         nk = {}
