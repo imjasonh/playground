@@ -524,6 +524,19 @@ enum MCULabProtocol {
         return nil
     }
 
+    /// Extract the expected byte offset from a firmware `"chunk gap: got offset X, expected Y"` error
+    /// so iOS can automatically rewind and resume even against firmware built before `READY` gap recovery.
+    static func parseChunkGapExpectedOffset(from errorMessage: String) -> UInt32? {
+        guard errorMessage.hasPrefix("chunk gap:"),
+              let range = errorMessage.range(of: "expected ")
+        else {
+            return nil
+        }
+        let tail = errorMessage[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+        let digits = tail.prefix { $0.isNumber }
+        return UInt32(digits)
+    }
+
     /// Standard IEEE 802.3 CRC32 (polynomial `0xEDB88320`) matching `mcu-lab/src/protocol.rs`.
     static func crc32(_ data: Data) -> UInt32 {
         var crc: UInt32 = 0xFFFF_FFFF

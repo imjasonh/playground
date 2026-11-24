@@ -81,6 +81,12 @@ final class MCULabController: NSObject, ObservableObject {
     private var otaDataChar: CBCharacteristic?
     private var otaStatusChar: CBCharacteristic?
     private var otaStreamTask: Task<Void, Never>?
+    private var otaWriteReadyContinuation: CheckedContinuation<Void, Never>?
+    private var otaWriteAckContinuation: CheckedContinuation<Void, Never>?
+    private var otaResumeCount = 0
+    private var lastOTAResumeOffset: UInt32?
+    private var lastOTAResumeAt: Date = .distantPast
+    private static let maxOTAResumeRetries = 10
     private var profilePeripheral: CBPeripheral?
     private var profileTargetDeviceId: UUID?
     private var profileTargetSampleId: UUID?
@@ -425,6 +431,7 @@ final class MCULabController: NSObject, ObservableObject {
     func cancelOTAUpdate() {
         otaStreamTask?.cancel()
         otaStreamTask = nil
+        resumePendingOTAContinuations()
         if let peripheral = otaPeripheral {
             if let ctrl = otaControlChar,
                let abortData = MCULabProtocol.encodeOTACommand(.abort).data(using: .utf8)
@@ -453,10 +460,55 @@ final class MCULabController: NSObject, ObservableObject {
         otaStatusText = "Installed \(stagedFirmwareName) (\(total) B, sha256 \(sha.prefix(12))…)."
     }
 
+    private func resumePendingOTAContinuations() {
+        if let ready = otaWriteReadyContinuation {
+            otaWriteReadyContinuation = nil
+            ready.resume()
+        }
+        if let ack = otaWriteAckContinuation {
+            otaWriteAckContinuation = nil
+            ack.resume()
+        }
+    }
+
+    private func waitForOTAWriteReady(_ peripheral: CBPeripheral) async {
+        if peripheral.canSendWriteWithoutResponse {
+            return
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            otaWriteReadyContinuation?.resume()
+            otaWriteReadyContinuation = continuation
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(250))
+                if let pending = self?.otaWriteReadyContinuation {
+                    self?.otaWriteReadyContinuation = nil
+                    pending.resume()
+                }
+            }
+        }
+    }
+
+    private func waitForOTAWriteAck() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            otaWriteAckContinuation?.resume()
+            otaWriteAckContinuation = continuation
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(500))
+                if let pending = self?.otaWriteAckContinuation {
+                    self?.otaWriteAckContinuation = nil
+                    pending.resume()
+                }
+            }
+        }
+    }
+
     private func beginOTAConnection(to peripheral: CBPeripheral) {
         guard let central, central.state == .poweredOn else {
             return
         }
+        otaResumeCount = 0
+        lastOTAResumeOffset = nil
+        lastOTAResumeAt = .distantPast
         otaPeripheral = peripheral
         peripheral.delegate = self
         otaPhase = .connecting
@@ -496,6 +548,7 @@ final class MCULabController: NSObject, ObservableObject {
             return
         }
         otaStreamTask?.cancel()
+        resumePendingOTAContinuations()
         let mtu = max(peripheral.maximumWriteValueLength(for: .withoutResponse), 180)
         let chunkSize = min(mtu, 480)
         let chunks = MCULabProtocol.chunkFirmwareFramed(
@@ -511,14 +564,21 @@ final class MCULabController: NSObject, ObservableObject {
         otaStreamTask = Task { @MainActor [weak self] in
             var sentBytes: UInt32 = startOffset
             for (idx, item) in chunks.enumerated() {
-                if Task.isCancelled { return }
-                peripheral.writeValue(item.frame, for: dataChar, type: .withoutResponse)
-                sentBytes += UInt32(item.payloadCount)
-                if idx % 16 == 0 || sentBytes == total {
-                    self?.otaPhase = .streaming(written: sentBytes, total: total)
-                    try? await Task.sleep(for: .milliseconds(12))
+                guard let self, !Task.isCancelled else { return }
+                let isSyncBoundary = ((idx + 1) % 8 == 0) || (idx == chunks.count - 1)
+                if isSyncBoundary {
+                    // Synchronize once per ~4 KiB flash sector with `.withResponse` so the
+                    // ESP32 finishes `esp_ota_write` and drains NimBLE's RX queue before the next burst.
+                    peripheral.writeValue(item.frame, for: dataChar, type: .withResponse)
+                    await self.waitForOTAWriteAck()
                 } else {
-                    try? await Task.sleep(for: .milliseconds(3))
+                    await self.waitForOTAWriteReady(peripheral)
+                    if Task.isCancelled { return }
+                    peripheral.writeValue(item.frame, for: dataChar, type: .withoutResponse)
+                }
+                sentBytes += UInt32(item.payloadCount)
+                if isSyncBoundary {
+                    self.otaPhase = .streaming(written: sentBytes, total: total)
                 }
             }
             guard let self, !Task.isCancelled else { return }
@@ -530,6 +590,22 @@ final class MCULabController: NSObject, ObservableObject {
         }
     }
 
+    private func attemptOTARewind(to offset: UInt32) -> Bool {
+        let now = Date()
+        if lastOTAResumeOffset == offset && now.timeIntervalSince(lastOTAResumeAt) < 0.3 {
+            // Ignore duplicate rewind notifications for packets that were already in flight.
+            return true
+        }
+        guard otaResumeCount < Self.maxOTAResumeRetries else {
+            return false
+        }
+        otaResumeCount += 1
+        lastOTAResumeOffset = offset
+        lastOTAResumeAt = now
+        startStreamingOTAChunks(fromOffset: offset)
+        return true
+    }
+
     func handleOTAStatusNotification(_ line: String) {
         guard let parsed = MCULabProtocol.parseOTAStatus(line) else {
             return
@@ -538,20 +614,39 @@ final class MCULabController: NSObject, ObservableObject {
         case .idle:
             break
         case .ready(_, let offset):
-            startStreamingOTAChunks(fromOffset: offset)
+            if case .streaming = otaPhase {
+                if !attemptOTARewind(to: offset) {
+                    otaStreamTask?.cancel()
+                    resumePendingOTAContinuations()
+                    otaPhase = .failed("Too many BLE packet drops during OTA (stuck at \(offset) B).")
+                    otaStatusText = "OTA failed after \(Self.maxOTAResumeRetries) retries."
+                    if let peripheral = otaPeripheral {
+                        central?.cancelPeripheralConnection(peripheral)
+                    }
+                }
+            } else {
+                startStreamingOTAChunks(fromOffset: offset)
+            }
         case .progress(let written, let total):
             otaPhase = .streaming(written: written, total: total)
             let pct = total > 0 ? Int((Double(written) / Double(total) * 100).rounded()) : 0
             otaStatusText = "Flashing inactive slot: \(written)/\(total) bytes (\(pct)%)."
         case .ok(let sha256):
             otaStreamTask?.cancel()
+            resumePendingOTAContinuations()
             otaPhase = .completed(sha256: sha256)
             otaStatusText = "Update verified (\(sha256.prefix(12))…). \(selectedFirmwareTarget.displayName) is rebooting into the new slot."
             if let peripheral = otaPeripheral {
                 central?.cancelPeripheralConnection(peripheral)
             }
         case .error(let message):
+            if let expectedOffset = MCULabProtocol.parseChunkGapExpectedOffset(from: message),
+               attemptOTARewind(to: expectedOffset)
+            {
+                return
+            }
             otaStreamTask?.cancel()
+            resumePendingOTAContinuations()
             otaPhase = .failed(message)
             otaStatusText = "OTA error: \(message)"
             if let peripheral = otaPeripheral {
@@ -1205,6 +1300,9 @@ extension MCULabController: CBCentralManagerDelegate {
             if self.otaPeripheral?.identifier != peripheral.identifier {
                 return
             }
+            self.otaStreamTask?.cancel()
+            self.otaStreamTask = nil
+            self.resumePendingOTAContinuations()
             self.otaPeripheral = nil
             self.otaControlChar = nil
             self.otaDataChar = nil
@@ -1375,6 +1473,38 @@ extension MCULabController: CBPeripheralDelegate {
         }
         Task { @MainActor in
             self.handleOTAStatusNotification(line)
+        }
+    }
+
+    nonisolated func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
+        Task { @MainActor in
+            guard self.otaPeripheral?.identifier == peripheral.identifier,
+                  let pending = self.otaWriteReadyContinuation
+            else {
+                return
+            }
+            self.otaWriteReadyContinuation = nil
+            pending.resume()
+        }
+    }
+
+    nonisolated func peripheral(
+        _ peripheral: CBPeripheral,
+        didWriteValueFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        let dataUUID = CBUUID(string: MCULabProtocol.otaDataUUIDString)
+        guard characteristic.uuid == dataUUID else {
+            return
+        }
+        Task { @MainActor in
+            guard self.otaPeripheral?.identifier == peripheral.identifier,
+                  let pending = self.otaWriteAckContinuation
+            else {
+                return
+            }
+            self.otaWriteAckContinuation = nil
+            pending.resume()
         }
     }
 }

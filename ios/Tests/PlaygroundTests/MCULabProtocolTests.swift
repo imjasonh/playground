@@ -628,6 +628,11 @@ final class MCULabProtocolTests: XCTestCase {
         let formatted = MCULabProtocol.formatOTAStatus(readyResumed)
         XCTAssertEqual(formatted, "READY total=384000 offset=65536")
         XCTAssertEqual(MCULabProtocol.parseOTAStatus(formatted), readyResumed)
+        XCTAssertEqual(
+            MCULabProtocol.parseChunkGapExpectedOffset(from: "chunk gap: got offset 42300, expected 41830"),
+            41_830
+        )
+        XCTAssertNil(MCULabProtocol.parseChunkGapExpectedOffset(from: "sha256 mismatch"))
 
         let firmware = Data((0..<1000).map { UInt8($0 % 251) })
         let framed = MCULabProtocol.chunkFirmwareFramed(firmware, startingAt: 500, maxPacketBytes: 210)
