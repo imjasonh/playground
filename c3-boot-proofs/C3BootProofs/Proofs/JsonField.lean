@@ -63,30 +63,30 @@ namespace C3.RV32
 
 open C3.Image C3.Json
 
-theorem fd_at_0 : fetchRel jsonFieldCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFE0, 2) := by decide
-theorem fd_at_2 : fetchRel jsonFieldCode 0x2 = some (.store .sw sp ra 0x1C, 2) := by decide
-theorem fd_at_4 : fetchRel jsonFieldCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x18, 2) := by decide
-theorem fd_at_6 : fetchRel jsonFieldCode 0x6 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
-theorem fd_at_8 : fetchRel jsonFieldCode 0x8 = some (.aluImm .add a0 sp 0xC, 2) := by decide
-theorem fd_at_a : fetchRel jsonFieldCode 0xA = some (.auipc ra 0x0, 4) := by decide
-theorem fd_at_e : fetchRel jsonFieldCode 0xE = some (.jalr ra ra 0x162, 4) := by decide
-theorem fd_at_12 : fetchRel jsonFieldCode 0x12 = some (.load .lbu a0 sp 0xC, 4) := by decide
-theorem fd_at_16 : fetchRel jsonFieldCode 0x16 = some (.branch .beq a0 x0 0xA, 2) := by decide
-theorem fd_at_18 : fetchRel jsonFieldCode 0x18 = some (.aluImm .add a0 x0 0x0, 2) := by decide
-theorem fd_at_1a : fetchRel jsonFieldCode 0x1A = some (.load .lbu a1 sp 0xD, 4) := by decide
-theorem fd_at_1e : fetchRel jsonFieldCode 0x1E = some (.jal x0 0x10, 2) := by decide
-theorem fd_at_20 : fetchRel jsonFieldCode 0x20 = some (.load .lw a0 sp 0x10, 2) := by decide
-theorem fd_at_22 : fetchRel jsonFieldCode 0x22 = some (.branch .beq a0 x0 0x8, 2) := by decide
-theorem fd_at_24 : fetchRel jsonFieldCode 0x24 = some (.load .lw a1 sp 0x14, 2) := by decide
-theorem fd_at_26 : fetchRel jsonFieldCode 0x26 = some (.store .sw (8 : Fin 32) a1 0x4, 2) := by decide
-theorem fd_at_28 : fetchRel jsonFieldCode 0x28 = some (.jal x0 0xA, 2) := by decide
-theorem fd_at_2a : fetchRel jsonFieldCode 0x2A = some (.aluImm .add a1 x0 0x21, 4) := by decide
-theorem fd_at_2e : fetchRel jsonFieldCode 0x2E = some (.store .sb (8 : Fin 32) a1 0x4, 4) := by decide
-theorem fd_at_32 : fetchRel jsonFieldCode 0x32 = some (.store .sw (8 : Fin 32) a0 0x0, 2) := by decide
-theorem fd_at_34 : fetchRel jsonFieldCode 0x34 = some (.load .lw ra sp 0x1C, 2) := by decide
-theorem fd_at_36 : fetchRel jsonFieldCode 0x36 = some (.load .lw (8 : Fin 32) sp 0x18, 2) := by decide
-theorem fd_at_38 : fetchRel jsonFieldCode 0x38 = some (.aluImm .add sp sp 0x20, 2) := by decide
-theorem fd_at_3a : fetchRel jsonFieldCode 0x3A = some (.jalr x0 ra 0x0, 2) := by decide
+theorem jfd_at_0 : fetchRel jsonFieldCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFE0, 2) := by decide
+theorem jfd_at_2 : fetchRel jsonFieldCode 0x2 = some (.store .sw sp ra 0x1C, 2) := by decide
+theorem jfd_at_4 : fetchRel jsonFieldCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x18, 2) := by decide
+theorem jfd_at_6 : fetchRel jsonFieldCode 0x6 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
+theorem jfd_at_8 : fetchRel jsonFieldCode 0x8 = some (.aluImm .add a0 sp 0xC, 2) := by decide
+theorem jfd_at_a : fetchRel jsonFieldCode 0xA = some (.auipc ra 0x0, 4) := by decide
+theorem jfd_at_e : fetchRel jsonFieldCode 0xE = some (.jalr ra ra 0x162, 4) := by decide
+theorem jfd_at_12 : fetchRel jsonFieldCode 0x12 = some (.load .lbu a0 sp 0xC, 4) := by decide
+theorem jfd_at_16 : fetchRel jsonFieldCode 0x16 = some (.branch .beq a0 x0 0xA, 2) := by decide
+theorem jfd_at_18 : fetchRel jsonFieldCode 0x18 = some (.aluImm .add a0 x0 0x0, 2) := by decide
+theorem jfd_at_1a : fetchRel jsonFieldCode 0x1A = some (.load .lbu a1 sp 0xD, 4) := by decide
+theorem jfd_at_1e : fetchRel jsonFieldCode 0x1E = some (.jal x0 0x10, 2) := by decide
+theorem jfd_at_20 : fetchRel jsonFieldCode 0x20 = some (.load .lw a0 sp 0x10, 2) := by decide
+theorem jfd_at_22 : fetchRel jsonFieldCode 0x22 = some (.branch .beq a0 x0 0x8, 2) := by decide
+theorem jfd_at_24 : fetchRel jsonFieldCode 0x24 = some (.load .lw a1 sp 0x14, 2) := by decide
+theorem jfd_at_26 : fetchRel jsonFieldCode 0x26 = some (.store .sw (8 : Fin 32) a1 0x4, 2) := by decide
+theorem jfd_at_28 : fetchRel jsonFieldCode 0x28 = some (.jal x0 0xA, 2) := by decide
+theorem jfd_at_2a : fetchRel jsonFieldCode 0x2A = some (.aluImm .add a1 x0 0x21, 4) := by decide
+theorem jfd_at_2e : fetchRel jsonFieldCode 0x2E = some (.store .sb (8 : Fin 32) a1 0x4, 4) := by decide
+theorem jfd_at_32 : fetchRel jsonFieldCode 0x32 = some (.store .sw (8 : Fin 32) a0 0x0, 2) := by decide
+theorem jfd_at_34 : fetchRel jsonFieldCode 0x34 = some (.load .lw ra sp 0x1C, 2) := by decide
+theorem jfd_at_36 : fetchRel jsonFieldCode 0x36 = some (.load .lw (8 : Fin 32) sp 0x18, 2) := by decide
+theorem jfd_at_38 : fetchRel jsonFieldCode 0x38 = some (.aluImm .add sp sp 0x20, 2) := by decide
+theorem jfd_at_3a : fetchRel jsonFieldCode 0x3A = some (.jalr x0 ra 0x0, 2) := by decide
 
 /-- The result of `field` at `out`. -/
 def FieldRes (M M' : Word → BitVec 8) (out : Word) : Except Nat (Word × Nat) → Prop
@@ -153,10 +153,10 @@ theorem fd_epi {R : (Word → BitVec 8) → Prop} {Mf : Word → BitVec 8} (hsp 
     (hsp0 : g0 sp = F + BitVec.ofNat 32 0x20) (hret : g0 ra &&& ~~~1 = g0 ra) (hal : F.toNat % 4 = 0)
     (hz0 : g0 0 = 0) (hfr : ∀ x, x ∉ jClob ++ [ra, sp, 8] → f x = g0 x) (hR : R Mf) :
     WP jsonFieldCode base (RPost (g0 ra) R g0) Mf 0x34 f := by
-  refine WP.lw fd_at_34 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x1C) (by decide)) ?_; wn
-  refine WP.lw fd_at_36 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x18) (by decide)) ?_; wn
-  refine WP.aluImm fd_at_38 ?_; wn
-  refine WP.ret fd_at_3a ⟨?_, hR, ?_⟩
+  refine WP.lw jfd_at_34 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x1C) (by decide)) ?_; wn
+  refine WP.lw jfd_at_36 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x18) (by decide)) ?_; wn
+  refine WP.aluImm jfd_at_38 ?_; wn
+  refine WP.ret jfd_at_3a ⟨?_, hR, ?_⟩
   · rsimp; rw [hsp, e1, add_lit_zero, hret]
   refine frame_of (L2 := [ra, sp, 8]) (by keepz hz0) fun x hx => ?_
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
@@ -210,7 +210,7 @@ theorem fd_wp (h0 : f a0 = out) (h1 : f a1 = p) (h2 : f a2 = BitVec.ofNat 32 n) 
       (fieldRes p (objField (memBytes M0 p n) (memBytes M0 kq kl)))) f) M0 0 f := by
   refine WP.zero fun hz => ?_
   have esp : aluEval .add (f sp) 0xFFFFFFE0 = s + 228 := by rw [hsp, ev_add, BitVec.add_assoc]; rfl
-  refine WP.aluImm fd_at_0 ?_; wn
+  refine WP.aluImm jfd_at_0 ?_; wn
   rw [esp]
   generalize hF : s + 228 = F
   have hF' : s + BitVec.ofNat 32 228 = F := hF
@@ -220,9 +220,9 @@ theorem fd_wp (h0 : f a0 = out) (h1 : f a1 = p) (h2 : f a2 = BitVec.ofNat 32 n) 
       Sep (F + BitVec.ofNat 32 c) w a l := fun hc _ _ h => by rw [← hF', add_ofNat_assoc]; exact h.sub hc
   have hoS : ∀ {c : Nat}, 228 + c + 4 ≤ 260 → Sep out 8 (F + BitVec.ofNat 32 c) 4 := fun hc => by
     rw [← hF', add_ofNat_assoc]; exact hso.subR hc
-  refine WP.sw fd_at_2 (by rsimp; exact aligned_add halF (k := 0x1C) (by decide))
+  refine WP.sw jfd_at_2 (by rsimp; exact aligned_add halF (k := 0x1C) (by decide))
     (by rsimp; exact hFs (by decide) hfs.field) ?_; wn
-  refine WP.sw fd_at_4 (by rsimp; exact aligned_add halF (k := 0x18) (by decide))
+  refine WP.sw jfd_at_4 (by rsimp; exact aligned_add halF (k := 0x18) (by decide))
     (by rsimp; exact hFs (by decide) hfs.field) ?_; wn
   change WP jsonFieldCode base _ (memStore32 (memStore32 M0 (F + 0x1C) (f ra)) (F + 0x18) (f 8)) 0x6 _
   have v1 : memLoad32 (memStore32 (memStore32 M0 (F + 0x1C) (f ra)) (F + 0x18) (f 8)) (F + 0x1C) = f ra :=
@@ -238,10 +238,10 @@ theorem fd_wp (h0 : f a0 = out) (h1 : f a1 = p) (h2 : f a2 = BitVec.ofNat 32 n) 
   have hd1 : memBytes M1 p n = memBytes M0 p n := hO1.bytes hSp
   have hk1 : memBytes M1 kq kl = memBytes M0 kq kl := hO1.bytes hSk
   have hFc : s + BitVec.ofNat 32 240 = F + 0xC := by rw [← hF', BitVec.add_assoc]; rfl
-  refine WP.alu fd_at_6 ?_; wn
-  refine WP.aluImm fd_at_8 ?_; wn
+  refine WP.alu jfd_at_6 ?_; wn
+  refine WP.aluImm jfd_at_8 ?_; wn
   refine WP.callGet (tb := base + 0x16C) (out := F + 0xC) (s := s) (p := p) (kq := kq) (n := n) (kl := kl)
-    fd_at_a fd_at_e (by simp only [BitVec.add_assoc]; rfl) (even_at base hb _ (by decide)) (by decide) hc1.get
+    jfd_at_a jfd_at_e (by simp only [BitVec.add_assoc]; rfl) (even_at base hb _ (by decide)) (by decide) hc1.get
     (by (try rsimp); (try rw [ev_add])) (by (try rsimp); exact h1) (by (try rsimp); exact h2)
     (by (try rsimp); exact h3) (by (try rsimp); exact h4) (by (try rsimp); exact hF'.symm)
     hal (aligned_add halF (k := 12) (by decide)) (by omega) hkl hp0 hpn (hfs.get.low (by decide))
@@ -270,20 +270,20 @@ theorem fd_wp (h0 : f a0 = out) (h1 : f a1 = p) (h2 : f a2 = BitVec.ofNat 32 n) 
       have := sep_offsets s (c := 0) (n := 228) (d := 252) (k := 4) (Or.inl (by decide)) (by decide) (by decide)
       rwa [add_ofNat_zero] at this
   refine WP.zero fun hz2 => ?_
-  refine WP.lbu fd_at_12 ?_; wn
+  refine WP.lbu jfd_at_12 ?_; wn
   unfold objField
   rcases hog : objGet (memBytes M0 p n) (memBytes M0 kq kl) with e | (_ | ⟨vp, vl⟩) <;> rw [hog] at hGR
   · obtain ⟨-, t1, t2⟩ := hGR
-    refine WP.branch fd_at_16 (fun eb => ?_) (fun _ => ?_) <;> wn
+    refine WP.branch jfd_at_16 (fun eb => ?_) (fun _ => ?_) <;> wn
     · exfalso; (try rsimp at eb); rw [t1] at eb; exact absurd eb (by decide)
-    refine WP.aluImm fd_at_18 ?_; wn
-    refine WP.lbu fd_at_1a ?_; wn
-    refine WP.jal fd_at_1e (by decide) ?_; wn
+    refine WP.aluImm jfd_at_18 ?_; wn
+    refine WP.lbu jfd_at_1a ?_; wn
+    refine WP.jal jfd_at_1e (by decide) ?_; wn
     have t2' : M2 (F + 0xD) = BitVec.ofNat 8 e := by
       rw [show F + 0xD = F + 12 + 1 by rw [BitVec.add_assoc]; rfl]; exact t2
     have hs4 : Sep (out + BitVec.ofNat 32 4) 1 base jsonFieldCode.length := hsc.sub (by decide)
-    refine WP.sb fd_at_2e (by (try rsimp); (try simp only [ev0]); rw [h0]; exact hs4) ?_; wn
-    refine WP.sw fd_at_32 (by (try rsimp); (try simp only [ev0]); rw [h0, add_lit_zero]; exact halo)
+    refine WP.sb jfd_at_2e (by (try rsimp); (try simp only [ev0]); rw [h0]; exact hs4) ?_; wn
+    refine WP.sw jfd_at_32 (by (try rsimp); (try simp only [ev0]); rw [h0, add_lit_zero]; exact halo)
       (by (try rsimp); (try simp only [ev0]); rw [h0, add_lit_zero]; exact sep_low hsc (by decide)) ?_
     wn
     (try rsimp); (try simp only [ev0]); rw [h0, add_lit_zero, t2', ri_ze]
@@ -294,17 +294,17 @@ theorem fd_wp (h0 : f a0 = out) (h1 : f a1 = p) (h2 : f a2 = BitVec.ofNat 32 n) 
   · obtain ⟨-, t1, t2⟩ := hGR
     have t2' : memLoad32 M2 (F + 0x10) = 0 := by
       rw [show F + 0x10 = F + 0xC + 4 by rw [BitVec.add_assoc]; rfl]; exact t2
-    refine WP.branch fd_at_16 (fun _ => ?_) (fun eb => ?_) <;> wn
+    refine WP.branch jfd_at_16 (fun _ => ?_) (fun eb => ?_) <;> wn
     rotate_left
     · exfalso; (try rsimp at eb); rw [t1] at eb; exact absurd eb (by decide)
-    refine WP.lw fd_at_20 (by (try rsimp); exact aligned_add halF (k := 0x10) (by decide)) ?_; wn
-    refine WP.branch fd_at_22 (fun _ => ?_) (fun eb => ?_) <;> wn
+    refine WP.lw jfd_at_20 (by (try rsimp); exact aligned_add halF (k := 0x10) (by decide)) ?_; wn
+    refine WP.branch jfd_at_22 (fun _ => ?_) (fun eb => ?_) <;> wn
     rotate_left
     · exfalso; (try rsimp at eb); rw [t2'] at eb; exact absurd eb (by decide)
-    refine WP.aluImm fd_at_2a ?_; wn
+    refine WP.aluImm jfd_at_2a ?_; wn
     have hs4 : Sep (out + BitVec.ofNat 32 4) 1 base jsonFieldCode.length := hsc.sub (by decide)
-    refine WP.sb fd_at_2e (by (try rsimp); (try simp only [ev0]); rw [h0]; exact hs4) ?_; wn
-    refine WP.sw fd_at_32 (by (try rsimp); (try simp only [ev0]); rw [h0, add_lit_zero]; exact halo)
+    refine WP.sb jfd_at_2e (by (try rsimp); (try simp only [ev0]); rw [h0]; exact hs4) ?_; wn
+    refine WP.sw jfd_at_32 (by (try rsimp); (try simp only [ev0]); rw [h0, add_lit_zero]; exact halo)
       (by (try rsimp); (try simp only [ev0]); rw [h0, add_lit_zero]; exact sep_low hsc (by decide)) ?_
     wn
     (try rsimp); (try simp only [ev0]); rw [h0, add_lit_zero, t2']
@@ -320,18 +320,18 @@ theorem fd_wp (h0 : f a0 = out) (h1 : f a1 = p) (h2 : f a2 = BitVec.ofNat 32 n) 
     have hv := objGet_val hog
     rw [memBytes_length] at hv
     have hq0 := nx_q0 hp0 (n := n) (pos := vp) (by omega) hv.1
-    refine WP.branch fd_at_16 (fun _ => ?_) (fun eb => ?_) <;> wn
+    refine WP.branch jfd_at_16 (fun _ => ?_) (fun eb => ?_) <;> wn
     rotate_left
     · exfalso; (try rsimp at eb); rw [t1] at eb; exact absurd eb (by decide)
-    refine WP.lw fd_at_20 (by (try rsimp); exact aligned_add halF (k := 0x10) (by decide)) ?_; wn
-    refine WP.branch fd_at_22 (fun eb => ?_) (fun _ => ?_) <;> wn
+    refine WP.lw jfd_at_20 (by (try rsimp); exact aligned_add halF (k := 0x10) (by decide)) ?_; wn
+    refine WP.branch jfd_at_22 (fun eb => ?_) (fun _ => ?_) <;> wn
     · exfalso; (try rsimp at eb); rw [t2', hq0] at eb; exact absurd eb (by decide)
-    refine WP.lw fd_at_24 (by (try rsimp); exact aligned_add halF (k := 0x14) (by decide)) ?_; wn
+    refine WP.lw jfd_at_24 (by (try rsimp); exact aligned_add halF (k := 0x14) (by decide)) ?_; wn
     have hs4 : Sep (out + BitVec.ofNat 32 4) 4 base jsonFieldCode.length := hsc.sub (by decide)
-    refine WP.sw fd_at_26 (by (try rsimp); (try simp only [ev0]); rw [h0]; exact aligned_add halo (k := 4) (by decide))
+    refine WP.sw jfd_at_26 (by (try rsimp); (try simp only [ev0]); rw [h0]; exact aligned_add halo (k := 4) (by decide))
       (by (try rsimp); (try simp only [ev0]); rw [h0]; exact hs4) ?_; wn
-    refine WP.jal fd_at_28 (by decide) ?_; wn
-    refine WP.sw fd_at_32 (by (try rsimp); (try simp only [ev0]); rw [h0, add_lit_zero]; exact halo)
+    refine WP.jal jfd_at_28 (by decide) ?_; wn
+    refine WP.sw jfd_at_32 (by (try rsimp); (try simp only [ev0]); rw [h0, add_lit_zero]; exact halo)
       (by (try rsimp); (try simp only [ev0]); rw [h0, add_lit_zero]; exact sep_low hsc (by decide)) ?_
     wn
     (try rsimp); (try simp only [ev0]); rw [h0, add_lit_zero, t2', t3']

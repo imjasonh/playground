@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.JsonParseOuter
+import C3BootProofs.Proofs.JsonParseEnd
 
 /-!
 # `json::parse` from its entry
@@ -226,7 +227,10 @@ callees are, and `ParseSep` keeps the frame apart from them.
 Callers (the TUF and trusted-root checks) reason about the result through
 `parseModel`, the position-level model in `JsonParseModel`, which reads the
 document in one pass with a stack of at most 16 open containers and, in
-canonical mode, runs `checkKeys` on each object as it closes. -/
+canonical mode, runs `checkKeys` on each object as it closes. By
+`parseModel_ok`, an `.ok (a, l)` result is a value at `a` whose `l` bytes
+lie within the document with only whitespace after them, and in canonical
+mode it is the whole document. -/
 theorem jsonParse_correct (m : Machine) {base retAddr out s p : Word} {n : Nat} {c : Bool}
     (hb : base.toNat % 2 = 0) (hc : ParseCode m.mem base) (hpc : m.pc = base) (ha0 : reg m a0 = out)
     (ha1 : reg m a1 = p) (ha2 : reg m a2 = BitVec.ofNat 32 n) (ha3 : reg m a3 = modeW c)

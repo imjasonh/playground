@@ -175,6 +175,16 @@ import C3BootProofs.Proofs.JsonNextElement
 import C3BootProofs.Proofs.JsonNextMember
 import C3BootProofs.Proofs.JsonGet
 import C3BootProofs.Proofs.JsonField
+import C3BootProofs.Proofs.JsonParseModel
+import C3BootProofs.Proofs.JsonParseFrame
+import C3BootProofs.Proofs.JsonParseKeys
+import C3BootProofs.Proofs.JsonParseStrict
+import C3BootProofs.Proofs.JsonParseClose
+import C3BootProofs.Proofs.JsonParseLoop
+import C3BootProofs.Proofs.JsonParseItem
+import C3BootProofs.Proofs.JsonParseOuter
+import C3BootProofs.Proofs.JsonParseEnd
+import C3BootProofs.Proofs.JsonParse
 
 /-!
 # Audit
@@ -8704,6 +8714,12 @@ end C3
 
 /-- info: 'C3.RV32.jsonParse_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.jsonParse_correct
+
+/-- info: 'C3.Json.parseModel_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.parseModel_ok
+
+/-- info: 'C3.Json.parseModel_ok_canon' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.parseModel_ok_canon
 
 /-- info: 'C3.Json.objGet_val' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.objGet_val

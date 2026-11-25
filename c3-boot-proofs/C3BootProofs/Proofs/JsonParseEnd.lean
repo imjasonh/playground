@@ -28,7 +28,11 @@ theorem closeLoop_done (c : Bool) (d : Bytes) (start : Nat) {a e : Nat} :
     split at h
     · split at h
       · cases h
-      · cases h; omega
+      · rename_i hc
+        cases h
+        obtain ⟨h1, h23⟩ := not_or.mp hc
+        obtain ⟨h2, h3⟩ := not_or.mp h23
+        exact ⟨rfl, Nat.le_of_not_lt h2, Nat.le_of_not_lt h3, Decidable.of_not_not h1⟩
     · split at h
       · cases h
       split at h
@@ -67,8 +71,9 @@ theorem afterClose_end {c : Bool} {d : Bytes} {start j : Nat} {stk : List (Bool 
   rcases afterClose_ok h with ⟨a, e, hr, hv⟩ | ⟨stk', p, -, hp⟩
   · obtain ⟨ha, hs, he, hw⟩ := closeLoop_done c d start j stk pos hr
     subst hv ha
-    refine ⟨rfl, by simp only; omega, ?_⟩
-    simp only; rw [Nat.add_sub_cancel' hs]; exact hw
+    refine ⟨rfl, ?_, ?_⟩ <;> simp only <;> rw [Nat.add_sub_cancel' hs]
+    · exact he
+    · exact hw
   · exact hn _ _ hp
 
 theorem parseLoop_end (c : Bool) (d : Bytes) (start : Nat) {v : Nat × Nat} :
@@ -123,6 +128,7 @@ theorem parseModel_ok_canon {d : Bytes} {a l : Nat} (h : parseModel true d = .ok
     a = 0 ∧ l = d.length := by
   obtain ⟨ha, -, hw⟩ := parseModel_ok h
   simp only [wsIn, ↓reduceIte] at ha hw
-  exact ⟨ha, by omega⟩
+  rw [ha, Nat.zero_add] at hw
+  exact ⟨ha, hw⟩
 
 end C3.Json
