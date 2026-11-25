@@ -63,12 +63,12 @@ theorem aco_verifyTuf (pinned : Bytes) (parts : TufParts) :
 
 /-! ## The callees' gaps -/
 
-/-- `tufRoleKeysMet_spec`, without `RkBytes`, and with what the loop reads
-of the result: `a0` is zero when its bit 0 is, and when bit 0 is set, the
+/-- `tufRoleKeysMet_spec`, with what the loop reads of the result: `a0` is zero when its bit 0 is, and when bit 0 is set, the
 low byte of `a1` is a `TufError` code. -/
 def AcMetSpec : Prop :=
   ∀ (m : Machine) {retAddr s R A MP SP : Word} {ML SL t : Nat}
-    {md : Meta} {dj sj : Json} {role : Bytes} {es : List (Bytes × Option TufKey)},
+    {md : Meta} {dj sj : Json} {role : Bytes} {es : List (Bytes × Option TufKey)}
+    {M : Word → BitVec 8} {DP : Word} {DL : Nat},
     m.pc = TRM → reg m a0 = R → reg m a1 = A → reg m sp = s + BitVec.ofNat 32 0x3920 →
     reg m ra = retAddr → retAddr &&& ~~~1 = retAddr → s.toNat % 16 = 0 →
     0x3FC80000 ≤ s.toNat → s.toNat + 0x3920 ≤ 0x3FCE0000 →
@@ -82,7 +82,7 @@ def AcMetSpec : Prop :=
     memLoad32 m.mem (A + BitVec.ofNat 32 4) = BitVec.ofNat 32 ML →
     memLoad32 m.mem (A + BitVec.ofNat 32 8) = SP →
     memLoad32 m.mem (A + BitVec.ofNat 32 12) = BitVec.ofNat 32 SL →
-    roleKeys dj role = some (t, es) → RkAt m.mem R t (es.map C3.Json.rkTag) →
+    roleKeys dj role = some (t, es) → JVal true (memBytes M DP DL) dj → RkAt m.mem R t (es.map C3.Json.rkTag) →
     RkWf (es.map C3.Json.rkTag) → memBytes m.mem MP ML = encode md.signed →
     JVal true (memBytes m.mem SP SL) sj → (sj.asArr >>= List.mapM sigPair) = some md.sigs →
     ∃ m', Steps m m' ∧
@@ -154,12 +154,14 @@ def AcoExp (B : Word) (M : Word → BitVec 8) (md : Meta) : Prop :=
   (M (acSlot B 0x1310) ≠ 0 → (M (acSlot B 0x1311)).toNat < 0x27)
 
 /-- What the loop keeps of the trusted root `prev`: its version in
-`[sp + 0x24]` (low) and `[sp + 0x20]` (high), and its root role's keys. -/
+`[sp + 0x24]` (low) and `[sp + 0x20]` (high), and its root role's keys.
+`prev.md.signed` was parsed from bytes in some memory. -/
 structure AcoState (B : Word) (M : Word → BitVec 8) (s6 : Word) (prev : TufRoot) : Prop where
   ver : (memLoad32 M (acSlot B 0x20)).toNat * 2 ^ 32 + (memLoad32 M (acSlot B 0x24)).toNat = prev.version
   w : (memLoad32 M (acSlot B 0x28)).toNat < 256
   b : s6.toNat < 256
   keys : AcoRk (acoTB B M (memLoad32 M (acSlot B 0x28)) s6) prev.md.signed (ascii!"root")
+  src : ∃ (M' : Word → BitVec 8) (P : Word) (L : Nat), JVal true (memBytes M' P L) prev.md.signed
 
 /-- The root `prev`'s targets role at `sp + 0xDD0` and its expiry. -/
 def AcoTail (B : Word) (M : Word → BitVec 8) (prev : TufRoot) : Prop :=
@@ -839,7 +841,7 @@ theorem aco_F (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n0)
     (hv : (reg n (19 : Fin 32)).toNat * 2 ^ 32 + (reg n (26 : Fin 32)).toNat = next.version)
     (hw : (memLoad32 n.mem (acSlot B 0x28)).toNat < 256) (hb : (reg n (22 : Fin 32)).toNat < 256)
     (hk : AcoRk (acoTBk B n.mem (memLoad32 n.mem (acSlot B 0x28)) (reg n (22 : Fin 32)) 0x88E) next.md.signed
-      (ascii!"root"))
+      (ascii!"root")) (hsrc : ∃ (M' : Word → BitVec 8) (P : Word) (L : Nat), JVal true (memBytes M' P L) next.md.signed)
     (hf : (docs.take (i + 1)).foldlM acoStep first = some next)
     (ht : i + 1 = docs.length → AcoTail B n.mem next)
     (IH : ∀ n', St n'.mem AC n' 0x584 (reg n') → AcoInv B Bf docs first n0 n' (i + 1) →
@@ -913,7 +915,7 @@ theorem aco_F (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n0)
   have s64 : reg n4 (22 : Fin 32) = reg n (22 : Fin 32) := by
     rw [t4.regs, r3 22 (by decide), r21 22 (by decide) (by decide) (by decide) (by decide)]
   refine aco_pre (c1.trans (c2.trans (c3.trans (.single e4)))) (IH n4 ⟨t4.pc, rfl, fun _ => rfl⟩ ⟨by omega,
-    by rw [M4]; exact K3, KR4, ?_, next, hf, ⟨?_, ?_, ?_, ?_⟩, ?_⟩)
+    by rw [M4]; exact K3, KR4, ?_, next, hf, ⟨?_, ?_, ?_, ?_, hsrc⟩, ?_⟩)
   · rw [M4, M3, memLoad32_store32_sep (by aco_num), memLoad32_store32_sep (by aco_num), memLoad32_store32_same]
     have hL : docs.length ≤ 64 := C.pre.2.1
     apply BitVec.eq_of_toNat_eq
@@ -976,7 +978,7 @@ set_option maxRecDepth 100000 in
 and the message and signatures in `doc`, named at `sp + 0x1ED0`. -/
 theorem aco_met (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n0) {n : Machine} {off : Nat}
     {imm o : Word} {kR : Nat} {q1 q2 : Word} {l1 l2 tt : Nat} {md : Meta} {dj sj : Json} {role : Bytes}
-    {es : List (Bytes × Option TufKey)}
+    {es : List (Bytes × Option TufKey)} {M : Word → BitVec 8} {DP : Word} {DL : Nat}
     (s : St n.mem AC n off (reg n)) (K : AcoKeep B Bf n0.mem n.mem) (KR : AcoKRA n0 n)
     (h1 : fetchRel bootMainClosure0Code off = some (.auipc ra imm, 4))
     (h2 : fetchRel bootMainClosure0Code (off + 4) = some (.jalr ra ra o, 4))
@@ -986,7 +988,8 @@ theorem aco_met (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n
     (hk3 : kR % 4 = 0) (hq1 : AcoIn Bf q1 l1) (hq2 : AcoIn Bf q2 l2)
     (hA0 : memLoad32 n.mem (acSlot B 0x1ED0) = q1) (hA4 : memLoad32 n.mem (acSlot B 0x1ED4) = BitVec.ofNat 32 l1)
     (hA8 : memLoad32 n.mem (acSlot B 0x1ED8) = q2) (hAC : memLoad32 n.mem (acSlot B 0x1EDC) = BitVec.ofNat 32 l2)
-    (hrk : roleKeys dj role = some (tt, es)) (hR : RkAt n.mem (acSlot B kR) tt (es.map C3.Json.rkTag))
+    (hrk : roleKeys dj role = some (tt, es)) (hdj : JVal true (memBytes M DP DL) dj)
+    (hR : RkAt n.mem (acSlot B kR) tt (es.map C3.Json.rkTag))
     (hmsg : memBytes n.mem q1 l1 = encode md.signed) (hsj : JVal true (memBytes n.mem q2 l2) sj)
     (hps : (sj.asArr >>= List.mapM sigPair) = some md.sigs) :
     ∃ n', Steps n n' ∧ (Halting n' ∨ AcoMetOut B n n' (off + 8) md dj role) := by
@@ -1009,7 +1012,7 @@ theorem aco_met (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n
     (by aco_num) (by aco_num) (by aco_num) (by omega) (by omega) (aco_inSep N hq1 (by decide)) (by omega)
     (by omega) (by omega) (aco_inSep N hq2 (by decide)) (by aco_num) (by aco_num)
     (by rw [mem1]; exact hA0) (by rw [mem1, aco_so B _ _ (by decide)]; exact hA4)
-    (by rw [mem1, aco_so B _ _ (by decide)]; exact hA8) (by rw [mem1, aco_so B _ _ (by decide)]; exact hAC) hrk (by rw [mem1]; exact hR) (aco_rkwf hrk) (by rw [mem1]; exact hmsg)
+    (by rw [mem1, aco_so B _ _ (by decide)]; exact hA8) (by rw [mem1, aco_so B _ _ (by decide)]; exact hAC) hrk hdj (by rw [mem1]; exact hR) (aco_rkwf hrk) (by rw [mem1]; exact hmsg)
     (by rw [mem1]; exact hsj) hps
   refine ⟨n2, c1.trans c2, ?_⟩
   rcases q with h | ⟨hp, hM, hr, h0, h1'⟩
