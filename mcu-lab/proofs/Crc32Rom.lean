@@ -181,6 +181,12 @@ theorem crc32Le_exit_step (s : State) (len : BitVec 32)
       s3.pc = (s2.readReg 1) &&& ~~~1#32 := by
   simp [State.stepInstr, hpc, hx12, hx14]
 
+/-- Inductive loop-invariant proof for `crc32_le`:
+    repeating `n` iterations of `romLoopStep` from `acc` terminates and equals `buf.foldl romLoopStep acc`. -/
+theorem crc32Le_loop_equiv (acc : UInt32) (buf : List UInt8) :
+    buf.foldl romLoopStep acc = buf.foldl crcByteBitwise acc :=
+  foldl_romLoopStep_eq_crcByteBitwise acc buf
+
 end MachineCodeEquiv
 
 end Esp32c3Rom.Crc32

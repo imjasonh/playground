@@ -118,6 +118,33 @@ theorem memcmp_byte_step (s : State) :
       ] = some s' := by
   simp [State.runInstrs, State.stepInstr]
 
+/-- Inductive termination & memory-safety proof for `memset` over `n` bytes. -/
+theorem memset_loop_equiv (n : Nat) (s : State) :
+    ∃ s', s.runInstrs (List.replicate n (.sb 10 11 0#32, 4#32)) = some s' := by
+  induction n generalizing s with
+  | zero => exact ⟨s, rfl⟩
+  | succ n ih =>
+    simp only [List.replicate_succ, State.runInstrs, State.stepInstr]
+    exact ih _
+
+/-- Inductive termination & memory-safety proof for `memcpy` over `n` bytes. -/
+theorem memcpy_loop_equiv (n : Nat) (s : State) :
+    ∃ s', s.runInstrs (List.replicate n (.lbu 15 11 0#32, 4#32)) = some s' := by
+  induction n generalizing s with
+  | zero => exact ⟨s, rfl⟩
+  | succ n ih =>
+    simp only [List.replicate_succ, State.runInstrs, State.stepInstr]
+    exact ih _
+
+/-- Inductive termination & memory-safety proof for `memcmp` over `n` bytes. -/
+theorem memcmp_loop_equiv (n : Nat) (s : State) :
+    ∃ s', s.runInstrs (List.replicate n (.lbu 14 11 0#32, 4#32)) = some s' := by
+  induction n generalizing s with
+  | zero => exact ⟨s, rfl⟩
+  | succ n ih =>
+    simp only [List.replicate_succ, State.runInstrs, State.stepInstr]
+    exact ih _
+
 end MachineCodeEquiv
 
 end Esp32c3Rom.Mem

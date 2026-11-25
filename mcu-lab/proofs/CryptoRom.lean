@@ -180,6 +180,18 @@ theorem crypto_ret_step (s : State) (rc : BitVec 32) :
   have h10 : (10 : Reg).val ≠ 0 := by decide
   simp [State.runInstrs, State.stepInstr, State.readReg, State.writeReg, h10]
 
+theorem etsEmsaPssVerify_step (s : State) :
+    ∃ s', s.runInstrs [(.lbu 15 10 0#32, 4#32), (.jalr 0 1 0#32, 2#32)] = some s' := by
+  simp [State.runInstrs, State.stepInstr]
+
+theorem rEccIsValidPoint_step (s : State) :
+    ∃ s', s.runInstrs [(.addi 10 0 1#32, 4#32), (.jalr 0 1 0#32, 2#32)] = some s' := by
+  simp [State.runInstrs, State.stepInstr]
+
+theorem rEccPointMulWin256_step (s : State) :
+    ∃ s', s.runInstrs [(.addi 10 0 0#32, 4#32), (.jalr 0 1 0#32, 2#32)] = some s' := by
+  simp [State.runInstrs, State.stepInstr]
+
 end MachineCodeEquiv
 
 end Esp32c3Rom.Crypto
