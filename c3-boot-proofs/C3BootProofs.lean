@@ -630,6 +630,10 @@ import C3BootProofs.Proofs.AcceptBundleSegs
 import C3BootProofs.Proofs.AcceptBundle
 import C3BootProofs.Proofs.ResetPath
 import C3BootProofs.Proofs.Reset
+import C3BootProofs.Proofs.AcceptExtractDupLib
+import C3BootProofs.Proofs.AcceptExtractDupN
+import C3BootProofs.Proofs.AcceptExtractDupK
+import C3BootProofs.Proofs.AcceptExtractDup
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
