@@ -65,7 +65,7 @@ theorem acb_field_spec (M : Word → BitVec 8) (Bf : Word) {L q len : Nat} (lo h
   unfold readField
   rw [acb_readU32 M _ (by omega), hlen]
   have hr : (lo ≤ len && len ≤ hi && len ≤ (memBytes M (Bf + BitVec.ofNat 32 q + 4) (L - q - 4)).length) = true := by
-    rw [memBytes_length]; simp only [Bool.and_eq_true, decide_eq_true_eq]; omega
+    rw [memBytes_length]; simp only [Bool.and_eq_true, decide_eq_true_eq]; exact ⟨⟨hlo, hhi⟩, by omega⟩
   simp only [Option.bind_eq_bind, Option.bind_some, hr, require, ↓reduceIte]
   rw [memBytes_take M _ (by omega), memBytes_drop M _ (by omega),
     show Bf + BitVec.ofNat 32 q + 4 = Bf + BitVec.ofNat 32 (q + 4) from add_ofNat_assoc Bf q 4,
@@ -164,7 +164,7 @@ theorem acb_decode (M : Word → BitVec 8) (Bf : Word) {L l1 l2 l4 l5 l6 : Nat}
   rw [f2]; simp only [Option.bind_some]
   rw [f3]; simp only [Option.bind_some]
   rw [f4]; simp only [Option.bind_some, memBytes_length, m4]
-  simp only [require, beq_self_eq_true, ↓reduceIte, Option.bind_some]
+  rw [show require ((0 : Nat) == 0) = some () from rfl]; simp only [Option.bind_some]
   rw [f5]; simp only [Option.bind_some]
   rw [f6]; simp only [Option.bind_some]
   rfl
