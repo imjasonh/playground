@@ -258,6 +258,7 @@ import C3BootProofs.Proofs.BootMainPlan
 import C3BootProofs.Proofs.BootMainEntry
 import C3BootProofs.Proofs.BootMainStart
 import C3BootProofs.Proofs.AcceptPinned
+import C3BootProofs.Proofs.AcceptIndex
 
 /-!
 # Audit
@@ -9622,3 +9623,23 @@ end C3
 #guard_msgs in #print axioms C3.RV32.Cur.bootMain_correct
 /-- info: 'C3.RV32.Ac.acp_stage' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acp_stage
+/-- info: 'C3.RV32.Ac.acIndexStage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acIndexStage
+
+/-- info: 'C3.RV32.Ac.acx_post' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acx_post
+
+/-- info: 'C3.RV32.Ac.acx_to4e4' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acx_to4e4
+
+/-- info: 'C3.RV32.Ac.acx_to440' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acx_to440
+
+/-- info: 'C3.RV32.Ac.acx_t1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acx_t1
+
+/-- info: 'C3.RV32.Ac.acx_t2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acx_t2
+
+/-- info: 'C3.RV32.Ac.acx_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acx_loop
