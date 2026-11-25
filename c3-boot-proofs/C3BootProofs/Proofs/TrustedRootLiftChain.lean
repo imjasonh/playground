@@ -380,7 +380,7 @@ theorem trustedRootReadChain_spec (m : Machine) {sp0 out p fr fp retAddr : Word}
           info.subject = memBytes m'.mem cert.subject cert.subjectLen ∧
           info.window = ⟨cert.notBefore, cert.notAfter⟩ ∧
           info.p384Key = if cert.key = 0 then none else some (memBytes m'.mem cert.key 0x61) := by
-  obtain ⟨m', hs, hpc', hsp', hk, hR⟩ := trustedRootReadChain_correct m hc hpc ha0 ha1 ha2 ha3 hra hret hsp hsa
+  obtain ⟨m', hs, hpc', hsp', hk, hR, -⟩ := trustedRootReadChain_correct m hc hpc ha0 ha1 ha2 ha3 hra hret hsp hsa
     hsl hsw h384 sRO hoa how sOG sOR sOB hfa hfw sRG sRR sRB hbw hb0 sBG sBR hfp hfl hpw hp0 sPG sPR sPB
   refine ⟨m', hs, hpc', hsp', hk, hR, fun cert s hr => ?_⟩
   obtain ⟨info, hrc, hi⟩ := readChainPos_spec hj hr

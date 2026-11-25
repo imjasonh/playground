@@ -109,9 +109,7 @@ structure RomHyp (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (
   invalidate : RomFn romBase romCode 0x400004D8 romStack fun _ => True
   resume : RomFn romBase romCode 0x40000528 romStack fun _ => True
   hR : R % 4 = 0
-  hRHi : R ≤ 0x38D0
   hrs : 16 ≤ romStack
-  hrsHi : romStack ≤ 0x3A50
   hrs4 : romStack % 4 = 0
   hpa : (memLoad32 M0 bmPtr).toNat % 4 = 0
   hpl : 0x3FCC8000 ≤ (memLoad32 M0 bmPtr).toNat + 4
@@ -166,15 +164,15 @@ What the theorem assumes:
   `efuse_program_run`.
 * `rom`: the ROM's code, flash reads, and routines, and its flash-chip
   pointer (`RomHyp`).
-* `hS` and `hFx`: the two facts about the first closure's error paths that
-  `acs_contract` assumes.
+* `hFx`: the fact about the first closure's error path that `acs_contract`
+  assumes.
 * `hlo`: the `bmK R romStack 0x5C10` bytes of stack below 0x3FCDC700 that
   `boot_main`, the ROM, and the first closure use stay above the image's
   read-only data, which ends below 0x3FCC8000.
 
 The pinned root and the policy are the image's, `acPinnedRootData` and
 `imagePolicy`. The conclusion is `reset_correct`'s. -/
-theorem reset_correct_loaded (hS : Ac.AcetsRcErr) (hFx : Ac.AcsFinishBad) {flash : Nat → BitVec 8}
+theorem reset_correct_loaded (hFx : Ac.AcsFinishBad) {flash : Nat → BitVec 8}
     {M0 : Word → BitVec 8} {R romStack : Nat} {romBase : Word} {romCode : List Nat} (L : Loaded M0)
     (ctl : EfuseCtl efuseProgramRunCode) (rom : RomHyp flash acPinnedRootData Ac.imagePolicy M0 R romStack romBase romCode)
     (hlo : 0x3FCC8000 + bmK R romStack 0x5C10 ≤ 0x3FCDC700)
@@ -200,9 +198,36 @@ theorem reset_correct_loaded (hS : Ac.AcetsRcErr) (hFx : Ac.AcsFinishBad) {flash
             (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x :=
   reset_correct (loaded_rstCode L)
     (loaded_bmHyp L ctl rom
-      (Ac.acs_contract hS hFx rom.log rom.hrsHi rom.hRHi rom.hR rom.hrb (by have := rom.hrl; omega))
+      (Ac.acs_contract hFx rom.log (by unfold bmK at hlo; omega) (by unfold bmK at hlo; omega) rom.hR rom.hrb
+        (by have := rom.hrl; omega))
       (fun _ hK => Ac.acl_acsE (loaded_resetMem L) (reset_codeIn rom.code rom.hrb rom.hrl) rom.hrb
         (by have := rom.hrl; omega) fun x hx => hK x (rl_stackSep hlo hx) (rl_ptrSep rom hx))
       hlo) m hm hpc
+
+/-! ## The stack bound `hlo`
+
+Between the read-only data's end at 0x3FCC8000 and the stack top at
+0x3FCDC700 there are 0x14700 bytes. `boot_main` takes 0xBE80 of them for
+its frame and 0x150 for the deepest frame it opens on the way to a callee,
+which leaves 0x8730 bytes for `R`, `romStack`, and `stack0`. -/
+
+/-- `hlo` holds when the ROM's flash-read stack `R`, its other routines'
+stack `romStack`, and the first closure's stack `stack0` total at most
+0x8730 bytes. -/
+theorem reset_hlo {R romStack stack0 : Nat} (h : R + romStack + stack0 ≤ 0x8730) :
+    0x3FCC8000 + bmK R romStack stack0 ≤ 0x3FCDC700 := by
+  have e : 0x3FCC8000 + bmK R romStack stack0 = 0x3FCD3FD0 + (R + romStack + stack0) := by
+    simp only [bmK, ← Nat.add_assoc]
+  rw [e]
+  exact Nat.add_le_add_left h 0x3FCD3FD0
+
+/-- `hlo` with the first closure's stack at 0x5C10 bytes, the most that its
+stages use below its frame's top (`AcceptSlot.lean`): the ROM's flash
+read and its other routines may then use 0x2B20 bytes together. The
+closure's stages separately need `R ≤ 0x38D0` and a `printf` stack of at
+most 0x3A50 bytes, which this bound implies. -/
+theorem reset_hlo_c0 {R romStack : Nat} (h : R + romStack ≤ 0x2B20) :
+    0x3FCC8000 + bmK R romStack 0x5C10 ≤ 0x3FCDC700 :=
+  reset_hlo (Nat.add_le_add_right h 0x5C10)
 
 end C3.RV32.Cur

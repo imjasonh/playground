@@ -230,6 +230,7 @@ import C3BootProofs.Proofs.TrustedRootReadChainRec
 import C3BootProofs.Proofs.TrustedRootReadChainLoop
 import C3BootProofs.Proofs.TrustedRootReadChainFin
 import C3BootProofs.Proofs.TrustedRootReadChainHead
+import C3BootProofs.Proofs.TrustedRootReadChainErr
 import C3BootProofs.Proofs.TrustedRootReadChain
 import C3BootProofs.Proofs.TrustedRootLift
 import C3BootProofs.Proofs.TrustedRootLiftDer
@@ -9208,6 +9209,8 @@ end C3
 
 /-- info: 'C3.RV32.trustedRootReadChain_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.trustedRootReadChain_correct
+/-- info: 'C3.RV32.rce_readChainPos' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.rce_readChainPos
 /-- info: 'C3.RV32.validForPos_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.validForPos_spec
 /-- info: 'C3.RV32.trustedRootValidFor_spec' depends on axioms: [propext, Quot.sound] -/
@@ -10459,6 +10462,9 @@ end C3
 /-- info: 'C3.RV32.Cur.reset_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.reset_correct
 
+/-- info: 'C3.RV32.Ac.acets_rcErr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_rcErr
+
 /-- info: 'C3.acs_parts_le' depends on axioms: [propext] -/
 #guard_msgs in #print axioms C3.acs_parts_le
 
@@ -10573,6 +10579,9 @@ end C3
 /-- info: 'C3.RV32.Ac.ace_ca' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ace_ca
 
+/-- info: 'C3.RV32.Ac.ace_ca_stage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_ca_stage
+
 /-- info: 'C3.RV32.Ac.aceca_pass' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.aceca_pass
 
@@ -10646,6 +10655,12 @@ end C3
 
 /-- info: 'C3.RV32.Cur.reset_correct_loaded' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.reset_correct_loaded
+
+/-- info: 'C3.RV32.Cur.reset_hlo' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_hlo
+
+/-- info: 'C3.RV32.Cur.reset_hlo_c0' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_hlo_c0
 
 /-- info: 'C3.RV32.chip_step' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.chip_step

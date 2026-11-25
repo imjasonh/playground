@@ -754,4 +754,8 @@ theorem ace_ca (hrc : AcetsRcErr) : AceCaStage := by
       obtain ⟨m'', c', q'⟩ := ih _ _ _ A' I'
       exact ⟨m'', c.trans c', q'⟩
 
+/-- The certificate-authority loop, with `read_chain`'s error bound from
+`acets_rcErr`. -/
+theorem ace_ca_stage : AceCaStage := ace_ca acets_rcErr
+
 end C3.RV32.Ac

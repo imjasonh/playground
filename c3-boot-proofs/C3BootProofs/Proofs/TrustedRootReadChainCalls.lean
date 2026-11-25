@@ -473,7 +473,8 @@ theorem RcCtx.callDec (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
     (htw : t.toNat + tn ≤ 0x40000000) (htG : Sep t tn G 0x740) (htB : Sep t tn fp fl) (hd : memBytes M t tn = d)
     (k : ∀ m2 : Machine, RcMemInv M0 G F fr fp fl g0 m2.mem →
       trDecMem M (G + BitVec.ofNat 32 0x550) (F + BitVec.ofNat 32 0xD0) fr (fp + BitVec.ofNat 32 o) fl'
-        (trDecodeRes (base64Decode d) fl') m2.mem →
+        (trDecodeRes (base64Decode d) fl') m2.mem ∧
+        (trDecodeRes (base64Decode d) fl' = none → m2.mem (F + 0xD4) = BitVec.ofNat 8 (bdiErr d fl')) →
       WP trustedRootReadChainCode TRC Q m2.mem 0x148 (clob (upd f ra (TRC + BitVec.ofNat 32 0x148)) m2 jClob)) :
     WP trustedRootReadChainCode TRC Q M 0x140 f := by
   have gw := X.gw
@@ -483,7 +484,8 @@ theorem RcCtx.callDec (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
   refine X.call (c := 0) (l := 0x70C) (off := 0x140) (tb := TRDC)
     (P := fun m2 => trDecMem M (G + BitVec.ofNat 32 0x550) (F + BitVec.ofNat 32 0xD0) fr (fp + BitVec.ofNat 32 o) fl'
-      (trDecodeRes (base64Decode d) fl') m2.mem)
+      (trDecodeRes (base64Decode d) fl') m2.mem ∧
+      (trDecodeRes (base64Decode d) fl' = none → m2.mem (F + 0xD4) = BitVec.ofNat 8 (bdiErr d fl')))
     trc_at_140 trc_at_144 (by decide) hI (by decide) (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hP x hx hf hb => ?_)
     (fun m2 hP hI' => k m2 hI' hP)
   · have C := X.codeAt hI
@@ -503,8 +505,10 @@ theorem RcCtx.callDec (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
       (by rw [X.fG]; exact (X.bg.symm.sub (c := 0x690) (l := 8) (by decide)).subR (by omega))
       (X.frp.subR (by omega)) (by rw [X.fG]; exact X.frg.symm.sub (by decide))
     rw [hmem1, eG, hd] at R
-    exact ⟨m2, c2, pc2, R, by rw [hsp2, hreg1]; trsimp; exact hR.2.1.symm, hk2⟩
-  · exact hP.2 x (rc_gin hx (by decide) (by decide)) (by rw [X.fG]; exact rc_gin hx (by decide) (by decide)) hf
+    refine ⟨m2, c2, pc2, ⟨R.1, fun h => ?_⟩, by rw [hsp2, hreg1]; trsimp; exact hR.2.1.symm, hk2⟩
+    rw [show (F + 0xD4 : Word) = F + BitVec.ofNat 32 0xD0 + 4 by rw [BitVec.add_assoc]; rfl]
+    exact R.2 h
+  · exact hP.1.2 x (rc_gin hx (by decide) (by decide)) (by rw [X.fG]; exact rc_gin hx (by decide) (by decide)) hf
       (hb.sub (by omega))
 
 theorem rc_mc_saved : ∀ q : Fin 32, q.val ∈ trSaved → q ≠ a1 ∧ q ≠ a2 ∧ q ≠ a3 ∧ q ≠ a4 ∧ q ≠ a5 ∧ q ≠ a6 ∧

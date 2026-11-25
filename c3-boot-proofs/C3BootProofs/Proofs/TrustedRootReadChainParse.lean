@@ -386,8 +386,11 @@ theorem RcCtx.pTimes (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
   rcases hN : readTime (rcView L (rcIn t v)) with _ | ⟨nb, r1⟩
   · rw [hN] at hT5
     refine WP.branch trc_at_278 (fun _ => ?_) (fun hf => absurd hf (by
-      trsimp; rw [hR.2.1, show F + 0xE0 = F + BitVec.ofNat 32 0xE0 from rfl, hT5]; decide)); wn
-    exact X.e4f6 (herr none (by simp only [rcpValid, hE, rcTimes, hN])) (by rc_r hR) hI5 (fun _ h => by cases h)
+      trsimp; rw [hR.2.1, show F + 0xE0 = F + BitVec.ofNat 32 0xE0 from rfl, hT5.1]; decide)); wn
+    exact X.e4f6 (herr (some (readTimeErr (rcView L (rcIn t v))))
+      (by simp only [rcpValid, hE, rcTimes, hN])) (by rc_r hR) hI5 (fun _ h => by
+      cases h; rw [show (F + 0xE1 : Word) = F + BitVec.ofNat 32 0xE0 + 1 by rw [BitVec.add_assoc]; rfl]
+      exact hT5.2)
   rw [hN] at hT5
   obtain ⟨hnb, h0, hlo, hhi, hlen, hrd⟩ := hT5
   refine WP.branch trc_at_278 (fun ht => absurd ht (by
@@ -421,9 +424,12 @@ theorem RcCtx.pTimes (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
   rcases hN2 : readTime (rcView L ((rcIn t v).1 + ((rcIn t v).2 - r1.length), r1.length)) with _ | ⟨na, r2⟩
   · rw [hN2] at hT7
     refine WP.branch trc_at_292 (fun _ => ?_) (fun hf => absurd hf (by
-      trsimp; rw [hR.2.1, show F + 0xE0 = F + BitVec.ofNat 32 0xE0 from rfl, hT7]; decide)); wn
-    exact X.e4f6 (herr none (by simp only [rcpValid, hE, rcTimes, hN, hN2])) (by rc_r hR) hI7
-      (fun _ h => by cases h)
+      trsimp; rw [hR.2.1, show F + 0xE0 = F + BitVec.ofNat 32 0xE0 from rfl, hT7.1]; decide)); wn
+    exact X.e4f6
+      (herr (some (readTimeErr (rcView L ((rcIn t v).1 + ((rcIn t v).2 - r1.length), r1.length))))
+        (by simp only [rcpValid, hE, rcTimes, hN, hN2])) (by rc_r hR) hI7 (fun _ h => by
+      cases h; rw [show (F + 0xE1 : Word) = F + BitVec.ofNat 32 0xE0 + 1 by rw [BitVec.add_assoc]; rfl]
+      exact hT7.2)
   rw [hN2] at hT7
   obtain ⟨hna, h0', hlo', hhi', hlen', hrd'⟩ := hT7
   refine WP.branch trc_at_292 (fun ht => absurd ht (by

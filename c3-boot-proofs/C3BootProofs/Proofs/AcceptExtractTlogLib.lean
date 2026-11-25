@@ -365,7 +365,7 @@ theorem WP.acetlDecode {hi lo out t fr fp sp0 : Word} {n fl : Nat}
       rw [hP.2 _ (sep_pt cG hi).symm (sep_pt cO hi).symm (sep_pt cF hi).symm (sep_pt cB hi).symm]; exact hc i hi) k
   have hr := tmc_regs hreg1
   have hra : reg m1 ra = base + BitVec.ofNat 32 (off + 8) := by rw [hreg1]; rsimp
-  obtain ⟨m2, c2, pc2, sp2, sv2, hR⟩ := trustedRootDecode_correct m1 (by rw [hmem1]; exact hc) hpc1
+  obtain ⟨m2, c2, pc2, sp2, sv2, hR, -⟩ := trustedRootDecode_correct m1 (by rw [hmem1]; exact hc) hpc1
     (by rw [hr a0 (by decide), h0]) (by rw [hr a1 (by decide), ha1]) (by rw [hr a2 (by decide), ha2])
     (by rw [hr a3 (by decide), ha3]) hra (even_clear _ (even_at base hb _ hev)) (by rw [hr sp (by decide), hsp])
     hsa hsl hsw hoa how hfa hfw (by rw [hmem1]; exact hfp) (by rw [hmem1]; exact hfl) hbw htw sOG sFG sBG sTG sTB
