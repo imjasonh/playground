@@ -179,6 +179,29 @@ import C3BootProofs.Proofs.TufHexDecode
 import C3BootProofs.Proofs.TufReadDoc
 import C3BootProofs.Proofs.EcdsaSig32
 import C3BootProofs.Proofs.Sha384Fn
+import C3BootProofs.Proofs.JsonSkipWs
+import C3BootProofs.Proofs.JsonStringEnd
+import C3BootProofs.Proofs.JsonNumberEnd
+import C3BootProofs.Proofs.JsonKeyEnd
+import C3BootProofs.Proofs.JsonStr
+import C3BootProofs.Proofs.JsonMembers
+import C3BootProofs.Proofs.JsonLiteralEnd
+import C3BootProofs.Proofs.JsonU64
+import C3BootProofs.Proofs.JsonReadItem
+import C3BootProofs.Proofs.JsonNextElement
+import C3BootProofs.Proofs.JsonNextMember
+import C3BootProofs.Proofs.JsonGet
+import C3BootProofs.Proofs.JsonField
+import C3BootProofs.Proofs.JsonParseModel
+import C3BootProofs.Proofs.JsonParseFrame
+import C3BootProofs.Proofs.JsonParseKeys
+import C3BootProofs.Proofs.JsonParseStrict
+import C3BootProofs.Proofs.JsonParseClose
+import C3BootProofs.Proofs.JsonParseLoop
+import C3BootProofs.Proofs.JsonParseItem
+import C3BootProofs.Proofs.JsonParseOuter
+import C3BootProofs.Proofs.JsonParseEnd
+import C3BootProofs.Proofs.JsonParse
 
 /-!
 # Audit
@@ -8912,3 +8935,74 @@ end C3
 
 /-- info: 'C3.RV32.sha384Fn_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.sha384Fn_correct
+/-- info: 'C3.RV32.jsonSkipWs_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonSkipWs_correct
+
+/-- info: 'C3.RV32.jsonStringEnd_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonStringEnd_correct
+
+/-- info: 'C3.RV32.jsonNumberEnd_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonNumberEnd_correct
+
+/-- info: 'C3.RV32.jsonKeyEnd_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonKeyEnd_correct
+
+/-- info: 'C3.RV32.jsonStr_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonStr_correct
+
+/-- info: 'C3.RV32.jsonMembers_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonMembers_correct
+
+/-- info: 'C3.RV32.jsonElements_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonElements_correct
+
+/-- info: 'C3.RV32.jsonLiteralEnd_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonLiteralEnd_correct
+
+/-- info: 'C3.RV32.jsonU64_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonU64_correct
+
+/-- info: 'C3.RV32.allAsciiDigit_wp' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.allAsciiDigit_wp
+
+/-- info: 'C3.RV32.jsonReadItem_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonReadItem_correct
+
+/-- info: 'C3.RV32.jsonNextElement_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonNextElement_correct
+
+/-- info: 'C3.RV32.jsonNextMember_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonNextMember_correct
+
+/-- info: 'C3.RV32.jsonGet_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonGet_correct
+
+/-- info: 'C3.RV32.jsonField_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonField_correct
+
+/-- info: 'C3.RV32.pa_canon' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pa_canon
+
+/-- info: 'C3.RV32.pa_strict' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pa_strict
+
+/-- info: 'C3.RV32.pa_keys' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pa_keys
+
+/-- info: 'C3.RV32.pa_close' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pa_close
+
+/-- info: 'C3.RV32.pa_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pa_loop
+
+/-- info: 'C3.RV32.jsonParse_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonParse_correct
+
+/-- info: 'C3.Json.parseModel_ok' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.Json.parseModel_ok
+
+/-- info: 'C3.Json.parseModel_ok_canon' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.Json.parseModel_ok_canon
+
+/-- info: 'C3.Json.objGet_val' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.objGet_val
