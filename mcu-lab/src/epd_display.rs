@@ -10,9 +10,10 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, Context, Result};
 use esp_idf_svc::hal::delay::{Ets, FreeRtos};
 use esp_idf_svc::hal::gpio::{Input, InputPin, Output, OutputPin, PinDriver, Pull};
-use esp_idf_svc::hal::spi::{config, SpiAnyPins, SpiDeviceDriver, SpiDriver};
+use esp_idf_svc::hal::spi::{config, Dma, SpiAnyPins, SpiDeviceDriver, SpiDriver};
 use esp_idf_svc::hal::units::FromValueType;
 
+use crate::grayscale::lut::{DriveLuts, PANEL_SETTING_REGISTER_LUT, VCOM_DATA_INTERVAL, VCOM_DC};
 use crate::maze::ByteRect;
 use crate::panel::FRAME_BYTES;
 
@@ -35,12 +36,24 @@ const CMD_VCOM: u8 = 0x50;
 const CMD_TCON: u8 = 0x60;
 const CMD_RESOLUTION: u8 = 0x61;
 const CMD_GET_STATUS: u8 = 0x71;
+const CMD_VCOM_DC: u8 = 0x82;
 const CMD_PARTIAL_IN: u8 = 0x91;
 const CMD_PARTIAL_WINDOW: u8 = 0x90;
 const CMD_TEMP_SEL: u8 = 0xE0;
 const CMD_TEMP_LUT: u8 = 0xE5;
 
-/// Owns the SPI bus + panel for the maze firmware.
+/// SPI clock in MHz. At 4 MHz one 48 KB plane takes 96 ms; 20 MHz with DMA
+/// brings that to ~19 ms, enabling 20+ refreshes/sec in grayscale drive mode.
+pub const SPI_MHZ: u32 = 20;
+
+/// Largest single DMA transfer. Without DMA, esp-idf-hal splits every write
+/// into 64-byte transactions with a gap after each.
+const DMA_TRANSFER_BYTES: usize = 4092;
+
+/// Upper bound on one custom drive refresh before it counts as stuck.
+const DRIVE_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// Owns the SPI bus + panel for Waveshare 7.5″ V2 e-Paper apps.
 pub struct Panel {
     spi: PanelSpi,
     busy: BusyPin,
@@ -69,14 +82,14 @@ impl Panel {
         DC: OutputPin + 'static,
         RST: OutputPin + 'static,
     {
-        let spi_config = config::Config::new().baudrate(4_u32.MHz().into());
+        let spi_config = config::Config::new().baudrate(SPI_MHZ.MHz().into());
         let spi = SpiDeviceDriver::new_single(
             spi,
             sclk,
             mosi,
             Option::<BUSY>::None,
             Some(cs),
-            &config::DriverConfig::new(),
+            &config::DriverConfig::new().dma(Dma::Auto(DMA_TRANSFER_BYTES)),
             &spi_config,
         )
         .context("configure e-paper SPI")?;
@@ -104,6 +117,72 @@ impl Panel {
         self.data(frame)?;
         self.cmd(CMD_DTM2)?;
         self.data_inverted(frame)?;
+        self.refresh()?;
+        Ok(())
+    }
+
+    /// Full-refresh a packed 1-bit framebuffer (MSB first, 1 = white) streamed in
+    /// small chunks from flash so no 48 KiB heap buffer is needed. Leaves the panel awake.
+    pub fn show_bw_stream<F>(&mut self, mut read_at: F) -> Result<()>
+    where
+        F: FnMut(usize, &mut [u8]) -> Result<()>,
+    {
+        self.init_full()?;
+        let mut buf = [0u8; 4096];
+
+        self.cmd(CMD_DTM1)?;
+        let mut offset = 0usize;
+        while offset < FRAME_BYTES {
+            let len = (FRAME_BYTES - offset).min(buf.len());
+            read_at(offset, &mut buf[..len])?;
+            self.data(&buf[..len])?;
+            offset += len;
+        }
+
+        self.cmd(CMD_DTM2)?;
+        offset = 0;
+        while offset < FRAME_BYTES {
+            let len = (FRAME_BYTES - offset).min(buf.len());
+            read_at(offset, &mut buf[..len])?;
+            for b in &mut buf[..len] {
+                *b = !*b;
+            }
+            self.data(&buf[..len])?;
+            offset += len;
+        }
+
+        self.refresh()?;
+        Ok(())
+    }
+
+    /// Full-refresh a 4-level grayscale (2-bit) image stored as two contiguous
+    /// 48,000-byte planes (`DTM1` at `0..48_000`, `DTM2` at `48_000..96_000`) streamed
+    /// in 4 KiB chunks from flash. Leaves the panel awake.
+    pub fn show_4gray_stream<F>(&mut self, mut read_at: F) -> Result<()>
+    where
+        F: FnMut(usize, &mut [u8]) -> Result<()>,
+    {
+        self.init_4gray()?;
+        let mut buf = [0u8; 4096];
+
+        self.cmd(CMD_DTM1)?;
+        let mut offset = 0usize;
+        while offset < FRAME_BYTES {
+            let len = (FRAME_BYTES - offset).min(buf.len());
+            read_at(offset, &mut buf[..len])?;
+            self.data(&buf[..len])?;
+            offset += len;
+        }
+
+        self.cmd(CMD_DTM2)?;
+        offset = 0;
+        while offset < FRAME_BYTES {
+            let len = (FRAME_BYTES - offset).min(buf.len());
+            read_at(FRAME_BYTES + offset, &mut buf[..len])?;
+            self.data(&buf[..len])?;
+            offset += len;
+        }
+
         self.refresh()?;
         Ok(())
     }
@@ -165,6 +244,134 @@ impl Panel {
         Ok(())
     }
 
+    /// Factory full refresh to white. Takes a few seconds and leaves the panel
+    /// in OTP mode: call [`Panel::init_drive`] before custom-LUT driving.
+    pub fn full_refresh_white(&mut self) -> Result<()> {
+        self.init_full()?;
+        let white = [0xFFu8; 1000];
+        self.cmd(CMD_DTM1)?;
+        for _ in 0..FRAME_BYTES / white.len() {
+            self.data(&white)?;
+        }
+        let zero = [0x00u8; 1000];
+        self.cmd(CMD_DTM2)?;
+        for _ in 0..FRAME_BYTES / zero.len() {
+            self.data(&zero)?;
+        }
+        self.refresh()
+    }
+
+    /// Reset the controller and load custom one-step waveform LUTs. The old
+    /// plane is undefined until the next [`Panel::write_old_rows`].
+    pub fn init_drive(&mut self, luts: &DriveLuts) -> Result<()> {
+        self.hardware_reset();
+        self.cmd_data(CMD_POWER_SETTING, &[0x07, 0x07, 0x3F, 0x3F])?;
+        self.cmd_data(CMD_BOOSTER, &[0x17, 0x17, 0x28, 0x17])?;
+        self.cmd(CMD_POWER_ON)?;
+        FreeRtos::delay_ms(100);
+        self.wait_idle()?;
+        self.cmd_data(CMD_PANEL_SETTING, &[PANEL_SETTING_REGISTER_LUT])?;
+        self.cmd_data(CMD_RESOLUTION, &[0x03, 0x20, 0x01, 0xE0])?;
+        self.cmd_data(CMD_DUAL_SPI, &[0x00])?;
+        self.cmd_data(CMD_VCOM, &VCOM_DATA_INTERVAL)?;
+        self.cmd_data(CMD_TCON, &[0x22])?;
+        self.cmd_data(CMD_VCOM_DC, &[VCOM_DC])?;
+        for (command, table) in &luts.registers {
+            self.cmd_data(*command, table)?;
+        }
+        Ok(())
+    }
+
+    /// Stream the `old` plane (`DTM1`) by packing each logical row on the fly
+    /// and doubling it vertically into DMA-sized chunks.
+    pub fn write_old_rows(
+        &mut self,
+        logical_rows: usize,
+        row_bytes: usize,
+        fill_row: impl FnMut(usize, &mut [u8]),
+    ) -> Result<()> {
+        self.write_doubled_plane(CMD_DTM1, logical_rows, row_bytes, fill_row)
+    }
+
+    /// Stream a half-height `new` plane (`DTM2`), doubling each logical row
+    /// vertically into DMA-sized chunks.
+    pub fn write_new_half_plane(
+        &mut self,
+        new_half: &[u8],
+        logical_rows: usize,
+        row_bytes: usize,
+    ) -> Result<()> {
+        if new_half.len() != logical_rows * row_bytes {
+            return Err(anyhow!(
+                "new half-plane must be {} bytes, got {}",
+                logical_rows * row_bytes,
+                new_half.len()
+            ));
+        }
+        self.write_doubled_plane(CMD_DTM2, logical_rows, row_bytes, |y, dst| {
+            let start = y * row_bytes;
+            dst.copy_from_slice(&new_half[start..start + row_bytes]);
+        })
+    }
+
+    /// Start one custom drive refresh and return while the panel is busy.
+    pub fn start_drive(&mut self) -> Result<()> {
+        self.cmd(CMD_REFRESH)?;
+        // Give BUSY time to assert before anyone polls it.
+        Ets::delay_us(200);
+        Ok(())
+    }
+
+    /// Wait for the refresh [`Panel::start_drive`] began.
+    pub fn wait_drive(&mut self) -> Result<()> {
+        let start = Instant::now();
+        while self.busy.is_low() {
+            if start.elapsed() > DRIVE_TIMEOUT {
+                return Err(anyhow!("drive refresh busy timeout"));
+            }
+            Ets::delay_us(50);
+        }
+        Ok(())
+    }
+
+    /// Power the panel's drive voltages off.
+    pub fn power_off(&mut self) -> Result<()> {
+        self.cmd(CMD_POWER_OFF)?;
+        self.wait_idle()
+    }
+
+    fn write_doubled_plane(
+        &mut self,
+        command: u8,
+        logical_rows: usize,
+        row_bytes: usize,
+        mut fill_row: impl FnMut(usize, &mut [u8]),
+    ) -> Result<()> {
+        let doubled_row = row_bytes * 2;
+        if logical_rows * doubled_row != FRAME_BYTES {
+            return Err(anyhow!(
+                "doubled plane must be {FRAME_BYTES} bytes, got {}",
+                logical_rows * doubled_row
+            ));
+        }
+        self.cmd(command)?;
+        let mut chunk = [0u8; DMA_TRANSFER_BYTES];
+        let rows_per_chunk = (DMA_TRANSFER_BYTES / doubled_row).max(1);
+        let mut y = 0;
+        while y < logical_rows {
+            let y_end = (y + rows_per_chunk).min(logical_rows);
+            let mut off = 0;
+            for row_idx in y..y_end {
+                fill_row(row_idx, &mut chunk[off..off + row_bytes]);
+                chunk.copy_within(off..off + row_bytes, off + row_bytes);
+                off += doubled_row;
+            }
+            self.data(&chunk[..off])?;
+            y = y_end;
+        }
+        Ok(())
+    }
+
     fn init_full(&mut self) -> Result<()> {
         self.hardware_reset();
         self.cmd_data(CMD_POWER_SETTING, &[0x07, 0x07, 0x3F, 0x3F])?;
@@ -177,6 +384,20 @@ impl Panel {
         self.cmd_data(CMD_DUAL_SPI, &[0x00])?;
         self.cmd_data(CMD_VCOM, &[0x10, 0x07])?;
         self.cmd_data(CMD_TCON, &[0x22])?;
+        Ok(())
+    }
+
+    /// Waveshare 7.5″ V2 4-Gray OTP LUT initialization (`epd7in5_V2.py: init_4Gray`).
+    fn init_4gray(&mut self) -> Result<()> {
+        self.hardware_reset();
+        self.cmd_data(CMD_PANEL_SETTING, &[0x1F])?;
+        self.cmd_data(CMD_VCOM, &[0x10, 0x07])?;
+        self.cmd(CMD_POWER_ON)?;
+        FreeRtos::delay_ms(100);
+        self.wait_idle()?;
+        self.cmd_data(CMD_BOOSTER, &[0x27, 0x27, 0x18, 0x17])?;
+        self.cmd_data(CMD_TEMP_SEL, &[0x02])?;
+        self.cmd_data(CMD_TEMP_LUT, &[0x5F])?;
         Ok(())
     }
 

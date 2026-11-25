@@ -40,7 +40,7 @@ jobs:
           for b, bd in m["boards"].items():
               caps = set(bd["capabilities"])
               for a, ad in m["apps"].items():
-                  if set(ad["requires"]).issubset(caps):
+                  if ad.get("ota", True) and set(ad["requires"]).issubset(caps):
                       inc.append({
                           "board": b,
                           "app": a,

@@ -647,8 +647,12 @@ final class MCULabProtocolTests: XCTestCase {
         // Switching board after staging must reset incompatible app to .base and block arming the wrong chip binary.
         controller.selectedBoard = .waveshareEPD75
         XCTAssertEqual(controller.selectedApp, .base)
-        XCTAssertEqual(MCULabBoard.waveshareEPD75.compatibleApps, [.base, .maze])
+        XCTAssertEqual(MCULabBoard.waveshareEPD75.compatibleApps, [.base, .maze, .grayscale, .photo])
         XCTAssertEqual(MCULabBoard.xiaoESP32C3.compatibleApps, [.base, .bench])
+        XCTAssertEqual(
+            MCULabFirmwareTarget(board: .waveshareEPD75, app: .grayscale).ghcrRepo,
+            "imjasonh/playground/waveshare-epd75-grayscale"
+        )
         controller.armOTAUpdate()
         if case .failed = controller.otaPhase {
             // Expected
@@ -871,7 +875,9 @@ final class MCULabProtocolTests: XCTestCase {
         XCTAssertEqual(metricsPostCount.current, 3)
     }
 
-    func testAppOTelMetricsAndAttrs() throws {
+    func testGzipBenchAppOTelMetricsAndAttrs() throws {
+        // gzip-bench is flashed manually over USB (excluded from the BLE OTA picker),
+        // but its wake-profile OTel metrics and span attributes still decode generically.
         let rawJSON = """
         {"v":1,"wake":4,"seq":4,"board":"waveshare-epd75","chip":"esp32","app":"waveshare-epd75-bench","free_heap":205000,"min_heap":192000,"stack_hw":4096,"cycles":12000000,"spans":[{"name":"gzip.inflate.json_otel","parent":"compute","start_us":100,"dur_us":3200,"attrs":{"corpus":"json_otel","impl":"esp32_rom_miniz"}}],"pcs":[{"pc":"0x40060050","hits":12}],"attrs":{"gzip.impl":"esp32_rom_miniz","gzip.deflate_status":"oom"},"metrics":[{"name":"gzip.inflate_bps","val":2100000,"unit":"By/s","attrs":{"corpus":"json_otel","impl":"esp32_rom_miniz"}},{"name":"gzip.inflate_bps","val":5400000,"unit":"By/s","attrs":{"corpus":"rle_epd","impl":"esp32_rom_miniz"}},{"name":"gzip.deflate_oom","val":1,"unit":"1","attrs":{"impl":"esp32_rom_miniz"}}]}
         """

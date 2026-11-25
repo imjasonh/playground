@@ -14,6 +14,7 @@ struct MCULabView: View {
                 availabilityBanner
                 scanControls
                 appCommandsPanel
+                MCULabPhotoFramePanel(controller: controller)
                 metricsDashboard
                 phaseBreakdownPanel
                 profileAndTracesPanel
@@ -472,7 +473,9 @@ struct MCULabView: View {
                 .accessibilityIdentifier("mcuLabOtaChooseBinButton")
             }
 
-            if let staged = controller.stagedFirmwareData {
+            if controller.otaTransferKind == .firmware,
+               let staged = controller.stagedFirmwareData
+            {
                 LabeledContent("Staged image", value: "\(controller.stagedFirmwareName) (\(staged.count) B)")
                     .font(.caption)
                     .accessibilityIdentifier("mcuLabOtaStagedName")
@@ -481,7 +484,10 @@ struct MCULabView: View {
                     .accessibilityIdentifier("mcuLabOtaStagedSha")
             }
 
-            if case .streaming(let written, let total) = controller.otaPhase, total > 0 {
+            if controller.otaTransferKind == .firmware,
+               case .streaming(let written, let total) = controller.otaPhase,
+               total > 0
+            {
                 let fraction = Double(written) / Double(total)
                 ProgressView(value: min(max(fraction, 0), 1))
                     .accessibilityLabel("OTA transfer progress")
@@ -489,7 +495,7 @@ struct MCULabView: View {
                     .accessibilityIdentifier("mcuLabOtaProgressView")
             }
 
-            if controller.otaPhase.isActive {
+            if controller.otaTransferKind == .firmware, controller.otaPhase.isActive {
                 Button(role: .destructive) {
                     controller.cancelOTAUpdate()
                 } label: {
@@ -506,14 +512,20 @@ struct MCULabView: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(controller.stagedFirmwareData == nil)
+                .disabled(
+                    controller.otaTransferKind != .firmware
+                        || controller.stagedFirmwareData == nil
+                        || controller.otaPhase.isActive
+                )
                 .accessibilityIdentifier("mcuLabOtaArmButton")
             }
 
-            Text(controller.otaStatusText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("mcuLabOtaStatusText")
+            if controller.otaTransferKind == .firmware {
+                Text(controller.otaStatusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("mcuLabOtaStatusText")
+            }
 
             if let report = controller.lastOTAReport {
                 otaReportCard(report)

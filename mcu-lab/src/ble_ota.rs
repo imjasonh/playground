@@ -18,14 +18,15 @@ use esp_idf_svc::sys::{
     esp_ota_get_state_partition, esp_ota_handle_t, esp_ota_img_states_t,
     esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY, esp_ota_mark_app_invalid_rollback_and_reboot,
     esp_ota_mark_app_valid_cancel_rollback, esp_ota_set_boot_partition, esp_ota_write,
-    esp_partition_find_first, esp_partition_read,
+    esp_partition_erase_range, esp_partition_find_first, esp_partition_read,
     esp_partition_subtype_t_ESP_PARTITION_SUBTYPE_DATA_COREDUMP, esp_partition_t,
-    esp_partition_type_t_ESP_PARTITION_TYPE_DATA, esp_restart, esp_task_wdt_reset, ESP_OK,
-    OTA_WITH_SEQUENTIAL_WRITES,
+    esp_partition_type_t_ESP_PARTITION_TYPE_DATA, esp_partition_write, esp_restart,
+    esp_task_wdt_reset, ESP_OK, OTA_WITH_SEQUENTIAL_WRITES,
 };
 use log::{info, warn};
 use sha2::{Digest, Sha256};
 
+use crate::photo::{validate_photo_album_magic, PhotoAlbumHeader, PHOTO_HEADER_LEN};
 use crate::profiler::{create_profile_char, now_us, update_profile_char, ProfileCharHandle};
 use crate::protocol::{
     decode_ota_chunk_frame, encode_blob_frames, encode_mfg_data, format_ota_status,
@@ -140,20 +141,29 @@ fn erase_flash_coredump() {
     }
 }
 
+/// SPI flash erase sector size on ESP32 / ESP32-C3 (4 KiB).
+const FLASH_SECTOR_BYTES: u32 = 4096;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ActiveSession {
+    Firmware(esp_ota_handle_t),
+    DataBlob { erased_end: u32 },
+}
+
 struct OtaWriterState {
     expected_chip_id: u16,
     min_ota_battery_mv: u16,
-    handle: Option<esp_ota_handle_t>,
+    session: Option<ActiveSession>,
     partition: *const esp_partition_t,
     expected_size: u32,
     expected_sha256: String,
     compression: OtaCompression,
-    /// Uncompressed firmware bytes written to flash and hashed.
+    /// Uncompressed bytes written to flash and hashed.
     written: u32,
     /// Wire payload bytes accepted so far (equals `written` when uncompressed).
     wire_written: u32,
-    /// First 14 uncompressed bytes buffered for `esp_image_header_t` validation.
-    header_buf: [u8; 14],
+    /// First 20 uncompressed bytes buffered for `esp_image_header_t` (14 B) or `MCUP` header (20 B).
+    header_buf: [u8; PHOTO_HEADER_LEN],
     header_len: usize,
     deflate: Option<OtaDeflateDecoder>,
     next_notify_at: u32,
@@ -171,14 +181,14 @@ impl OtaWriterState {
         Self {
             expected_chip_id,
             min_ota_battery_mv,
-            handle: None,
+            session: None,
             partition: core::ptr::null(),
             expected_size: 0,
             expected_sha256: String::new(),
             compression: OtaCompression::None,
             written: 0,
             wire_written: 0,
-            header_buf: [0u8; 14],
+            header_buf: [0u8; PHOTO_HEADER_LEN],
             header_len: 0,
             deflate: None,
             next_notify_at: 0,
@@ -190,7 +200,7 @@ impl OtaWriterState {
     }
 
     fn abort_active(&mut self) {
-        if let Some(h) = self.handle.take() {
+        if let Some(ActiveSession::Firmware(h)) = self.session.take() {
             // SAFETY: `h` was returned by `esp_ota_begin` and has not been ended yet.
             unsafe {
                 let _ = esp_ota_abort(h);
@@ -216,12 +226,33 @@ impl OtaWriterState {
         compression: OtaCompression,
         battery_mv: u16,
     ) -> OtaStatus {
+        self.begin_session(size, sha256, compression, battery_mv, false)
+    }
+
+    fn begin_data(
+        &mut self,
+        size: u32,
+        sha256: String,
+        compression: OtaCompression,
+        battery_mv: u16,
+    ) -> OtaStatus {
+        self.begin_session(size, sha256, compression, battery_mv, true)
+    }
+
+    fn begin_session(
+        &mut self,
+        size: u32,
+        sha256: String,
+        compression: OtaCompression,
+        battery_mv: u16,
+        is_data_blob: bool,
+    ) -> OtaStatus {
         self.last_activity_us = now_us();
         self.last_gap_notify_us = 0;
         if self.min_ota_battery_mv > 0 && battery_mv > 0 && battery_mv < self.min_ota_battery_mv {
             return OtaStatus::Error {
                 message: format!(
-                    "battery too low for OTA: {battery_mv}mV < {}mV",
+                    "battery too low for transfer: {battery_mv}mV < {}mV",
                     self.min_ota_battery_mv
                 ),
             };
@@ -231,9 +262,14 @@ impl OtaWriterState {
                 message: format!("invalid size {size}"),
             };
         }
-        // Resumable OTA: if an in-progress session matches `(size, sha256, compression)` and
-        // already has bytes written, resume from `self.wire_written` without re-erasing flash.
-        if self.handle.is_some()
+        // Resumable transfer: if an in-progress session matches `(kind, size, sha256, compression)`
+        // and already has bytes written, resume from `self.wire_written` without re-erasing flash.
+        let kind_matches = match self.session {
+            Some(ActiveSession::Firmware(_)) => !is_data_blob,
+            Some(ActiveSession::DataBlob { .. }) => is_data_blob,
+            None => false,
+        };
+        if kind_matches
             && self.expected_size == size
             && self.expected_sha256 == sha256
             && self.compression == compression
@@ -251,7 +287,7 @@ impl OtaWriterState {
         }
 
         self.abort_active();
-        // SAFETY: queries ESP-IDF's partition table for the inactive OTA app slot and opens it.
+        // SAFETY: queries ESP-IDF's partition table for the inactive OTA slot.
         unsafe {
             let part = esp_ota_get_next_update_partition(core::ptr::null());
             if part.is_null() {
@@ -259,16 +295,26 @@ impl OtaWriterState {
                     message: "no inactive OTA slot (run make flash-all)".to_string(),
                 };
             }
-            let mut handle: esp_ota_handle_t = 0;
-            // Erase sectors incrementally on each `esp_ota_write` (~30 ms/sector) instead of
-            // blocking the NimBLE host task for 3+ seconds erasing the full slot upfront.
-            let err = esp_ota_begin(part, OTA_WITH_SEQUENTIAL_WRITES as usize, &mut handle);
-            if err != ESP_OK {
+            if size > (*part).size {
                 return OtaStatus::Error {
-                    message: format!("esp_ota_begin err={err}"),
+                    message: format!("size {size} exceeds partition {}B", (*part).size),
                 };
             }
-            self.handle = Some(handle);
+            let session = if is_data_blob {
+                ActiveSession::DataBlob { erased_end: 0 }
+            } else {
+                let mut handle: esp_ota_handle_t = 0;
+                // Erase sectors incrementally on each `esp_ota_write` (~30 ms/sector) instead of
+                // blocking the NimBLE host task for 3+ seconds erasing the full slot upfront.
+                let err = esp_ota_begin(part, OTA_WITH_SEQUENTIAL_WRITES as usize, &mut handle);
+                if err != ESP_OK {
+                    return OtaStatus::Error {
+                        message: format!("esp_ota_begin err={err}"),
+                    };
+                }
+                ActiveSession::Firmware(handle)
+            };
+            self.session = Some(session);
             self.partition = part;
             self.expected_size = size;
             self.expected_sha256 = sha256;
@@ -279,7 +325,12 @@ impl OtaWriterState {
             self.deflate = (compression == OtaCompression::Deflate).then(OtaDeflateDecoder::new);
             self.next_notify_at = 16 * 1024;
             self.hasher = Sha256::new();
-            info!("ota: opened inactive partition for {size} bytes (compression={compression:?})");
+            let kind = if is_data_blob {
+                "data blob"
+            } else {
+                "firmware"
+            };
+            info!("ota: opened inactive partition for {kind} ({size} bytes, compression={compression:?})");
             OtaStatus::Ready {
                 total: size,
                 offset: 0,
@@ -287,28 +338,86 @@ impl OtaWriterState {
         }
     }
 
-    /// Validate header (on the first 14 bytes), write uncompressed firmware bytes to flash,
+    /// Validate header (on the first bytes), write uncompressed bytes to flash,
     /// and feed them into the running SHA-256 hasher.
-    fn write_plain_bytes(&mut self, handle: esp_ota_handle_t, plain: &[u8]) -> Result<(), String> {
+    fn write_plain_bytes(&mut self, plain: &[u8]) -> Result<(), String> {
         if plain.is_empty() {
             return Ok(());
         }
+        let Some(session) = self.session else {
+            return Err("write before BEGIN".to_string());
+        };
         if self.header_len < self.header_buf.len() {
             let take = (self.header_buf.len() - self.header_len).min(plain.len());
             self.header_buf[self.header_len..self.header_len + take]
                 .copy_from_slice(&plain[..take]);
             self.header_len += take;
-            validate_esp_image_header(&self.header_buf[..self.header_len], self.expected_chip_id)?;
+            match session {
+                ActiveSession::Firmware(_) => {
+                    validate_esp_image_header(
+                        &self.header_buf[..self.header_len],
+                        self.expected_chip_id,
+                    )?;
+                }
+                ActiveSession::DataBlob { .. } => {
+                    validate_photo_album_magic(&self.header_buf[..self.header_len])?;
+                    if self.header_len >= PHOTO_HEADER_LEN {
+                        let hdr = PhotoAlbumHeader::parse(&self.header_buf)?;
+                        if hdr.total_bytes() != self.expected_size as usize {
+                            return Err(format!(
+                                "photo album size mismatch: header={}B, begin={}B",
+                                hdr.total_bytes(),
+                                self.expected_size
+                            ));
+                        }
+                    }
+                }
+            }
         }
         let next_written = self.written.saturating_add(plain.len() as u32);
         if next_written > self.expected_size {
             return Err(format!("overflow: {next_written} > {}", self.expected_size));
         }
-        // SAFETY: `handle` is an active OTA handle and `plain` is valid for `plain.len()` bytes.
-        let err = unsafe { esp_ota_write(handle, plain.as_ptr().cast(), plain.len()) };
-        if err != ESP_OK {
-            return Err(format!("esp_ota_write err={err}"));
+
+        match session {
+            ActiveSession::Firmware(handle) => {
+                // SAFETY: `handle` is an active OTA handle and `plain` is valid for `plain.len()` bytes.
+                let err = unsafe { esp_ota_write(handle, plain.as_ptr().cast(), plain.len()) };
+                if err != ESP_OK {
+                    return Err(format!("esp_ota_write err={err}"));
+                }
+            }
+            ActiveSession::DataBlob { mut erased_end } => {
+                let needed_end = next_written.div_ceil(FLASH_SECTOR_BYTES) * FLASH_SECTOR_BYTES;
+                if needed_end > erased_end {
+                    let erase_start = erased_end as usize;
+                    let erase_len = (needed_end - erased_end) as usize;
+                    // SAFETY: `self.partition` is the inactive OTA partition and both offset and
+                    // length are 4 KiB sector-aligned within the partition bounds.
+                    let err = unsafe {
+                        esp_partition_erase_range(self.partition, erase_start, erase_len)
+                    };
+                    if err != ESP_OK {
+                        return Err(format!("esp_partition_erase_range err={err}"));
+                    }
+                    erased_end = needed_end;
+                    self.session = Some(ActiveSession::DataBlob { erased_end });
+                }
+                // SAFETY: `self.partition` is valid and `self.written..next_written` was just erased.
+                let err = unsafe {
+                    esp_partition_write(
+                        self.partition,
+                        self.written as usize,
+                        plain.as_ptr().cast(),
+                        plain.len(),
+                    )
+                };
+                if err != ESP_OK {
+                    return Err(format!("esp_partition_write err={err}"));
+                }
+            }
         }
+
         self.hasher.update(plain);
         self.written = next_written;
         Ok(())
@@ -317,11 +426,11 @@ impl OtaWriterState {
     fn write_chunk(&mut self, raw: &[u8]) -> Option<OtaStatus> {
         let now = now_us();
         self.last_activity_us = now;
-        let Some(handle) = self.handle else {
+        if self.session.is_none() {
             return Some(OtaStatus::Error {
                 message: "write before BEGIN".to_string(),
             });
-        };
+        }
         if raw.is_empty() {
             return None;
         }
@@ -360,11 +469,11 @@ impl OtaWriterState {
         }
 
         let write_result = if let Some(mut decoder) = self.deflate.take() {
-            let res = decoder.push(chunk, |plain| self.write_plain_bytes(handle, plain));
+            let res = decoder.push(chunk, |plain| self.write_plain_bytes(plain));
             self.deflate = Some(decoder);
             res
         } else {
-            self.write_plain_bytes(handle, chunk)
+            self.write_plain_bytes(chunk)
         };
 
         if let Err(message) = write_result {
@@ -385,25 +494,28 @@ impl OtaWriterState {
 
     fn commit(&mut self) -> OtaStatus {
         self.last_activity_us = now_us();
-        let Some(handle) = self.handle.take() else {
+        if self.session.is_none() {
             return OtaStatus::Error {
                 message: "commit before BEGIN".to_string(),
             };
-        };
+        }
         if let Some(mut decoder) = self.deflate.take() {
-            if let Err(message) = decoder.finish(|plain| self.write_plain_bytes(handle, plain)) {
-                // SAFETY: `handle` was just taken and is still open.
-                unsafe {
-                    let _ = esp_ota_abort(handle);
-                }
+            if let Err(message) = decoder.finish(|plain| self.write_plain_bytes(plain)) {
                 self.abort_active();
                 return OtaStatus::Error { message };
             }
         }
+        let Some(session) = self.session.take() else {
+            return OtaStatus::Error {
+                message: "commit before BEGIN".to_string(),
+            };
+        };
         if self.written != self.expected_size {
-            // SAFETY: `handle` was just taken and is still open.
-            unsafe {
-                let _ = esp_ota_abort(handle);
+            if let ActiveSession::Firmware(handle) = session {
+                // SAFETY: `handle` was just taken and is still open.
+                unsafe {
+                    let _ = esp_ota_abort(handle);
+                }
             }
             let w = self.written;
             let total = self.expected_size;
@@ -414,9 +526,11 @@ impl OtaWriterState {
         }
         let actual_sha = hex::encode(self.hasher.clone().finalize());
         if actual_sha != self.expected_sha256 {
-            // SAFETY: `handle` was just taken and is still open.
-            unsafe {
-                let _ = esp_ota_abort(handle);
+            if let ActiveSession::Firmware(handle) = session {
+                // SAFETY: `handle` was just taken and is still open.
+                unsafe {
+                    let _ = esp_ota_abort(handle);
+                }
             }
             let expected = self.expected_sha256.clone();
             self.abort_active();
@@ -424,24 +538,34 @@ impl OtaWriterState {
                 message: format!("sha256 mismatch: got {actual_sha}, want {expected}"),
             };
         }
-        // SAFETY: finalizes the verified OTA image and switches `otadata` to boot `self.partition`.
-        unsafe {
-            let end_err = esp_ota_end(handle);
-            if end_err != ESP_OK {
-                self.abort_active();
-                return OtaStatus::Error {
-                    message: format!("esp_ota_end err={end_err}"),
-                };
+
+        match session {
+            ActiveSession::Firmware(handle) => {
+                // SAFETY: finalizes the verified OTA image and switches `otadata` to boot `self.partition`.
+                unsafe {
+                    let end_err = esp_ota_end(handle);
+                    if end_err != ESP_OK {
+                        self.abort_active();
+                        return OtaStatus::Error {
+                            message: format!("esp_ota_end err={end_err}"),
+                        };
+                    }
+                    let boot_err = esp_ota_set_boot_partition(self.partition);
+                    if boot_err != ESP_OK {
+                        self.abort_active();
+                        return OtaStatus::Error {
+                            message: format!("esp_ota_set_boot_partition err={boot_err}"),
+                        };
+                    }
+                }
+                info!("ota: committed firmware {actual_sha}, rebooting into new slot");
             }
-            let boot_err = esp_ota_set_boot_partition(self.partition);
-            if boot_err != ESP_OK {
-                self.abort_active();
-                return OtaStatus::Error {
-                    message: format!("esp_ota_set_boot_partition err={boot_err}"),
-                };
+            ActiveSession::DataBlob { .. } => {
+                // Keep the currently running firmware slot active; simply restart so the app
+                // loads and displays the newly written data blob immediately on boot.
+                info!("data: committed blob {actual_sha}, rebooting to display");
             }
         }
-        info!("ota: committed {actual_sha}, rebooting into new slot");
         self.reboot_pending = true;
         OtaStatus::Ok { sha256: actual_sha }
     }
@@ -593,6 +717,11 @@ impl BleOtaNode {
                     sha256,
                     compression,
                 }) => guard.begin(size, sha256, compression, batt),
+                Some(OtaCommand::BeginData {
+                    size,
+                    sha256,
+                    compression,
+                }) => guard.begin_data(size, sha256, compression, batt),
                 Some(OtaCommand::Commit) => guard.commit(),
                 Some(OtaCommand::Abort) => {
                     guard.abort_active();

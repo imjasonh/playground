@@ -81,6 +81,7 @@ enum MCULabOTACompression: String, Equatable {
 /// Control command written by the iPhone to the MCU Lab BLE GATT OTA control characteristic.
 enum MCULabOTACommand: Equatable {
     case begin(size: UInt32, sha256: String, compression: MCULabOTACompression = .none)
+    case beginData(size: UInt32, sha256: String, compression: MCULabOTACompression = .none)
     case commit
     case abort
 }
@@ -236,6 +237,8 @@ enum MCULabApp: String, CaseIterable, Identifiable {
     case base = "base"
     case bench = "bench"
     case maze = "maze"
+    case grayscale = "grayscale"
+    case photo = "photo"
 
     var id: String { rawValue }
 
@@ -244,6 +247,8 @@ enum MCULabApp: String, CaseIterable, Identifiable {
         case .base: return "Base (OTA + OTel)"
         case .bench: return "Bench (Power / EPD Sim)"
         case .maze: return "Maze Animator"
+        case .grayscale: return "Grayscale Boids"
+        case .photo: return "Photo Frame"
         }
     }
 
@@ -252,6 +257,8 @@ enum MCULabApp: String, CaseIterable, Identifiable {
         case .base: return []
         case .bench: return [.logicProbe]
         case .maze: return [.epd75]
+        case .grayscale: return [.epd75]
+        case .photo: return [.epd75]
         }
     }
 }
@@ -484,6 +491,10 @@ enum MCULabProtocol {
             return "BEGIN \(size) \(sha256.lowercased())"
         case .begin(let size, let sha256, .deflate):
             return "BEGIN \(size) \(sha256.lowercased()) deflate"
+        case .beginData(let size, let sha256, .none):
+            return "BEGIN_DATA \(size) \(sha256.lowercased())"
+        case .beginData(let size, let sha256, .deflate):
+            return "BEGIN_DATA \(size) \(sha256.lowercased()) deflate"
         case .commit:
             return "COMMIT"
         case .abort:
@@ -502,7 +513,10 @@ enum MCULabProtocol {
             return .commit
         case "ABORT" where parts.count == 1:
             return .abort
-        case "BEGIN" where parts.count == 3 || parts.count == 4:
+        case "BEGIN", "BEGIN_DATA":
+            guard parts.count == 3 || parts.count == 4 else {
+                return nil
+            }
             guard let size = UInt32(parts[1]), size > 0, size <= otaSlotBytes else {
                 return nil
             }
@@ -523,6 +537,9 @@ enum MCULabProtocol {
                 }
             } else {
                 compression = .none
+            }
+            if head == "BEGIN_DATA" {
+                return .beginData(size: size, sha256: sha, compression: compression)
             }
             return .begin(size: size, sha256: sha, compression: compression)
         default:

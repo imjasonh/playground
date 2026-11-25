@@ -3,4 +3,6 @@
 
 pub mod base;
 pub mod bench;
+pub mod grayscale;
 pub mod maze;
+pub mod photo;

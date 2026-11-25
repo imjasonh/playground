@@ -26,7 +26,7 @@ require (
 require (
 	cel.dev/expr v0.26.0 // indirect
 	cloud.google.com/go v0.123.0 // indirect
-	cloud.google.com/go/auth v0.24.4 // indirect
+	cloud.google.com/go/auth v0.24.5 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.3.1 // indirect
 	cloud.google.com/go/iam v1.15.1 // indirect
 	cloud.google.com/go/monitoring v1.32.1 // indirect
@@ -53,7 +53,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.39.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.53.0 // indirect
-	github.com/aws/smithy-go v1.28.9 // indirect
+	github.com/aws/smithy-go v1.28.10 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
@@ -103,7 +103,7 @@ require (
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	google.golang.org/api v0.316.0 // indirect
+	google.golang.org/api v0.317.0 // indirect
 	google.golang.org/genproto v0.0.0-20261123191846-1e707ab9fbc2 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261123191846-1e707ab9fbc2 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261123191846-1e707ab9fbc2 // indirect
