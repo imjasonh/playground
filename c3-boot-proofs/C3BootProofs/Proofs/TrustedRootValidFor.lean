@@ -534,4 +534,201 @@ theorem TvfCtx.noneC6 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f 
 
 end
 
+theorem tvf_saved_nc : ∀ q : Fin 32, q.val ∈ trSaved → q ∉ jClob := by decide
+
+theorem tvf_saved_ns : ∀ q : Fin 32, q.val ∈ trSaved → q ∉ strClob := by decide
+
+/-- A memory that changes only in a range below `0x40000000` keeps the
+code. -/
+theorem tvf_hiOut {M M' : Word → BitVec 8} {a : Word} {k : Nat} (h : Out M M' a k) (ha : a.toNat + k ≤ 0x40000000) :
+    ∀ x : Word, 0x40000000 ≤ x.toNat → M' x = M x :=
+  fun x hx => h x (lowSep ha hx (by have := x.isLt; omega)).symm
+
+section
+variable {M0 : Word → BitVec 8} {G F out p : Word} {n : Nat} {g0 : Fin 32 → Word}
+
+theorem TvfCtx.fGc (X : TvfCtx M0 G F out p n g0) (c d : Nat) (h : 0x104 + c = d) :
+    F + BitVec.ofNat 32 c = G + BitVec.ofNat 32 d := by
+  rw [X.fG, h]
+
+theorem TvfCtx.keyS (X : TvfCtx M0 G F out p n g0) : Sep G 0x144 tvfStartKey 5 :=
+  X.ro.subR (c := img% svOidEcPublicKeyAddress + 0x7 - roWindowAddress) (by decide)
+
+theorem TvfCtx.keyE (X : TvfCtx M0 G F out p n g0) : Sep G 0x144 tvfEndKey 3 :=
+  X.ro.subR (c := img% svOidEcPublicKeyAddress + 0xC - roWindowAddress) (by decide)
+
+/-- The call of `Value::field` at 0x20, for the key `start`, with the
+result at `F + 0x20`. -/
+theorem TvfCtx.callField (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {Q : Post}
+    (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M) (ha0 : f a0 = F + 0x20) (ha1 : f a1 = p)
+    (ha2 : f a2 = BitVec.ofNat 32 n) (ha3 : f a3 = tvfStartKey) (ha4 : f a4 = BitVec.ofNat 32 5)
+    (k : ∀ (M1 M' : Word → BitVec 8) (f' : Fin 32 → Word), TvfRegs F out p n g0 f' → TvfMemInv M0 G F g0 M' →
+      FieldRes M1 M' (F + 0x20) (fieldRes p (objField (memBytes M0 p n) (ascii!"start"))) →
+      WP trustedRootValidForCode TVF Q M' 0x28 f') :
+    WP trustedRootValidForCode TVF Q M 0x20 f := by
+  have C := X.code.out hI.1 X.gw X.ro
+  have gw := X.gw
+  have pw := X.pw
+  have e20 : F + 0x20 = G + BitVec.ofNat 32 0x124 := X.fGc 0x20 0x124 rfl
+  have hd : memBytes M p n = memBytes M0 p n := hI.1.bytes (trSepR X.pg.symm (by omega))
+  have hk : memBytes M tvfStartKey 5 = ascii!"start" := (hI.1.bytes X.keyS).trans X.ks
+  refine WP.trCallSaved (tb := TJF)
+    (P := fun m2 => FieldResF M m2.mem (F + 0x20) G 260 (fieldRes p (objField (memBytes M0 p n) (ascii!"start"))))
+    tvf_at_20 tvf_at_24 (by decide) (fun m1 hpc1 hmem1 hreg1 _ => ?_) (fun m2 hP hc => ?_) (fun m2 hP => ?_)
+  · obtain ⟨m2, c2, pc2, R, fr⟩ := jsonField_correct m1 (base := TJF) (s := G) (out := F + 0x20) (p := p)
+      (kq := tvfStartKey) (n := n) (kl := 5) (retAddr := TVF + BitVec.ofNat 32 (0x20 + 8)) (by decide)
+      (by rw [hmem1]; exact C.field) hpc1 (by rw [hreg1]; trsimp; exact ha0) (by rw [hreg1]; trsimp; exact ha1)
+      (by rw [hreg1]; trsimp; exact ha2) (by rw [hreg1]; trsimp; exact ha3) (by rw [hreg1]; trsimp; exact ha4)
+      (by rw [hreg1]; trsimp; rw [hR.2.1, ← X.fg]) (by rw [hreg1]; trsimp) (by decide) X.ga
+      (by rw [e20]; exact aligned_add X.ga (by decide)) (by omega) (by decide) X.p0 (by omega)
+      (tvf_fieldSep (by omega) (sep_low X.ro (by decide))) (trSepR (sep_low X.pg.symm (by decide)) (by omega))
+      (sep_low X.keyS (by decide))
+      (by rw [e20]; have := sep_offsets G (c := 0x124) (n := 8) (d := 0) (k := 260) (Or.inr (by decide)) (by decide)
+            (by decide); rwa [add_ofNat_zero] at this)
+      (by rw [e20]; exact tr_lowAt (by omega) (by decide) (by decide))
+    rw [hmem1, hd, hk] at R
+    exact ⟨m2, c2, pc2, R, by rw [fr sp (by decide)], fun q hq => fr q (tvf_saved_nc q hq)⟩
+  · obtain ⟨M1, hO1, hFR⟩ := hP
+    have h1 := tvf_hiOut hO1 (by omega)
+    have h2 := tvf_hiOut hFR.out (by rw [e20, X.gc (by decide)]; omega)
+    exact hc.hi (fun x hx => (h2 x hx).trans (h1 x hx)) (by decide) (by decide)
+  · obtain ⟨M1, hO1, hFR⟩ := hP
+    have hO2 := hFR.out
+    rw [e20] at hO2
+    exact k M1 m2.mem _ hR.clob ((hI.step X (c := 0) (l := 260) (by rw [add_ofNat_zero]; exact hO1) (by decide)).step
+      X hO2 (by decide)) hFR
+
+/-- The call of `Value::get` at 0x62, for the key `end`, with the result
+at `F + 0x10`. -/
+theorem TvfCtx.callGet (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {Q : Post}
+    (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M) (ha0 : f a0 = F + 0x10) (ha1 : f a1 = p)
+    (ha2 : f a2 = BitVec.ofNat 32 n) (ha3 : f a3 = tvfEndKey) (ha4 : f a4 = BitVec.ofNat 32 3)
+    (k : ∀ (M1 M' : Word → BitVec 8) (f' : Fin 32 → Word), TvfRegs F out p n g0 f' → TvfMemInv M0 G F g0 M' →
+      GetRes M1 M' (F + 0x10) (getRes p (objGet (memBytes M0 p n) (ascii!"end"))) →
+      WP trustedRootValidForCode TVF Q M' 0x6A f') :
+    WP trustedRootValidForCode TVF Q M 0x62 f := by
+  have C := X.code.out hI.1 X.gw X.ro
+  have gw := X.gw
+  have pw := X.pw
+  have e10 : F + 0x10 = G + BitVec.ofNat 32 0x114 := X.fGc 0x10 0x114 rfl
+  have hg : (G + BitVec.ofNat 32 0x20).toNat = G.toNat + 0x20 := X.gc (by decide)
+  have hd : memBytes M p n = memBytes M0 p n := hI.1.bytes (trSepR X.pg.symm (by omega))
+  have hk : memBytes M tvfEndKey 3 = ascii!"end" := (hI.1.bytes X.keyE).trans X.ke
+  refine WP.trCallSaved (tb := TJF + 0x16C)
+    (P := fun m2 => GetResF M m2.mem (F + 0x10) (G + BitVec.ofNat 32 0x20) 228
+      (getRes p (objGet (memBytes M0 p n) (ascii!"end"))))
+    tvf_at_62 tvf_at_66 (by decide) (fun m1 hpc1 hmem1 hreg1 _ => ?_) (fun m2 hP hc => ?_) (fun m2 hP => ?_)
+  · obtain ⟨m2, c2, pc2, R, fr⟩ := jsonGet_correct m1 (base := TJF + 0x16C) (s := G + BitVec.ofNat 32 0x20)
+      (out := F + 0x10) (p := p) (kq := tvfEndKey) (n := n) (kl := 3) (retAddr := TVF + BitVec.ofNat 32 (0x62 + 8))
+      (by decide) (by rw [hmem1]; exact C.field.get) hpc1 (by rw [hreg1]; trsimp; exact ha0)
+      (by rw [hreg1]; trsimp; exact ha1) (by rw [hreg1]; trsimp; exact ha2) (by rw [hreg1]; trsimp; exact ha3)
+      (by rw [hreg1]; trsimp; exact ha4)
+      (by rw [hreg1]; trsimp; rw [hR.2.1, add_ofNat_assoc, ← X.fg]) (by rw [hreg1]; trsimp) (by decide)
+      (by rw [hg]; have := X.ga; omega) (by rw [e10]; exact aligned_add X.ga (by decide)) (by omega) (by decide)
+      X.p0 (by omega)
+      (tvf_getSep (by omega) (X.ro.sub (by decide))) (trSepR (X.pg.symm.sub (by decide)) (by omega))
+      (X.keyE.sub (by decide))
+      (by rw [e10]; exact sep_offsets G (Or.inr (by decide)) (by decide) (by decide))
+      (by rw [e10]; exact tr_lowAt (by omega) (by decide) (by decide))
+    rw [hmem1, hd, hk] at R
+    exact ⟨m2, c2, pc2, R, by rw [fr sp (by decide)], fun q hq => fr q (tvf_saved_nc q hq)⟩
+  · obtain ⟨M1, hO1, hGR⟩ := hP
+    have h1 := tvf_hiOut hO1 (by omega)
+    have h2 := tvf_hiOut hGR.out (by rw [e10, X.gc (by decide)]; omega)
+    exact hc.hi (fun x hx => (h2 x hx).trans (h1 x hx)) (by decide) (by decide)
+  · obtain ⟨M1, hO1, hGR⟩ := hP
+    have hO2 := hGR.out
+    rw [e10] at hO2
+    exact k M1 m2.mem _ hR.clob ((hI.step X hO1 (by decide)).step X hO2 (by decide)) hGR
+
+/-- A call of `Value::str` from `valid_for`, with the result at `F + c`. -/
+theorem TvfCtx.callStr (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {Q : Post}
+    {off c : Nat} {hi lo q : Word} {l : Nat}
+    (h1 : fetchRel trustedRootValidForCode off = some (.auipc ra hi, 4))
+    (h2 : fetchRel trustedRootValidForCode (off + 4) = some (.jalr ra ra lo, 4))
+    (htgt : (TVF + BitVec.ofNat 32 off + hi + lo) &&& ~~~1 = TJS)
+    (hev : (TVF + BitVec.ofNat 32 (off + 8)) &&& ~~~1 = TVF + BitVec.ofNat 32 (off + 8))
+    (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M) (hc : c + 8 ≤ 0x28) (hca : c % 4 = 0)
+    (ha0 : f a0 = F + BitVec.ofNat 32 c) (ha1 : f a1 = q) (ha2 : f a2 = BitVec.ofNat 32 l) (hl : l < 2 ^ 32)
+    (k : ∀ (M' : Word → BitVec 8) (f' : Fin 32 → Word), TvfRegs F out p n g0 f' → TvfMemInv M0 G F g0 M' →
+      SliceRes M M' (F + BitVec.ofNat 32 c) 0x21 (strRes q (memBytes M q l)) →
+      WP trustedRootValidForCode TVF Q M' (off + 8) f') :
+    WP trustedRootValidForCode TVF Q M off f := by
+  have C := X.code.out hI.1 X.gw X.ro
+  have gw := X.gw
+  have ec := X.fG c
+  have hgc : (G + BitVec.ofNat 32 (0x104 + c)).toNat = G.toNat + (0x104 + c) := X.gc (by omega)
+  refine WP.trCallSaved (tb := TJS)
+    (P := fun m2 => SliceRes M m2.mem (F + BitVec.ofNat 32 c) 0x21 (strRes q (memBytes M q l)))
+    h1 h2 htgt (fun m1 hpc1 hmem1 hreg1 _ => ?_) (fun m2 hP hcd => ?_) (fun m2 hP => ?_)
+  · obtain ⟨m2, c2, pc2, R, fr⟩ := jsonStr_correct m1 (base := TJS) (out := F + BitVec.ofNat 32 c) (p := q) (n := l)
+      (retAddr := TVF + BitVec.ofNat 32 (off + 8)) (by decide) (by rw [hmem1]; exact C.str) hpc1
+      (by rw [hreg1]; trsimp; exact ha0) (by rw [hreg1]; trsimp; exact ha1) (by rw [hreg1]; trsimp; exact ha2) hl
+      (by rw [ec, hgc]; have := X.ga; omega) (by rw [ec]; exact tr_lowAt (by omega) (by decide) (by decide))
+      (by rw [hreg1]; trsimp) hev
+    rw [hmem1] at R
+    exact ⟨m2, c2, pc2, R, by rw [fr sp (by decide)], fun q hq => fr q (tvf_saved_ns q hq)⟩
+  · exact hcd.hi (tvf_hiOut hP.out (by rw [ec, hgc]; omega)) (by decide) (by decide)
+  · have hO2 := hP.out
+    rw [ec] at hO2
+    exact k m2.mem _ hR.clob (hI.step X hO2 (by omega)) hP
+
+/-- A call of `time::rfc3339` from `valid_for`, with the result at
+`F + 0x10`. -/
+theorem TvfCtx.callRfc (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {Q : Post}
+    {off : Nat} {hi lo q : Word} {l : Nat}
+    (h1 : fetchRel trustedRootValidForCode off = some (.auipc ra hi, 4))
+    (h2 : fetchRel trustedRootValidForCode (off + 4) = some (.jalr ra ra lo, 4))
+    (htgt : (TVF + BitVec.ofNat 32 off + hi + lo) &&& ~~~1 = RFC)
+    (hev : (TVF + BitVec.ofNat 32 (off + 8)) &&& ~~~1 = TVF + BitVec.ofNat 32 (off + 8))
+    (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
+    (ha0 : f a0 = F + 0x10) (ha1 : f a1 = q) (ha2 : f a2 = BitVec.ofNat 32 l)
+    (hqw : q.toNat + l + 4 ≤ 0x40000000) (hqG : Sep q (l + 4) G 0x144)
+    (k : ∀ (M' : Word → BitVec 8) (f' : Fin 32 → Word), TvfRegs F out p n g0 f' → TvfMemInv M0 G F g0 M' →
+      (∀ t, rfc3339 (memBytes M q l) = some t → t < 2 ^ 64 ∧ M' (F + 0x10) = 0 ∧
+        memLoad32 M' (F + 0x18) = BitVec.ofNat 32 (t % 2 ^ 32) ∧
+        memLoad32 M' (F + 0x1C) = BitVec.ofNat 32 (t / 2 ^ 32)) →
+      (rfc3339 (memBytes M q l) = none → M' (F + 0x10) = 1 ∧ M' (F + 0x11) = 0x19) →
+      WP trustedRootValidForCode TVF Q M' (off + 8) f') :
+    WP trustedRootValidForCode TVF Q M off f := by
+  have C := X.code.out hI.1 X.gw X.ro
+  have gw := X.gw
+  have fn := X.fn
+  have e10 : F + 0x10 = G + BitVec.ofNat 32 0x114 := X.fGc 0x10 0x114 rfl
+  have eH : F + 0xFFFFFF70 = G + BitVec.ofNat 32 0x74 := by rw [← X.fg, BitVec.add_assoc]; rfl
+  have e18 : F + 0x10 + 8 = F + 0x18 := by rw [BitVec.add_assoc]; rfl
+  have e1C : F + 0x10 + 0xC = F + 0x1C := by rw [BitVec.add_assoc]; rfl
+  have e11 : F + 0x10 + 1 = F + 0x11 := by rw [BitVec.add_assoc]; rfl
+  have hg74 : (G + BitVec.ofNat 32 0x74).toNat = G.toNat + 0x74 := X.gc (by decide)
+  refine WP.trCallSaved (tb := RFC)
+    (P := fun m2 => (∀ t, rfc3339 (memBytes M q l) = some t → t < 2 ^ 64 ∧ m2.mem (F + 0x10) = 0 ∧
+        memLoad32 m2.mem (F + 0x18) = BitVec.ofNat 32 (t % 2 ^ 32) ∧
+        memLoad32 m2.mem (F + 0x1C) = BitVec.ofNat 32 (t / 2 ^ 32)) ∧
+      (rfc3339 (memBytes M q l) = none → m2.mem (F + 0x10) = 1 ∧ m2.mem (F + 0x11) = 0x19) ∧
+      ∀ x, Sep (G + BitVec.ofNat 32 0x74) 0x90 x 1 → Sep (F + 0x10) 16 x 1 → m2.mem x = M x)
+    h1 h2 htgt (fun m1 hpc1 hmem1 hreg1 _ => ?_) (fun m2 hP hcd => ?_) (fun m2 hP => ?_)
+  · obtain ⟨m2, c2, pc2, sp2, keep2, ok2, err2, fr2⟩ := timeRfc3339_correct m1 (sp0 := F) (out := F + 0x10) (p := q)
+      (n := l) (retAddr := TVF + BitVec.ofNat 32 (off + 8)) (by rw [hmem1]; exact C.rfc) (by rw [hmem1]; exact C.dt)
+      (by rw [hmem1]; exact C.td) (by rw [hmem1]; exact C.td4) (by rw [hmem1]; exact C.aad) hpc1
+      (by rw [hreg1]; trsimp; exact ha0) (by rw [hreg1]; trsimp; exact ha1) (by rw [hreg1]; trsimp; exact ha2)
+      (by rw [hreg1]; trsimp) hev (by rw [hreg1]; trsimp; exact hR.2.1) X.fa (by omega) (by omega)
+      (by rw [e10, X.gc (by decide)]; omega) (by rw [e10]; exact aligned_add X.ga (by decide)) hqw
+      (by rw [e10, eH]; exact sep_offsets G (Or.inr (by decide)) (by decide) (by decide))
+      (by rw [eH]; exact hqG.subR (by decide))
+    rw [hmem1, e18, e1C] at ok2
+    rw [hmem1, e11] at err2
+    rw [hmem1, eH] at fr2
+    refine ⟨m2, c2, pc2, ⟨ok2, err2, fr2⟩, ?_, fun q hq => keep2 q hq⟩
+    rw [sp2, hreg1]; trsimp; exact hR.2.1.symm
+  · exact hcd.hi (fun x hx => hP.2.2 x (lowSep (by omega) hx (by have := x.isLt; omega))
+      (lowSep (by rw [e10, X.gc (by decide)]; omega) hx (by have := x.isLt; omega))) (by decide) (by decide)
+  · have hO : Out M m2.mem (G + BitVec.ofNat 32 0x74) 0xB0 := fun x hx => by
+      refine hP.2.2 x (trSepR hx (by decide)).symm ?_
+      have e : G + BitVec.ofNat 32 0x74 + BitVec.ofNat 32 0xA0 = F + 0x10 := by rw [add_ofNat_assoc, e10]
+      have := sep_in hx (d := 0xA0) (l := 16) (by decide)
+      rw [e] at this; exact this.symm
+    exact k m2.mem _ hR.clob (hI.step X hO (by decide)) hP.1 hP.2.1
+
+end
+
 end C3.RV32
