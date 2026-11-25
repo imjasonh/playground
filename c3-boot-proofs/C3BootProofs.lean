@@ -454,3 +454,5 @@ import C3BootProofs.Proofs.SvClmiss
 import C3BootProofs.Proofs.SvClhit
 import C3BootProofs.Proofs.SvClend
 import C3BootProofs.Proofs.SvCs1
+import C3BootProofs.Proofs.SvEd
+import C3BootProofs.Proofs.SvCs

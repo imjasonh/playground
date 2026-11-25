@@ -32,12 +32,10 @@ import C3BootProofs.Proofs.SvCosigLoop
 import C3BootProofs.Proofs.SvCr1
 import C3BootProofs.Proofs.SvCr1e
 import C3BootProofs.Proofs.SvCr1n
-import C3BootProofs.Proofs.SvCs
 import C3BootProofs.Proofs.SvCsa
 import C3BootProofs.Proofs.SvCsx
 import C3BootProofs.Proofs.SvD
 import C3BootProofs.Proofs.SvDbc2m
-import C3BootProofs.Proofs.SvEd
 import C3BootProofs.Proofs.SvEdImage
 import C3BootProofs.Proofs.SvEkuLoop
 import C3BootProofs.Proofs.SvEntry
