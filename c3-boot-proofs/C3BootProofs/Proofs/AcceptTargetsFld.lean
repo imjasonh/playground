@@ -19,10 +19,6 @@ bytes at `B + c0`. -/
 def ActKp (B : Word) (c0 n0 : Nat) (M M' : Word → BitVec 8) : Prop :=
   ∀ x, Sep x 1 B 0x3A50 → Sep x 1 (B + BitVec.ofNat 32 c0) n0 → M' x = M x
 
-theorem act_slice2 (v : Bytes) {a b c d : Nat} (h : c + d ≤ b) : slice (slice v a b) c d = slice v (a + c) d := by
-  unfold slice
-  rw [List.drop_take, List.take_take, Nat.min_eq_left (by omega), List.drop_drop]
-
 theorem act_toNat_add {p : Word} {a : Nat} (h : p.toNat + a < 2 ^ 32) : (p + BitVec.ofNat 32 a).toNat = p.toNat + a := by
   rw [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := a) (by omega)]; exact Nat.mod_eq_of_lt h
 
