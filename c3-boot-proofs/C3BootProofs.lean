@@ -623,6 +623,10 @@ import C3BootProofs.Proofs.AcceptExtractTail
 import C3BootProofs.Proofs.AcceptExtractErr
 import C3BootProofs.Proofs.AcceptExtractHeadLib
 import C3BootProofs.Proofs.AcceptExtractHead
+import C3BootProofs.Proofs.AcceptExtractDupLib
+import C3BootProofs.Proofs.AcceptExtractDupN
+import C3BootProofs.Proofs.AcceptExtractDupK
+import C3BootProofs.Proofs.AcceptExtractDup
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs

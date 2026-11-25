@@ -266,6 +266,7 @@ import C3BootProofs.Proofs.AcceptExtractTail
 import C3BootProofs.Proofs.AcceptExtractErr
 import C3BootProofs.Proofs.AcceptExtractHeadLib
 import C3BootProofs.Proofs.AcceptExtractHead
+import C3BootProofs.Proofs.AcceptExtractDup
 
 /-!
 # Audit
@@ -9968,6 +9969,27 @@ end C3
 
 /-- info: 'C3.RV32.Ac.ace_head' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ace_head
+
+/-- info: 'C3.RV32.Ac.acedp_distinct_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acedp_distinct_iff
+
+/-- info: 'C3.RV32.Ac.acedp_nCheck' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acedp_nCheck
+
+/-- info: 'C3.RV32.Ac.acedp_kCheck' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acedp_kCheck
+
+/-- info: 'C3.RV32.Ac.acedp_cmpN' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acedp_cmpN
+
+/-- info: 'C3.RV32.Ac.acedp_cmp97' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acedp_cmp97
+
+/-- info: 'C3.RV32.Ac.acedp_cmp32' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acedp_cmp32
+
+/-- info: 'C3.RV32.Ac.ace_dup' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_dup
 
 /-- info: 'C3.RV32.Ac.ac_extract_loops' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ac_extract_loops
