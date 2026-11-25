@@ -40,4 +40,47 @@ theorem memcpyModel_idempotent (dst src : Nat → UInt8) (n k : Nat) :
   unfold memcpyModel
   split <;> rfl
 
+/-- `memcmp(a, b, n)`: returns `0` iff `a[k] = b[k]` for all `k < n`,
+    otherwise the signed difference at the first mismatching byte. -/
+def memcmpModel (a b : Nat → UInt8) : Nat → Int
+  | 0 => 0
+  | n + 1 =>
+    let prev := memcmpModel a b n
+    if prev ≠ 0 then prev
+    else (a n).toNat - (b n).toNat
+
+theorem memcmpModel_self (a : Nat → UInt8) (n : Nat) :
+    memcmpModel a a n = 0 := by
+  induction n with
+  | zero => rfl
+  | succ n ih =>
+    simp [memcmpModel, ih]
+
+theorem memcmpModel_eq_zero_iff (a b : Nat → UInt8) (n : Nat) :
+    memcmpModel a b n = 0 ↔ ∀ k, k < n → a k = b k := by
+  induction n with
+  | zero => simp [memcmpModel]
+  | succ n ih =>
+    simp only [memcmpModel]
+    split
+    · rename_i hne
+      constructor
+      · intro h; exact absurd h hne
+      · intro hall
+        have hprev : memcmpModel a b n = 0 := ih.mpr (fun k hk => hall k (Nat.lt_succ_of_lt hk))
+        exact absurd hprev hne
+    · rename_i heq
+      have hprev : memcmpModel a b n = 0 := Classical.byContradiction (fun h => heq h)
+      have hall_prev := ih.mp hprev
+      constructor
+      · intro hdiff k hk
+        rcases Nat.lt_succ_iff_lt_or_eq.mp hk with hklt | hk_eq
+        · exact hall_prev k hklt
+        · subst hk_eq
+          have hnat : (a k).toNat = (b k).toNat := by omega
+          exact UInt8.eq_of_toBitVec_eq (BitVec.eq_of_toNat_eq hnat)
+      · intro hall
+        have hlast := hall n (Nat.lt_succ_self n)
+        simp [hlast]
+
 end Esp32c3Rom.Mem

@@ -55,4 +55,39 @@ theorem scalarMul_one {Point : Type} (G : EcGroup Point) (P : Point) :
     scalarMul G 1 P = P := by
   simp [scalarMul, G.add_zero]
 
+/-- `ets_emsa_pss_verify`: checks trailer byte `0xBC` and maskedDB/hash consistency. -/
+def etsEmsaPssVerify (em : List UInt8) (hLen sLen : Nat) (checkSalt : List UInt8 → Bool) : Bool :=
+  match em.getLast? with
+  | some 0xBC => decide (em.length ≥ hLen + sLen + 2) && checkSalt em
+  | _ => false
+
+theorem etsEmsaPssVerify_trailer (em : List UInt8) (hLen sLen : Nat) (checkSalt : List UInt8 → Bool)
+    (h : etsEmsaPssVerify em hLen sLen checkSalt = true) :
+    em.getLast? = some 0xBC ∧ em.length ≥ hLen + sLen + 2 := by
+  unfold etsEmsaPssVerify at h
+  cases hlast : em.getLast? with
+  | none => simp [hlast] at h
+  | some b =>
+    by_cases hbc : b = 0xBC
+    · subst hbc
+      simp only [hlast, Bool.and_eq_true, decide_eq_true_eq] at h
+      exact ⟨rfl, h.1⟩
+    · exfalso
+      simp [hlast, hbc] at h
+
+/-- Abstract state for `ets_bigint_{enable,disable,modexp,wait_finish,getz}` MMIO wrapper. -/
+structure BigintState where
+  enabled : Bool
+  busy : Bool
+  z : Nat
+
+def bigintEnable (s : BigintState) : BigintState := { s with enabled := true }
+def bigintDisable (s : BigintState) : BigintState := { s with enabled := false, busy := false }
+def bigintModexp (s : BigintState) (base exp mod : Nat) : BigintState :=
+  if s.enabled then { s with busy := false, z := modPow base exp mod } else s
+
+theorem bigintModexp_getz (s : BigintState) (base exp mod : Nat) :
+    (bigintModexp (bigintEnable s) base exp mod).z = modPow base exp mod := by
+  rfl
+
 end Esp32c3Rom.Crypto
