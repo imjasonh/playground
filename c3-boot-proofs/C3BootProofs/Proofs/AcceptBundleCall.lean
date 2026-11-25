@@ -603,7 +603,7 @@ theorem acb_cpy {n : Machine} {B : Word}
     (ra0 : reg n a0 = acSlot B 0x1875) (ra1 : reg n a1 = acSlot B 0xDD0) (ra2 : reg n a2 = 0x423)
     (hra : reg n ra = AC + BitVec.ofNat 32 0x1812 + 0x15000) :
     ∃ n', Steps n n' ∧ St n'.mem AC n' 0x181A (reg n') ∧
-      (∀ x : Fin 32, x.val ∉ [1, 2, 5, 6, 7, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30] → reg n' x = reg n x) ∧
+      (∀ x : Fin 32, x.val ∉ [1, 5, 6, 7, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30] → reg n' x = reg n x) ∧
       (∀ x, Sep (B + BitVec.ofNat 32 0x3A40) 16 x 1 →
         n'.mem x = copyBytes n.mem (acSlot B 0x1875) (acSlot B 0xDD0) 0x423 x) := by
   have hz := s.zero

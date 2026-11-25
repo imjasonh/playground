@@ -275,6 +275,116 @@ theorem acb_chk {B : Word} {n0 n : Machine} {o o1 o2 o3 o4 : Nat} {bimm c : Word
     refine acb_pre (.cons c1 (.cons c2 (.cons c3 (.cons c4 (.refl _))))) (acb_ret K4 ⟨⟨s4.pc, rfl, fun _ => rfl⟩,
       by rw [s4.mem], fun x hx => by rw [s4.regs, ← rk x hx, s3.regs], hp⟩)
 
+/-- From the copy of the root's keys to the call of `Reader::magic`. -/
+def acbI : List BInstr :=
+  [.lui a0 0x3FCC6000, .aluImm .add a0 a0 0x621, .aluImm .add a1 x0 0x2B, .lui a2 0x1000,
+   .aluImm .add a2 a2 0x310, .alu .add a2 a2 sp, .sw a2 a0 0x560, .sb a2 a1 0x564, .aluImm .add a0 sp 0x7FF,
+   .aluImm .add a0 a0 0x91, .lw a1 sp 0x34, .sw a0 a1 0x540, .lw a1 sp 0x38, .sw a0 a1 0x544, .sw a0 x0 0x548,
+   .lui a1 0x4E423000, .aluImm .add a1 a1 0x343, .aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x5D1]
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 4000000 in
+theorem acbI_end : blockEnd bootMainClosure0Code 0x181A acbI = some 0x185E := by decide
+
+/-- What the stage needs at 0x1816: the bundle part's pointer and length at
+`sp + 0x34` and `sp + 0x38`, and the arguments of the copy of the root's
+keys. -/
+structure AcBundlePre (B Bf : Word) (L : Nat) (n : Machine) : Prop where
+  bf : memLoad32 n.mem (acSlot B 0x34) = Bf
+  len : memLoad32 n.mem (acSlot B 0x38) = BitVec.ofNat 32 L
+  hL : L ≤ 0x4000
+  sv : Sv.SvIn (B + 0x13F0) Bf 0x4000
+  a0 : reg n a0 = acSlot B 0x1875
+  a1 : reg n a1 = acSlot B 0xDD0
+  a2 : reg n a2 = 0x423
+  ra : reg n ra = AC + BitVec.ofNat 32 0x1812 + 0x15000
+
+theorem acb_cm (k B : Word) (c : Nat) : k + (B + BitVec.ofNat 32 c) = B + BitVec.ofNat 32 c + k :=
+  BitVec.add_comm _ _
+
+theorem acb_lst {M : Word → BitVec 8} {B v : Word} {c d : Nat} (h : c + 4 ≤ d ∨ d + 4 ≤ c)
+    (hc : c + 4 ≤ 2 ^ 32) (hd : d + 4 ≤ 2 ^ 32) :
+    memLoad32 (memStore32 M (B + BitVec.ofNat 32 c) v) (B + BitVec.ofNat 32 d) =
+      memLoad32 M (B + BitVec.ofNat 32 d) :=
+  memLoad32_store32_sep (sep_offsets B h hc hd)
+
+theorem acb_lsb {M : Word → BitVec 8} {B : Word} {v : BitVec 8} {c d : Nat} (h : c + 1 ≤ d ∨ d + 4 ≤ c)
+    (hc : c + 1 ≤ 2 ^ 32) (hd : d + 4 ≤ 2 ^ 32) :
+    memLoad32 (memStore8 M (B + BitVec.ofNat 32 c) v) (B + BitVec.ofNat 32 d) =
+      memLoad32 M (B + BitVec.ofNat 32 d) :=
+  memLoad32_store8_sep (sep_offsets B h hc hd)
+
+theorem acb_ldC {M M' : Word → BitVec 8} {B : Word}
+    (h : ∀ x, Sep (B + BitVec.ofNat 32 0x3A40) 16 x 1 →
+      M' x = copyBytes M (acSlot B 0x1875) (acSlot B 0xDD0) 0x423 x)
+    {c : Nat} (h1 : 0x3A50 ≤ c) (h2 : c + 4 ≤ 0x52C5) :
+    memLoad32 M' (B + BitVec.ofNat 32 c) = memLoad32 M (B + BitVec.ofNat 32 c) :=
+  memLoad32_congr fun j hj => by
+    rw [add_ofNat_assoc, h _ (sep_offsets B (by omega) (by decide) (by omega)),
+      copyBytes_sep (sep_offsets B (n := 0x423) (c := 0x3A50 + 0x1875) (by omega) (by decide) (by omega))
+        (Nat.le_refl _)]
+
+theorem acb_hiC {M M' : Word → BitVec 8} {B : Word} (F : Fr B 0x5A70)
+    (h : ∀ x, Sep (B + BitVec.ofNat 32 0x3A40) 16 x 1 →
+      M' x = copyBytes M (acSlot B 0x1875) (acSlot B 0xDD0) 0x423 x) :
+    ∀ x : Word, 0x40000000 ≤ x.toNat → M' x = M x := fun x hx => by
+  rw [h x (F.hiOut (by decide) hx), copyBytes_sep (F.hiOut (c := 0x3A50 + 0x1875) (by decide) hx) (Nat.le_refl _)]
+
+set_option hygiene false in
+/-- Closes a block's alignment and code-separation conditions in the frame `F`. -/
+macro "acb_ok" : tactic => `(tactic| all_goals first
+  | exact acb_al F _ (by decide) (by decide)
+  | exact acb_stackCode F (by decide) (by decide) (by decide))
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 4000000 in
+/-- From 0x1816 to the call of `Reader::magic`: copy the root's keys, store
+the root's header, and set up the reader over the bundle part. -/
+theorem acb_init {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {L : Nat} {n0 : Machine}
+    (G : AcbG B Bf g t r v M0 L n0) (s : St n0.mem AC n0 0x1816 (reg n0)) (P : AcBundlePre B Bf L n0) :
+    ∃ n, Steps n0 n ∧ AcbK B n0 n ∧ St n.mem AC n 0x185E (reg n) ∧ reg n a0 = acSlot B 0xDD0 ∧
+      reg n a1 = 0x4E423343 ∧ AcbRd B Bf L 0 n.mem := by
+  have F := G.Y.fr
+  obtain ⟨n1, c1, s1, rg1, mem1⟩ := acb_cpy s G.C G.E F G.I.sp P.a0 P.a1 P.a2 P.ra
+  have rsp1 : reg n1 sp = B + BitVec.ofNat 32 0x3A50 := by rw [rg1 sp (by decide)]; exact G.I.sp
+  have hz := s1.zero
+  have C1 : CodeIn n1.mem AC bootMainClosure0Code := acb_codeHi G.C (by decide) (by decide) (acb_hiC F mem1)
+  obtain ⟨n2, c2, u2⟩ := s1.block acbI C1 acbI_end (by
+    simp only [BlockOk, BInstr.ok, BInstr.run, acbI]; simp +decide only [upd, ↓reduceIte, true_and, and_true]
+    rw [rsp1]
+    simp (disch := decide) only [aluEval, acb_cm, Dq.frame_lit, BitVec.reduceToNat, Nat.reduceAdd,
+      BitVec.reduceAdd]
+    repeat' apply And.intro
+    acb_ok)
+  have hb : memLoad32 n1.mem (B + BitVec.ofNat 32 0x3A84) = Bf :=
+    (acb_ldC mem1 (by decide) (by decide)).trans P.bf
+  have hl : memLoad32 n1.mem (B + BitVec.ofNat 32 0x3A88) = BitVec.ofNat 32 L :=
+    (acb_ldC mem1 (by decide) (by decide)).trans P.len
+  have m2 : n2.mem = memStore32 (memStore32 (memStore32 (memStore8 (memStore32 n1.mem (acSlot B 0x1870)
+      0x3FCC6621) (acSlot B 0x1874) 0x2B) (acSlot B 0xDD0) Bf) (acSlot B 0xDD4) (BitVec.ofNat 32 L))
+      (acSlot B 0xDD8) 0 := by
+    rw [u2.mem]; simp only [runBlock, BInstr.run, acbI]; simp +decide only [upd, ↓reduceIte]; rw [rsp1]
+    simp (disch := decide) only [acSlot, aluEval, acb_cm, Dq.frame_lit, BitVec.reduceToNat, Nat.reduceAdd,
+      BitVec.reduceAdd, acb_lst, acb_lsb, hb, hl]
+    rfl
+  have g : ∀ q, reg n2 q = (runBlock acbI (n1.mem, reg n1)).2 q := fun q => by rw [u2.regs]
+  have rk : ∀ q : Fin 32, q.val ∈ [2, 3, 4] → reg n2 q = reg n1 q := fun q hq => by
+    rw [g, runBlock_reg _ _ _ q hz (by simp only [acbI]; revert hq; revert q; decide)]
+  have K2 : AcbK B n0 n2 := ⟨by rw [rk sp (by decide)]; exact rsp1, by rw [rk 3 (by decide), rg1 3 (by decide)],
+    by rw [rk 4 (by decide), rg1 4 (by decide)], fun x hx => by
+      rw [m2, memStore32_get_sep (a := acSlot B 0xDD8) (acb_sep hx (p := (0x4820, 0xC)) (by decide) (by decide) (by decide)),
+        memStore32_get_sep (a := acSlot B 0xDD4) (acb_sep hx (p := (0x4820, 0xC)) (by decide) (by decide) (by decide)),
+        memStore32_get_sep (a := acSlot B 0xDD0) (acb_sep hx (p := (0x4820, 0xC)) (by decide) (by decide) (by decide))]
+      unfold acbMi
+      exact acb_st8 (acb_st32 (mem1 x (acb_sep hx (p := (0, 0x3A50)) (by decide) (by decide) (by decide))))⟩
+  refine ⟨n2, c1.trans c2, K2, ⟨u2.pc, rfl, fun _ => rfl⟩, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [g]; simp +decide only [runBlock, BInstr.run, acbI, upd, ↓reduceIte]; rw [rsp1]
+    simp (disch := decide) only [acSlot, aluEval, Dq.frame_lit, BitVec.reduceToNat, Nat.reduceAdd]
+  · rw [g]; simp +decide only [runBlock, BInstr.run, acbI, upd, ↓reduceIte, aluEval]
+  · rw [m2]; simp (disch := decide) only [acSlot, Nat.reduceAdd, acb_lst, memLoad32_store32_same]
+  · rw [m2]; simp (disch := decide) only [acSlot, Nat.reduceAdd, acb_lst, memLoad32_store32_same]
+  · rw [m2]; simp (disch := decide) only [acSlot, Nat.reduceAdd, memLoad32_store32_same]; rfl
+
 #exit
 
 end C3.RV32.Ac
