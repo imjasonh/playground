@@ -623,6 +623,11 @@ import C3BootProofs.Proofs.AcceptExtractTail
 import C3BootProofs.Proofs.AcceptExtractErr
 import C3BootProofs.Proofs.AcceptExtractHeadLib
 import C3BootProofs.Proofs.AcceptExtractHead
+import C3BootProofs.Proofs.AcceptBundleLib
+import C3BootProofs.Proofs.AcceptBundleCall
+import C3BootProofs.Proofs.AcceptBundleSteps
+import C3BootProofs.Proofs.AcceptBundleSegs
+import C3BootProofs.Proofs.AcceptBundle
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
