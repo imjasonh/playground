@@ -9717,8 +9717,9 @@ def dataWindowAddress : Nat := 0x3fcc4060
 /-- The data window's size in bytes. -/
 def dataWindowSize : Nat := 0xe80
 
-/-- The start of the read-only window: all the data the proofs name, rounded
-down to 0x1000 bytes and up to 0x400. -/
+/-- The start of the read-only window: all the data the proofs name except
+the pinned root and the policy's strings, rounded down to 0x1000 bytes and
+up to 0x400. -/
 def roWindowAddress : Nat := 0x3fcc4000
 
 /-- The read-only window's size in bytes. -/

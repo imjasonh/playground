@@ -482,8 +482,11 @@ DATA_EXTRA8 = [
 # The jump table that `boot_main`'s first closure indexes with a rejection
 # code from 0x20 to 0x26, the keys it looks up in `targets.json`, the hex
 # digits it writes `trusted_root.json`'s digest in, the keys and values it
-# compares in `trusted_root.json` and the bundle's media type, and the
-# identity policy, written to the tenth output. Same fields as `DATA`.
+# compares in `trusted_root.json` and the bundle's media type, the identity
+# policy and its strings, the pinned root, the JSON literals that
+# `literal_end` compares, and the keys that `trusted_root::read_chain` and
+# `valid_for` look up, written to the tenth output.
+# Same fields as `DATA`.
 DATA_EXTRA9 = [
     ("acRejectTable", "bootMainClosure0", 0x7EA, 28),
     ("acTargetsKeys", "bootMainClosure0", 0x868, 42),
@@ -503,7 +506,25 @@ DATA_EXTRA9 = [
     ("acValidForKey", "bootMainClosure0", 0x1124, 8),
     ("acTsasKey", "bootMainClosure0", 0x11BE, 0x14),
     ("acPolicy", "bootMainClosure0", 0x17C6, 0x23),
+    ("acRepositoryId", "bootMainClosure0", 0x17C6, 0xA, 0x1257),
+    ("acBuildSignerUri", "bootMainClosure0", 0x17C6, 0x57, 0x1261),
+    ("acPinnedRoot", "bootMainClosure0", 0x4EA, 0x1318),
+    ("acIssuer", "bootMainClosure0", 0x181A, 0x2B),
+    ("acTrigger", "bootMainClosure0", 0x17C6, 4, 0x25FB),
+    ("acOwnerId", "bootMainClosure0", 0x17C6, 6, 0x25FF),
+    ("jsonLitTrue", "jsonLiteralEnd", 0x3E, 4),
+    ("jsonLitFalse", "jsonLiteralEnd", 0x48, 5),
+    ("jsonLitNull", "jsonLiteralEnd", 0x5A, 4),
+    ("trCertChainKey", "sigstoreVerify", 0x2C8, 9, 0x3D),
+    ("trCertsKey", "sigstoreVerify", 0x2C8, 12, 0x46),
+    ("trCurveKey", "base64EncodeTo", 0x28, 5, 0x40),
+    ("tvfStartStr", "sigstoreVerify", 0x2DE, 5, 7),
+    ("tvfEndStr", "sigstoreVerify", 0x2DE, 3, 0xC),
 ]
+
+# The pinned root and the policy's strings, which `acPolicy` points to. The
+# read-only window leaves them out.
+OUTSIDE_RO_WINDOW = {"acRepositoryId", "acBuildSignerUri", "acPinnedRoot", "acIssuer", "acTrigger", "acOwnerId"}
 
 # The data that the P-256 and P-384 proofs don't read. The data window spans
 # the rest, rounded out to 0x20 bytes, and those proofs show that the stack
@@ -512,7 +533,8 @@ OUTSIDE_DATA_WINDOW = {"svRekorLeaf", "shaK", "sha512K", "regionEnds", "regionSt
                        "acTargetsKeys", "acHexDigits", "acMediaTypeKey", "acMediaType", "acCasKey",
                        "acTlogsKey", "acPublicKeyKey", "acKeyDetailsKey", "acEd25519Value", "acRawBytesKey",
                        "acSpkiPrefix", "acBaseUrlKey", "acHttps", "acSlash", "acValidForKey", "acTsasKey",
-                       "acPolicy"}
+                       "acPolicy", "jsonLitTrue", "jsonLitFalse", "jsonLitNull", "trCertChainKey", "trCertsKey",
+                       "trCurveKey", "tvfStartStr", "tvfEndStr"} | OUTSIDE_RO_WINDOW
 
 
 def call_target(code, addr, off):
@@ -637,8 +659,9 @@ def window_lines(extracted):
     inside = [(a, n) for a, n, name in spans if name not in OUTSIDE_DATA_WINDOW]
     lo = min(a for a, _ in inside) & ~0x1F
     hi = (max(a + n for a, n in inside) + 0x1F) & ~0x1F
-    ro_lo = min(a for a, _, _ in spans) & ~0xFFF
-    ro_hi = (max(a + n for a, n, _ in spans) + 0x3FF) & ~0x3FF
+    ro = [(a, n) for a, n, name in spans if name not in OUTSIDE_RO_WINDOW]
+    ro_lo = min(a for a, _ in ro) & ~0xFFF
+    ro_hi = (max(a + n for a, n in ro) + 0x3FF) & ~0x3FF
     return [
         "",
         "/-- The start of the data window: the data that the P-256 and P-384 proofs",
@@ -648,8 +671,9 @@ def window_lines(extracted):
         "/-- The data window's size in bytes. -/",
         f"def dataWindowSize : Nat := {hi - lo:#x}",
         "",
-        "/-- The start of the read-only window: all the data the proofs name, rounded",
-        "down to 0x1000 bytes and up to 0x400. -/",
+        "/-- The start of the read-only window: all the data the proofs name except",
+        "the pinned root and the policy's strings, rounded down to 0x1000 bytes and",
+        "up to 0x400. -/",
         f"def roWindowAddress : Nat := {ro_lo:#x}",
         "",
         "/-- The read-only window's size in bytes. -/",
