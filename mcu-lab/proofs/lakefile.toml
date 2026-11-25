@@ -1,0 +1,5 @@
+name = "mcu_lab_proofs"
+defaultTargets = ["Crc32Rom"]
+
+[[lean_lib]]
+name = "Crc32Rom"
