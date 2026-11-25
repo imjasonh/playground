@@ -37,7 +37,7 @@ if [[ "${1:-}" == "--update" ]]; then
   python3 "${proofs}/scripts/extract-functions.py" "${work}/bootloader.bin" \
     target/riscv32imc-unknown-none-elf/release/c3-bootloader "${nm}" \
     "${proofs}/C3BootProofs/Image/Bootloader.lean" \
-    "${proofs}"/C3BootProofs/Image/BootloaderData{,2,3,4,5,6,7}.lean
+    "${proofs}"/C3BootProofs/Image/BootloaderData{,2,3,4,5,6,7,8}.lean
   echo "regenerated c3-boot-proofs/C3BootProofs/Image/Bootloader.lean and BootloaderData*.lean"
   # The proofs' decode lemmas, code chunks, and straight-line blocks follow
   # from those bytes.
