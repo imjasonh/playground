@@ -150,13 +150,164 @@ theorem bmt_ult {a : Word} {t : Nat} (ht : t < 2 ^ 32) (h : a.ult (BitVec.ofNat 
   rw [BitVec.ult, decide_eq_false_iff_not, BitVec.toNat_ofNat, Nat.mod_eq_of_lt ht] at h
   exact Nat.le_of_not_lt h
 
+theorem bmt_lowbyte {t : Nat} (ht : t ≤ 16) : BitVec.ofNat 32 t &&& 0xFF = BitVec.ofNat 32 t := by
+  have h : ∀ t, t < 17 → BitVec.ofNat 32 t &&& 0xFF = BitVec.ofNat 32 t := by decide
+  exact h t (by omega)
+
+theorem bmt_ult_eq (a b : Nat) (ha : a < 2 ^ 32) (hb : b < 2 ^ 32) :
+    (BitVec.ofNat 32 a).ult (BitVec.ofNat 32 b) = decide (a < b) := by
+  rw [BitVec.ult, BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb]
+
+/-- The level that `boot_main` computes for `boot`: the larger of the entry
+level and, for a confirmed slot, the slot's security version. -/
+theorem bmt_burn (sv L : Nat) (cf : Bool) (hsv : sv ≤ 16) (hL : L ≤ 16) :
+    (if (if cf = true then BitVec.ofNat 32 sv else 0 : Word).ult (BitVec.ofNat 32 L) = true then
+      BitVec.ofNat 32 L else (if cf = true then BitVec.ofNat 32 sv else 0 : Word)) =
+      BitVec.ofNat 32 (burnTarget sv cf L) := by
+  unfold burnTarget
+  cases cf
+  · simp only [Bool.false_eq_true, ite_false, Bool.false_and]
+    rw [show (0 : Word) = BitVec.ofNat 32 0 from rfl, bmt_ult_eq 0 L (by omega) (by omega)]
+    cases L with
+    | zero => rfl
+    | succ k => rfl
+  · simp only [ite_true, Bool.true_and]
+    rw [bmt_ult_eq sv L (by omega) (by omega)]
+    rcases Nat.lt_or_ge sv L with h | h
+    · simp only [show decide (sv < L) = true from decide_eq_true h,
+        show decide (L < sv) = false from decide_eq_false (Nat.not_lt.mpr (Nat.le_of_lt h)), ↓reduceIte,
+        Bool.false_eq_true]
+    · rcases Nat.lt_or_ge L sv with h' | h'
+      · simp only [show decide (sv < L) = false from decide_eq_false (Nat.not_lt.mpr h),
+          show decide (L < sv) = true from decide_eq_true h', ↓reduceIte, Bool.false_eq_true]
+      · simp only [show decide (sv < L) = false from decide_eq_false (Nat.not_lt.mpr h),
+          show decide (L < sv) = false from decide_eq_false (Nat.not_lt.mpr h'), ↓reduceIte, Bool.false_eq_true]
+        rw [Nat.le_antisymm h h']
+
+/-- The mask that `boot_main` makes from the confirmed bits `c`: all ones
+when the slot with bit `b` is confirmed, else zero. -/
+theorem bmt_mask (c p b : Nat) (hc : c < 4) (hp : p ≤ 1) (hb : b = 1 ∨ b = 2) :
+    aluEval .add (aluEval .sltu (aluEval .and (aluEval .and (BitVec.ofNat 32 (c + 256 * p))
+      (BitVec.ofNat 32 b)) 0xFF) 1) 0xFFFFFFFF = if (c &&& b != 0) = true then 0xFFFFFFFF else 0 := by
+  have hc' : c = 0 ∨ c = 1 ∨ c = 2 ∨ c = 3 := by omega
+  have hp' : p = 0 ∨ p = 1 := by omega
+  rcases hc' with rfl | rfl | rfl | rfl <;> rcases hp' with rfl | rfl <;> rcases hb with rfl | rfl <;> decide
+
+theorem bmt_mask_and (m v : Word) (cf : Bool) (hm : m = if cf = true then 0xFFFFFFFF else 0) :
+    aluEval .and m v = if cf = true then v else 0 := by
+  subst hm; cases cf
+  · exact BitVec.zero_and
+  · show (0xFFFFFFFF : Word) &&& v = v
+    rw [BitVec.and_comm]; exact and_ff32 v
+
+
+/-- `AccOk` reads only the first 0x10C bytes, so it carries over to a copy. -/
+theorem bmt_acc_move {flash : Nat → BitVec 8} {slot : Word} {mf : Manifest} {M M' : Word → BitVec 8}
+    {b b' : Word} (hA : AccOk flash slot mf M b)
+    (hc : ∀ i, i < 0x10C → M' (b' + BitVec.ofNat 32 i) = M (b + BitVec.ofNat 32 i)) : AccOk flash slot mf M' b' :=
+  fun h hd => bmt_hdr_move (hA h hd) (bmc_decode hd).1 hc
+
+/-- `boot_main`'s `max` at `off`: `bltu a0, s7` over `mv s3, a0`. -/
+theorem bmt_max {n : Machine} {off : Nat} (s : St n.mem BM n off (reg n)) (hc : CodeIn n.mem BM bootMainCode)
+    (h1 : fetchRel bootMainCode off = some (.branch .bltu a0 (23 : Fin 32) 0x6, 4))
+    (h2 : fetchRel bootMainCode (off + 4) = some (.alu .add (19 : Fin 32) x0 a0, 2)) :
+    ∃ n', Steps n n' ∧ St n'.mem BM n' (off + 6) (reg n') ∧ n'.mem = n.mem ∧
+      reg n' 19 = (if (reg n a0).ult (reg n 23) = true then reg n 19 else reg n a0) ∧
+      ∀ r, r ≠ 19 → reg n' r = reg n r := by
+  cases hb : (reg n a0).ult (reg n 23)
+  · obtain ⟨n1, e1, t1⟩ := s.notTaken hc (off + 4) h1 (ofNat_add_ofNat off 4) hb
+    obtain ⟨n2, e2, t2⟩ := t1.alu hc h2 (off' := off + 6)
+      (by rw [show (2 : Word) = BitVec.ofNat 32 2 from rfl, ofNat_add_ofNat])
+    refine ⟨n2, .cons e1 (.single e2), ⟨t2.pc, rfl, fun _ => rfl⟩, t2.mem, ?_, fun r hr => ?_⟩
+    · rw [t2.regs]; simp +decide only [upd, ↓reduceIte]
+      rw [s.zero]; exact BitVec.zero_add _
+    · rw [t2.regs, updz s.zero hr]
+  · obtain ⟨n1, e1, t1⟩ := s.taken hc (off + 6) h1 (ofNat_add_ofNat off 6) hb
+    exact ⟨n1, .single e1, ⟨t1.pc, rfl, fun _ => rfl⟩, t1.mem, by rw [t1.regs, ite_eq_left rfl],
+      fun r _ => t1.regs r⟩
+
+set_option maxHeartbeats 8000000 in
+set_option maxRecDepth 20000 in
+/-- A call at `off` to `memcpy(F + 0xB9AD, F + c, 0x120)`, with the frame
+at `F`: it copies the bytes and keeps the registers in `romKeep`. -/
+theorem bmt_copy {M0 : Word → BitVec 8} {top : Word} {R romStack stack0 : Nat} {romBase : Word}
+    {romCode : List Nat} (C : BmEnv M0 top R romStack stack0 romBase romCode) {n : Machine} {F : Word}
+    {off c : Nat} {imm o : Word} (s : St n.mem BM n off (reg n)) (hsp : reg n sp = F)
+    (hF : F.toNat + 0xBE80 = top.toNat)
+    (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
+    (hc1 : 0xBACD ≤ c) (hc2 : c + 0x120 ≤ 0xBE80)
+    (ha0 : reg n a0 = F + BitVec.ofNat 32 0xB9AD) (ha1 : reg n a1 = F + BitVec.ofNat 32 c)
+    (ha2 : reg n a2 = BitVec.ofNat 32 0x120)
+    (h1 : fetchRel bootMainCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel bootMainCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : BM + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 memcpyStubAddress)
+    (he8 : (BM + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0) :
+    ∃ n', Steps n n' ∧ St n'.mem BM n' (off + 8) (reg n') ∧ (∀ q, romKeep q = true → reg n' q = reg n q) ∧
+      BmKeep M0 n'.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) ∧
+      (∀ i, i < 0x120 → n'.mem (F + BitVec.ofNat 32 0xB9AD + BitVec.ofNat 32 i) =
+        n.mem (F + BitVec.ofNat 32 c + BitVec.ofNat 32 i)) ∧
+      ∀ x, Sep (F + 0xFFFFFFF0) 16 x 1 → Sep (F + BitVec.ofNat 32 0xB9AD) 0x120 x 1 → n'.mem x = n.mem x := by
+  have hlo := C.hlo; have hhi := C.hhi; have h16 := C.hsp
+  have hKv : bmK R romStack stack0 = 0xBE80 + 0x150 + R + romStack + stack0 := rfl
+  have hbp : bmPtr.toNat = 0x3FCDFFF0 := rfl
+  rw [hbp] at hhi
+  have eF : ∀ c : Nat, c ≤ 0xBE80 → (F + BitVec.ofNat 32 c).toNat = F.toNat + c := fun c hc => by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := c) (by omega), Nat.mod_eq_of_lt (by omega)]
+  have hiM : ∀ x : Word, 0x40000000 ≤ x.toNat → n.mem x = M0 x := hK.hiOf C
+  have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
+  obtain ⟨n2, c2, pc2, mem2, regs2⟩ := s.callRa (cb := BitVec.ofNat 32 memcpyStubAddress) hc h1 h2 hb (by decide)
+  have r2 := PEnv.reg1 regs2 s.zero
+  have sp2 : reg n2 sp = F := by rw [r2 _ (by decide), hsp]
+  have hFm : (F + 0xFFFFFFF0).toNat = F.toNat - 16 := by
+    rw [BitVec.toNat_add, show (0xFFFFFFF0 : Word).toNat = 2 ^ 32 - 16 from rfl]; rw [hKv] at hlo; omega
+  have hst8 : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = (img% memcpyBodyAddress) := by decide
+  have hiS : ∀ x : Word, 0x40000000 ≤ x.toNat → n2.mem x = M0 x := fun x hx => by rw [mem2]; exact hiM x hx
+  rw [hKv] at hlo
+  obtain ⟨n3, c3, pc3, sp3, _, f3, k3⟩ := memcpy_correct n2 (BitVec.ofNat 32 memcpyStubAddress)
+    (BM + BitVec.ofNat 32 (off + 8)) (F + BitVec.ofNat 32 0xB9AD) (F + BitVec.ofNat 32 c) 0x120
+    (fun i hi => (C.stub.hi hiS (by decide) (by decide)) i hi) (by decide) pc2
+    (by rw [r2 _ (by decide), ha0]) (by rw [r2 _ (by decide), ha1]) (by rw [r2 _ (by decide), ha2])
+    (by rw [regs2]; simp +decide [upd]) (even_clear _ he8)
+    (by
+      rw [sp2]
+      exact { code := C.body.hi hiS (by rw [hst8]; decide) (by rw [hst8]; decide)
+              hDC := sep_of_le (by rw [eF _ (by decide), hst8]; omega) (by rw [hst8]; decide)
+              hFC := sep_of_le (by rw [hFm, hst8]; omega) (by rw [hst8]; decide)
+              hdF := (sep_of_le (by rw [hFm, eF _ (by decide)]; omega) (by rw [eF _ (by decide)]; omega)).symm
+              hsF := (sep_of_le (by rw [hFm, eF _ (by omega)]; omega) (by rw [eF _ (by omega)]; omega)).symm
+              hsep := sep_of_le (by rw [eF _ (by decide), eF _ (by omega)]; omega)
+                (by rw [eF _ (by omega)]; omega)
+              hF := by rw [hFm]; omega
+              hFw := by rw [hFm]; omega
+              hdw := by rw [eF _ (by decide)]; omega
+              hsw := by rw [eF _ (by omega)]; omega })
+  rw [sp2] at f3 sp3
+  have out3 : ∀ x, Sep (F + 0xFFFFFFF0) 16 x 1 → Sep (F + BitVec.ofNat 32 0xB9AD) 0x120 x 1 → n3.mem x = n.mem x :=
+    fun x h1 h2 => by rw [f3 x h1, copyBytes_sep h2 (Nat.le_refl _), mem2]
+  refine ⟨n3, c2.trans c3, ⟨by rw [pc3], rfl, fun _ => rfl⟩, fun q hq => ?_, hK.step fun x hx => ?_,
+    fun i hi => ?_, out3⟩
+  · by_cases hqs : q = sp
+    · rw [hqs, sp3, hsp]
+    · have hne : ∀ q : Fin 32, romKeep q = true → q ≠ sp → q ≠ a1 ∧ q ≠ a2 ∧ q ≠ a3 ∧ q ≠ a4 ∧ q ≠ a5 ∧
+          q ≠ a6 ∧ q ≠ a7 ∧ q ≠ t0 ∧ q ≠ t1 ∧ q ≠ (7 : Fin 32) ∧ q ≠ (28 : Fin 32) ∧ q ≠ (29 : Fin 32) ∧
+          q ≠ (30 : Fin 32) ∧ q ≠ ra := by decide
+      obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14⟩ := hne q hq hqs
+      rw [k3 q d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13 hqs, r2 q d14]
+  · have hW : (top - BitVec.ofNat 32 (bmK R romStack stack0)).toNat = top.toNat - bmK R romStack stack0 := by
+      rw [BitVec.toNat_sub, BitVec.toNat_ofNat, hKv]; omega
+    exact out3 x (bmt_sep_in hx (by rw [hFm, hW, hKv]; omega) (by rw [hFm, hW, hKv]; omega))
+      (bmt_sep_in hx (by rw [eF _ (by decide), hW, hKv]; omega) (by rw [eF _ (by decide), hW, hKv]; omega))
+  · rw [f3 _ (by
+      rw [add_ofNat_assoc]
+      exact sep_of_le (by rw [hFm, eF _ (by omega)]; omega) (by rw [eF _ (by omega)]; omega)),
+      cb_in hi (by decide), mem2]
+
 /-! ## From 0x348 to the jump -/
 
 set_option maxHeartbeats 16000000 in
 set_option maxRecDepth 20000 in
 /-- **`boot_main` from 0x348.** With the frame at `F`, the chosen slot's
-`Accepted` bytes at `F + 0xB9AD`, the slot in bit 0 of `s1`, the target in
-the low byte of `s3`, the image's flash address in `s2`, and the entry level
+`Accepted` bytes at `F + 0xB9AD`, the slot in `s1`, the target in `s3`, the image's flash address in `s2`, and the entry level
 in `s7`, `boot_main` copies the bytes to `bmAcc top` and calls `boot`, which
 jumps into the slot or panics. -/
 theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
@@ -170,8 +321,8 @@ theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
     (hD : (bmDecision flash pinned policy M0).outcome = .boot slot target)
     (hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t))
     (hAcc : AccOk flash (BitVec.ofNat 32 (bmSlotNum slot)) mf n.mem (F + BitVec.ofNat 32 0xB9AD))
-    (h9 : reg n 9 &&& 1 = BitVec.ofNat 32 (bmSlotNum slot))
-    (h19 : reg n 19 &&& 0xFF = BitVec.ofNat 32 target) (htg : target ≤ 16)
+    (h9 : reg n 9 = BitVec.ofNat 32 (bmSlotNum slot))
+    (h19 : reg n 19 = BitVec.ofNat 32 target) (htg : target ≤ 16)
     (h18 : reg n 18 = BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset))
     (h23 : reg n 23 = btPop (memLoad32 M0 efuseRd)) :
     BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
@@ -259,10 +410,10 @@ theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
   have t4 : St n4.mem BM n4 0x37A (reg n4) := ⟨u4.pc, rfl, fun _ => rfl⟩
   have a0_4 : reg n4 a0 = BitVec.ofNat 32 (bmSlotNum slot) := by
     rw [r4]; simp +decide only [runBlock, BInstr.run, bmB37, upd, ↓reduceIte]
-    rw [k3' 9 (.inl rfl)]; exact h9
+    rw [k3' 9 (.inl rfl), h9]; cases slot <;> rfl
   have a3_4 : reg n4 a3 = BitVec.ofNat 32 target := by
     rw [r4]; simp +decide only [runBlock, BInstr.run, bmB37, upd, ↓reduceIte]
-    rw [k3' 19 (.inr (.inr (.inl rfl)))]; exact h19
+    rw [k3' 19 (.inr (.inr (.inl rfl))), h19]; exact bmt_lowbyte htg
   have a1_4 : reg n4 a1 = F + BitVec.ofNat 32 0xBAD0 := by
     rw [r4]; simp +decide only [runBlock, BInstr.run, bmB37, upd, ↓reduceIte]
     rw [sp3]; exact BitVec.add_comm _ _
