@@ -53,6 +53,55 @@ theorem acs_code_sep {G c : Word} {n l : Nat} (hG : G.toNat + n ≤ 0x40000000) 
     (hl : c.toNat + l ≤ 2 ^ 32) : Sep G n c l :=
   sep_of_le (by omega) hl
 
+theorem acs_flash_lt (flash : Nat → BitVec 8) (a l : Nat) : Lt256 (flashBytes flash a l) := by
+  intro x hx
+  obtain ⟨i, -, rfl⟩ := List.mem_map.mp hx
+  exact BitVec.isLt _
+
+theorem acs_docs_lt {flash : Nat → BitVec 8} {M : Word → BitVec 8} {B start : Word} {docs : List Bytes}
+    (h : AcoDocs flash M B start docs) : ∀ d ∈ docs, Lt256 d := by
+  intro d hd
+  obtain ⟨j, hj, rfl⟩ := List.getElem_of_mem hd
+  obtain ⟨o, l, -, hf⟩ := h j hj
+  rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hj, Option.getD_some] at hf
+  rw [← hf]; exact acs_flash_lt _ _ _
+
+/-- A root parsed from bytes below 256 has a `signed` value of such bytes. -/
+theorem acs_parse_bytes {d : Bytes} {r : TufRoot} (hd : Lt256 d) (hp : parseTufRoot d = some r) :
+    JBytes r.md.signed := by
+  have hs := prModel_spec d
+  rcases hpm : prModel d with e | ⟨gp, gl, q, ql, v⟩ <;> rw [hpm] at hs
+  · have h : parseTufRoot d = none := hs
+    rw [hp] at h; exact nomatch h
+  · obtain ⟨r', sj, h1, -, hJ, -, -⟩ := hs
+    rw [hp] at h1; cases h1
+    exact JVal_bytes hJ.2 fun x hx => hd x (List.mem_of_mem_drop (List.mem_of_mem_take hx))
+
+theorem acs_step_bytes {prev r : TufRoot} {d : Bytes} (hd : Lt256 d) (h : acoStep prev d = some r) :
+    JBytes r.md.signed := by
+  unfold acoStep at h
+  obtain ⟨next, hp, h⟩ := Option.bind_eq_some_iff.mp h
+  obtain ⟨_, -, h⟩ := Option.bind_eq_some_iff.mp h
+  obtain ⟨_, -, h⟩ := Option.bind_eq_some_iff.mp h
+  obtain ⟨_, -, h⟩ := Option.bind_eq_some_iff.mp h
+  obtain ⟨_, -, h⟩ := Option.bind_eq_some_iff.mp h
+  obtain ⟨_, -, h⟩ := Option.bind_eq_some_iff.mp h
+  cases h
+  exact acs_parse_bytes hd hp
+
+/-- The fold over roots of bytes below 256 keeps the trusted root's `signed`
+value to such bytes. -/
+theorem acs_fold_bytes : ∀ {docs : List Bytes} {first root : TufRoot}, (∀ d ∈ docs, Lt256 d) →
+    JBytes first.md.signed → docs.foldlM acoStep first = some root → JBytes root.md.signed
+  | [], first, root, _, hf, h => by
+    have e : some first = some root := h
+    cases e; exact hf
+  | d :: ds, _, _, hd, _, h => by
+    rw [List.foldlM_cons] at h
+    obtain ⟨next, h1, h2⟩ := Option.bind_eq_some_iff.mp h
+    exact acs_fold_bytes (fun d' h' => hd d' (List.mem_cons_of_mem _ h'))
+      (acs_step_bytes (hd d (List.mem_cons.mpr (.inl rfl))) h1) h2
+
 section
 variable {X : AcsCtx} (ok : X.Ok)
 include ok
@@ -128,11 +177,11 @@ end
 
 /-- **From 0x584**: the roots stage, then the targets stage and the rest,
 end the closure. -/
-theorem acs_roots (hG : AcRootsGap) (hNK : AcsTargetsNoKeys) (hT : AcTargetsStage) (hE : AcExtractStage)
+theorem acs_roots (hNK : AcsTargetsNoKeys) (hT : AcTargetsStage) (hE : AcExtractStage)
     (hB : AcsBundleStage) (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest}
     {header : ImageHeader} {parts : TufParts} {first : TufRoot} (S : AcsAt584 X mf header parts first n) :
     X.End n := by
-  refine acs_stage S.inv (acRootsStage hG X.flash X.R X.romBase X.romCode ok.rom n X.B X.Bf X.g X.t X.r X.v X.M0
+  refine acs_stage S.inv (acRootsStage X.flash X.R X.romBase X.romCode ok.rom n X.B X.Bf X.g X.t X.r X.v X.M0
     parts.roots first (fun M hM => acs_rootsEnv ok (ok.envs hM)) ok.F ok.sB ok.bfa ok.bfhi'
     (by have := ok.hR; omega) S.st S.inv S.pre) (fun _ => ok.fail)
     fun n' I' hpc ⟨root, hfold, K, KR, _, _, hrt, _, e, hexp, w18, w1C⟩ => ?_
@@ -151,6 +200,8 @@ theorem acs_roots (hG : AcRootsGap) (hNK : AcsTargetsNoKeys) (hT : AcTargetsStag
   have r40 : memLoad32 n'.mem (acSlot X.B 0x40) = X.r :=
     (acs_rootsLd ok kx (.inr ⟨by decide, by decide⟩)).trans S.pre.2.2.2.2.1
   have st : St n'.mem AC n' 0x836 (reg n') := ⟨hpc, rfl, fun _ => rfl⟩
+  have hjb : JBytes root.md.signed := acs_fold_bytes (acs_docs_lt S.pre.2.2.2.2.2.1)
+    (acs_parse_bytes (by rw [← (ok.envsAt S.inv).pin.pin]; exact memBytes_mem_lt) S.pin) hfold
   rcases hrt with ⟨h0, h1⟩ | ⟨t, es, hrk, hRB⟩
   · refine hNK X ok n' parts root e st I' hact hexp ?_ ?_ tgt tr r20 r40
     · have := h0; simp only [add_ofNat_zero] at this; exact this
@@ -164,7 +215,7 @@ theorem acs_roots (hG : AcRootsGap) (hNK : AcsTargetsNoKeys) (hT : AcTargetsStag
         inv := I'
         img := A
         tuf := S.tuf
-        pre := ⟨hact, hexp, w18.trans (acs_ofNat_mod e), w1C, ⟨t, es, hrk, hRB, aco_rkwf hrk⟩, tgt, tr, r20, r40⟩
+        pre := ⟨hact, hexp, w18.trans (acs_ofNat_mod e), w1C, ⟨t, es, hrk, hRB, aco_rkwf hrk, rkBytes_of_roleKeys hrk hjb⟩, tgt, tr, r20, r40⟩
         keys := (acs_rootsLd ok kx (.inr ⟨by decide, by decide⟩)).trans S.keys
         bf := (acs_rootsLd ok kx (.inr ⟨by decide, by decide⟩)).trans S.bf
         len := (acs_rootsLd ok kx (.inr ⟨by decide, by decide⟩)).trans S.len
