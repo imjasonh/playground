@@ -392,3 +392,4 @@ import C3BootProofs.Proofs.JsonParseEnd
 import C3BootProofs.Proofs.JsonParse
 import C3BootProofs.Proofs.TufCalls
 import C3BootProofs.Proofs.TufExpires
+import C3BootProofs.Proofs.TufPemSpki

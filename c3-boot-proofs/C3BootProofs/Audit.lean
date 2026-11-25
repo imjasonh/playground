@@ -203,6 +203,7 @@ import C3BootProofs.Proofs.JsonParseOuter
 import C3BootProofs.Proofs.JsonParseEnd
 import C3BootProofs.Proofs.JsonParse
 import C3BootProofs.Proofs.TufExpires
+import C3BootProofs.Proofs.TufPemSpki
 
 /-!
 # Audit
@@ -9010,3 +9011,18 @@ end C3
 
 /-- info: 'C3.RV32.tufExpires_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufExpires_correct
+
+/-- info: 'C3.RV32.tufPemSpki_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufPemSpki_correct
+
+/-- info: 'C3.Json.pemSpkiModel_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.pemSpkiModel_sound
+
+/-- info: 'C3.Json.pemSpkiModel_complete' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.pemSpkiModel_complete
+
+/-- info: 'C3.Json.pemSpkiModel_p256' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.pemSpkiModel_p256
+
+/-- info: 'C3.Json.pemSpkiModel_p384' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.pemSpkiModel_p384
