@@ -661,4 +661,170 @@ theorem RcCtx.callTime (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
 
 end
 
+
+theorem RcL.view2 {M : Word → BitVec 8} {G b : Word} {L : Bytes} (h : RcL M G b L) {i j : Nat}
+    (hr : i + j ≤ L.length) : memBytes M (b + BitVec.ofNat 32 i) j = rcView L (i, j) :=
+  h.view (r := (i, j)) hr
+
+/-- What `Der::algorithm` stores at `o`, as `derAlgorithm_correct` states
+it. -/
+def rcAlgMem (M : Word → BitVec 8) (o : Word) :
+    Except (BitVec 8) ((Word × Nat) × Option (Word × DerTlv)) → Prop
+  | .error b => memLoad32 M o = 0 ∧ M (o + 4) = b
+  | .ok ((op, ol), none) => memLoad32 M o = op ∧ memLoad32 M (o + 4) = BitVec.ofNat 32 ol ∧
+      memLoad32 M (o + 8) = 0
+  | .ok ((op, ol), some (rp, u)) => memLoad32 M o = op ∧
+      memLoad32 M (o + 4) = BitVec.ofNat 32 ol ∧
+      memLoad32 M (o + 8) = rp + BitVec.ofNat 32 u.header ∧
+      memLoad32 M (o + 0xC) = BitVec.ofNat 32 u.len ∧ memLoad32 M (o + 0x10) = rp ∧
+      memLoad32 M (o + 0x14) = BitVec.ofNat 32 (u.header + u.len) ∧
+      M (o + 0x18) = BitVec.ofNat 8 u.tag
+
+/-- `Der::algorithm`'s result at `o` for the reader `r` over the bytes `L`
+at `b`: the OID's offset and length, and the parameters' offset, element,
+and tag, all inside `L`. -/
+def RcAlgOut (M : Word → BitVec 8) (o b : Word) (L : Bytes) :
+    Except Unit ((Nat × Nat) × Option (Nat × DerTlv)) → Prop
+  | .error _ => memLoad32 M o = 0
+  | .ok ((oo, ol), par) => memLoad32 M o = b + BitVec.ofNat 32 oo ∧ memLoad32 M (o + 4) = BitVec.ofNat 32 ol ∧
+      oo + ol ≤ L.length ∧
+      match par with
+      | none => memLoad32 M (o + 8) = 0
+      | some (q, u) => memLoad32 M (o + 8) = b + BitVec.ofNat 32 (q + u.header) ∧
+          memLoad32 M (o + 0xC) = BitVec.ofNat 32 u.len ∧ M (o + 0x18) = BitVec.ofNat 8 u.tag ∧
+          q + u.header + u.len ≤ L.length
+
+theorem rcd_algOut {M M' : Word → BitVec 8} {G o b : Word} {L : Bytes} {r : RcRd} (hL : RcL M G b L)
+    (hr2 : r.1 + r.2 ≤ L.length) (hA : rcAlgMem M' o (derAlgOf M (b + BitVec.ofNat 32 r.1) r.2)) :
+    RcAlgOut M' o b L (rcAlg L r) := by
+  unfold rcAlg; unfold derAlgOf at hA; rw [hL.view hr2] at hA
+  rcases hE : derElement 0x30 (rcView L r) with e | t
+  · rw [hE] at hA; exact hA.1
+  · rw [hE] at hA; dsimp only at hA ⊢
+    have hb := derElement_bound hE; rw [rcd_view_len hr2] at hb
+    simp only [add_ofNat_assoc] at hA
+    rw [hL.view2 (by omega)] at hA
+    rcases hO : derOid (rcView L (r.1 + t.header, t.len)) with e | o
+    · rw [hO] at hA; exact hA.1
+    · rw [hO] at hA; dsimp only at hA ⊢
+      have hob : o.header + o.len ≤ t.len := by
+        have := derElement_bound (derOid_ok_elem hO)
+        rwa [rcd_view_len (show r.1 + t.header + t.len ≤ L.length by omega)] at this
+      by_cases hz : t.len - (o.header + o.len) = 0
+      · rw [ite_eq_left hz] at hA ⊢
+        exact ⟨hA.1, hA.2.1, by omega, hA.2.2⟩
+      · rw [ite_eq_right hz] at hA ⊢
+        rw [hL.view2 (by omega)] at hA
+        rcases hU : derTlv (rcView L (r.1 + t.header + (o.header + o.len), t.len - (o.header + o.len))) with e | u
+        · rw [hU] at hA; exact hA.1
+        · rw [hU] at hA; dsimp only at hA ⊢
+          by_cases hu : u.header + u.len = t.len - (o.header + o.len)
+          · rw [ite_eq_left hu] at hA ⊢
+            exact ⟨hA.1, hA.2.1, by omega, by rw [hA.2.2.1, add_ofNat_assoc], hA.2.2.2.1, hA.2.2.2.2.2.2, by omega⟩
+          · rw [ite_eq_right hu] at hA ⊢
+            exact hA.1
+
+/-- The reader at `d` after `Der::algorithm`: past the algorithm's
+element when `Der::element` reads one. -/
+def RcAlgRd (M : Word → BitVec 8) (d b : Word) (L : Bytes) (r : RcRd) : Prop :=
+  ∀ a, derElement 0x30 (rcView L r) = .ok a → RcRdAt M d b L (rcAdv r a) ∧ a.header + a.len ≤ r.2
+
+theorem rcd_algRd {M M' : Word → BitVec 8} {G S o d b : Word} {L : Bytes} {r : RcRd} {k l : Nat}
+    (hL : RcL M G b L) (hr : RcRdAt M d b L r) (hSd : Sep S k (d + 8) 8) (hod : Sep o l (d + 8) 8)
+    (h : ∀ x, Sep S k x 1 → Sep o l x 1 →
+      M' x = derAdvance M d (memLoad32 M (d + 8)) (memLoad32 M (d + 0xC))
+        (derElement 0x30 (memBytes M (memLoad32 M (d + 8)) (memLoad32 M (d + 0xC)).toNat)) x) :
+    RcAlgRd M' d b L r := by
+  intro a ha
+  rw [hr.view hL, ha] at h
+  have hb := derElement_bound ha; rw [rcd_view_len hr.2.2] at hb
+  have hC1 : Sep S k (d + 0xC) 4 := by have := hSd.subR (c := 4) (l := 4) (by decide); rwa [rcd_c8] at this
+  have hC2 : Sep o l (d + 0xC) 4 := by have := hod.subR (c := 4) (l := 4) (by decide); rwa [rcd_c8] at this
+  have l8 : memLoad32 M' (d + 8) = memLoad32 (derAdvance M d (memLoad32 M (d + 8)) (memLoad32 M (d + 0xC)) (.ok a)) (d + 8) :=
+    memLoad32_congr fun _ hj => h _ ((rcd_s0 hSd (by decide)).symm.shift hj).symm
+      ((rcd_s0 hod (by decide)).symm.shift hj).symm
+  have lC : memLoad32 M' (d + 0xC) = memLoad32 (derAdvance M d (memLoad32 M (d + 8)) (memLoad32 M (d + 0xC)) (.ok a)) (d + 0xC) :=
+    memLoad32_congr fun _ hj => h _ (hC1.symm.shift hj).symm (hC2.symm.shift hj).symm
+  exact ⟨rcd_rdAdv hL hr hb (by rw [l8, rcd_adv8, hr.1]) (by rw [lC, rcd_advC]) rfl, hb⟩
+
+section
+variable {M0 : Word → BitVec 8} {G F out fr fp p : Word} {fl n : Nat} {g0 : Fin 32 → Word}
+
+/-- The call of `Der::algorithm` at `off` with the result at `F + oc` and
+the reader at `F + dc`. -/
+theorem RcCtx.callAlg (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word}
+    {Q : Post} {off oc dc : Nat} {hi lo b : Word} {L : Bytes} {r : RcRd}
+    (h1 : fetchRel trustedRootReadChainCode off = some (.auipc ra hi, 4))
+    (h2 : fetchRel trustedRootReadChainCode (off + 4) = some (.jalr ra ra lo, 4))
+    (htgt : (TRC + BitVec.ofNat 32 off + hi + lo) &&& ~~~1 = RDA)
+    (hev : (TRC + BitVec.ofNat 32 (off + 8)) &&& ~~~1 = TRC + BitVec.ofNat 32 (off + 8))
+    (hR : RcRegs F out fr g0 f) (hI : RcMemInv M0 G F fr fp fl g0 M)
+    (hoc : 0x60 ≤ oc ∧ oc + 0x1C ≤ 0x14C ∧ oc % 4 = 0) (hdc : 0x60 ≤ dc ∧ dc + 16 ≤ 0x14C ∧ dc % 4 = 0)
+    (hod : oc + 0x1C ≤ dc + 8 ∨ dc + 16 ≤ oc)
+    (ha0 : f a0 = F + BitVec.ofNat 32 oc) (ha1 : f a1 = F + BitVec.ofNat 32 dc)
+    (hL : RcL M G b L) (hr : RcRdAt M (F + BitVec.ofNat 32 dc) b L r)
+    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcMemInv M0 G F fr fp fl g0 m2.mem →
+      RcAlgOut m2.mem (F + BitVec.ofNat 32 oc) b L (rcAlg L r) → RcAlgRd m2.mem (F + BitVec.ofNat 32 dc) b L r →
+      WP trustedRootReadChainCode TRC Q m2.mem (off + 8) (clob (upd f ra (TRC + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
+    WP trustedRootReadChainCode TRC Q M off f := by
+  have gw := X.gw
+  have hw := hL.hw
+  have hr2 := hr.2.2
+  have eA : F + 0xFFFFFF90 = G + BitVec.ofNat 32 0x550 := X.fneg (k := 0x70) (by decide) (by decide)
+  refine X.callK (P := fun m2 => RcAlgOut m2.mem (F + BitVec.ofNat 32 oc) b L (rcAlg L r) ∧
+      RcAlgRd m2.mem (F + BitVec.ofNat 32 dc) b L r)
+    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hI' hP.1 hP.2)
+  have C := X.codeAt hI
+  rw [← hmem1] at C hL
+  have hr1 : RcRdAt m1.mem (F + BitVec.ofNat 32 dc) b L r := by rw [hmem1]; exact hr
+  have hsp1 : reg m1 sp = F := by rw [hreg1]; trsimp; exact hR.2.1
+  have hfn := X.fn
+  obtain ⟨m2, c2, pc2, hsp2, hk2, hm2, hA⟩ := derAlgorithm_correct m1 (P := RDA) (sp0 := F)
+    (out := F + BitVec.ofNat 32 oc) (d := F + BitVec.ofNat 32 dc) (p := b + BitVec.ofNat 32 r.1) (n := r.2)
+    (retAddr := TRC + BitVec.ofNat 32 (off + 8))
+    ⟨by decide, C.dal,
+      by rw [show RDA + 0xFFFFD080 = RDS from by decide]; exact C.dsq,
+      by rw [show RDA + 0xFFFFD2F8 = RDN from by decide]; exact C.nst,
+      by rw [show RDA + 0xFFFFD218 = RDE from by decide]; exact C.del,
+      by rw [show RDA + 0xFFFFD23E = TLV from by decide]; exact C.tlv,
+      by rw [show RDA + 0xDA = ROI from by decide]; exact C.oid,
+      by rw [show RDA + 0xA376 = BMS from by decide]; exact C.dec.stub,
+      by rw [show RDA + 0xA37E = BMB from by decide]; exact C.dec.body,
+      X.fa4, by omega, X.fal hoc.2.2, by rw [X.fG, X.gc (by omega)]; omega, X.fal hdc.2.2,
+      hr1.1, hr1.2.1, by rw [hL.w (by omega)]; have := hL.pos; omega, by rw [hL.w (by omega)]; omega,
+      by rw [eA]; exact X.glo (by decide) (by decide) (by decide),
+      by rw [eA]; exact X.glo (by decide) (by decide) (by decide),
+      by rw [eA]; exact X.glo (by decide) (by decide) (by decide),
+      by rw [eA]; exact X.glo (by decide) (by decide) (by decide),
+      by rw [eA]; exact X.glo (by decide) (by decide) (by decide),
+      by rw [eA]; exact X.glo (by decide) (by decide) (by decide),
+      by rw [eA]; exact X.glo (by decide) (by decide) (by decide),
+      by rw [eA]; exact X.glo (by decide) (by decide) (by decide),
+      by rw [X.fG]; exact X.glo (by omega) (by decide) (by decide),
+      by rw [X.fG]; exact X.glo (by omega) (by decide) (by decide),
+      by rw [eA, X.fG]; exact X.gsep (Or.inr (by omega)) (by omega) (by decide),
+      by rw [X.f8, X.fG]; exact X.glo (by omega) (by decide) (by decide),
+      by rw [X.f8, X.fG]; exact X.glo (by omega) (by decide) (by decide),
+      by rw [X.f8, X.fG]; exact X.glo (by omega) (by decide) (by decide),
+      by rw [X.f8, X.fG]; exact X.glo (by omega) (by decide) (by decide),
+      by rw [X.f8, X.fG]; exact X.glo (by omega) (by decide) (by decide),
+      by rw [X.f8, X.fG]; exact X.glo (by omega) (by decide) (by decide),
+      by rw [X.f8, X.fG]; exact X.glo (by omega) (by decide) (by decide),
+      by rw [eA, X.f8, X.fG]; exact X.gsep (Or.inr (by omega)) (by omega) (by decide),
+      by rw [X.f8, X.fG, X.fG]; exact X.gsep (by omega) (by omega) (by omega),
+      by rw [eA]; exact (hL.sep.sub (c := r.1) (l := r.2) (by omega)).subR (by decide),
+      by rw [X.f8, X.fG]; exact (hL.sep.sub (c := r.1) (l := r.2) (by omega)).subR (by omega)⟩
+    hpc1 hsp1 (by rw [hreg1]; trsimp; exact ha0) (by rw [hreg1]; trsimp; exact ha1) (by rw [hreg1]; trsimp) hev
+  rw [eA] at hm2
+  refine ⟨m2, c2, pc2, ⟨fun x xa xb => ?_, rcd_algOut hL hr2 hA, ?_⟩, by rw [hsp2, hsp1],
+    fun q hq => hk2 q (rcd_time_saved q hq)⟩
+  · rw [hm2 x (rc_gin (rc_g0 xa) (by decide) (by decide)) (by rw [X.fG]; exact rc_gin xb (by omega) (by omega)),
+      derAdvance_outside _ (by rw [X.f8, X.fG]; exact rc_gin xb (by omega) (by omega)), hmem1]
+  · refine rcd_algRd (S := G + BitVec.ofNat 32 0x550) (k := 0x70) (o := F + BitVec.ofNat 32 oc) (l := 0x1C)
+      hL hr1 (by rw [X.f8, X.fG]; exact X.gsep (Or.inl (by omega)) (by decide) (by omega))
+      (by rw [X.f8, X.fG, X.fG]; exact X.gsep (by omega) (by omega) (by omega)) (fun x xa xb => ?_)
+    rw [hr1.1, hr1.len hL, hr1.2.1]; exact hm2 x xa xb
+
+end
+
 end C3.RV32
