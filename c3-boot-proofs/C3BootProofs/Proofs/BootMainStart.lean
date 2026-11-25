@@ -164,7 +164,8 @@ theorem bms_Fbig {M0 : Word → BitVec 8} {top : Word} {R romStack stack0 : Nat}
   have hlo := C.hlo; have hhi := C.hhi
   have hKv : bmK R romStack stack0 = 0xBE80 + 0x150 + R + romStack + stack0 := rfl
   have hbp : bmPtr.toNat = 0x3FCDFFF0 := rfl
-  omega
+  rw [hKv] at hlo; rw [hbp] at hhi
+  exact ⟨by omega, by omega⟩
 
 theorem bms_m70 {F : Word} (h : 112 ≤ F.toNat) : F + 0xFFFFFF90 = F - BitVec.ofNat 32 112 :=
   BitVec.eq_of_toNat_eq (by
@@ -311,5 +312,159 @@ theorem bms_halt {M0 : Word → BitVec 8} {top : Word} {R romStack stack0 : Nat}
   have hP : PanicCode n.mem := bmt_panic C.panic (hK.hiOf C)
   exact Panics.of_steps (.cons d1 c2) (halt_panics n2 (by rw [mem2]; exact hP) pc2
     (by rw [sp2]; exact bmd_room C hF))
+
+/-! ## From 0x64 to 0xB4 -/
+
+theorem bms_hiF {F top : Word} {c j : Nat} (hF : F.toNat + 0xBE80 = top.toNat) (hj : c + j + 1 ≤ 0xBE80)
+    {k : Nat} (hk : k ≤ F.toNat) : Sep (F - BitVec.ofNat 32 k) k (F + BitVec.ofNat 32 c + BitVec.ofNat 32 j) 1 := by
+  rw [add_ofNat_assoc]; exact bms_lo hF hk (by omega)
+
+theorem bms_off (F : Word) {c n d j : Nat} (h : c + n ≤ d + j ∨ d + j + 1 ≤ c) (hc : c + n ≤ 0xBE80)
+    (hj : d + j + 1 ≤ 0xBE80) : Sep (F + BitVec.ofNat 32 c) n (F + BitVec.ofNat 32 d + BitVec.ofNat 32 j) 1 := by
+  rw [add_ofNat_assoc]; exact sep_offsets F h (by omega) (by omega)
+
+set_option maxHeartbeats 16000000 in
+set_option maxRecDepth 20000 in
+/-- From 0x64: `boot_main` reads both records, halting when a read fails,
+decodes each, and goes on at 0xB4. -/
+theorem bms_reads {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
+    {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
+    {E : (Word → BitVec 8) → Prop}
+    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {n : Machine} {F : Word} (s : St n.mem BM n 0x64 (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
+    (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
+    (hsp : reg n sp = F) :
+    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+  have C := X.env
+  obtain ⟨hFl, hFh⟩ := bms_Fbig C hF
+  have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
+  -- 0x64: the first read.
+  obtain ⟨n1, c1, u1⟩ := s.block bmB3 hc bmB3_end ⟨trivial, trivial, trivial, trivial⟩
+  have m1 : n1.mem = n.mem := u1.mem
+  have r1 : ∀ r, reg n1 r = (runBlock bmB3 (n.mem, reg n)).2 r := fun r => by rw [u1.regs]
+  have t1 : St n1.mem BM n1 0x6E (reg n1) := ⟨u1.pc, rfl, fun _ => rfl⟩
+  have K1 : BmKeep M0 n1.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) := by
+    rw [m1]; exact hK
+  obtain ⟨n2, c2, t2, sp2, a02, ok2, K2, _⟩ := bms_frd X t1 K1 hF bm_at_6e bm_at_72 (by decide) (by decide)
+    (A := 0x28000) (d := 0x10)
+    (by rw [r1]; simp +decide only [runBlock, BInstr.run, bmB3, upd, ↓reduceIte]; (try rw [s.zero]); try rfl)
+    (by decide)
+    (by rw [r1]; simp +decide only [runBlock, BInstr.run, bmB3, upd, ↓reduceIte]; rw [hsp]; rfl)
+    (by rw [r1]; simp +decide only [runBlock, BInstr.run, bmB3, upd, ↓reduceIte]; (try rw [s.zero]); try rfl)
+    (by rw [r1, runBlock_reg bmB3 _ _ sp s.zero (by decide), hsp]) (by decide)
+  have hc2 := K2.codeIn C C.code (.inr ⟨by decide, by decide⟩)
+  rcases a02 with z2 | o2
+  · obtain ⟨n3, e3, t3⟩ := t2.taken hc2 0xD2 bm_at_76 (by decide)
+      (by show (reg n2 a0 == reg n2 0) = true; rw [z2, t2.zero]; rfl)
+    rw [← t3.mem] at K2
+    exact BmEnd.pre (c1.trans (c2.trans (.single e3))) (.inr (bms_halt C ⟨t3.pc, rfl, t3.regs⟩ K2 sp2 hF))
+  obtain ⟨n3, e3, t3⟩ := t2.notTaken hc2 0x78 bm_at_76 (by decide)
+    (by show (reg n2 a0 == reg n2 0) = false; rw [o2, t2.zero]; rfl)
+  have t3' : St n3.mem BM n3 0x78 (reg n3) := ⟨t3.pc, rfl, fun _ => rfl⟩
+  have m3 : n3.mem = n2.mem := t3.mem
+  have K3 : BmKeep M0 n3.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) := by
+    rw [m3]; exact K2
+  have hc3 := K3.codeIn C C.code (.inr ⟨by decide, by decide⟩)
+  -- 0x78: the second read.
+  obtain ⟨n4, c4, u4⟩ := t3'.block bmB4 hc3 bmB4_end ⟨trivial, trivial, trivial, trivial⟩
+  have m4 : n4.mem = n3.mem := u4.mem
+  have r4 : ∀ r, reg n4 r = (runBlock bmB4 (n3.mem, reg n3)).2 r := fun r => by rw [u4.regs]
+  have t4 : St n4.mem BM n4 0x82 (reg n4) := ⟨u4.pc, rfl, fun _ => rfl⟩
+  have K4 : BmKeep M0 n4.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) := by
+    rw [m4]; exact K3
+  have sp3 : reg n3 sp = F := by rw [t3.regs]; exact sp2
+  obtain ⟨n5, c5, t5, sp5, a05, ok5, K5, fr5⟩ := bms_frd X t4 K4 hF bm_at_82 bm_at_86 (by decide) (by decide)
+    (A := 0x29000) (d := 0x30)
+    (by rw [r4]; simp +decide only [runBlock, BInstr.run, bmB4, upd, ↓reduceIte]; (try rw [t3'.zero]); try rfl)
+    (by decide)
+    (by rw [r4]; simp +decide only [runBlock, BInstr.run, bmB4, upd, ↓reduceIte]; rw [sp3]; rfl)
+    (by rw [r4]; simp +decide only [runBlock, BInstr.run, bmB4, upd, ↓reduceIte]; (try rw [t3'.zero]); try rfl)
+    (by rw [r4, runBlock_reg bmB4 _ _ sp t3'.zero (by decide), sp3]) (by decide)
+  have hc5 := K5.codeIn C C.code (.inr ⟨by decide, by decide⟩)
+  rcases a05 with z5 | o5
+  · obtain ⟨n6, e6, t6⟩ := t5.taken hc5 0xD2 bm_at_8a (by decide)
+      (by show (reg n5 a0 == reg n5 0) = true; rw [z5, t5.zero]; rfl)
+    rw [← t6.mem] at K5
+    exact BmEnd.pre (c1.trans (c2.trans (.cons e3 (c4.trans (c5.trans (.single e6))))))
+      (.inr (bms_halt C ⟨t6.pc, rfl, t6.regs⟩ K5 sp5 hF))
+  obtain ⟨n6, e6, t6⟩ := t5.notTaken hc5 0x8C bm_at_8a (by decide)
+    (by show (reg n5 a0 == reg n5 0) = false; rw [o5, t5.zero]; rfl)
+  have t6' : St n6.mem BM n6 0x8C (reg n6) := ⟨t6.pc, rfl, fun _ => rfl⟩
+  have m6 : n6.mem = n5.mem := t6.mem
+  have K6 : BmKeep M0 n6.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) := by
+    rw [m6]; exact K5
+  have hc6 := K6.codeIn C C.code (.inr ⟨by decide, by decide⟩)
+  have sp6 : reg n6 sp = F := by rw [t6.regs]; exact sp5
+  -- the bytes read
+  have b1 : ∀ i, i < 32 → n6.mem (F + BitVec.ofNat 32 0x10 + BitVec.ofNat 32 i) = flash (0x28000 + i) := by
+    intro i hi
+    rw [m6, fr5 _ (bms_hiF hF (by omega) (by omega)) (bms_off F (by omega) (by decide) (by omega)), m4, m3]
+    exact ok2 o2 i hi
+  have b2 : ∀ i, i < 32 → n6.mem (F + BitVec.ofNat 32 0x30 + BitVec.ofNat 32 i) = flash (0x29000 + i) := by
+    intro i hi; rw [m6]; exact ok5 o5 i hi
+  -- 0x8C: the first decode.
+  obtain ⟨n7, c7, u7⟩ := t6'.block bmB5 hc6 bmB5_end ⟨trivial, trivial, trivial, trivial, trivial, trivial,
+    trivial, trivial⟩
+  have m7 : n7.mem = n6.mem := u7.mem
+  have r7 : ∀ r, reg n7 r = (runBlock bmB5 (n6.mem, reg n6)).2 r := fun r => by rw [u7.regs]
+  have t7 : St n7.mem BM n7 0xA0 (reg n7) := ⟨u7.pc, rfl, fun _ => rfl⟩
+  have K7 : BmKeep M0 n7.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) := by
+    rw [m7]; exact K6
+  have sp7 : reg n7 sp = F := by rw [r7, runBlock_reg bmB5 _ _ sp t6'.zero (by decide), sp6]
+  have g20 : reg n7 20 = F + BitVec.ofNat 32 0xB9A8 := by
+    rw [r7]; simp +decide only [runBlock, BInstr.run, bmB5, upd, ↓reduceIte]; rw [sp6]; rfl
+  obtain ⟨n8, c8, t8, k8, K8, f8⟩ := bms_bsd C t7 K7 hF bm_at_a0 bm_at_a4 (by decide) (by decide)
+    (o := 0xB9A8) (b := 0x10)
+    (by rw [r7]; simp +decide only [runBlock, BInstr.run, bmB5, upd, ↓reduceIte]; rw [sp6, BitVec.add_comm]; rfl)
+    (by rw [r7]; simp +decide only [runBlock, BInstr.run, bmB5, upd, ↓reduceIte]; rw [sp6]; rfl)
+    sp7 (by decide) (by decide) (by decide)
+  have hc8 := K8.codeIn C C.code (.inr ⟨by decide, by decide⟩)
+  have sp8 : reg n8 sp = F := by
+    rw [k8 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide), sp7]
+  have h20 : reg n8 20 = F + BitVec.ofNat 32 0xB9A8 := by
+    rw [k8 20 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide), g20]
+  -- 0xA8: the second decode.
+  obtain ⟨n9, c9, u9⟩ := t8.block bmB6 hc8 bmB6_end ⟨trivial, trivial, trivial⟩
+  have m9 : n9.mem = n8.mem := u9.mem
+  have r9 : ∀ r, reg n9 r = (runBlock bmB6 (n8.mem, reg n8)).2 r := fun r => by rw [u9.regs]
+  have t9 : St n9.mem BM n9 0xAC (reg n9) := ⟨u9.pc, rfl, fun _ => rfl⟩
+  have K9 : BmKeep M0 n9.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) := by
+    rw [m9]; exact K8
+  have k9 : ∀ r, r ≠ a0 → r ≠ a1 → reg n9 r = reg n8 r := fun r h0 h1 => by
+    rw [r9, runBlock_reg bmB6 _ _ r t8.zero (by simp only [bmB6]; revert h0 h1; revert r; decide)]
+  obtain ⟨n10, c10, t10, k10, K10, f10⟩ := bms_bsd C t9 K9 hF bm_at_ac bm_at_b0 (by decide) (by decide)
+    (o := 0x50) (b := 0x30)
+    (by rw [r9]; simp +decide only [runBlock, BInstr.run, bmB6, upd, ↓reduceIte]; rw [sp8]; rfl)
+    (by rw [r9]; simp +decide only [runBlock, BInstr.run, bmB6, upd, ↓reduceIte]; rw [sp8]; rfl)
+    (by rw [k9 sp (by decide) (by decide), sp8]) (by decide) (by decide) (by decide)
+  have k10' : ∀ r, r = sp ∨ r = 20 → reg n10 r = reg n8 r := fun r hr => by
+    rcases hr with rfl | rfl
+    · rw [k10 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide), k9 sp (by decide) (by decide)]
+    · rw [k10 20 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide), k9 20 (by decide) (by decide)]
+  -- the copies
+  have hk112 : 112 ≤ F.toNat := by omega
+  have M8 : ∀ c j, c + j + 1 ≤ 0xBE80 → Sep (F + BitVec.ofNat 32 0xB9A8) 8 (F + BitVec.ofNat 32 c +
+      BitVec.ofNat 32 j) 1 → n8.mem (F + BitVec.ofNat 32 c + BitVec.ofNat 32 j) =
+      n6.mem (F + BitVec.ofNat 32 c + BitVec.ofNat 32 j) := fun c j hj hs => by
+    rw [f8 _ (bms_hiF hF hj hk112), bms_bsx _ hs, m7]
+  have cA : BmeCopy n8.mem (F + BitVec.ofNat 32 0xB9A8) (decodeRecord (bmcFlash flash 0x28000 32)) := by
+    have := bms_copy n7.mem (F + BitVec.ofNat 32 0xB9A8) (F + BitVec.ofNat 32 0x10)
+    rw [bms_list (A := 0x28000) (fun i hi => by rw [m7]; exact b1 i hi)] at this
+    exact bms_congr (fun j hj => f8 _ (bms_hiF hF (by omega) hk112)) this
+  have cB : BmeCopy n10.mem (F + BitVec.ofNat 32 0x50) (decodeRecord (bmcFlash flash 0x29000 32)) := by
+    have := bms_copy n9.mem (F + BitVec.ofNat 32 0x50) (F + BitVec.ofNat 32 0x30)
+    rw [bms_list (A := 0x29000) (fun i hi => by
+      rw [m9, M8 0x30 i (by omega) (bms_off F (by omega) (by decide) (by omega))]; exact b2 i hi)] at this
+    exact bms_congr (fun j hj => f10 _ (bms_hiF hF (by omega) hk112)) this
+  have cA' : BmeCopy n10.mem (F + BitVec.ofNat 32 0xB9A8) (decodeRecord (bmcFlash flash 0x28000 32)) :=
+    bms_congr (fun j hj => by
+      rw [f10 _ (bms_hiF hF (by omega) hk112), bms_bsx _ (bms_off F (by omega) (by decide) (by omega)), m9]) cA
+  exact BmEnd.pre (c1.trans (c2.trans (.cons e3 (c4.trans (c5.trans (.cons e6 (c7.trans (c8.trans
+    (c9.trans c10))))))))) (bme_sel X t10 hF K10 cA' cB
+      (by rw [k10' 20 (.inr rfl)]; exact h20) (by rw [k10' sp (.inl rfl)]; exact sp8))
 
 end C3.RV32.Cur
