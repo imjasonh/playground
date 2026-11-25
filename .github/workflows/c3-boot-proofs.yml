@@ -59,12 +59,13 @@ jobs:
           axiom-audit-root: C3BootProofs
 
       # leanchecker replays each module in its own task, and each task imports
-      # that module's whole dependency closure. Four tasks at once need more
-      # memory than the runner has, so two run at a time.
+      # that module's whole dependency closure. Since the project passed about
+      # 1,000 modules, even two tasks at once run the 16 GB runner out of
+      # memory, so one runs at a time.
       - name: Recheck the proofs with leanchecker
         working-directory: c3-boot-proofs
         env:
-          LEAN_NUM_THREADS: "2"
+          LEAN_NUM_THREADS: "1"
         run: lake env leanchecker C3BootProofs
 
       - name: Compare the specification with c3-verify
