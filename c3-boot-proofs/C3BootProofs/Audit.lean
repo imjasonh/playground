@@ -248,6 +248,7 @@ import C3BootProofs.Proofs.BootMainContract
 import C3BootProofs.Proofs.BootMainSpec
 import C3BootProofs.Proofs.BootMainTail
 import C3BootProofs.Proofs.BootMainPick
+import C3BootProofs.Proofs.BootMainWrite
 
 /-!
 # Audit
@@ -9300,3 +9301,9 @@ end C3
 
 /-- info: 'C3.RV32.Cur.bmp_other' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bmp_other
+
+/-- info: 'C3.RV32.Cur.bmw_call' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmw_call
+
+/-- info: 'C3.RV32.Cur.bmc_call' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmc_call
