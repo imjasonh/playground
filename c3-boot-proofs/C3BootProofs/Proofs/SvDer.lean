@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.SvLib2
+import C3BootProofs.Proofs.SvErrBound
 
 /-!
 # `sigstore::verify`: calls to the `Der` readers
@@ -171,30 +172,49 @@ structure SvOut (B out : Word) : Prop where
 
 /-- `sigstore::verify` returned `Err`: from `n0`, the machine reaches the
 return address with the stack and the callee-saved registers restored,
-`Err`'s discriminant 1 at `out`, and memory outside the stack unchanged
-except for the result. -/
+`Err`'s discriminant 1 at `out`, an error code below 0x27 at `out + 1`, and
+memory outside the stack unchanged except for the result. The closure that
+calls `sigstore::verify` indexes a table of 0x27 entries with the code. -/
 def SvErrRet (B out : Word) (v : Nat → Word) (n0 : Machine) : Prop :=
   ∃ n', Steps n0 n' ∧ n'.pc = v 0 ∧ reg n' sp = B + 0x2660 ∧ (∀ k, k < 13 → reg n' (savedReg k) = v k) ∧
     reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧ n'.mem out = 1 ∧
-    ∀ x, SvR B x → x ≠ out → x ≠ out + 1 → n'.mem x = n0.mem x
+    (n'.mem (out + 1)).toNat < 0x27 ∧ ∀ x, SvR B x → x ≠ out → x ≠ out + 1 → n'.mem x = n0.mem x
+
+/-- The low byte of a byte widened to a word is the byte. -/
+theorem sv_zx8 (b : BitVec 8) : (b.zeroExtend 32 : Word).extractLsb' 0 8 = b := by
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.extractLsb'_toNat, BitVec.toNat_setWidth, Nat.shiftRight_zero]
+  have := b.isLt
+  omega
+
+/-- Closes `((v).extractLsb' 0 8).toNat < 0x27` for an error code `v` that
+is a constant, a hypothesis, or a byte widened to a word whose bound is
+`derErrByte_lt`, a literal, or a hypothesis. -/
+macro "sv_code" : tactic =>
+  `(tactic| first
+    | decide
+    | assumption
+    | (rw [sv_zx8]; first | exact derErrByte_lt _ | decide | assumption))
 
 /-- **The failing exit**: from a step at 0x7A4, `sigstore::verify` returns `Err`. -/
 theorem sv_fail {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B 0x2660) (E : SvCode n.mem)
     (s : St n.mem SV n 0x7A4 (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
     (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
     (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
-    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) : SvErrRet B out v n0 := by
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32))
+    (hc : ((reg n (8 : Fin 32)).extractLsb' 0 8).toNat < 0x27) : SvErrRet B out v n0 := by
   have sOS : Sep out 2 (B + BitVec.ofNat 32 0x262C) 0x34 := by
     have := hO.stk.symm.sub (c := 0x1590 + 0x262C) (l := 0x34) (by decide)
     rw [show B + 0xFFFFEA70 + BitVec.ofNat 32 (0x1590 + 0x262C) = B + BitVec.ofNat 32 0x262C by
       rw [BitVec.add_assoc]; rfl] at this
     exact this.symm
   obtain ⟨n', c', pc', mem', sp', sv', g', t'⟩ := sv_err E.self F s rsp hout V hret sOS hO.code
-  refine ⟨n', t.trans c', pc', sp', sv', by rw [g', r3], by rw [t', r4], ?_, fun x hx h0 h1 => ?_⟩
+  refine ⟨n', t.trans c', pc', sp', sv', by rw [g', r3], by rw [t', r4], ?_, ?_, fun x hx h0 h1 => ?_⟩
   · rw [mem']; unfold svErrMem
     rw [memStore8_ne (show out ≠ out + 1 by
       have := add_ofNat_ne out (c := 0) (d := 1) (by decide) (by decide) (by decide)
       rwa [add_ofNat_zero] at this), memStore8_same]
+  · rw [mem']; unfold svErrMem; rw [memStore8_same]; exact hc
   · rw [mem']; unfold svErrMem; rw [memStore8_ne h1, memStore8_ne h0, fR x hx]
 
 /-- The content of an element read from bytes outside the stack is outside it too. -/

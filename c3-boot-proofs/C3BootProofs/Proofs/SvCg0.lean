@@ -1801,7 +1801,7 @@ theorem sv_cg0 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b27_14 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = BitVec.ofNat 8 (sg.getD 0 0) := by rw [m27]; exact b26_14
     have q27_1fc : ∀ j, j < 63 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m27]; exact q26_1fc j hj
     clear q26_1fc b26_14 w26_400 w26_50 w26_48 w26_44 w26_38 w26_34 w26_30 w26_2c w26_28 w26_24 w26_18 w26_10 w26_c w26_8 w26_4 g26_25 g26_27 g26_26 g26_24 g26_23 g26_22 g26_21 g26_20 g26_19 g26_18 g26_14 g26_13 g26_12 g26_11 g26_10 g26_9 g26_8 g26_4 g26_3 g26_2 V26 E26 fR26 t26 fr26 rb26 s26 m26 u26 c26
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hlast h0'), sv_fail_1882 F E27 s27 t27 (fun x hx => (fR27 x hx).trans (fM x hx).symm) V27 hret g27_2 g27_18 hO g27_3 g27_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hlast h0'), sv_fail_1882 F E27 s27 t27 (fun x hx => (fR27 x hx).trans (fM x hx).symm) V27 hret g27_2 g27_18 hO g27_3 g27_4 (by rw [g27_25]; sv_code)⟩
   -- 0x1716: branch, not taken
   obtain ⟨n25, d25, u25⟩ := s24.notTaken E24.self 0x171A sv_at_1716
     (by decide) (by rw [g24_21, g24_10]; exact br_bne_f hlast)
@@ -2244,7 +2244,7 @@ theorem sv_cg0 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b32_420 : n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := by rw [m32]; exact b31_420
     have q32_1fc : ∀ j, j < 63 → n32.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m32]; exact q31_1fc j hj
     clear q31_1fc b31_420 b31_14 w31_400 w31_50 w31_48 w31_44 w31_38 w31_34 w31_30 w31_2c w31_28 w31_24 w31_18 w31_10 w31_c w31_8 w31_4 g31_25 g31_27 g31_26 g31_24 g31_23 g31_22 g31_21 g31_20 g31_19 g31_18 g31_11 g31_10 g31_9 g31_8 g31_4 g31_3 g31_2 V31 E31 fR31 t31 fr31 rb31 s31 m31 u31 c31
-    exact .inl ⟨(fun ⟨h0', bq27', h1', _⟩ => by rw [hr27] at h1'; cases h1'), sv_fail_1882 F E32 s32 t32 (fun x hx => (fR32 x hx).trans (fM x hx).symm) V32 hret g32_2 g32_18 hO g32_3 g32_4⟩
+    exact .inl ⟨(fun ⟨h0', bq27', h1', _⟩ => by rw [hr27] at h1'; cases h1'), sv_fail_1882 F E32 s32 t32 (fun x hx => (fR32 x hx).trans (fM x hx).symm) V32 hret g32_2 g32_18 hO g32_3 g32_4 (by rw [g32_25]; sv_code)⟩
   by_cases hl3 : bq27.length ≤ 3
   rotate_left
   · have z27 := Bad27 fun b h => by rw [hr27] at h; cases h; omega
@@ -2531,7 +2531,7 @@ theorem sv_cg0 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b32_420 : n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := by rw [m32]; exact b31_420
     have q32_1fc : ∀ j, j < 63 → n32.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m32]; exact q31_1fc j hj
     clear q31_1fc b31_420 b31_14 w31_400 w31_50 w31_48 w31_44 w31_38 w31_34 w31_30 w31_2c w31_28 w31_24 w31_18 w31_10 w31_c w31_8 w31_4 g31_25 g31_27 g31_26 g31_24 g31_23 g31_22 g31_21 g31_20 g31_19 g31_18 g31_11 g31_10 g31_9 g31_8 g31_4 g31_3 g31_2 V31 E31 fR31 t31 fr31 rb31 s31 m31 u31 c31
-    exact .inl ⟨(fun ⟨h0', bq27', h1', h2', _⟩ => by rw [hr27] at h1'; cases h1'; exact hl3 h2'), sv_fail_1882 F E32 s32 t32 (fun x hx => (fR32 x hx).trans (fM x hx).symm) V32 hret g32_2 g32_18 hO g32_3 g32_4⟩
+    exact .inl ⟨(fun ⟨h0', bq27', h1', h2', _⟩ => by rw [hr27] at h1'; cases h1'; exact hl3 h2'), sv_fail_1882 F E32 s32 t32 (fun x hx => (fR32 x hx).trans (fM x hx).symm) V32 hret g32_2 g32_18 hO g32_3 g32_4 (by rw [g32_25]; sv_code)⟩
   have z27 := Ok27 bq27 hr27 hl3
   have keep_kk27 : SvKeepL B n0.mem n27.mem [(0x4, 0x4), (0x400, 0x4), (0x420, 0x8), (0x370, 0x3)] := keep_kk26.trans K27
   clear keep_kk26

@@ -476,7 +476,7 @@ theorem sv_ckd {B out bp x20 x21 x22 x23 x26 c p ckl rl rp w64 w74 : Word} {v : 
     have w7_64 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x64) = w64 := by rw [m7]; exact w6_64
     have w7_74 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = w74 := by rw [m7]; exact w6_74
     clear w6_74 w6_64 g6_25 g6_27 g6_26 g6_24 g6_23 g6_22 g6_21 g6_20 g6_19 g6_18 g6_11 g6_10 g6_9 g6_8 g6_4 g6_3 g6_2 V6 E6 fR6 t6 fr6 rb6 s6 m6 u6 c6
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hdig h0'), sv_fail_1882 F E7 s7 t7 (fun x hx => (fR7 x hx).trans (fM x hx).symm) V7 hret g7_2 g7_18 hO g7_3 g7_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hdig h0'), sv_fail_1882 F E7 s7 t7 (fun x hx => (fR7 x hx).trans (fM x hx).symm) V7 hret g7_2 g7_18 hO g7_3 g7_4 (by rw [g7_25]; sv_code)⟩
   -- 0x150C: branch, not taken
   obtain ⟨n5, d5, u5⟩ := s4.notTaken E4.self 0x1510 sv_at_150c
     (by decide) (by rw [g4_11, g4_10]; exact br_bgeu_f hdig)
@@ -1098,7 +1098,7 @@ theorem sv_ckd {B out bp x20 x21 x22 x23 x26 c p ckl rl rp w64 w74 : Word} {v : 
     have w17_64 : memLoad32 n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x64) = w64 := by rw [m17]; exact w16_64
     have w17_74 : memLoad32 n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = w74 := by rw [m17]; exact w16_74
     clear w16_74 w16_64 g16_25 g16_27 g16_26 g16_24 g16_23 g16_22 g16_21 g16_20 g16_19 g16_18 g16_14 g16_13 g16_12 g16_11 g16_10 g16_9 g16_8 g16_4 g16_3 g16_2 V16 E16 fR16 t16 fr16 rb16 s16 m16 u16 c16
-    exact .inl ⟨(fun ⟨h0', h1', _⟩ => by exact hov1 h1'), sv_fail_1882 F E17 s17 t17 (fun x hx => (fR17 x hx).trans (fM x hx).symm) V17 hret g17_2 g17_18 hO g17_3 g17_4⟩
+    exact .inl ⟨(fun ⟨h0', h1', _⟩ => by exact hov1 h1'), sv_fail_1882 F E17 s17 t17 (fun x hx => (fR17 x hx).trans (fM x hx).symm) V17 hret g17_2 g17_18 hO g17_3 g17_4 (by rw [g17_25]; sv_code)⟩
   -- 0x152C: branch, not taken
   obtain ⟨n15, d15, u15⟩ := s14.notTaken E14.self 0x1530 sv_at_152c
     (by decide) (by rw [g14_13, s14.zero]; exact br_bne_f hov1)
@@ -1848,7 +1848,7 @@ theorem sv_ckd {B out bp x20 x21 x22 x23 x26 c p ckl rl rp w64 w74 : Word} {v : 
     have w30_64 : memLoad32 n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x64) = ((((M0 (p)).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul (w64) (BitVec.ofNat 32 0xA)) := by rw [m30]; exact w29_64
     have w30_74 : memLoad32 n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = ((aluEval .mul (w74) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu (w64) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 (p)).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul (w64) (BitVec.ofNat 32 0xA))) (aluEval .mul (w64) (BitVec.ofNat 32 0xA))) := by rw [m30]; exact w29_74
     clear w29_74 w29_64 g29_25 g29_27 g29_26 g29_24 g29_23 g29_22 g29_21 g29_20 g29_19 g29_18 g29_14 g29_13 g29_12 g29_11 g29_10 g29_9 g29_8 g29_4 g29_3 g29_2 V29 E29 fR29 t29 fr29 rb29 s29 m29 u29 c29
-    exact .inl ⟨(fun ⟨h0', h1', h2', _⟩ => by exact hov2 h2'), sv_fail_1882 F E30 s30 t30 (fun x hx => (fR30 x hx).trans (fM x hx).symm) V30 hret g30_2 g30_18 hO g30_3 g30_4⟩
+    exact .inl ⟨(fun ⟨h0', h1', h2', _⟩ => by exact hov2 h2'), sv_fail_1882 F E30 s30 t30 (fun x hx => (fR30 x hx).trans (fM x hx).symm) V30 hret g30_2 g30_18 hO g30_3 g30_4 (by rw [g30_25]; sv_code)⟩
   -- 0x154E: branch, taken
   obtain ⟨n27, d27, u27⟩ := s26.taken E26.self 0x14FE sv_at_154e
     (by decide) (by rw [g26_11, s26.zero]; exact br_beq_t hov2)

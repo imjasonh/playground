@@ -644,6 +644,9 @@ theorem sv_csa {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have g12_24 : reg n12 (24 : Fin 32) = x24 := by rw [u12.regs, upd_ne (by decide) (by decide), g11_24]
     have g12_26 : reg n12 (26 : Fin 32) = x26 := by rw [u12.regs, upd_ne (by decide) (by decide), g11_26]
     have g12_27 : reg n12 (27 : Fin 32) = x27 := by rw [u12.regs, upd_ne (by decide) (by decide), g11_27]
+    have g12_25 : reg n12 (25 : Fin 32) = ((0x1A : BitVec 8)).zeroExtend 32 := by
+      rw [u12.regs]; simp +decide only [upd, ↓reduceIte]
+      rw [g11_2, show B + 0x21A0 + 0x424 = B + 0x21A0 + BitVec.ofNat 32 0x424 by sv_addr, b11_424]
     have keep_kk12 : SvKeepL B n0.mem n12.mem [(0x2C, 0x4), (0x420, 0x10)] := by rw [m12]; exact keep_kk11
     clear keep_kk11
     have w12_18 : memLoad32 n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x18) = kh := by rw [m12]; exact w11_18
@@ -682,6 +685,7 @@ theorem sv_csa {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have g13_22 : reg n13 (22 : Fin 32) = x22 := by rw [u13.regs, g12_22]
     have g13_23 : reg n13 (23 : Fin 32) = x23 := by rw [u13.regs, g12_23]
     have g13_24 : reg n13 (24 : Fin 32) = x24 := by rw [u13.regs, g12_24]
+    have g13_25 : reg n13 (25 : Fin 32) = ((0x1A : BitVec 8)).zeroExtend 32 := by rw [u13.regs, g12_25]
     have g13_26 : reg n13 (26 : Fin 32) = x26 := by rw [u13.regs, g12_26]
     have g13_27 : reg n13 (27 : Fin 32) = x27 := by rw [u13.regs, g12_27]
     have keep_kk13 : SvKeepL B n0.mem n13.mem [(0x2C, 0x4), (0x420, 0x10)] := by rw [m13]; exact keep_kk12
@@ -700,8 +704,8 @@ theorem sv_csa {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b13_14 : n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = BitVec.ofNat 8 (sg.getD 0 0) := by rw [m13]; exact b12_14
     have b13_424 : n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x424) = (0x1A : BitVec 8) := by rw [m13]; exact b12_424
     have q13_1fc : ∀ j, j < 63 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m13]; exact q12_1fc j hj
-    clear q12_1fc b12_424 b12_14 w12_420 w12_50 w12_48 w12_44 w12_38 w12_34 w12_30 w12_2c w12_28 w12_24 w12_18 g12_27 g12_26 g12_24 g12_23 g12_22 g12_21 g12_20 g12_19 g12_18 g12_10 g12_4 g12_3 g12_2 V12 E12 fR12 t12 fr12 m12 s12 u12 d12
-    exact .inl ⟨(fun ⟨ix9', h0', _⟩ => by rw [hr9] at h0'; cases h0'), sv_fail_1882 F E13 s13 t13 (fun x hx => (fR13 x hx).trans (fM x hx).symm) V13 hret g13_2 g13_18 hO g13_3 g13_4⟩
+    clear q12_1fc b12_424 b12_14 w12_420 w12_50 w12_48 w12_44 w12_38 w12_34 w12_30 w12_2c w12_28 w12_24 w12_18 g12_25 g12_27 g12_26 g12_24 g12_23 g12_22 g12_21 g12_20 g12_19 g12_18 g12_10 g12_4 g12_3 g12_2 V12 E12 fR12 t12 fr12 m12 s12 u12 d12
+    exact .inl ⟨(fun ⟨ix9', h0', _⟩ => by rw [hr9] at h0'; cases h0'), sv_fail_1882 F E13 s13 t13 (fun x hx => (fR13 x hx).trans (fM x hx).symm) V13 hret g13_2 g13_18 hO g13_3 g13_4 (by rw [g13_25]; sv_code)⟩
   have hix9 : ix9 < (w50).toNat := by have := (nlScan_lt _ _ _ hr9).2; omega
   rw [hr9] at L9
   obtain ⟨y0_9, y4_9, y8_9, y12_9⟩ := L9
@@ -1361,7 +1365,7 @@ theorem sv_csa {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b22_14 : n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = BitVec.ofNat 8 (sg.getD 0 0) := by rw [m22]; exact b21_14
     have q22_1fc : ∀ j, j < 63 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m22]; exact q21_1fc j hj
     clear q21_1fc b21_14 w21_42c w21_428 w21_424 w21_420 w21_50 w21_48 w21_44 w21_38 w21_34 w21_30 w21_2c w21_28 w21_24 w21_18 g21_25 g21_27 g21_26 g21_24 g21_23 g21_22 g21_21 g21_20 g21_19 g21_18 g21_10 g21_4 g21_3 g21_2 V21 E21 fR21 t21 fr21 rb21 s21 m21 u21 c21
-    exact .inl ⟨(fun ⟨ix9', h0', h1', _⟩ => by rw [hr9] at h0'; cases h0'; exact hdash h1'), sv_fail_1882 F E22 s22 t22 (fun x hx => (fR22 x hx).trans (fM x hx).symm) V22 hret g22_2 g22_18 hO g22_3 g22_4⟩
+    exact .inl ⟨(fun ⟨ix9', h0', h1', _⟩ => by rw [hr9] at h0'; cases h0'; exact hdash h1'), sv_fail_1882 F E22 s22 t22 (fun x hx => (fR22 x hx).trans (fM x hx).symm) V22 hret g22_2 g22_18 hO g22_3 g22_4 (by rw [g22_25]; sv_code)⟩
   have g19_10 : reg n19 a0 = w38 + BitVec.ofNat 32 4 := by rw [a0_19, if_pos hdash]
   have g19_11 : reg n19 a1 = BitVec.ofNat 32 (ix9 - 4) := a1_19 hdash.1
   -- 0x1686: branch, not taken
@@ -1754,7 +1758,7 @@ theorem sv_csa {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b26_14 : n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = BitVec.ofNat 8 (sg.getD 0 0) := by rw [m26]; exact b25_14
     have q26_1fc : ∀ j, j < 63 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m26]; exact q25_1fc j hj
     clear q25_1fc b25_14 w25_42c w25_428 w25_424 w25_420 w25_50 w25_48 w25_44 w25_38 w25_34 w25_30 w25_2c w25_28 w25_24 w25_18 g25_25 g25_27 g25_26 g25_24 g25_23 g25_22 g25_21 g25_20 g25_19 g25_18 g25_11 g25_10 g25_8 g25_4 g25_3 g25_2 V25 E25 fR25 t25 fr25 rb25 s25 m25 u25 c25
-    exact .inl ⟨(fun ⟨ix9', h0', h1', h2', _⟩ => by rw [hr9] at h0'; cases h0'; exact hsp h2'), sv_fail_1882 F E26 s26 t26 (fun x hx => (fR26 x hx).trans (fM x hx).symm) V26 hret g26_2 g26_18 hO g26_3 g26_4⟩
+    exact .inl ⟨(fun ⟨ix9', h0', h1', h2', _⟩ => by rw [hr9] at h0'; cases h0'; exact hsp h2'), sv_fail_1882 F E26 s26 t26 (fun x hx => (fR26 x hx).trans (fM x hx).symm) V26 hret g26_2 g26_18 hO g26_3 g26_4 (by rw [g26_25]; sv_code)⟩
   -- 0x1690: branch, not taken
   obtain ⟨n24, d24, u24⟩ := s23.notTaken E23.self 0x1694 sv_at_1690
     (by decide) (by rw [g23_11, s23.zero]; exact br_beq_f (ofNat_ne_zero (by omega) (by have := w50.isLt; omega)))

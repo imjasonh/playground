@@ -547,7 +547,7 @@ theorem sv_tsig {B out bp x20 x21 x22 x23 x24 x25 x27 : Word} {tp tl dg w70 w68 
     have w9_78 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = q := by rw [m9]; exact w8_78
     have w9_174 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x174) = tl := by rw [m9]; exact w8_174
     clear w8_174 w8_78 w8_74 w8_70 w8_68 w8_64 w8_50 w8_44 g8_8 g8_27 g8_26 g8_25 g8_24 g8_23 g8_22 g8_21 g8_20 g8_19 g8_18 g8_10 g8_4 g8_3 g8_2 V8 E8 fR8 t8 fr8 rb8 s8 m8 u8 c8 g7_10
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact htd h0'), sv_fail F E9 s9 t9 (fun x hx => (fR9 x hx).trans (fM x hx).symm) V9 hret g9_2 g9_18 hO g9_3 g9_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact htd h0'), sv_fail F E9 s9 t9 (fun x hx => (fR9 x hx).trans (fM x hx).symm) V9 hret g9_2 g9_18 hO g9_3 g9_4 (by rw [g9_8]; sv_code)⟩
   have g7_10 : reg n7 a0 = BitVec.ofNat 32 0 := by rw [a0_7, ite_eq_left htd]; rfl
   -- 0x13BC
   obtain ⟨n8, c8, u8⟩ := s7.block svTsig13bc E7.self svTsig13bc_end
@@ -938,7 +938,7 @@ theorem sv_tsig {B out bp x20 x21 x22 x23 x24 x25 x27 : Word} {tp tl dg w70 w68 
     have w16_78 : memLoad32 n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = q := by rw [m16]; exact w15_78
     have w16_174 : memLoad32 n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x174) = tl := by rw [m16]; exact w15_174
     clear w15_174 w15_78 w15_74 w15_70 w15_68 w15_64 w15_50 w15_44 g15_2 g15_27 g15_26 g15_25 g15_24 g15_23 g15_22 g15_21 g15_20 g15_19 g15_18 g15_8 g15_4 g15_3 V15 E15 fR15 t15 fr15 K15 a0_15 rk15 sp15 s15 c15
-    exact .inl ⟨(fun ⟨h0', h1', _⟩ => by exact him h1'), sv_fail F E16 s16 t16 (fun x hx => (fR16 x hx).trans (fM x hx).symm) V16 hret g16_2 g16_18 hO g16_3 g16_4⟩
+    exact .inl ⟨(fun ⟨h0', h1', _⟩ => by exact him h1'), sv_fail F E16 s16 t16 (fun x hx => (fR16 x hx).trans (fM x hx).symm) V16 hret g16_2 g16_18 hO g16_3 g16_4 (by rw [g16_8]; sv_code)⟩
   have g15_10 : reg n15 a0 = BitVec.ofNat 32 0 := by rw [a0_15, ite_eq_left him]; rfl
   -- 0x13E0: branch, not taken
   obtain ⟨n16, d16, u16⟩ := s15.notTaken E15.self 0x13E4 sv_at_13e0
@@ -1142,7 +1142,7 @@ theorem sv_tsig {B out bp x20 x21 x22 x23 x24 x25 x27 : Word} {tp tl dg w70 w68 
     have w20_78 : memLoad32 n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = q := by rw [m20]; exact w19_78
     have w20_174 : memLoad32 n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x174) = tl := by rw [m20]; exact w19_174
     clear w19_174 w19_78 w19_74 w19_70 w19_68 w19_64 w19_50 w19_44 g19_8 g19_27 g19_26 g19_25 g19_24 g19_23 g19_22 g19_21 g19_20 g19_19 g19_18 g19_10 g19_4 g19_3 g19_2 V19 E19 fR19 t19 fr19 rb19 s19 m19 u19 c19
-    exact .inl ⟨(fun ⟨h0', h1', h2', _⟩ => by exact hsa h2'), sv_fail F E20 s20 t20 (fun x hx => (fR20 x hx).trans (fM x hx).symm) V20 hret g20_2 g20_18 hO g20_3 g20_4⟩
+    exact .inl ⟨(fun ⟨h0', h1', h2', _⟩ => by exact hsa h2'), sv_fail F E20 s20 t20 (fun x hx => (fR20 x hx).trans (fM x hx).symm) V20 hret g20_2 g20_18 hO g20_3 g20_4 (by rw [g20_8]; sv_code)⟩
   -- 0x13E6: branch, not taken
   obtain ⟨n18, d18, u18⟩ := s17.notTaken E17.self 0x13EA sv_at_13e6
     (by decide) (by rw [g17_10, s17.zero]; exact br_beq_f hsa)

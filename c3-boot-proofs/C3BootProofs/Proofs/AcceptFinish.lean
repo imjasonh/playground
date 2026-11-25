@@ -16,11 +16,10 @@ and the manifest's fields, and returns.
 `sigstore::verify` writes up to 0x1A0 bytes below the closure's frame, so the
 stage keeps memory as it was outside the frame and those bytes
 (`AcFinishInv`, which is `AcInvW`), not outside the frame alone (`AcInv`).
-`SvErrRet` says nothing about the error's code, so an `Err` whose code is
-0x27 or more reaches 0x7D6 outside `AcFail` (`AcFinishBad`). The code at
-0x7D6 has no case for such a code: it checks only that the code is at least
-0x20 before it indexes the 7-entry jump table at `acRejectTableAddress`, so
-a larger code jumps to whatever word follows the table.
+The code at 0x7D6 checks only that the error's code is at least 0x20
+before it indexes the 7-entry jump table at `acRejectTableAddress`, so a code
+of 0x27 or more would jump to whatever word follows the table. `SvErrRet`
+bounds the code below 0x27, so every `Err` reaches `AcFail`.
 -/
 
 namespace C3.RV32.Ac
@@ -85,10 +84,6 @@ structure AcFinishPre (B r : Word) (bundle : Bundle) (root : SigstoreRoot) (expi
 abbrev AcFinishInv (B Bf g t : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (n : Machine) : Prop :=
   AcInvW B Bf g t v M0 n
 
-/-- The exit at 0x7D6 with a code of 0x27 or more. -/
-def AcFinishBad (B r : Word) (n : Machine) : Prop :=
-  n.pc = AC + 0x7D6 ∧ memLoad32 n.mem (acSlot B 0x40) = r ∧ 0x27 ≤ (reg n (21 : Fin 32) &&& 0xFF).toNat
-
 /-- The result the closure writes at `r` when the bundle verifies and its
 signing time is no later than the expiry, from the registers and frame of
 `n0` at 0x1A46. -/
@@ -113,7 +108,7 @@ result written. -/
 def AcFinishPost (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (bundle : Bundle)
     (root : SigstoreRoot) (expiry : Nat) (n0 : Machine) : Prop :=
   ∃ n', Steps n0 n' ∧ (Halting n' ∨
-    (AcFinishInv B Bf g t v M0 n' ∧ (AcFail B r n' ∨ AcFinishBad B r n')) ∨
+    (AcFinishInv B Bf g t v M0 n' ∧ AcFail B r n') ∨
     (n'.pc = v 0 ∧ reg n' sp = B + 0x5A70 ∧ (∀ k, k < 13 → reg n' (savedReg k) = v k) ∧
       reg n' (3 : Fin 32) = g ∧ reg n' (4 : Fin 32) = t ∧
       AcFinishRes B Bf r M0 bundle root expiry n0 n'.mem))
@@ -897,6 +892,13 @@ theorem acf_seg_write {M : Word → BitVec 8} {m : Machine} {B r : Word} {v : Na
   · rw [hB2.2.2, R7 _ (by decide), R6 _ (by decide), R3 _ (by decide)]
   · exact K8 x (acf_F16W hw) hx.symm
 
+/-- The low byte of a byte widened to a word is the byte. -/
+theorem acf_zx_and (b : BitVec 8) : ((b.zeroExtend 32 : Word) &&& 0xFF).toNat = b.toNat := by
+  rw [BitVec.toNat_and, BitVec.toNat_setWidth, show (0xFF : Word).toNat = 2 ^ 8 - 1 from rfl,
+    Nat.and_two_pow_sub_one_eq_mod]
+  have := b.isLt
+  omega
+
 /-- At 0x7D6 after `sigstore::verify` returned: the invariant, and the exit
 with the code in `s5`. -/
 theorem acf_exit {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {n n2 n5 : Machine}
@@ -904,18 +906,16 @@ theorem acf_exit {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8}
     (K : ∀ x, Sep x 1 (B + 0xFFFFFE60) 0x5C10 → n2.mem x = n.mem x)
     (KS : ∀ c, c < 0x2020 → (c < 0xDD0 ∨ 0xDE8 ≤ c) → n2.mem (acSlot B c) = n.mem (acSlot B c))
     (s : St n2.mem AC n5 0x7D6 (reg n5)) (rsp : reg n5 sp = B + 0x3A50) (r3 : reg n5 (3 : Fin 32) = g)
-    (r4 : reg n5 (4 : Fin 32) = t) :
-    AcFinishInv B Bf g t v M0 n5 ∧ (AcFail B r n5 ∨ AcFinishBad B r n5) := by
+    (r4 : reg n5 (4 : Fin 32) = t) (hc : (reg n5 (21 : Fin 32) &&& 0xFF).toNat < 0x27) :
+    AcFinishInv B Bf g t v M0 n5 ∧ AcFail B r n5 := by
   have M5 : n5.mem = n2.mem := s.mem
   refine ⟨⟨rsp, r3, r4, ?_, fun x hw hb => ?_⟩, ?_⟩
   · rw [M5]; exact acf_saves (fun c h1 h2 => KS c h2 (by omega)) I.saves
   · rw [M5, K x hw]; exact I.out x (acf_wB hw) hb
   · have hr : memLoad32 n5.mem (acSlot B 0x40) = r := by
       rw [M5, acf_ld fun j hj => KS _ (by omega) (by omega)]; exact P
-    unfold AcFail AcFinishBad
-    by_cases h : (reg n5 (21 : Fin 32) &&& 0xFF).toNat < 0x27
-    · exact .inl (.inr (.inr (.inl ⟨s.pc, hr, h⟩)))
-    · exact .inr ⟨s.pc, hr, by omega⟩
+    unfold AcFail
+    exact .inr (.inr (.inl ⟨s.pc, hr, hc⟩))
 
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 4000000 in
@@ -948,7 +948,7 @@ theorem ac_finish_stage : AcFinishStage := by
     E.rekor
   rw [R1 a3 (by decide), P.a3] at sv
   rw [a0_1] at sv
-  rcases sv with ⟨n2, c2, pc2, sp2, sv2, r3, r4, m2, K2⟩ | ⟨n', c', hh⟩ | ⟨vv, hv, n2, c2, pc2, sp2, sv2, r3, r4, m2, mlo, mhi, -, -, K2⟩
+  rcases sv with ⟨n2, c2, pc2, sp2, sv2, r3, r4, m2, oc2, K2⟩ | ⟨n', c', hh⟩ | ⟨vv, hv, n2, c2, pc2, sp2, sv2, r3, r4, m2, mlo, mhi, -, -, K2⟩
   · -- `Err`.
     have sp2' : reg n2 sp = B + 0x3A50 := by rw [sp2, BitVec.add_assoc]; rfl
     have K : ∀ x, Sep x 1 (B + 0xFFFFFE60) 0x5C10 → n2.mem x = n.mem x := fun x hw => by
@@ -966,10 +966,11 @@ theorem ac_finish_stage : AcFinishStage := by
     have hg : ∀ q : Fin 32, (q = 3 ∨ q = 4 ∨ q = sp) → reg n5 q = reg n2 q := fun q hq => by
       rw [k5 q (by rcases hq with rfl | rfl | rfl <;> decide), k4 q (by rcases hq with rfl | rfl | rfl <;> decide)
         (by rcases hq with rfl | rfl | rfl <;> decide), k3 q (by rcases hq with rfl | rfl | rfl <;> decide)]
-    refine ⟨n5, .cons e1 (c2.trans (c3.trans (c4.trans c5))), .inr (.inl (acf_exit I P.res K KS s5 ?_ ?_ ?_))⟩
+    refine ⟨n5, .cons e1 (c2.trans (c3.trans (c4.trans c5))), .inr (.inl (acf_exit I P.res K KS s5 ?_ ?_ ?_ ?_))⟩
     · rw [hg _ (by decide), sp2']
     · rw [hg _ (by decide), r3, R1 _ (by decide), I.gp]
     · rw [hg _ (by decide), r4, R1 _ (by decide), I.tp]
+    · rw [s5v, s0, acf_zx_and, ← acf_slot1]; exact oc2
   · exact ⟨n', .cons e1 c', .inl hh⟩
   · -- `Ok`.
     have sp2' : reg n2 sp = B + 0x3A50 := by rw [sp2, BitVec.add_assoc]; rfl
@@ -1004,15 +1005,11 @@ theorem ac_finish_stage : AcFinishStage := by
       obtain ⟨n6, c6, s6, s5v, k6⟩ := acf_seg_7d6 C2 s5
       have hg : ∀ q : Fin 32, (q.val = 3 ∨ q.val = 4 ∨ q.val = 2) → reg n6 q = reg n2 q := fun q hq => by
         rw [k6 q (by omega), k5 q (by omega), k34 q (by omega)]
-      refine ⟨n6, .cons e1 (c2.trans (c3.trans (c4.trans (c5.trans c6)))), .inr (.inl ⟨?_, .inl ?_⟩)⟩
-      · refine (acf_exit I P.res K KS s6 ?_ ?_ ?_).1
-        · rw [hg sp (by decide), sp2']
-        · rw [hg _ (by decide), r3, R1 _ (by decide), I.gp]
-        · rw [hg _ (by decide), r4, R1 _ (by decide), I.tp]
-      · unfold AcFail
-        refine .inr (.inr (.inl ⟨s6.pc, ?_, ?_⟩))
-        · rw [s6.mem, acf_ld fun j hj => KS _ (by omega) (by omega)]; exact P.res
-        · rw [s5v, s0_5]; decide
+      refine ⟨n6, .cons e1 (c2.trans (c3.trans (c4.trans (c5.trans c6)))), .inr (.inl
+        (acf_exit I P.res K KS s6 ?_ ?_ ?_ (by rw [s5v, s0_5]; decide)))⟩
+      · rw [hg sp (by decide), sp2']
+      · rw [hg _ (by decide), r3, R1 _ (by decide), I.gp]
+      · rw [hg _ (by decide), r4, R1 _ (by decide), I.tp]
     · rw [ite_eq_right hlt] at a4
       have hz4 := s4.zero
       obtain ⟨n5, e5, s5⟩ := s4.taken C2 0x1A9C ac_at_1a94 (by decide)

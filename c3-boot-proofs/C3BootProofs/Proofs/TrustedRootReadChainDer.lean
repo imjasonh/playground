@@ -682,7 +682,7 @@ theorem RcCtx.callTime (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
   refine ⟨m2, c2, pc2, ⟨X.keepOf ⟨hoc.1, hoc.2.1⟩ ⟨hdc.1, hdc.2.1⟩ hF, hF, ?_⟩, by rw [hsp2, hsp1], fun q hq => hk2 q (rcd_time_saved q hq)⟩
   · rw [← hV]
     rcases hT : readTime (memBytes m1.mem (b + BitVec.ofNat 32 r.1) r.2) with _ | ⟨t, r1⟩
-    · exact hnone hT
+    · exact (hnone hT).1
     · obtain ⟨h64, h0, h8, hC, j, hj, hd8, hdC, hr1'⟩ := hsome t r1 hT
       have hl : r1.length = r.2 - j := by rw [hr1', memBytes_length]
       refine ⟨h64, h0, h8, hC, by omega, ?_, ?_, ?_⟩

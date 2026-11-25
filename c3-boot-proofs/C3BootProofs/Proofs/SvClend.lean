@@ -133,7 +133,7 @@ theorem sv_clend {B out bp x20 x21 x22 x23 x24 x25 x26 x27 c q op ol w48 w44 : W
     have w2_48 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x48) = w48 := by rw [m2]; exact w1_48
     have w2_4c : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x4C) = q := by rw [m2]; exact w1_4c
     clear w1_4c w1_48 w1_44 g1_25 g1_27 g1_26 g1_24 g1_23 g1_22 g1_21 g1_20 g1_19 g1_18 g1_8 g1_4 g1_3 g1_2 V1 E1 fR1 t1 fr1 rb1 s1 m1 u1 c1 g0_4 g0_3 fR0 t0
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hf h0'), sv_fail_1882 F E2 s2 t2 (fun x hx => (fR2 x hx).trans (fM x hx).symm) V2 hret g2_2 g2_18 hO g2_3 g2_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hf h0'), sv_fail_1882 F E2 s2 t2 (fun x hx => (fR2 x hx).trans (fM x hx).symm) V2 hret g2_2 g2_18 hO g2_3 g2_4 (by rw [g2_25]; sv_code)⟩
   exact hf.elim
 
 

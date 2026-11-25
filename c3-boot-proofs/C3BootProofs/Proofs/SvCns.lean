@@ -480,7 +480,7 @@ theorem sv_cns {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b7_14 : n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = BitVec.ofNat 8 (sg.getD 0 0) := by rw [m7]; exact b6_14
     have q7_1fc : ∀ j, j < 63 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m7]; exact q6_1fc j hj
     clear q6_1fc b6_14 w6_50 w6_48 w6_44 w6_38 w6_34 w6_30 w6_28 w6_24 w6_18 g6_25 g6_27 g6_26 g6_24 g6_23 g6_22 g6_21 g6_20 g6_19 g6_18 g6_10 g6_8 g6_4 g6_3 g6_2 V6 E6 fR6 t6 fr6 rb6 s6 m6 u6 c6
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hc0 h0'), sv_fail_1882 F E7 s7 t7 (fun x hx => (fR7 x hx).trans (fM x hx).symm) V7 hret g7_2 g7_18 hO g7_3 g7_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hc0 h0'), sv_fail_1882 F E7 s7 t7 (fun x hx => (fR7 x hx).trans (fM x hx).symm) V7 hret g7_2 g7_18 hO g7_3 g7_4 (by rw [g7_25]; sv_code)⟩
   -- 0x16A8: branch, not taken
   obtain ⟨n5, d5, u5⟩ := s4.notTaken E4.self 0x16AC sv_at_16a8
     (by decide) (by rw [g4_24, s4.zero]; exact br_beq_f hc0)
@@ -781,7 +781,7 @@ theorem sv_cns {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b10_14 : n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = BitVec.ofNat 8 (sg.getD 0 0) := by rw [m10]; exact b9_14
     have q10_1fc : ∀ j, j < 63 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m10]; exact q9_1fc j hj
     clear q9_1fc b9_14 w9_50 w9_48 w9_44 w9_38 w9_34 w9_30 w9_28 w9_24 w9_18 g9_25 g9_27 g9_26 g9_24 g9_23 g9_22 g9_21 g9_20 g9_19 g9_18 g9_10 g9_9 g9_8 g9_4 g9_3 g9_2 V9 E9 fR9 t9 fr9 rb9 s9 m9 u9 c9
-    exact .inl ⟨(fun ⟨h0', h1', _⟩ => by exact h4m h1'), sv_fail_1882 F E10 s10 t10 (fun x hx => (fR10 x hx).trans (fM x hx).symm) V10 hret g10_2 g10_18 hO g10_3 g10_4⟩
+    exact .inl ⟨(fun ⟨h0', h1', _⟩ => by exact h4m h1'), sv_fail_1882 F E10 s10 t10 (fun x hx => (fR10 x hx).trans (fM x hx).symm) V10 hret g10_2 g10_18 hO g10_3 g10_4 (by rw [g10_25]; sv_code)⟩
   -- 0x16BA: branch, not taken
   obtain ⟨n8, d8, u8⟩ := s7.notTaken E7.self 0x16BE sv_at_16ba
     (by decide) (by rw [g7_10, s7.zero]; exact br_bne_f h4m)

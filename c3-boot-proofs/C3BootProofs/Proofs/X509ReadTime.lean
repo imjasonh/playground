@@ -371,7 +371,7 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
         memLoad32 m'.mem (out + 0xC) = BitVec.ofNat 32 (t / 2 ^ 32) ∧
         ∃ k, k ≤ rl ∧ memLoad32 m'.mem (d + 8) = rp + BitVec.ofNat 32 k ∧
           memLoad32 m'.mem (d + 0xC) = BitVec.ofNat 32 (rl - k) ∧ r = memBytes m.mem (rp + BitVec.ofNat 32 k) (rl - k)) ∧
-      (readTime (memBytes m.mem rp rl) = none → m'.mem out = 1) ∧
+      (readTime (memBytes m.mem rp rl) = none → m'.mem out = 1 ∧ (m'.mem (out + 1)).toNat < 0x27) ∧
       ∀ x, Sep (sp0 + 0xFFFFFFA0) 0x60 x 1 → Sep out 16 x 1 → Sep (d + 8) 8 x 1 → m'.mem x = m.mem x := by
   obtain ⟨R, hR⟩ : ∃ R, sp0 + 0xFFFFFFA0 = R := ⟨_, rfl⟩
   rw [hR] at sOG sDG sPG ⊢
@@ -510,6 +510,7 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
     fun hS c' h1 h2 => by rw [memStore8_ne (xo1 (sRo h2)), hS c' h1 h2]
   have finMem : ∀ {nn : Machine}, Steps m nn → nn.pc = retAddr → reg nn sp = sp0 →
       (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn q = reg m q) → nn.mem out = 1 →
+      (nn.mem (out + 1)).toNat < 0x27 →
       (∀ x, Sep R 0x60 x 1 → Sep out 16 x 1 → Sep (d + 8) 8 x 1 → nn.mem x = m.mem x) →
       readTime (memBytes m.mem rp rl) = none → ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
         (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
@@ -518,23 +519,24 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
           memLoad32 m'.mem (out + 0xC) = BitVec.ofNat 32 (t / 2 ^ 32) ∧
           ∃ k, k ≤ rl ∧ memLoad32 m'.mem (d + 8) = rp + BitVec.ofNat 32 k ∧
             memLoad32 m'.mem (d + 0xC) = BitVec.ofNat 32 (rl - k) ∧ r = memBytes m.mem (rp + BitVec.ofNat 32 k) (rl - k)) ∧
-        (readTime (memBytes m.mem rp rl) = none → m'.mem out = 1) ∧
-        ∀ x, Sep R 0x60 x 1 → Sep out 16 x 1 → Sep (d + 8) 8 x 1 → m'.mem x = m.mem x := fun pre pc sp' K hout hfr hspec =>
-    ⟨_, pre, pc, sp', K, fun t r h => absurd (hspec ▸ h) (by simp), fun _ => hout, hfr⟩
+        (readTime (memBytes m.mem rp rl) = none → m'.mem out = 1 ∧ (m'.mem (out + 1)).toNat < 0x27) ∧
+        ∀ x, Sep R 0x60 x 1 → Sep out 16 x 1 → Sep (d + 8) 8 x 1 → m'.mem x = m.mem x := fun pre pc sp' K hout hc1 hfr hspec =>
+    ⟨_, pre, pc, sp', K, fun t r h => absurd (hspec ▸ h) (by simp), fun _ => ⟨hout, hc1⟩, hfr⟩
   have fin74 : ∀ {Mt : Word → BitVec 8} {nn : Machine} {v : Word}, Steps m nn → St Mt XRT nn 0x74 (reg nn) →
       (∀ x, Sep R 0x60 x 1 → Sep (d + 8) 8 x 1 → Mt x = m.mem x) →
       (∀ c', 0x58 ≤ c' → c' < 0x60 → Mt (R + BitVec.ofNat 32 c') = Ms (R + BitVec.ofNat 32 c')) →
       reg nn sp = F → reg nn 8 = out → (∀ q, q.val ∈ [3, 4, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn q = reg m q) →
-      readTime (memBytes m.mem rp rl) = none → reg nn a0 = v → v.extractLsb' 0 8 = 1 → ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+      readTime (memBytes m.mem rp rl) = none → reg nn a0 = v → v.extractLsb' 0 8 = 1 →
+      (v.extractLsb' 8 8).toNat < 0x27 → ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
         (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
         (∀ t r, readTime (memBytes m.mem rp rl) = some (t, r) → t < 2 ^ 64 ∧ m'.mem out = 0 ∧
           memLoad32 m'.mem (out + 8) = BitVec.ofNat 32 (t % 2 ^ 32) ∧
           memLoad32 m'.mem (out + 0xC) = BitVec.ofNat 32 (t / 2 ^ 32) ∧
           ∃ k, k ≤ rl ∧ memLoad32 m'.mem (d + 8) = rp + BitVec.ofNat 32 k ∧
             memLoad32 m'.mem (d + 0xC) = BitVec.ofNat 32 (rl - k) ∧ r = memBytes m.mem (rp + BitVec.ofNat 32 k) (rl - k)) ∧
-        (readTime (memBytes m.mem rp rl) = none → m'.mem out = 1) ∧
+        (readTime (memBytes m.mem rp rl) = none → m'.mem out = 1 ∧ (m'.mem (out + 1)).toNat < 0x27) ∧
         ∀ x, Sep R 0x60 x 1 → Sep out 16 x 1 → Sep (d + 8) 8 x 1 → m'.mem x = m.mem x := by
-    intro Mt nn v pre st hI hS rsp r8 hK hspec ra0 hv
+    intro Mt nn v pre st hI hS rsp r8 hK hspec ra0 hv hv1
     have hct := cdX hI
     obtain ⟨n1, d1, u1⟩ := st.sh hct xrt_at_74 (off' := 0x78) (by decide) (by rw [r8, add_lit_zero]; omega)
     rw [r8, add_lit_zero, ra0] at u1
@@ -542,23 +544,24 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
     obtain ⟨n2, d2, u2⟩ := u1.jump hct1 xrt_at_78 (off' := 0xB0) (by decide) (by rw [u1.pc]; decide)
     obtain ⟨n3, c3, pc3, sp3, K3, mem3⟩ := exB0 u2.self hct1 (by rw [u2.regs, rsp]) (sl1 (sl0 hS))
       (fun q hq => by rw [u2.regs, hK q hq])
-    refine finMem (pre.trans (.cons d1 (.cons d2 c3))) pc3 sp3 K3 ?_ (fun x hx hx1 hx2 => ?_) hspec
+    refine finMem (pre.trans (.cons d1 (.cons d2 c3))) pc3 sp3 K3 ?_ ?_ (fun x hx hx1 hx2 => ?_) hspec
     · rw [mem3, memStore8_ne (fun e => o01 e.symm), memStore8_same, hv]
+    · rw [mem3, memStore8_same]; exact hv1
     · rw [mem3, memStore8_ne (xo1 hx1), memStore8_ne (xo0 hx1), hI x hx hx2]
   have finA6 : ∀ {Mt : Word → BitVec 8} {nn : Machine} {v : Word}, Steps m nn → St Mt XRT nn 0xA6 (reg nn) →
       (∀ x, Sep R 0x60 x 1 → Sep (d + 8) 8 x 1 → Mt x = m.mem x) →
       (∀ c', 0x58 ≤ c' → c' < 0x60 → Mt (R + BitVec.ofNat 32 c') = Ms (R + BitVec.ofNat 32 c')) →
       reg nn sp = F → reg nn 8 = out → (∀ q, q.val ∈ [3, 4, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn q = reg m q) →
-      readTime (memBytes m.mem rp rl) = none → reg nn a0 = v → ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+      readTime (memBytes m.mem rp rl) = none → reg nn a0 = v → (v.extractLsb' 0 8).toNat < 0x27 → ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
         (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
         (∀ t r, readTime (memBytes m.mem rp rl) = some (t, r) → t < 2 ^ 64 ∧ m'.mem out = 0 ∧
           memLoad32 m'.mem (out + 8) = BitVec.ofNat 32 (t % 2 ^ 32) ∧
           memLoad32 m'.mem (out + 0xC) = BitVec.ofNat 32 (t / 2 ^ 32) ∧
           ∃ k, k ≤ rl ∧ memLoad32 m'.mem (d + 8) = rp + BitVec.ofNat 32 k ∧
             memLoad32 m'.mem (d + 0xC) = BitVec.ofNat 32 (rl - k) ∧ r = memBytes m.mem (rp + BitVec.ofNat 32 k) (rl - k)) ∧
-        (readTime (memBytes m.mem rp rl) = none → m'.mem out = 1) ∧
+        (readTime (memBytes m.mem rp rl) = none → m'.mem out = 1 ∧ (m'.mem (out + 1)).toNat < 0x27) ∧
         ∀ x, Sep R 0x60 x 1 → Sep out 16 x 1 → Sep (d + 8) 8 x 1 → m'.mem x = m.mem x := by
-    intro Mt nn v pre st hI hS rsp r8 hK hspec ra0
+    intro Mt nn v pre st hI hS rsp r8 hK hspec ra0 hv
     have hct := cdX hI
     obtain ⟨n1, c1, u1⟩ := St.block xrtEA6 st hct xrtEA6_end (by
       simp +decide only [BlockOk, BInstr.ok, xrtEA6, and_true, true_and]; rw [r8]; exact so1)
@@ -582,23 +585,25 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
       rw [R1, runBlock_reg _ _ _ q st.zero hd]
     obtain ⟨n3, c3, pc3, sp3, K3, mem3⟩ := exB0 u2.self hct2 (by rw [u2.regs, K1 sp (by decide), rsp])
       (sl0 (sl1 hS)) (fun q hq => by rw [u2.regs, K1 q (by revert hq; revert q; decide), hK q hq])
-    refine finMem (pre.trans (c1.trans (.cons d2 c3))) pc3 sp3 K3 ?_ (fun x hx hx1 hx2 => ?_) hspec
+    refine finMem (pre.trans (c1.trans (.cons d2 c3))) pc3 sp3 K3 ?_ ?_ (fun x hx hx1 hx2 => ?_) hspec
     · rw [mem3, memStore8_same]; rfl
+    · rw [mem3, memStore8_ne o01, memStore8_same]; exact hv
     · rw [mem3, memStore8_ne (xo0 hx1), memStore8_ne (xo1 hx1), hI x hx hx2]
   have fin7A : ∀ {Mt : Word → BitVec 8} {nn : Machine}, Steps m nn → St Mt XRT nn 0x7A (reg nn) →
       (∀ x, Sep R 0x60 x 1 → Sep (d + 8) 8 x 1 → Mt x = m.mem x) →
       (∀ c', 0x58 ≤ c' → c' < 0x60 → Mt (R + BitVec.ofNat 32 c') = Ms (R + BitVec.ofNat 32 c')) →
       reg nn sp = F → reg nn 8 = out → (∀ q, q.val ∈ [3, 4, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn q = reg m q) →
-      readTime (memBytes m.mem rp rl) = none → ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+      readTime (memBytes m.mem rp rl) = none → (Mt (F + 0xC)).toNat < 0x27 → ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
+        reg m' sp = sp0 ∧
         (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
         (∀ t r, readTime (memBytes m.mem rp rl) = some (t, r) → t < 2 ^ 64 ∧ m'.mem out = 0 ∧
           memLoad32 m'.mem (out + 8) = BitVec.ofNat 32 (t % 2 ^ 32) ∧
           memLoad32 m'.mem (out + 0xC) = BitVec.ofNat 32 (t / 2 ^ 32) ∧
           ∃ k, k ≤ rl ∧ memLoad32 m'.mem (d + 8) = rp + BitVec.ofNat 32 k ∧
             memLoad32 m'.mem (d + 0xC) = BitVec.ofNat 32 (rl - k) ∧ r = memBytes m.mem (rp + BitVec.ofNat 32 k) (rl - k)) ∧
-        (readTime (memBytes m.mem rp rl) = none → m'.mem out = 1) ∧
+        (readTime (memBytes m.mem rp rl) = none → m'.mem out = 1 ∧ (m'.mem (out + 1)).toNat < 0x27) ∧
         ∀ x, Sep R 0x60 x 1 → Sep out 16 x 1 → Sep (d + 8) 8 x 1 → m'.mem x = m.mem x := by
-    intro Mt nn pre st hI hS rsp r8 hK hspec
+    intro Mt nn pre st hI hS rsp r8 hK hspec hcb
     have hct := cdX hI
     obtain ⟨n1, c1, u1⟩ := St.block xrtE7A st hct xrtE7A_end (by
       simp +decide only [BlockOk, BInstr.ok, BInstr.run, xrtE7A, upd_app, ↓reduceIte, and_true, true_and]
@@ -621,8 +626,9 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
     obtain ⟨n3, c3, pc3, sp3, K3, mem3⟩ := exB0 u2.self hct1 (by rw [K2 sp (by decide) (by decide), rsp])
       (sl1 (sl0 hS)) (fun q hq => by
         rw [K2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide), hK q hq])
-    refine finMem (pre.trans (c1.trans (.cons d2 c3))) pc3 sp3 K3 ?_ (fun x hx hx1 hx2 => ?_) hspec
+    refine finMem (pre.trans (c1.trans (.cons d2 c3))) pc3 sp3 K3 ?_ ?_ (fun x hx hx1 hx2 => ?_) hspec
     · rw [mem3, memStore8_ne (fun e => o01 e.symm), memStore8_same]
+    · rw [mem3, memStore8_same, ← hb]; exact hcb
     · rw [mem3, memStore8_ne (xo1 hx1), memStore8_ne (xo0 hx1), hI x hx hx2]
   -- 0x6: the reader's length and the result pointer
   have hd8 : (d + 8).toNat = d.toNat + 8 := by
@@ -669,7 +675,7 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
       (by rw [K6 sp (by decide), sp3]) (by rw [K6 8 (by decide), v3.2])
       (fun q hq => by rw [K6 q (by revert hq; revert q; decide), kk3 q hq])
       (by subst hl0; rw [memBytes_zero]; rfl)
-      (by rw [u6.regs, u5.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [u4.self.zero]; rfl) (by decide)
+      (by rw [u6.regs, u5.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [u4.self.zero]; rfl) (by decide) (by decide)
   obtain ⟨m4, d4, u4⟩ := u3'.notTaken hc2 0xC xrt_at_a (by decide) (by
     rw [v3.1, u3'.zero, dn_beq0 _ hrl]; exact decide_eq_false hl0)
   -- 0xC: the tag
@@ -734,7 +740,7 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
         SMs (by rw [K10 sp (by decide) (by decide), sp3]) (by rw [K10 8 (by decide) (by decide), v3.2])
         (fun q hq => by rw [K10 q (by revert hq; revert q; decide) (by revert hq; revert q; decide), kk3 q hq]) hspec
         (by rw [u10.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [u9.regs]; simp +decide only [upd_app, ↓reduceIte])
-        (by decide)
+        (by decide) (by decide)
     -- `GeneralizedTime`
     obtain ⟨m8, d8, u8⟩ := u7.self.notTaken hc2 0x1E xrt_at_1a (by decide) (by
       rw [a07, a27, xrt_tag18, decide_eq_true h18]; rfl)
@@ -807,7 +813,9 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
       have K13 : ∀ q, q ≠ a1 → reg m13 q = reg m11 q := fun q hq => by rw [u13.regs, u12.regs, upd_ne' hq u11.zero]
       exact fin7A (pre11.trans (.cons d12 (.single d13))) u13.self I11 S11 (by rw [K13 sp (by decide), sp11])
         (by rw [K13 8 (by decide), r811]) (fun q hq => by rw [K13 q (by revert hq; revert q; decide), kk11 q hq])
-        (readTime_err hdt)
+        (readTime_err hdt) (by
+          rw [mem11]; simp only [derTlvMem]
+          rw [show F + 0xC = F + 8 + 4 by rw [BitVec.add_assoc]; rfl, memStore8_same]; cases e <;> decide)
     | ok t =>
       rw [hdt] at mem11
       obtain ⟨lo0, lo4, ld8', ldC', fr11⟩ := derTlvMem_ok Ms (F + 8) d rp (BitVec.ofNat 32 (rl' + 1)) t sF8d
@@ -921,7 +929,7 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
               exact ldf _ (by omega)
       · rw [hspec] at h
         cases hg : generalizedTime (memBytes m.mem (rp + BitVec.ofNat 32 t.header) t.len) with
-        | none => exact (hNf hg).1
+        | none => exact ⟨(hNf hg).1, by rw [(hNf hg).2]; decide⟩
         | some tg => rw [hg] at h; cases h
       · rw [frf x hx hx1, I11 x hx hx2]
   -- `UTCTime`: read the element and run `utc_time` on its content
@@ -986,7 +994,9 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
     have K13 : ∀ q, q ≠ a0 → reg m13 q = reg m11 q := fun q hq => by rw [u13.regs, u12.regs, upd_ne' hq u11.zero]
     exact fin7A (pre11.trans (.cons d12 (.single d13))) u13.self I11 S11 (by rw [K13 sp (by decide), sp11])
       (by rw [K13 8 (by decide), r811]) (fun q hq => by rw [K13 q (by revert hq; revert q; decide), kk11 q hq])
-      (readTime_err hdt)
+      (readTime_err hdt) (by
+        rw [mem11]; simp only [derTlvMem]
+        rw [show F + 0xC = F + 8 + 4 by rw [BitVec.add_assoc]; rfl, memStore8_same]; cases e <;> decide)
   | ok t =>
   rw [hdt] at mem11
   obtain ⟨lo0, lo4, ld8', ldC', fr11⟩ := derTlvMem_ok Ms (F + 8) d rp (BitVec.ofNat 32 (rl' + 1)) t sF8d
@@ -1124,7 +1134,7 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
       (∀ x, Sep R 0x60 x 1 → Sep (d + 8) 8 x 1 → Mx x = m.mem x) →
       (∀ c', 0x58 ≤ c' → c' < 0x60 → Mx (R + BitVec.ofNat 32 c') = Ms (R + BitVec.ofNat 32 c')) →
       reg nn sp = F → reg nn 8 = out → (∀ q, q.val ∈ [3, 4, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn q = reg m q) →
-      utcTime (memBytes m.mem c t.len) = none → ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+      utcTime (memBytes m.mem c t.len) = none → (Mx (F + 9)).toNat < 0x27 → ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
         (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
         (∀ t r, readTime (memBytes m.mem rp (rl' + 1)) = some (t, r) → t < 2 ^ 64 ∧ m'.mem out = 0 ∧
           memLoad32 m'.mem (out + 8) = BitVec.ofNat 32 (t % 2 ^ 32) ∧
@@ -1132,9 +1142,9 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
           ∃ k, k ≤ rl' + 1 ∧ memLoad32 m'.mem (d + 8) = rp + BitVec.ofNat 32 k ∧
             memLoad32 m'.mem (d + 0xC) = BitVec.ofNat 32 (rl' + 1 - k) ∧
             r = memBytes m.mem (rp + BitVec.ofNat 32 k) (rl' + 1 - k)) ∧
-        (readTime (memBytes m.mem rp (rl' + 1)) = none → m'.mem out = 1) ∧
+        (readTime (memBytes m.mem rp (rl' + 1)) = none → m'.mem out = 1 ∧ (m'.mem (out + 1)).toNat < 0x27) ∧
         ∀ x, Sep R 0x60 x 1 → Sep out 16 x 1 → Sep (d + 8) 8 x 1 → m'.mem x = m.mem x := by
-    intro Mx nn pre st hI hS rsp r8 hK hu
+    intro Mx nn pre st hI hS rsp r8 hK hu h9
     have hcx := cdX hI
     obtain ⟨n1, d1, u1⟩ := st.lbu hcx xrt_at_68 (off' := 0x6C) (by decide)
     obtain ⟨n2, d2, u2⟩ := u1.self.jump hcx xrt_at_6c (off' := 0xA6) (by decide) (by rw [u1.pc]; decide)
@@ -1143,12 +1153,13 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
       (by rw [K2 sp (by decide), rsp]) (by rw [K2 8 (by decide), r8])
       (fun q hq => by rw [K2 q (by revert hq; revert q; decide), hK q hq])
       (by rw [hspec, hu]; rfl) (by rw [u2.regs, u1.regs]; simp +decide only [upd_app, ↓reduceIte])
-  rcases cs with ⟨hr, h8, _⟩ | ⟨v, hr, hv, h8, h12, hd0, hd4, h2⟩
+      (by rw [rsp, dt_zext8]; exact h9)
+  rcases cs with ⟨hr, h8, h9⟩ | ⟨v, hr, hv, h8, h12, hd0, hd4, h2⟩
   · rw [hcont] at hr
     obtain ⟨m18, d18, u18⟩ := u17.self.notTaken hc16 0x68 xrt_at_66 (by decide) (by rw [a017, h8, u17.self.zero]; rfl)
     exact errA6 (pre16.trans (.cons d17 (.single d18))) u18.self I3 S3 (by rw [u18.regs, K17 sp (by decide), sp16])
       (by rw [u18.regs, K17 8 (by decide), r816]) (fun q hq => by rw [u18.regs, K17 q (by revert hq; revert q; decide), kk16 q hq])
-      (by rw [utcTime_eq, hr]; rfl)
+      (by rw [utcTime_eq, hr]; rfl) (by rw [show F + 9 = F + 8 + 1 by rw [BitVec.add_assoc]; rfl, h9]; decide)
   rw [hcont] at hr
   have hmb2 : memBytes M2 (c + 2) (t.len - 2) = memBytes m.mem (c + 2) (t.len - 2) := by
     rw [← hc, show rp + BitVec.ofNat 32 t.header + 2 = rp + BitVec.ofNat 32 (t.header + 2) by
@@ -1299,11 +1310,11 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
     rw [utcTime_eq, hr]; simp only [Option.bind]; rw [hYv]
   cases hdtm : readDateTime Yv (memBytes m.mem (c + 2) (t.len - 2)) with
   | none =>
-    obtain ⟨t1, _⟩ := hN26 hdtm
+    obtain ⟨t1, t9⟩ := hN26 hdtm
     obtain ⟨m28, d28, u28⟩ := u27.self.taken hc26 0x68 xrt_at_c8 (by decide) (by rw [a027, t1, u27.self.zero]; rfl)
     exact errA6 (pre26.trans (.cons d27 (.single d28))) u28.self I4 S4 (by rw [u28.regs, K27 sp (by decide), sp26'])
       (by rw [u28.regs, K27 8 (by decide), r826]) (fun q hq => by rw [u28.regs, K27 q (by revert hq; revert q; decide), kk26 q hq])
-      (by rw [hutc, hdtm]; rfl)
+      (by rw [hutc, hdtm]; rfl) (by rw [show F + 9 = F + 8 + 1 by rw [BitVec.add_assoc]; rfl, t9]; decide)
   | some tr =>
   obtain ⟨tt, rest2⟩ := tr
   obtain ⟨htt, t0, tlo, thi, hr2, hq2, hL2⟩ := hS26 tt rest2 hdtm
@@ -1333,11 +1344,11 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
           ∃ k, k ≤ rl' + 1 ∧ memLoad32 m'.mem (d + 8) = rp + BitVec.ofNat 32 k ∧
             memLoad32 m'.mem (d + 0xC) = BitVec.ofNat 32 (rl' + 1 - k) ∧
             r = memBytes m.mem (rp + BitVec.ofNat 32 k) (rl' + 1 - k)) ∧
-        (readTime (memBytes m.mem rp (rl' + 1)) = none → m'.mem out = 1) ∧
+        (readTime (memBytes m.mem rp (rl' + 1)) = none → m'.mem out = 1 ∧ (m'.mem (out + 1)).toNat < 0x27) ∧
         ∀ x, Sep R 0x60 x 1 → Sep out 16 x 1 → Sep (d + 8) 8 x 1 → m'.mem x = m.mem x :=
     fun pre st hK ra0 hne => finA6 pre st I4 S4 (by rw [hK sp (by decide), sp26']) (by rw [hK 8 (by decide), r826])
       (fun q hq => by rw [hK q (by revert hq; revert q; decide), kk26 q hq])
-      (by rw [hspec, hutc, hdtm]; simp only [Option.bind]; rw [if_neg hne]; rfl) ra0
+      (by rw [hspec, hutc, hdtm]; simp only [Option.bind]; rw [if_neg hne]; rfl) ra0 (by decide)
   have ec12 : c + 2 + 10 = rp + BitVec.ofNat 32 (t.header + 12) := by
     rw [← hc, BitVec.add_assoc, BitVec.add_assoc, show (2 : Word) + 10 = BitVec.ofNat 32 12 from rfl, ofNat_add_ofNat]
   have hrest2 : rest2 = memBytes m.mem (c + 2 + 10) (t.len - 2 - 10) := by

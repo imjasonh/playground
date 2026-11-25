@@ -20,11 +20,11 @@ theorem sv_ret_err {B out : Word} {v : Nat → Word} {n0 n : Machine} {M : Word 
     (C : CodeIn M SV sigstoreVerifyCode) (s : St M SV n 0x7AE (reg n)) (t : Steps n0 n)
     (hS : ∀ k, k < 13 → memLoad32 M (B + BitVec.ofNat 32 (0x265C - 4 * k)) = v k) (hret : v 0 &&& ~~~1 = v 0)
     (rsp : reg n sp = B + 0x21A0) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
-    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) (h1 : M out = 1)
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) (h1 : M out = 1) (hc : (M (out + 1)).toNat < 0x27)
     (fR : ∀ x, SvR B x → x ≠ out → x ≠ out + 1 → M x = n0.mem x) : SvErrRet B out v n0 := by
   obtain ⟨n', c', pc', mem', sp', sv', g', t'⟩ := sv_ret (v := v) C F s rsp hS hret
   exact ⟨n', t.trans c', pc', sp', sv', by rw [g', r3], by rw [t', r4], by rw [mem']; exact h1,
-    fun x hx h0 h1' => by rw [mem']; exact fR x hx h0 h1'⟩
+    by rw [mem']; exact hc, fun x hx h0 h1' => by rw [mem']; exact fR x hx h0 h1'⟩
 
 theorem out_sep (B out : Word) (hO : SvOut B out) : Sep out 2 (B + BitVec.ofNat 32 0x262C) 0x34 := by
   have := hO.stk.symm.sub (c := 0x1590 + 0x262C) (l := 0x34) (by decide)
@@ -48,7 +48,8 @@ theorem sv_fail_sb {B out : Word} {v : Nat → Word} {n0 n : Machine} {off e : N
     (s : St n.mem SV n off (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
     (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
     (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
-    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) : SvErrRet B out v n0 := by
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) (hc : ((reg n r).extractLsb' 0 8).toNat < 0x27) :
+    SvErrRet B out v n0 := by
   have hz := s.zero
   have e0 : out + 0 = out := BitVec.add_zero _
   have sOC := hO.code
@@ -84,8 +85,9 @@ theorem sv_fail_sb {B out : Word} {v : Nat → Word} {n0 n : Machine} {off e : N
       rw [memStore8_ne h1, memStore8_ne h0]
   refine sv_ret_err (n := n2) (M := n1.mem) F C1 s2 (t.trans (c1.trans (.single d2))) hS hret
     (by rw [u2.regs, r1 sp (ha4 sp (by decide)), rsp]) (by rw [u2.regs, r1 3 (ha4 3 (by decide)), r3])
-    (by rw [u2.regs, r1 4 (ha4 4 (by decide)), r4]) ?_ ?_
+    (by rw [u2.regs, r1 4 (ha4 4 (by decide)), r4]) ?_ ?_ ?_
   · rw [M1, memStore8_ne (out_ne1 out), memStore8_same]
+  · rw [M1, memStore8_same]; exact hc
   · intro x hx h0 h1; rw [M1, memStore8_ne h1, memStore8_ne h0, fR x hx]
 
 set_option maxRecDepth 100000 in
@@ -94,9 +96,10 @@ theorem sv_fail_e3a {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B
     (s : St n.mem SV n 0xE3A (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
     (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
     (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
-    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) : SvErrRet B out v n0 :=
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) (hc : ((reg n a0).extractLsb' 0 8).toNat < 0x27) :
+    SvErrRet B out v n0 :=
   sv_fail_sb (a := a1) (r := a0) F E (.inr rfl) (.inl rfl) (by decide) (by decide) sv_at_e44 (by decide)
-    (by decide) s t fR V hret rsp hout hO r3 r4
+    (by decide) s t fR V hret rsp hout hO r3 r4 hc
 
 set_option maxRecDepth 100000 in
 /-- **The error exit at 0x1882**, with the code in `s9`. -/
@@ -104,9 +107,10 @@ theorem sv_fail_1882 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr 
     (s : St n.mem SV n 0x1882 (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
     (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
     (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
-    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) : SvErrRet B out v n0 :=
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) (hc : ((reg n (25 : Fin 32)).extractLsb' 0 8).toNat < 0x27) :
+    SvErrRet B out v n0 :=
   sv_fail_sb (a := a0) (r := s9) F E (.inl rfl) (.inr (.inr rfl)) (by decide) (by decide) sv_at_188c (by decide)
-    (by decide) s t fR V hret rsp hout hO r3 r4
+    (by decide) s t fR V hret rsp hout hO r3 r4 hc
 
 set_option maxRecDepth 100000 in
 /-- **The error exit at 0x1AB8**, with the code in `s4`. -/
@@ -114,9 +118,10 @@ theorem sv_fail_1ab8 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr 
     (s : St n.mem SV n 0x1AB8 (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
     (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
     (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
-    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) : SvErrRet B out v n0 :=
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) (hc : ((reg n (20 : Fin 32)).extractLsb' 0 8).toNat < 0x27) :
+    SvErrRet B out v n0 :=
   sv_fail_sb (a := a0) (r := s4) F E (.inl rfl) (.inr (.inl rfl)) (by decide) (by decide) sv_at_1ac2 (by decide)
-    (by decide) s t fR V hret rsp hout hO r3 r4
+    (by decide) s t fR V hret rsp hout hO r3 r4 hc
 
 theorem St.sh {M : Word → BitVec 8} {base : Word} {code : List Nat} {m : Machine} {off : Nat}
     {f : Fin 32 → Word} (s : St M base m off f)
@@ -147,7 +152,8 @@ theorem sv_fail_138e {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr 
     (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
     (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
     (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32))
-    (hlo : (reg n a0).extractLsb' 0 8 = 1) : SvErrRet B out v n0 := by
+    (hlo : (reg n a0).extractLsb' 0 8 = 1) (hhi : ((reg n a0).extractLsb' 8 8).toNat < 0x27) :
+    SvErrRet B out v n0 := by
   have e0 : out + 0 = out := BitVec.add_zero _
   have sOC := hO.code
   have sOS := out_sep B out hO
@@ -176,8 +182,9 @@ theorem sv_fail_138e {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr 
         hs 0 (by decide) j hj (by rw [add_ofNat_zero]; exact e.symm)
       rw [memStore8_ne h1, memStore8_ne h0]
   refine sv_ret_err (n := n3) F C2 s3 (t.trans ((Steps.single d2).trans (.single d3))) hS hret
-    (by rw [u3.regs, rsp]) (by rw [u3.regs, r3]) (by rw [u3.regs, r4]) ?_ ?_
+    (by rw [u3.regs, rsp]) (by rw [u3.regs, r3]) (by rw [u3.regs, r4]) ?_ ?_ ?_
   · rw [memStore8_ne (out_ne1 out), memStore8_same]
+  · rw [memStore8_same]; exact hhi
   · intro x hx h0 h1; rw [memStore8_ne h1, memStore8_ne h0, fR x hx]
 
 set_option maxRecDepth 100000 in
@@ -193,7 +200,8 @@ theorem sv_fail_to138e {B out : Word} {v : Nat → Word} {n0 n : Machine} {off o
     (hr : ∀ q : Fin 32, q ≠ a0 → (runBlock is (n.mem, reg n)).2 q = reg n q)
     (hj : fetchRel sigstoreVerifyCode off' = some (.jal x0 o, 2))
     (ht : BitVec.ofNat 32 off' + o = BitVec.ofNat 32 0x138E)
-    (hlo : ((runBlock is (n.mem, reg n)).2 a0).extractLsb' 0 8 = 1) : SvErrRet B out v n0 := by
+    (hlo : ((runBlock is (n.mem, reg n)).2 a0).extractLsb' 0 8 = 1)
+    (hhi : (((runBlock is (n.mem, reg n)).2 a0).extractLsb' 8 8).toNat < 0x27) : SvErrRet B out v n0 := by
   obtain ⟨n1, c1, u1⟩ := s.block is E.self he hok
   rw [hm] at u1
   have s1 : St n.mem SV n1 off' (reg n1) := ⟨u1.pc, u1.mem, fun _ => rfl⟩
@@ -206,7 +214,7 @@ theorem sv_fail_to138e {B out : Word} {v : Nat → Word} {n0 n : Machine} {off o
   exact sv_fail_138e F E2 s2 (t.trans (c1.trans (.single d2))) (by rw [m2]; exact fR) (by rw [m2]; exact V) hret
     (by rw [u2.regs, rr sp (by decide), rsp]) (by rw [u2.regs, rr 18 (by decide), hout])
     hO (by rw [u2.regs, rr 3 (by decide), r3]) (by rw [u2.regs, rr 4 (by decide), r4])
-    (by rw [u2.regs, u1.regs]; exact hlo)
+    (by rw [u2.regs, u1.regs]; exact hlo) (by rw [u2.regs, u1.regs]; exact hhi)
 
 set_option maxRecDepth 100000 in
 /-- **The error exit at 0x1388**: no listed intermediate issued the leaf,
@@ -226,7 +234,7 @@ theorem sv_fail_1388 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr 
     rw [u1.regs]; simp only [runBlock, BInstr.run, aluEval, upd, ↓reduceIte]; rfl
   exact sv_fail_138e F (by rw [m1]; exact E) s1 (t.trans c1) (by rw [m1]; exact fR) (by rw [m1]; exact V) hret
     (by rw [r1 sp (by decide), rsp]) (by rw [r1 18 (by decide), hout]) hO (by rw [r1 3 (by decide), r3])
-    (by rw [r1 4 (by decide), r4]) (by rw [ra0]; rfl)
+    (by rw [r1 4 (by decide), r4]) (by rw [ra0]; rfl) (by rw [ra0]; decide)
 
 set_option maxRecDepth 100000 in
 /-- **The error exit at 0xE46**: a policy value differs from the trust
@@ -240,6 +248,7 @@ theorem sv_fail_e46 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B
     (by decide) (by simp only [BlockOk, BInstr.ok]; exact ⟨trivial, trivial, trivial⟩) rfl
     (fun q hq => by simp only [runBlock, BInstr.run]; exact (updz (upd_zero _ _ _) hq).trans (updz s.zero hq))
     sv_at_e4c (by decide) (by simp only [runBlock, BInstr.run, aluEval, upd, ↓reduceIte]; rfl)
+    (by simp only [runBlock, BInstr.run, aluEval, upd, ↓reduceIte]; decide)
 
 set_option maxRecDepth 100000 in
 /-- **The error exit at 0xE4E**: the image's signature doesn't verify,
@@ -253,6 +262,7 @@ theorem sv_fail_e4e {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B
     (by decide) (by simp only [BlockOk, BInstr.ok]; exact ⟨trivial, trivial, trivial⟩) rfl
     (fun q hq => by simp only [runBlock, BInstr.run]; exact (updz (upd_zero _ _ _) hq).trans (updz s.zero hq))
     sv_at_e52 (by decide) (by simp only [runBlock, BInstr.run, aluEval, upd, ↓reduceIte]; rfl)
+    (by simp only [runBlock, BInstr.run, aluEval, upd, ↓reduceIte]; decide)
 
 set_option maxRecDepth 100000 in
 /-- **The error exit at 0xE38**: the leaf's signature doesn't verify, code
@@ -268,9 +278,11 @@ theorem sv_fail_e38 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B
   have m1 : n1.mem = n.mem := u1.mem
   have r1 : ∀ q, q ≠ a0 → reg n1 q = reg n q := fun q hq => by
     rw [u1.regs]; simp only [runBlock, BInstr.run]; exact updz s.zero hq
+  have ra0 : reg n1 a0 = 0x10 := by
+    rw [u1.regs]; simp only [runBlock, BInstr.run, aluEval, upd, ↓reduceIte]; rfl
   exact sv_fail_e3a F (by rw [m1]; exact E) s1 (t.trans c1) (by rw [m1]; exact fR) (by rw [m1]; exact V) hret
     (by rw [r1 sp (by decide), rsp]) (by rw [r1 18 (by decide), hout]) hO (by rw [r1 3 (by decide), r3])
-    (by rw [r1 4 (by decide), r4])
+    (by rw [r1 4 (by decide), r4]) (by rw [ra0]; decide)
 
 theorem shr_byte (x : Word) (k : Nat) (hk : k + 8 ≤ 32) : (x >>> k).extractLsb' 0 8 = x.extractLsb' k 8 := by
   apply BitVec.eq_of_toNat_eq

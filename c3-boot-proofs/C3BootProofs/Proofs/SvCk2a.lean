@@ -267,7 +267,7 @@ theorem sv_ck2a {B out bp x20 x21 x22 x23 x26 ckl sl sp1 rl rp sgp w50 : Word} {
     have w4_50 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = w50 := by rw [m4]; exact w3_50
     have w4_428 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x428) = sgp := by rw [m4]; exact w3_428
     clear w3_428 w3_50 g3_25 g3_27 g3_26 g3_24 g3_23 g3_22 g3_21 g3_20 g3_19 g3_18 g3_10 g3_9 g3_8 g3_4 g3_3 g3_2 V3 E3 fR3 t3 fr3 rb3 s3 m3 u3 c3
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hc1 h0'), sv_fail_1882 F E4 s4 t4 (fun x hx => (fR4 x hx).trans (fM x hx).symm) V4 hret g4_2 g4_18 hO g4_3 g4_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hc1 h0'), sv_fail_1882 F E4 s4 t4 (fun x hx => (fR4 x hx).trans (fM x hx).symm) V4 hret g4_2 g4_18 hO g4_3 g4_4 (by rw [g4_25]; sv_code)⟩
   -- 0x14C4: branch, not taken
   obtain ⟨n2, d2, u2⟩ := s1.notTaken E1.self 0x14C8 sv_at_14c4
     (by decide) (by rw [g1_10, g1_9]; exact br_bgeu_f hc1)
@@ -574,7 +574,7 @@ theorem sv_ck2a {B out bp x20 x21 x22 x23 x26 ckl sl sp1 rl rp sgp w50 : Word} {
     have w9_50 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = w50 := by rw [m9]; exact w8_50
     have w9_428 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x428) = sgp := by rw [m9]; exact w8_428
     clear w8_428 w8_50 w8_24 g8_25 g8_27 g8_26 g8_24 g8_23 g8_22 g8_21 g8_20 g8_19 g8_18 g8_10 g8_9 g8_8 g8_4 g8_3 g8_2 V8 E8 fR8 t8 fr8 rb8 s8 m8 u8 c8
-    exact .inl ⟨(fun ⟨h0', h1', _⟩ => by exact hc2 h1'), sv_fail_1882 F E9 s9 t9 (fun x hx => (fR9 x hx).trans (fM x hx).symm) V9 hret g9_2 g9_18 hO g9_3 g9_4⟩
+    exact .inl ⟨(fun ⟨h0', h1', _⟩ => by exact hc2 h1'), sv_fail_1882 F E9 s9 t9 (fun x hx => (fR9 x hx).trans (fM x hx).symm) V9 hret g9_2 g9_18 hO g9_3 g9_4 (by rw [g9_25]; sv_code)⟩
   -- 0x14D2: branch, not taken
   obtain ⟨n7, d7, u7⟩ := s6.notTaken E6.self 0x14D6 sv_at_14d2
     (by decide) (by rw [g6_9, g6_10]; exact br_bltu_f hc2)
@@ -831,7 +831,7 @@ theorem sv_ck2a {B out bp x20 x21 x22 x23 x26 ckl sl sp1 rl rp sgp w50 : Word} {
     have w12_50 : memLoad32 n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = w50 := by rw [m12]; exact w11_50
     have w12_428 : memLoad32 n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x428) = sgp := by rw [m12]; exact w11_428
     clear w11_428 w11_50 w11_24 g11_25 g11_27 g11_26 g11_24 g11_23 g11_22 g11_21 g11_20 g11_19 g11_18 g11_11 g11_10 g11_9 g11_8 g11_4 g11_3 g11_2 V11 E11 fR11 t11 fr11 rb11 s11 m11 u11 c11
-    exact .inl ⟨(fun ⟨h0', h1', h2', _⟩ => by exact hc3 h2'), sv_fail_1882 F E12 s12 t12 (fun x hx => (fR12 x hx).trans (fM x hx).symm) V12 hret g12_2 g12_18 hO g12_3 g12_4⟩
+    exact .inl ⟨(fun ⟨h0', h1', h2', _⟩ => by exact hc3 h2'), sv_fail_1882 F E12 s12 t12 (fun x hx => (fR12 x hx).trans (fM x hx).symm) V12 hret g12_2 g12_18 hO g12_3 g12_4 (by rw [g12_25]; sv_code)⟩
   -- 0x14DC: branch, not taken
   obtain ⟨n10, d10, u10⟩ := s9.notTaken E9.self 0x14E0 sv_at_14dc
     (by decide) (by rw [g9_10, g9_11]; exact br_bltu_f hc3)

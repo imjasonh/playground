@@ -1676,7 +1676,7 @@ theorem sv_cr1e {B out bp x20 x21 x22 x23 x24 x25 x26 x27 kp w1c w40 q w64 w74 l
     have q33_3a9 : ∀ j, j < 31 → n33.mem (B + 0x21A0 + BitVec.ofNat 32 (0x3A9 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0) := fun j hj => by rw [m33]; exact q32_3a9 j hj
     have q33_3e0 : ∀ j, j < 31 → n33.mem (B + 0x21A0 + BitVec.ofNat 32 (0x3E0 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0) := fun j hj => by rw [m33]; exact q32_3e0 j hj
     clear q32_3e0 q32_3a9 q32_385 q32_27c q32_25c b32_3a8 b32_384 w32_3a4 w32_3a0 w32_39c w32_398 w32_380 w32_74 w32_64 w32_4c w32_40 w32_34 w32_20 w32_1c g32_10 g32_27 g32_26 g32_25 g32_24 g32_23 g32_22 g32_21 g32_20 g32_19 g32_18 g32_11 g32_4 g32_3 g32_2 V32 E32 fR32 t32 fr32 rb32 s32 m32 u32 c32
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hidx h0'), sv_fail_138e F E33 s33 t33 (fun x hx => (fR33 x hx).trans (fM x hx).symm) V33 hret g33_2 g33_18 hO g33_3 g33_4 (by rw [g33_10]; decide)⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hidx h0'), sv_fail_138e F E33 s33 t33 (fun x hx => (fR33 x hx).trans (fM x hx).symm) V33 hret g33_2 g33_18 hO g33_3 g33_4 (by rw [g33_10]; decide) (by rw [g33_10]; decide)⟩
   -- 0x1896: branch, not taken
   obtain ⟨n31, d31, u31⟩ := s30.notTaken E30.self 0x189A sv_at_1896
     (by decide) (by rw [g30_10, s30.zero]; exact br_beq_f hidx)

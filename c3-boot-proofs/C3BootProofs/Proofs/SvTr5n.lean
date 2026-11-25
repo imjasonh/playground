@@ -519,7 +519,7 @@ theorem sv_tr5n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word
     have w11_424 : memLoad32 n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x424) = 0 := by rw [m11]; exact w10_424
     have b11_420 : n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (0 : BitVec 8) := by rw [m11]; exact b10_420
     clear b10_420 w10_424 w10_32c w10_328 w10_78 w10_74 g10_8 g10_27 g10_26 g10_25 g10_24 g10_23 g10_22 g10_21 g10_20 g10_19 g10_18 g10_10 g10_4 g10_3 g10_2 V10 E10 fR10 t10 fr10 rb10 s10 m10 u10 c10
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hcrl h0'), sv_fail F E11 s11 t11 (fun x hx => (fR11 x hx).trans (fM x hx).symm) V11 hret g11_2 g11_18 hO g11_3 g11_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hcrl h0'), sv_fail F E11 s11 t11 (fun x hx => (fR11 x hx).trans (fM x hx).symm) V11 hret g11_2 g11_18 hO g11_3 g11_4 (by rw [g11_8]; sv_code)⟩
   by_cases hz : sdl = 0
   · -- 0xD5C: branch, taken
     obtain ⟨n6, d6, u6⟩ := s5.taken E5.self 0xD70 sv_at_d5c

@@ -374,7 +374,7 @@ theorem sv_tt6n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 rp rl : Word} {v : Nat
     have w8_424 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x424) = 0 := by rw [m8]; exact w7_424
     have b8_420 : n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (0 : BitVec 8) := by rw [m8]; exact b7_420
     clear b7_420 w7_424 w7_268 w7_264 g7_8 g7_27 g7_26 g7_25 g7_24 g7_23 g7_22 g7_21 g7_20 g7_19 g7_18 g7_10 g7_4 g7_3 g7_2 V7 E7 fR7 t7 fr7 rb7 s7 m7 u7 c7
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hend h0'), sv_fail F E8 s8 t8 (fun x hx => (fR8 x hx).trans (fM x hx).symm) V8 hret g8_2 g8_18 hO g8_3 g8_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hend h0'), sv_fail F E8 s8 t8 (fun x hx => (fR8 x hx).trans (fM x hx).symm) V8 hret g8_2 g8_18 hO g8_3 g8_4 (by rw [g8_8]; sv_code)⟩
   -- 0x12B6: branch, taken
   obtain ⟨n6, d6, u6⟩ := s5.taken E5.self 0x12BE sv_at_12b6
     (by decide) (by rw [g5_10, s5.zero]; exact br_beq_t hend)
