@@ -462,6 +462,105 @@ theorem RcCtx.callNext (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
       (by rw [e2C]; exact (rc_gin hx (by decide) (by decide)).symm)).trans (hK.foot x hx hf hb)
 
 
+/-- The call of `trusted_root::decode` at 0x140 with the result at
+`F + 0xD0`, when the scratch slice holds the `fl'` bytes at `fp + o`. -/
+theorem RcCtx.callDec (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word}
+    {Q : Post} {t : Word} {tn o fl' : Nat} {d : Bytes}
+    (hR : RcRegs F out fr g0 f) (hI : RcMemInv M0 G F fr fp fl g0 M)
+    (ha0 : f a0 = F + BitVec.ofNat 32 0xD0) (ha1 : f a1 = t) (ha2 : f a2 = BitVec.ofNat 32 tn)
+    (ha3 : f a3 = fr) (hfp : memLoad32 M fr = fp + BitVec.ofNat 32 o)
+    (hfl : memLoad32 M (fr + 4) = BitVec.ofNat 32 fl') (hol : o + fl' = fl)
+    (htw : t.toNat + tn ≤ 0x40000000) (htG : Sep t tn G 0x740) (htB : Sep t tn fp fl) (hd : memBytes M t tn = d)
+    (k : ∀ m2 : Machine, RcMemInv M0 G F fr fp fl g0 m2.mem →
+      trDecMem M (G + BitVec.ofNat 32 0x550) (F + BitVec.ofNat 32 0xD0) fr (fp + BitVec.ofNat 32 o) fl'
+        (trDecodeRes (base64Decode d) fl') m2.mem →
+      WP trustedRootReadChainCode TRC Q m2.mem 0x148 (clob (upd f ra (TRC + BitVec.ofNat 32 0x148)) m2 jClob)) :
+    WP trustedRootReadChainCode TRC Q M 0x140 f := by
+  have gw := X.gw
+  have bw := X.bw
+  have eG : F + 0xFFFFFF90 = G + BitVec.ofNat 32 0x550 := X.fneg (k := 0x70) (by decide) (by decide)
+  have ho : (fp + BitVec.ofNat 32 o).toNat = fp.toNat + o := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+  refine X.call (c := 0) (l := 0x70C) (off := 0x140) (tb := TRDC)
+    (P := fun m2 => trDecMem M (G + BitVec.ofNat 32 0x550) (F + BitVec.ofNat 32 0xD0) fr (fp + BitVec.ofNat 32 o) fl'
+      (trDecodeRes (base64Decode d) fl') m2.mem)
+    trc_at_140 trc_at_144 (by decide) hI (by decide) (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hP x hx hf hb => ?_)
+    (fun m2 hP hI' => k m2 hI' hP)
+  · have C := X.codeAt hI
+    rw [← hmem1] at C
+    obtain ⟨m2, c2, pc2, hsp2, hk2, R⟩ := trustedRootDecode_correct m1 (sp0 := F) (out := F + BitVec.ofNat 32 0xD0)
+      (t := t) (fr := fr) (fp := fp + BitVec.ofNat 32 o) (n := tn) (fl := fl')
+      (retAddr := TRC + BitVec.ofNat 32 (0x140 + 8)) C.dec hpc1
+      (by rw [hreg1]; trsimp; exact ha0) (by rw [hreg1]; trsimp; exact ha1) (by rw [hreg1]; trsimp; exact ha2)
+      (by rw [hreg1]; trsimp; exact ha3) (by rw [hreg1]; trsimp) (by decide) (by rw [hreg1]; trsimp; exact hR.2.1)
+      X.fa4 (by rw [X.fn]; omega) (by rw [X.fn]; omega) (X.fal (by decide))
+      (by rw [X.fG, X.gc (by decide)]; omega) X.fa X.fw (by rw [hmem1]; exact hfp) (by rw [hmem1]; exact hfl)
+      (by rw [ho]; omega) htw
+      (by rw [eG, X.fG]; exact X.gsep (Or.inr (by decide)) (by decide) (by decide))
+      (by rw [eG]; exact X.frg.subR (by decide))
+      (by rw [eG]; exact (X.bg.sub (c := o) (l := fl') (by omega)).subR (by decide))
+      (by rw [eG]; exact htG.subR (by decide)) (htB.subR (by omega))
+      (by rw [X.fG]; exact (X.bg.symm.sub (c := 0x690) (l := 8) (by decide)).subR (by omega))
+      (X.frp.subR (by omega)) (by rw [X.fG]; exact X.frg.symm.sub (by decide))
+    rw [hmem1, eG, hd] at R
+    exact ⟨m2, c2, pc2, R, by rw [hsp2, hreg1]; trsimp; exact hR.2.1.symm, hk2⟩
+  · exact hP.2 x (rc_gin hx (by decide) (by decide)) (by rw [X.fG]; exact rc_gin hx (by decide) (by decide)) hf
+      (hb.sub (by omega))
+
+theorem rc_mc_saved : ∀ q : Fin 32, q.val ∈ trSaved → q ≠ a1 ∧ q ≠ a2 ∧ q ≠ a3 ∧ q ≠ a4 ∧ q ≠ a5 ∧ q ≠ a6 ∧
+    q ≠ a7 ∧ q ≠ t0 ∧ q ≠ t1 ∧ q ≠ (7 : Fin 32) ∧ q ≠ (28 : Fin 32) ∧ q ≠ (29 : Fin 32) ∧ q ≠ (30 : Fin 32) ∧
+    q ≠ sp := by decide
+
+/-- The call of `memcpy` at `off` that copies `N` bytes from `src` to
+`F + dd`. -/
+theorem RcCtx.callMc (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word}
+    {Q : Post} {off dd N : Nat} {hi lo src : Word}
+    (h1 : fetchRel trustedRootReadChainCode off = some (.auipc ra hi, 4))
+    (h2 : fetchRel trustedRootReadChainCode (off + 4) = some (.jalr ra ra lo, 4))
+    (htgt : (TRC + BitVec.ofNat 32 off + hi + lo) &&& ~~~1 = BMS)
+    (hev : (TRC + BitVec.ofNat 32 (off + 8)) &&& ~~~1 = TRC + BitVec.ofNat 32 (off + 8))
+    (hR : RcRegs F out fr g0 f) (hI : RcMemInv M0 G F fr fp fl g0 M)
+    (ha0 : f a0 = F + BitVec.ofNat 32 dd) (ha1 : f a1 = src) (ha2 : f a2 = BitVec.ofNat 32 N)
+    (hdN : dd + N ≤ 0x14C) (hsw : src.toNat + N < 2 ^ 32) (hsF : Sep src N (G + BitVec.ofNat 32 0x5B0) 16)
+    (hsd : Sep (F + BitVec.ofNat 32 dd) N src N)
+    (k : ∀ m2 : Machine, RcMemInv M0 G F fr fp fl g0 m2.mem →
+      (∀ x, Sep (G + BitVec.ofNat 32 0x5B0) 16 x 1 → m2.mem x = copyBytes M (F + BitVec.ofNat 32 dd) src N x) →
+      WP trustedRootReadChainCode TRC Q m2.mem (off + 8) (clob (upd f ra (TRC + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
+    WP trustedRootReadChainCode TRC Q M off f := by
+  have gw := X.gw
+  have eG : F + 0xFFFFFFF0 = G + BitVec.ofNat 32 0x5B0 := X.fneg (k := 16) (by decide) (by decide)
+  refine X.call (c := 0) (l := 0x70C) (tb := BMS)
+    (P := fun m2 => ∀ x, Sep (G + BitVec.ofNat 32 0x5B0) 16 x 1 → m2.mem x = copyBytes M (F + BitVec.ofNat 32 dd) src N x)
+    h1 h2 htgt hI (by decide) (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hP x hx hf hb => ?_)
+    (fun m2 hP hI' => k m2 hI' hP)
+  · have C := X.codeAt hI
+    have hs1 : reg m1 sp = F := by rw [hreg1]; trsimp; exact hR.2.1
+    obtain ⟨m2, c2, pc2, hsp2, -, hcp, fr'⟩ := memcpy_correct m1 BMS (TRC + BitVec.ofNat 32 (off + 8))
+      (F + BitVec.ofNat 32 dd) src N (fun i hi => by show m1.mem _ = _; rw [hmem1]; exact C.dec.stub i hi)
+      (by decide) hpc1 (by rw [hreg1]; trsimp; exact ha0) (by rw [hreg1]; trsimp; exact ha1)
+      (by rw [hreg1]; trsimp; exact ha2) (by rw [hreg1]; trsimp) hev
+      (by
+        rw [hs1, eG, hmem1]
+        exact ⟨by rw [show BMS + 8 = BMB from by decide]; exact C.dec.body,
+          by rw [X.fG]; exact X.glo (by omega) (by decide) (by decide), X.glo (by decide) (by decide) (by decide),
+          by rw [X.fG]; exact X.gsep (Or.inr (by omega)) (by omega) (by decide), hsF, hsd,
+          X.ga4 (by decide) (by decide), by rw [X.gc (by decide)]; omega,
+          by rw [X.fG, X.gc (by omega)]; omega, hsw⟩)
+    rw [hs1, eG, hmem1] at hcp
+    refine ⟨m2, c2, pc2, hcp, hsp2, fun q hq => ?_⟩
+    obtain ⟨e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14⟩ := rc_mc_saved q hq
+    exact fr' q e1 e2 e3 e4 e5 e6 e7 e8 e9 e10 e11 e12 e13 e14
+  · rw [hP x (rc_gin hx (by decide) (by decide))]
+    exact copyBytes_sep (n := N) (by rw [X.fG]; exact rc_gin hx (by omega) (by omega)) (Nat.le_refl N)
+
+/-- A copy into the frame's scratch area keeps `RcKeep`. -/
+theorem RcCtx.mcKeep (X : RcCtx M0 G F out fr fp fl p n g0) {M M' : Word → BitVec 8} {dd N : Nat} {src : Word}
+    (hdd : 0x60 ≤ dd) (hdN : dd + N ≤ 0x14C)
+    (h : ∀ x, Sep (G + BitVec.ofNat 32 0x5B0) 16 x 1 → M' x = copyBytes M (F + BitVec.ofNat 32 dd) src N x) :
+    RcKeep G M M' :=
+  RcKeep.of2 (a := 0x5B0) (k := 16) (b := 0x5C0 + dd) (l := N) (by decide) (by omega) (by omega)
+    (fun x xa xb => by rw [h x xa]; exact copyBytes_sep (n := N) (by rw [X.fG]; exact xb) (Nat.le_refl N))
+
 end
 
 end C3.RV32
