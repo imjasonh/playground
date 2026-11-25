@@ -406,3 +406,5 @@ import C3BootProofs.Proofs.SvPv
 import C3BootProofs.Proofs.SvLh
 import C3BootProofs.Proofs.SvDpv
 import C3BootProofs.Proofs.SvP2
+import C3BootProofs.Proofs.SvTsa
+import C3BootProofs.Proofs.SvSha2

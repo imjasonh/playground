@@ -1,4 +1,6 @@
-import C3BootProofs.Proofs.SvTs1
+import C3BootProofs.Proofs.SvDer4
+import C3BootProofs.Proofs.SvCongr
+import C3BootProofs.Proofs.SvData
 import C3BootProofs.Proofs.DerReaders
 import C3BootProofs.Proofs.IsSha256
 
@@ -16,8 +18,8 @@ set_option maxRecDepth 20000
 
 /-- `Der::nested`'s environment for a result at offset `oc` and a reader at
 offset `dc` of the frame. -/
-theorem sv_nestEnv {M : Word → BitVec 8} {B : Word} {rp rl : Word} {oc dc : Nat} (F : Fr B 0x3830) (C : SvCode M)
-    (ho2 : oc + 16 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+theorem sv_nestEnv {M : Word → BitVec 8} {B : Word} {rp rl : Word} {oc dc : Nat} (F : Fr B 0x2660) (C : SvCode M)
+    (ho2 : oc + 16 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl) (hin : SvIn B rp rl.toNat) :
     NestEnv M (BitVec.ofNat 32 derNestedAddress) (B + 0x21A0) (B + 0x21A0 + BitVec.ofNat 32 oc)
@@ -49,14 +51,14 @@ theorem sv_nestEnv {M : Word → BitVec 8} {B : Word} {rp rl : Word} {oc dc : Na
 set_option maxHeartbeats 8000000 in
 /-- **A call to `Der::set`**, as the generated stages track it. -/
 theorem sv_setF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derSetAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc)
-    (ho2 : oc + 16 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 16 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 16 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl)
@@ -73,7 +75,7 @@ theorem sv_setF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
   have d12 := lit12 (B + 0x21A0) dc (by omega)
   have env := sv_nestEnv F C ho2 ho3 hd2 hd3 hrp hrl hin
   obtain ⟨n2, c2, pc2, sp2, k2, f2⟩ := derSet_correct n1 (by decide) (by rw [mem1]; exact C.derSet)
-    (by rw [mem1, show BitVec.ofNat 32 derSetAddress + 0xFFFFF940 = BitVec.ofNat 32 derNestedAddress from rfl]; exact env)
+    (by rw [mem1, show BitVec.ofNat 32 derSetAddress + 4294955184 = BitVec.ofNat 32 derNestedAddress from rfl]; exact env)
     pc1 (by rw [r1 sp (by decide), rsp]) (by rw [r1 a0 (by decide), ha0])
     (by rw [r1 a1 (by decide), ha1]) (by rw [regs1]; simp +decide [upd]) (even_clear _ hev)
   rw [mem1, d8, d12, hrp, hrl, sv_sp20] at f2
@@ -83,14 +85,14 @@ theorem sv_setF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
 set_option maxHeartbeats 8000000 in
 /-- **A call to `Der::nested`** with tag `tag`, as the generated stages track it. -/
 theorem sv_nestF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc tag : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derNestedAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc) (ha2 : reg n a2 = BitVec.ofNat 32 tag) (htag : tag < 256)
-    (ho2 : oc + 16 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 16 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 16 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl)
@@ -185,20 +187,21 @@ theorem sv_spA0 (B : Word) : B + 0x21A0 + 0xFFFFFF60 = B + BitVec.ofNat 32 0x210
 set_option maxRecDepth 100000 in
 /-- The SHA-256 OID that `tsa::is_sha256` compares against is the image's. -/
 theorem sv_isOid {M : Word → BitVec 8} (D : SvData M) : memBytes M isOid 9 = sha256OidData := by
-  rw [show isOid = SVK + BitVec.ofNat 32 0x68 from rfl, D.mb (by decide)]
+  rw [show isOid = BitVec.ofNat 32 svConstCmsAddress + BitVec.ofNat 32 0x27 from rfl,
+    CodeIn.mbc D.cms (by decide) (by decide)]
   decide
 
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 16000000 in
 /-- **A call to `tsa::is_sha256`** on the reader at offset `dc`. -/
 theorem sv_isShaF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {dc : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (D : SvData M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (D : SvData M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 isSha256Address)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 dc)
-    (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl)
     (hin : SvIn B rp rl.toNat) :
@@ -218,7 +221,7 @@ theorem sv_isShaF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {
   have d12 := lit12 (B + 0x21A0) dc (by omega)
   have eD : B + 0x21A0 + BitVec.ofNat 32 dc + 8 = B + BitVec.ofNat 32 (0x21A0 + (dc + 8)) := by
     rw [d8]; exact (sv_base' B (dc + 8)).symm
-  have ro : ∀ {c k : Nat}, c + k ≤ 0x3830 → Sep isOid 9 (B + BitVec.ofNat 32 c) k := fun hc =>
+  have ro : ∀ {c k : Nat}, c + k ≤ 0x2660 → Sep isOid 9 (B + BitVec.ofNat 32 c) k := fun hc =>
     (SvRo.sep F (.inr ⟨by decide, by decide⟩) hc).symm
   have env : ISEnv M (BitVec.ofNat 32 isSha256Address) (B + 0x21A0) (B + 0x21A0 + BitVec.ofNat 32 dc) rp rl.toNat := by
     refine ⟨by decide, C.isSha256, C.derAlgorithm, C.seq, C.nest, C.elem, C.tlv, C.derOid, C.K.stub, C.K.body,
@@ -248,14 +251,14 @@ set_option maxHeartbeats 8000000 in
 /-- **A call to `Der::optional`**, as `sv_optF`, and when no element has the
 tag, the reader is left alone. -/
 theorem sv_optF2 {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc tag : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derOptionalAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc) (ha2 : reg n a2 = BitVec.ofNat 32 tag) (htag : tag < 256)
-    (ho2 : oc + 0x18 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 0x18 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 0x18 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl)
