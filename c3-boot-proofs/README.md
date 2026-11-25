@@ -63,9 +63,10 @@ either checked mechanically or trusted, as follows:
 
 What is not linked yet:
 
-- **Other builds.** The proofs cover the pinned test image, built with the
-  development genesis keys and without eFuse burns. Another build is
-  covered only where its function bytes are identical.
+- **Other builds.** The proofs cover the pinned image, built with the TUF
+  root in `c3-boot/release/pinned-root.json` and eFuse burns on
+  (`c3-boot/bootloader/check-digest.sh`). Another build is covered only
+  where its function bytes are identical.
 - **Flash to memory.** The theorems assume the bytes are at their
   addresses in memory. The ESP32-C3 ROM loader puts them there. `Loaded M`
   (`Proofs/LoadedImage.lean`, written by `scripts/gen-loaded.py`) states
@@ -84,10 +85,13 @@ What is not linked yet:
   meets `AliasOk` is assumed.
 - **The whole boot.** Each function's theorem has hypotheses, such as a
   stack layout and argument ranges, that its caller's proof must discharge.
-  `reset_correct` (`Proofs/Reset.lean`) states the plan's headline theorem
-  from the ROM's jump to `_start`: the image halts or boots only a slot
-  that `decideBoot` boots. It still assumes the contract of `boot_main`'s
-  first closure (`Closure0Contract`), which holds the signature checks.
+  `reset_correct_loaded` (`Proofs/ResetLoaded.lean`) states the plan's
+  headline theorem from the ROM's jump to `_start`: the image halts or
+  boots only a slot that `decideBoot` boots with a check that accepts no
+  slot `acceptTufSlot` rejects. `acs_contract` proves the slot check's
+  contract (`Closure0Contract`), so its remaining hypotheses are `Loaded`,
+  the ROM's contracts (`RomHyp`), `EfuseCtl`, and a bound on the ROM's
+  stack use.
 - **Devices.** Stores to the watchdog and clock registers are memory
   writes, and their effect on the device is outside the theorems. A
   watchdog reset restarts the ROM. The eFuse controller is the named
