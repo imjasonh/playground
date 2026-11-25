@@ -16,8 +16,8 @@ It counts two things:
   decisions as much as the code that runs longest.
 
 A function counts as proved when it is in PROVED below, which names the
-functions in `C3BootProofs/Image/Bootloader.lean`, the current image, that a
-correctness theorem covers. Theorems about the earlier image in
+functions in `C3BootProofs/Image/Bootloader.lean` and `BootloaderReset.lean`,
+the current image, that a correctness theorem covers. Theorems about the earlier image in
 `BootloaderV0.lean` don't count until they are redone for the current one. Add a function when its theorem lands. Helpers that two
 functions share are counted once.
 
@@ -27,6 +27,13 @@ So boot coverage counts instructions in proved code, not instructions whose
 every call is proved.
 
 Usage: coverage.py PROFILE ELF NM OBJDUMP [TOP]
+
+With `-` as PROFILE, it skips boot coverage. When the profile comes from
+another build, such as the burns-off development build that
+`c3-boot/qemu/boot-lockstep.sh` boots, set `PROFILE_ELF` to that build's
+ELF. Each profiled address then counts as proved when its function in
+`PROFILE_ELF` has the name of a proved function in ELF, or, outside any
+sized symbol (such as `_start`), when the address is proved in ELF.
 """
 
 import bisect
@@ -77,14 +84,17 @@ PROVED = [
     "edDouble",
     "fePow2k",
     "sha512Compress", "p384Mul", "p384Sqr", "p384PtDouble", "uintSelect2", "condNeg12", "uintSelect8", "condNeg8", "absSign2", "fromI64", "p384PtAdd", "fieldSquare", "p256PtDouble", "shr12", "leadMut12", "trailing12", "lincomb12", "blackBoxU8", "ctEqU8", "ctEqSlice", "memcmp", "uintRefIsNonzero", "lshrdi3", "asProjective", "asExtended", "p384Neg", "uint12IsNonzero", "derTlv", "derElement", "derOid", "derNested", "derSequence", "equalSameLength", "sliceEq", "shr8", "leadMut8", "trailing8", "feToBytes", "scalar29Sub", "scalar29Index", "scalar29IndexMut", "lincomb8", "mulMont8", "scalar29MontMul", "p256ScalarMul", "lincombShift12", "lincombShift8", "lowest12", "lowest8", "updateFg12", "updateFg8", "norm12", "uint8IsNonzero", "norm8", "toUintResize2", "lincombShiftMod12", "updateDe12", "lincombShiftMod8", "updateDe8", "derSet", "derOctetString", "derBitString", "derInteger", "derBooleanTrue", "derOptional", "uint12Eq", "uint8Eq", "lessThanLe", "inScalarRange", "p384ScalarMul", "p384ScalarNew", "u32Min", "sliceReverse", "splitAt12", "choiceNot", "uintRefIsZero", "limbCtEq", "uint12CtEq", "montRetrieve12", "p384FieldRetrieve", "sliceCtAssign", "uint12CtAssign", "copyFromSliceU8", "zipSkipNext", "derPositiveInteger", "derScalar48", "derScalar32", "ecdsaSignature48", "derIntegerIs", "checkpointLine", "tagMessageLen", "tagFromU8", "timeDigits2", "p256FieldNeg", "scalarIsZero384", "scalarIsZero256", "sliceNe", "arr32Eq", "arr32Ne", "choiceCtEq", "montyScalarCtEq384", "splitAt8", "tagAndThen", "condSelect384", "condSelect256", "unwrapOr384", "unwrapOr256", "ctMap384", "ctMap256", "uint8CtEq", "p256ScalarCtEq", "nonZero384", "nonZero256", "arr32EqCrypto", "feIsNegative", "ashldi3", "derAlgorithm", "listsOid", "leadingZeros", "feLoad3", "feLoad4", "feCtEq", "asProjNiels", "isSha256", "edAddNiels", "edSubNiels", "pow22501", "feCondAssign", "feNeg", "scalar29Pack", "incrementLimb", "nonAdjacentForm", "feCondNeg", "halt", "beginUnwind", "panicFmt", "assertFailedInner", "corePanic", "panicBoundsCheck", "expectFailed", "unwrapFailed", "lenMismatchFail", "sliceIndexFail", "assertFailedUsize", "assertFailedU8", "expectUsize", "expectTag", "nafSelect", "ctUnwrap384", "ctUnwrap256", "shaUpdate", "shaUpdateBlocks", "shaFinalize", "shaZero32", "shaFinBlock", "sha256Fn", "shaFinish", "sha256Parts", "merkleNodeHash", "rootFromInclusion", "encodedPointTag", "encodedPointIsIdentity", "sha512FinBlock", "sha384UpdateBlocks", "ctIntoAffine384", "ctIntoAffine256", "zeroArray48", "zeroArray64", "toBeBytes12", "toBeBytes8", "p256FieldRetrieve", "p384FromRepr", "p256FromRepr", "fillLimbsBeTrunc", "fromBeSliceTrunc12", "fromBeSliceTrunc8", "bytes2scalar384", "bytes2scalar256", "scalarFromSlice384", "scalarFromSlice256", "isSmallOrder", "dateTime", "base64DecodeInto", "base64EncodeTo", "sha512Update", "sha512UpdateArr32", "edDecompress", "edVerifyingKeyFromBytes", "ed25519PublicKeyOk", "nafTableFrom", "wnafForm", "ed25519Verify", "readerU32", "readerMagic", "manifestPart", "eqArr97", "fulcioIterNext", "fulcioEnumNext", "fulcioIterNth", "bundleField", "bootstateDecode", "imageParse", "bootMainClosure1", "p384Decompress", "p384FromSec1", "p256FromSec1", "p256Decompress", "p384VerifyPrehash",
+    "manifestParse", "x509ReadTime", "generalizedTime", "sigstoreVerify", "bootFn", "bootMain", "sha384Fn", "p256VerifyPrehash", "stripPrefix", "ecdsaSignature32", "allAsciiDigit", "timeDigits4", "timeRfc3339", "jsonSkipWs", "jsonStringEnd", "jsonKeyEnd", "jsonLiteralEnd", "jsonNumberEnd", "jsonReadItem", "jsonNextMember", "jsonNextElement", "jsonMembers", "jsonElements", "jsonGet", "jsonField", "jsonStr", "jsonU64", "jsonParse", "tufHexValue", "tufHexDecode", "tufPemSpki", "tufIndexDoc", "tufReadDoc", "tufParseMetadata", "tufParseRoot", "tufExpires", "tufRoleKeysRead", "tufRoleKeysMet", "trustedRootDecode", "trustedRootValidFor", "trustedRootReadChain", "flashPartRead", "efuseProgramRun", "startEntry", "setupFn", "watchdogArm", "clockRun160",
 ]
 
-IMAGE = os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", "Bootloader.lean")
+IMAGES = [os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", f)
+          for f in ("Bootloader.lean", "BootloaderReset.lean")]
 
 
 def extracted():
-    """Returns {name: (address, bytes)} for the code in Bootloader.lean."""
-    text = open(IMAGE).read()
+    """Returns {name: (address, bytes)} for the code in Bootloader.lean and
+    BootloaderReset.lean."""
+    text = "".join(open(f).read() for f in IMAGES)
     addrs = {m.group(1): int(m.group(2), 16)
              for m in re.finditer(r"def (\w+)Address : Nat := (0x[0-9a-fA-F]+)", text)}
     codes = {}
@@ -111,6 +121,12 @@ def symbols(elf, nm):
             funcs.append((int(parts[0], 16), int(parts[1], 16), parts[3]))
     funcs.sort()
     return funcs
+
+
+def base_name(symbol):
+    """The symbol without the ` (.N)` suffix that tells local copies apart,
+    whose numbers differ between builds."""
+    return re.sub(r" \(\.\d+\)$", "", symbol)
 
 
 def disassemble(elf, objdump):
@@ -161,7 +177,7 @@ def main():
     funcs = extracted()
     missing = [n for n in PROVED if n not in funcs]
     if missing:
-        sys.exit(f"not in Bootloader.lean: {missing}")
+        sys.exit(f"not in the image files: {missing}")
     proved = set()
     for n in PROVED:
         proved.update(starts(*funcs[n]))
@@ -170,35 +186,42 @@ def main():
 
     syms = symbols(elf, nm)
     reach = reachable(lines, syms, proved)
-    sym_starts = [s[0] for s in syms]
     boot_total = boot_proved = 0
     unproved = {}
-    for line in open(profile):
+    profile_elf = os.environ.get("PROFILE_ELF")
+    psyms = symbols(profile_elf, nm) if profile_elf else syms
+    psym_starts = [s[0] for s in psyms]
+    proved_names = {base_name(name) for a, _, name in syms if a in proved}
+    for line in open(profile) if profile != "-" else []:
         a, c = line.split()
         a, c = int(a, 16), int(c)
         boot_total += c
-        if a in proved:
+        i = bisect.bisect_right(psym_starts, a) - 1
+        found = i >= 0 and a < psyms[i][0] + psyms[i][1]
+        name = psyms[i][2] if found else f"0x{a:08x}"
+        if base_name(name) in proved_names if profile_elf and found else a in proved:
             boot_proved += c
             continue
-        i = bisect.bisect_right(sym_starts, a) - 1
-        name = syms[i][2] if i >= 0 and a < syms[i][0] + syms[i][1] else f"0x{a:08x}"
         unproved[name] = unproved.get(name, 0) + c
 
     print("| Measure | Proved | Total | Share |")
     print("| --- | --- | --- | --- |")
     print(f"| Instructions in the image | {len(proved):,} | {total_image:,} | "
           f"{100 * len(proved) / total_image:.1f}% |")
-    print(f"| Instructions one boot runs | {boot_proved:,} | {boot_total:,} | "
-          f"{100 * boot_proved / boot_total:.1f}% |")
+    if boot_total:
+        print(f"| Instructions one boot runs | {boot_proved:,} | {boot_total:,} | "
+              f"{100 * boot_proved / boot_total:.3f}% |")
     for root, (done, size, n) in reach.items():
         print(f"| Instructions in the {n} functions `{root}` reaches | {done:,} | {size:,} | "
               f"{100 * done / size:.1f}% |")
+    if not boot_total:
+        return
     print()
     print("| Unproved function | Instructions run | Share of the boot |")
     print("| --- | --- | --- |")
     for name, c in sorted(unproved.items(), key=lambda kv: -kv[1])[:top]:
         short = name if len(name) <= 90 else name[:87] + "..."
-        print(f"| `{short}` | {c:,} | {100 * c / boot_total:.1f}% |")
+        print(f"| `{short}` | {c:,} | {100 * c / boot_total:.3f}% |")
 
 
 if __name__ == "__main__":

@@ -222,7 +222,7 @@ theorem sv_b64F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
   have hS : (B + (0x21A0 : Word)).toNat = B.toNat + 0x21A0 := F.at 0x21A0 (by decide)
   have hpl := hin.lo
   have eB : MCS + 8 = BMB := by decide
-  obtain ⟨n2, c2, pc2, sp2, k2, ok2, bad2, f2⟩ := base64DecodeInto_correct n1 (sp0 := B + 0x21A0)
+  obtain ⟨n2, c2, pc2, sp2, k2, ok2, bad2, -, f2⟩ := base64DecodeInto_correct n1 (sp0 := B + 0x21A0)
     (by rw [mem1]; exact CK.b64) (by rw [mem1]; exact CK.cw) (by rw [mem1]; exact C.K.stub)
     (by rw [mem1, ← eB]; exact C.K.body) pc1
     (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2])

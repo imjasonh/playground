@@ -160,8 +160,8 @@ theorem act_89a {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R rom
     (hR4 : R % 4 = 0) (hR : R ≤ 0x3A50 - 0x180)
     (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
     (hr : memLoad32 M (acSlot B 0x40) = r) {pinned : Bytes} {parts : TufParts} {root : TufRoot} {re : Nat}
-    {x21 x25 x27 : Word} {Mi : Word → BitVec 8} {S SP : Word} {sl SL tt : Nat} {dS : Bytes} {md : Meta}
-    {sj : Json} {es : List (Bytes × Option TufKey)}
+    {x21 x25 x27 : Word} {Mi : Word → BitVec 8} {S SP : Word} {sl SL : Nat} {dS : Bytes} {md : Meta}
+    {sj : Json}
     (hO : ∀ x, ActOut B Bf x → M x = Mi x)
     (hdoc : ActDoc flash M (acSlot B 0x244) (f 24) ((memLoad32 M (acSlot B 0x1C)).toNat + 1) parts.trustedRoot)
     (hs4 : f 20 = Bf + 0x4000)
@@ -173,9 +173,7 @@ theorem act_89a {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R rom
     (hP1 : Bf.toNat + 0x4000 ≤ SP.toNat) (hP2 : SP.toNat + SL ≤ Bf.toNat + 0x6800)
     (hd : memBytes M S sl = dS) (hmsg : dS = encode md.signed)
     (hsj : JVal true (memBytes M SP SL) sj) (hps : (sj.asArr >>= List.mapM sigPair) = some md.sigs)
-    (hrk : roleKeys root.md.signed (ascii!"targets") = some (tt, es))
-    (hRk : RkAt M (B + BitVec.ofNat 32 0x4820) tt (es.map C3.Json.rkTag)) (hw : RkWf (es.map C3.Json.rkTag))
-    (hB : RkBytes es)
+    (hK : ActRk M (B + BitVec.ofNat 32 0x4820) root)
     (hspec : thresholdMet md root.md.signed (ascii!"targets") = some true → ∀ te, expiresModel dS = .ok te →
       ∀ p1 l1 p2 l2 p3 l3 val p4 l4 p5 l5 body, objField dS (ascii!"targets") = .ok (p1, l1) →
       objGet (slice dS p1 l1) (ascii!"trusted_root.json") = .ok (some (p2, l2)) →
@@ -254,14 +252,31 @@ theorem act_89a {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R rom
   have c4 : ∀ i, i < 12 → M4 (B + BitVec.ofNat 32 (0x52B4 + i)) = M (B + BitVec.ofNat 32 (0x52C4 + i)) :=
     fun i hi => by
       rw [← hM4, memStore32_get_sep (X.ss (by decide) (by omega) (Or.inl (by omega))), c3 i hi]
-  have r0 : M (B + BitVec.ofNat 32 0x4820) ≠ 0xFE := act_rk0 hRk hw
-  refine WP.branch ac_at_8e2 (fun _ => ?_) (fun hb => ?_)
+  have hI4 : ActI B Bf g t v M0 M4 f := hI.mem F X.sB fun x hx => K4 x hx.1 (act_ks hx.2.2.2.2.1 0 0x550 (by decide))
+  refine WP.branch ac_at_8e2 (fun hb => ?_) (fun hb => ?_)
+  rotate_left
+  · rcases hK with ⟨tt, es, hrk, hRk, hw, hB⟩ | ⟨e0, e1⟩
+    · exfalso; revert hb; act_r
+      rw [e890, eRk, b0]; intro hb
+      simp only [branchTaken, bne_eq_false_iff_eq] at hb
+      exact act_rk0 hRk hw (act_fe _ hb)
+    refine WP.jal ac_at_8e4 (by decide) ?_; wn
+    refine act_x6a (hI4.regs (by act_r) (by act_r) (by act_r))
+      ((K4.ld X (c := 0x3A90) (by decide) (by decide) (by decide) (Or.inl (by decide))).trans hr) ?_
+    act_r
+    have b1 : M3 (B + BitVec.ofNat 32 0x4821) = M (B + BitVec.ofNat 32 0x4821) :=
+      K3.at X (by decide) (by decide) (by decide) (Or.inl (by decide))
+    rw [e890, eRk1, b1]
+    have e1' : (M (B + BitVec.ofNat 32 0x4821)).toNat < 0x27 := by rw [add_ofNat_assoc] at e1; exact e1
+    rw [BitVec.toNat_and]
+    refine Nat.lt_of_le_of_lt Nat.and_le_left ?_
+    simp only [BitVec.zeroExtend_eq_setWidth, BitVec.toNat_setWidth]
+    omega
+  rcases hK with ⟨tt, es, hrk, hRk, hw, hB⟩ | ⟨e0, e1⟩
   rotate_left
   · exfalso; revert hb; act_r
-    rw [e890, eRk, b0]; intro hb
-    simp only [branchTaken, bne_eq_false_iff_eq] at hb
-    exact r0 (act_fe _ hb)
-  have hI4 : ActI B Bf g t v M0 M4 f := hI.mem F X.sB fun x hx => K4 x hx.1 (act_ks hx.2.2.2.2.1 0 0x550 (by decide))
+    rw [e890, eRk, b0, ← add_ofNat_zero (B + BitVec.ofNat 32 0x4820), e0]
+    decide
   refine WP.aluImm ac_at_8e8 ?_; wn
   refine WP.aluImm ac_at_8ec ?_; wn
   refine WP.lui ac_at_8f0 ?_; wn

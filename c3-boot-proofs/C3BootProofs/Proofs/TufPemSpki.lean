@@ -224,7 +224,7 @@ theorem WP.callB64 {hi lo sp0 res t out : Word} {n L : Nat}
       rw [hP.2.2 _ (hSb.symm.sub (c := i) (l := 1) hi).symm (hob.symm.sub (c := i) (l := 1) hi).symm
         (hrb.symm.sub (c := i) (l := 1) hi).symm]
       exact hc i hi) k
-  obtain ⟨m2, c2, pc2, rsp, hkeep, hok, herr, hfr⟩ := base64DecodeInto_correct m1 (sp0 := sp0) (res := res)
+  obtain ⟨m2, c2, pc2, rsp, hkeep, hok, herr, -, hfr⟩ := base64DecodeInto_correct m1 (sp0 := sp0) (res := res)
     (t := t) (out := out) (n := n) (L := L) (by rw [hmem1]; exact hc) (by rw [hmem1]; exact hcW)
     (by rw [hmem1]; exact hcS) (by rw [hmem1]; exact hcB) hpc1 (by rw [hreg1]; rsimp; exact h0)
     (by rw [hreg1]; rsimp; exact ha1) (by rw [hreg1]; rsimp; exact ha2) (by rw [hreg1]; rsimp; exact ha3)

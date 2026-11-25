@@ -13,7 +13,7 @@ calls `base64::decode_into`, which `base64DecodeInto_correct` proves.
 return. When the text decodes and the bytes fit, `out` holds the decoded
 slice and `free` holds the rest of the buffer. Otherwise `out` holds `Err`
 and `free` keeps its value. The error byte is the one that `decode_into`
-returned, which its theorem doesn't name. The `ScratchTooSmall` branch after
+returned: `ScratchTooSmall` or `BadBase64`. The `ScratchTooSmall` branch after
 the call is dead: `decode_into` returns `Ok` only when the bytes fit.
 
 The walk uses the steps of `JsonWp.lean` at the function's address in the
@@ -142,13 +142,15 @@ def trDecodeRes (d : Option Bytes) (fl : Nat) : Option Bytes :=
 /-- `out` and the scratch slice at `fr` after `decode`, when the slice was
 the `fl` bytes at `fp`. `some bs` is `Ok(bs)`: `out` holds the slice of `bs`
 at `fp`, and the scratch slice holds the rest of the buffer. `none` is
-`Err`: `out` holds a null pointer, the niche of `Err`, and the scratch slice
-is unchanged. -/
+`Err`: `out` holds a null pointer, the niche of `Err`, the scratch slice is
+unchanged, and the error byte after the pointer is one `decode_into`
+returns. -/
 def TrDecOut (M : Word → BitVec 8) (out fr fp : Word) (fl : Nat) : Option Bytes → Prop
   | some bs => memLoad32 M out = fp ∧ memLoad32 M (out + 4) = BitVec.ofNat 32 bs.length ∧
       memLoad32 M fr = fp + BitVec.ofNat 32 bs.length ∧
       memLoad32 M (fr + 4) = BitVec.ofNat 32 (fl - bs.length) ∧ memBytes M fp bs.length = bs
-  | none => memLoad32 M out = 0 ∧ memLoad32 M fr = fp ∧ memLoad32 M (fr + 4) = BitVec.ofNat 32 fl
+  | none => memLoad32 M out = 0 ∧ memLoad32 M fr = fp ∧ memLoad32 M (fr + 4) = BitVec.ofNat 32 fl ∧
+      BdiCode (M (out + 4))
 
 /-- The memory part of `decode`'s postcondition: `r` at `out` and `fr`, and
 no change outside the stack region `[G, G + 0x70)`, `out`, `fr`, and the
@@ -340,13 +342,13 @@ theorem trdc_wp (h0 : f a0 = out) (h1 : f a1 = t) (h2 : f a2 = BitVec.ofNat 32 n
       (by rw [hFB]; exact trSepR sBG (by decide)) (by rw [hFB]; exact trSepR sTG (by decide))
       (by rw [hFB]; exact sR) sTB sRB
     exact ⟨m2, c2, R.1, ⟨m1, hmem1, R⟩, by rw [R.2.1, hreg1]; trsimp, R.2.2.1⟩
-  · obtain ⟨m1, hm1, -, -, -, -, -, fr2⟩ := hP
+  · obtain ⟨m1, hm1, -, -, -, -, -, -, fr2⟩ := hP
     refine hc.hi (tr_hi3 (a := G) (b := fp) (c := F + 4) (k := 0x50) (l := fl) (n := 8) (by omega) hbw (by omega) ?_) (by decide) (by decide)
     intro x s1 s2 s3; rw [← hm1]; exact fr2 x (by rw [hFB]; exact s1) s2 s3
-  · obtain ⟨m1, hm1, -, -, -, ok2, err2, fr2⟩ := hP
+  · obtain ⟨m1, hm1, -, -, -, ok2, err2, code2, fr2⟩ := hP
     rw [hm1, hd1] at ok2 err2
     rw [hm1, hFB] at fr2
-    generalize m2.mem = M2 at ok2 err2 fr2 ⊢
+    generalize m2.mem = M2 at ok2 err2 code2 fr2 ⊢
     have hM2 : ∀ x, Sep x 1 G 0x70 → Sep x 1 fp fl → M2 x = M0 x := fun x hG hB => by
       rw [← hO1G x hG]
       refine fr2 x ?_ hB.symm ?_
@@ -401,7 +403,7 @@ theorem trdc_wp (h0 : f a0 = out) (h1 : f a1 = t) (h2 : f a2 = BitVec.ofNat 32 n
       refine WP.jal trdc_at_48 (by decide) ?_; wn
       simp only [ev0, h0, add_lit_zero]
       generalize hb : BitVec.extractLsb' 0 8 _ = b
-      obtain ⟨hOe, he0, -⟩ := sliceRes_err M2 out b
+      obtain ⟨hOe, he0, heb⟩ := sliceRes_err M2 out b
       have hOe' : ∀ x, Sep x 1 out 8 → Sep x 1 fr 8 → memStore8 (memStore32 M2 out 0) (out + 4) b x = M2 x :=
         fun x h _ => hOe x h
       refine trdc_epi (by trsimp) ((hslot hOe' 0x1C (by decide) (by decide)).trans v1)
@@ -409,12 +411,22 @@ theorem trdc_wp (h0 : f a0 = out) (h1 : f a1 = t) (h2 : f a2 = BitVec.ofNat 32 n
         ((hslot hOe' 0x10 (by decide) (by decide)).trans v4) ((hslot hOe' 0xC (by decide) (by decide)).trans v5)
         hsp0 hret hFa (fun q hq => by
           rcases trdc_rest_cases q hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> trsimp)
-        ⟨⟨⟨he0, ?_, ?_⟩, fun x sG sO sF sB => (hOe x sO.symm).trans (hM2 x sG.symm sB.symm)⟩, fun _ => ?_⟩
+        ⟨⟨⟨he0, ?_, ?_, ?_⟩, fun x sG sO sF sB => (hOe x sO.symm).trans (hM2 x sG.symm sB.symm)⟩, fun _ => ?_⟩
       · rw [Out.load32 hOe (trSepR sOF (by decide)), hM2l (sep_low sFG (by decide)).symm
           (sep_low sFB (by decide)).symm, hfp]
       · refine (Out.load32 hOe (a := fr + 4) (sOF.subR (c := 4) (l := 4) (by decide))).trans ?_
         exact (hM2l (a := fr + 4) (sFG.sub (c := 4) (l := 4) (by decide)).symm
           (sFB.sub (c := 4) (l := 4) (by decide)).symm).trans hfl
+      · rw [heb, ← hb]
+        have hcd := code2 hb1
+        rw [show F + 4 + 1 = F + 5 by rw [BitVec.add_assoc]; rfl] at hcd
+        have e : ∀ v : BitVec 8, BitVec.extractLsb' 0 8 (BitVec.zeroExtend 32 v) = v := fun v => by
+          apply BitVec.eq_of_toNat_eq
+          rw [BitVec.extractLsb'_toNat, BitVec.toNat_setWidth]
+          have := v.isLt
+          simp only [Nat.shiftRight_zero]
+          omega
+        rw [e]; exact hcd
       · rw [memStore8_same, ← hb, trdc_zx8, ← hbe, show F + 4 + 1 = F + 5 by rw [BitVec.add_assoc]; rfl]
     · rw [hr]
       have hbs : bs.length < 2 ^ 32 := by omega

@@ -108,6 +108,12 @@ bin="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
 python3 ../c3-boot-proofs/scripts/coverage.py /tmp/trial.prof "${elf}" "${bin}/llvm-nm" "${bin}/llvm-objdump"
 ```
 
+The pinned image is the production build, and the profile comes from the
+burns-off development build that `boot-lockstep.sh` boots, whose bootloader
+functions sit at other addresses. Pass the pinned build's ELF as `${elf}`
+and set `PROFILE_ELF` to the development build's, so that `coverage.py`
+matches the profile's functions to the pinned image's by name.
+
 ## Method
 
 - **Instructions** are counted by decoding each extracted function's bytes

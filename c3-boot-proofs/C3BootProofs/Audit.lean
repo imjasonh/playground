@@ -271,8 +271,13 @@ import C3BootProofs.Proofs.AcceptExtractHead
 import C3BootProofs.Proofs.AcceptBundle
 import C3BootProofs.Proofs.ResetPath
 import C3BootProofs.Proofs.Reset
+import C3BootProofs.Proofs.AcceptSpec
 import C3BootProofs.Proofs.AcceptExtractDup
 import C3BootProofs.Proofs.AcceptExtractTsa
+import C3BootProofs.Proofs.AcceptExtractCa
+import C3BootProofs.Proofs.ResetLoaded
+import C3BootProofs.Proofs.SramAlias
+import C3BootProofs.Proofs.AcceptExtractTlogStage
 
 /-!
 # Audit
@@ -9330,6 +9335,12 @@ end C3
 
 /-- info: 'C3.RV32.Ac.acImage_stage' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acImage_stage
+
+/-- info: 'C3.RV32.Ac.acs_imgW_cnt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_imgW_cnt
+
+/-- info: 'C3.RV32.Ac.acs_st2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_st2
 /-- info: 'C3.RV32.Ac.acf_seg_cmp' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acf_seg_cmp
 
@@ -9690,6 +9701,9 @@ end C3
 
 /-- info: 'C3.RV32.Ac.act_metSpec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.act_metSpec
+
+/-- info: 'C3.RV32.Ac.ActRk.congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ActRk.congr
 
 /-- info: 'C3.RV32.Ac.act_stage' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.act_stage
@@ -10172,6 +10186,9 @@ end C3
 /-- info: 'C3.RV32.Ac.acb_st32' does not depend on any axioms -/
 #guard_msgs in #print axioms C3.RV32.Ac.acb_st32
 
+/-- info: 'C3.RV32.Ac.AcbKw.kw' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcbKw.kw
+
 /-- info: 'C3.RV32.Ac.AcbK.kw' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.AcbK.kw
 
@@ -10190,8 +10207,11 @@ end C3
 /-- info: 'C3.RV32.Ac.AcbG.inv' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.AcbG.inv
 
-/-- info: 'C3.RV32.Ac.AcbG.res' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.Ac.AcbG.res
+/-- info: 'C3.RV32.Ac.AcbG.invW' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcbG.invW
+
+/-- info: 'C3.RV32.Ac.AcbG.resW' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcbG.resW
 
 /-- info: 'C3.RV32.Ac.acb_bind' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acb_bind
@@ -10445,6 +10465,75 @@ end C3
 /-- info: 'C3.RV32.Ac.acets_rcErr' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acets_rcErr
 
+/-- info: 'C3.acs_parts_le' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.acs_parts_le
+
+/-- info: 'C3.acs_expires_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.acs_expires_lt
+
+/-- info: 'C3.RV32.Ac.acs_accept' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_accept
+
+/-- info: 'C3.RV32.Ac.acs_hdr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_hdr
+
+/-- info: 'C3.RV32.Ac.AcsCtx.Ok.failW' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcsCtx.Ok.failW
+
+/-- info: 'C3.RV32.Ac.acs_fin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_fin
+
+/-- info: 'C3.RV32.Ac.acs_bun' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_bun
+
+/-- info: 'C3.RV32.Ac.acs_ext' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_ext
+
+/-- info: 'C3.RV32.Ac.acs_tgt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_tgt
+
+/-- info: 'C3.RV32.Ac.acs_rootsEnv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_rootsEnv
+
+/-- info: 'C3.RV32.Ac.acs_roots' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_roots
+
+/-- info: 'C3.RV32.Ac.acs_fold_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_fold_bytes
+
+/-- info: 'C3.RV32.Ac.acs_src' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_src
+
+/-- info: 'C3.RV32.Ac.acs_pin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_pin
+
+/-- info: 'C3.RV32.Ac.acs_decode_docs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_decode_docs
+
+/-- info: 'C3.RV32.Ac.acs_indexStage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_indexStage
+
+/-- info: 'C3.RV32.Ac.acs_doc_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_doc_at
+
+/-- info: 'C3.RV32.Ac.acs_index' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_index
+
+/-- info: 'C3.RV32.Ac.acs_image' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_image
+
+/-- info: 'C3.RV32.Ac.acs_front' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_front
+
+/-- info: 'C3.RV32.Ac.acs_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_spec
+
+/-- info: 'C3.RV32.Ac.acs_contract' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_contract
+
+/-- info: 'C3.RV32.Cur.bmc_pop_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmc_pop_lt
+
 /-- info: 'C3.RV32.Ac.acets_stage' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acets_stage
 
@@ -10480,3 +10569,122 @@ end C3
 
 /-- info: 'C3.RV32.Ac.acets_back' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acets_back
+
+/-- info: 'C3.RV32.Ac.ace_ca' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_ca
+
+/-- info: 'C3.RV32.Ac.ace_ca_stage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_ca_stage
+
+/-- info: 'C3.RV32.Ac.aceca_pass' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_pass
+
+/-- info: 'C3.RV32.Ac.aceca_dd2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_dd2
+
+/-- info: 'C3.RV32.Ac.aceca_e12' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_e12
+
+/-- info: 'C3.RV32.Ac.aceca_back' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_back
+
+/-- info: 'C3.RV32.Ac.aceca_rc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_rc
+
+/-- info: 'C3.RV32.Ac.aceca_e2e' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_e2e
+
+/-- info: 'C3.RV32.Ac.aceca_e40' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_e40
+
+/-- info: 'C3.RV32.Ac.aceca_e7a' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_e7a
+/-- info: 'C3.RV32.piecesIn_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.piecesIn_mem
+
+/-- info: 'C3.RV32.PiecesIn.congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.PiecesIn.congr
+
+/-- info: 'C3.RV32.CodeIn.sub' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.CodeIn.sub
+
+/-- info: 'C3.RV32.imagePieces_ok' does not depend on any axioms -/
+#guard_msgs in #print axioms C3.RV32.imagePieces_ok
+
+/-- info: 'C3.RV32.imagePieces_within' does not depend on any axioms -/
+#guard_msgs in #print axioms C3.RV32.imagePieces_within
+
+/-- info: 'C3.RV32.loaded_imageMem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.loaded_imageMem
+
+/-- info: 'C3.RV32.Loaded.congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Loaded.congr
+
+/-- info: 'C3.RV32.Loaded.bootMain' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Loaded.bootMain
+
+/-- info: 'C3.RV32.Loaded.p384R2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Loaded.p384R2
+
+/-- info: 'C3.RV32.Cur.loaded_rstCode' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_rstCode
+
+/-- info: 'C3.RV32.Cur.loaded_bsCode' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_bsCode
+
+/-- info: 'C3.RV32.Cur.loaded_bwCode' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_bwCode
+
+/-- info: 'C3.RV32.Cur.loaded_panicCode' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_panicCode
+
+/-- info: 'C3.RV32.Cur.loaded_eprAt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_eprAt
+
+/-- info: 'C3.RV32.Cur.loaded_resetMem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_resetMem
+
+/-- info: 'C3.RV32.Cur.loaded_bmHyp' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_bmHyp
+
+/-- info: 'C3.RV32.Cur.reset_correct_loaded' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_correct_loaded
+
+/-- info: 'C3.RV32.chip_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.chip_step
+
+/-- info: 'C3.RV32.chip_steps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.chip_steps
+
+/-- info: 'C3.RV32.chip_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.chip_run
+
+/-- info: 'C3.RV32.chipSim_init' does not depend on any axioms -/
+#guard_msgs in #print axioms C3.RV32.chipSim_init
+
+/-- info: 'C3.RV32.aliasOk_regions' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.aliasOk_regions
+
+/-- info: 'C3.RV32.Ac.acetl_tlog_stage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_tlog_stage
+
+/-- info: 'C3.RV32.Ac.acetl_pass' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_pass
+
+/-- info: 'C3.RV32.Ac.acetl_tEF2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_tEF2
+
+/-- info: 'C3.RV32.Ac.acetl_tF9E' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_tF9E
+
+/-- info: 'C3.RV32.Ac.acetl_skip' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_skip
+
+/-- info: 'C3.RV32.Ac.acetl_close' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_close
+
+/-- info: 'C3.RV32.Ac.acetl_end' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_end
+
+/-- info: 'C3.RV32.Ac.acetl_pre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_pre
