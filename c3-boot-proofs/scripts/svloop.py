@@ -38,6 +38,22 @@ class Loop:
             for b in names:
                 types[b] = ty
         self.types = types
+        # A head register whose binder nothing else names, and that the body
+        # overwrites, is dead at the head: each iteration reads it afresh.
+        dead = {}
+        for p, t in self.head:
+            key, parts = param_key(p), top_split(t, ' = ')
+            if not key or not key.startswith('r') or len(parts) != 2:
+                continue
+            rhs, f = strip_parens(parts[-1]), facts.get(key)
+            if not re.fullmatch(r"\w+", rhs) or f is None or f.rhs is None:
+                continue
+            rx = IDENT.format(re.escape(rhs))
+            others = [t2 for p2, t2 in st.params if p2 != p] + [g.text for g in st.facts] + st.sc_parts
+            if not any(re.search(rx, x) for x in others):
+                dead[p] = (rhs, strip_parens(parts[0]))
+        self.head = [(p, t) for p, t in self.head if p not in dead]
+        self.per = [(p, t) for p, t in st.params if p not in GLOBAL and (p, t) not in self.head]
         for p, t in self.head:
             key = param_key(p)
             if not key:
@@ -63,8 +79,8 @@ class Loop:
         for p, t in self.per:
             parts = top_split(t, ' = ')
             rhs = strip_parens(parts[-1]) if len(parts) == 2 else None
-            if (rhs in bset and rhs not in upd and rhs not in self.local
-                    and not re.search(IDENT.format(re.escape(rhs)), head_text)):
+            if p in dead or (rhs in bset and rhs not in upd and rhs not in self.local
+                             and not re.search(IDENT.format(re.escape(rhs)), head_text)):
                 self.local[rhs] = strip_parens(parts[0])
             else:
                 self.kept_per.append((p, t))

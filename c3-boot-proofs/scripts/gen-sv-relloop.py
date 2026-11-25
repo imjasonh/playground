@@ -138,7 +138,11 @@ def main(fname, c):
                 xmap[m.group(1)] = f"{br}.toNat"
                 xconv[p] = f"({p}.trans (ofNat_toNat_self _).symm)"
     fixed_in = c.get('fixed_in', {})
-    groups_, seen = [], set(loopv) | {'n0'} | set(xmap)
+    # A register the body overwrites before it reads it is the head's own value.
+    xmap = {**L.local, **{b: subst(t, L.local) for b, t in xmap.items()}}
+    dead = {p for p, t in X.params if param_key(p) and strip_parens(subst(top_split(t, ' = ')[-1], xmap)) in L.local.values()}
+    bb = {b for names, _ in lean_binders(*BODY) for b in names}
+    groups_, seen = [], set(loopv) | {'n0'} | (set(xmap) - (bb - set(L.local)))
     for names, ty in lean_binders(*BODY) + lean_binders(*EXIT):
         new = [b for b in names if b not in seen]
         seen |= set(new)
@@ -223,7 +227,7 @@ def main(fname, c):
     O("      ∃ nk, Steps n0 nk ∧ reg nk (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg nk (4 : Fin 32) = reg n0 (4 : Fin 32) ∧")
     O(f"      SvKeepL B n0.mem nk.mem {L.kl} ∧ {OK} {fixed_names} M0 {' '.join(ps)} nk := by")
     xnamed = " ".join(f"({b} := {xmap.get(b, b)})" for b in dict.fromkeys(b for names, _ in lean_binders(*EXIT) for b in names))
-    xargs = " ".join({c['xcond']: 'h0', **xconv}.get(p, p) for p, _ in X.params)
+    xargs = " ".join({c['xcond']: 'h0', **xconv}.get(p, 'rfl' if p in dead else p) for p, _ in X.params)
     intro = f"intro {' '.join(loopv)} n0 hN {' '.join(hn)} {' '.join(per_names)} {' '.join(p for p, _ in xextra)}"
     exit_ok = (f"exact .inr ⟨0, {', '.join(loopv)}, svChain.nil, n0, .refl _, rfl, rfl, SvKeepL.refl.mono (by decide), "
                f"h0, {''.join(p + ', ' for p, _, _ in invs)}okx⟩")
@@ -251,9 +255,12 @@ def main(fname, c):
     O("")
     # The loop as a stage.
     pr = dict(zip(loopv, ps))
-    facts = []
+    facts, dropped = [], []
     for f in X.facts:
         if f.key == 'STEPS':
+            continue
+        if f.key not in ('r3', 'r4') and 'reg n0 ' in subst(f.text, xmap):
+            dropped.append(f.key)
             continue
         t = subst(subst(f.text, xmap), pr)
         if f.key in ('r3', 'r4'):
@@ -288,7 +295,8 @@ def main(fname, c):
       f"⟨k, {', '.join(ps)}, chn, nk, cs, hr3, hr4, hkl, okh⟩")
     O("  · exact .inl e")
     iv = [f"iv{j}" for j in range(len(invs))]
-    O(f"  obtain ⟨hz, {', '.join(iv + xnm + ['n1', 'cn'] + [f'f_{k}' for k, _ in facts])}⟩ := okh")
+    fnames = [f"f_{f.key}" if f.key not in dropped else "-" for f in X.facts if f.key != 'STEPS']
+    O(f"  obtain ⟨hz, {', '.join(iv + xnm + ['n1', 'cn'] + fnames)}⟩ := okh")
     terms = [{"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}")
              for k, _ in facts]
     O(f"  exact .inr ⟨k, {', '.join(ps)}, chn, hz, {', '.join(iv + xnm + ['n1', 'cs.trans cn'] + terms)}⟩")

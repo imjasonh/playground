@@ -20,7 +20,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from svchain import IDENT, Chain, Stage, subst  # noqa: E402
+from svchain import IDENT, Chain, Stage, param_key, strip_parens, subst, top_split  # noqa: E402
 from svloop import GLOBAL, Loop  # noqa: E402
 from svmerge import sc_pattern  # noqa: E402
 
@@ -36,13 +36,6 @@ PER_SC = {'SvCkdLoop', 'SvCgLoop'}
 
 # file: (theorem, body stage, doc)
 LOOPS = {
-    'SvILoop': ('sv_iloop', ('SvImiss', 'sv_imiss'),
-                "the search of the root's Fulcio intermediates for the leaf's issuer, over `k` entries that "
-                "don't match"),
-    'SvTLoop': ('sv_tloop', ('SvTlmiss', 'sv_tlmiss'),
-                "the search of the root's TSAs for the timestamp's signer, over `k` entries that don't match"),
-    'SvCLoop': ('sv_cloop', ('SvClmiss', 'sv_clmiss'),
-                "the search of the root's logs for the checkpoint's origin, over `k` entries that don't match"),
     'SvCkdLoop': ('sv_ckdloop', ('SvCkd', 'sv_ckd'), "the checkpoint's size, over `k` digits"),
     'SvCgLoop': ('sv_cgloop', ('SvCg', 'sv_cg'), "a cosignature's base64, over `k` groups of four"),
 }
@@ -220,6 +213,9 @@ def exit_form(O, name, L, efile, ename, endp):
     for p in loopfree:
         rn.setdefault(p, p)
     rn.update({endp: f"(hz {' '.join(ps)} e0)"})
+    for p, t in E.params:
+        if p not in rn and param_key(p) and strip_parens(top_split(t, ' = ')[-1]) in L.local:
+            rn[p] = 'rfl'
     eargs = " ".join(rn.get(p, p) for p, _ in E.params)
     enamed = " ".join(f"({b} := {pr.get(b, b)})" for names, _ in L.binders for b in names if b in E.binder_set()
                       and b not in L.local and b != 'n0')

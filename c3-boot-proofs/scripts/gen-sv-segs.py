@@ -55,7 +55,7 @@ SEGMENTS = {
                   "extensions, the intermediate that issued it, the leaf's signature, and the policy."),
     'SvSegTs': ('sv_seg_ts', [('SvSegTr', 'sv_seg_tr'), ('SvSegAttrPre', 'sv_seg_attr_pre'),
                               ('SvAttrLoop', 'sv_attrloop_st'), ('SvSegTt', 'sv_seg_tt'),
-                              ('SvTSearch', 'sv_tsearch_st'), ('SvTsig', 'sv_tsig'), ('SvTp', 'sv_tp')],
+                              ('SvTsv', 'sv_tsv'), ('SvTSearch', 'sv_tsearch_st'), ('SvTsig', 'sv_tsig'), ('SvTp', 'sv_tp')],
                 "**The timestamp**: from 0xA60 to the checkpoint at 0x142E: the timestamp response, its signed "
                 "attributes, the `TSTInfo`, the TSA that signed it, and its signature."),
     'SvSegLog': ('sv_seg_log', [('SvSegCkpt', 'sv_seg_ck'), ('SvCkdLoop', 'sv_ckdloop_run'),
@@ -98,9 +98,8 @@ SEGMENTS = {
     'SvSegTt4o': ('sv_seg_tt4o', [('SvTt4o', 'sv_tt4o'), ('SvTt4b', 'sv_tt4b')],
                   "**The `ordering` boolean and what follows it**: from 0x121E to 0x1272."),
     'SvSegTt': ('sv_seg_tt', [('SvTt1', 'sv_tt1'), ('SvTt2', 'sv_tt2'), ('SvTt3', 'sv_tt3'), ('SvTt4', 'sv_tt4'),
-                              ('SvTt5', 'sv_tt5'), ('SvTt6', 'sv_tt6'), ('SvTsv', 'sv_tsv')],
-                "**The `TSTInfo` and the timestamp's signature**: from 0x10A4 to the TSA search at 0x1344, "
-                "`sv_tt1` to `sv_tsv`."),
+                              ('SvTt5', 'sv_tt5'), ('SvTt6', 'sv_tt6')],
+                "**The `TSTInfo`**: from 0x10A4 to the timestamp's signature at 0x12BE, `sv_tt1` to `sv_tt6`."),
     'SvSegAttrPre': ('sv_seg_attr_pre', [('SvTra', 'sv_tra'), ('SvTrv', 'sv_trv')],
                      "**The first signed attribute**: from 0xEA0 to the attributes loop's branch at 0xFF8."),
     'SvSegAttr': ('sv_seg_attr', [('SvTrl', 'sv_trl'), ('SvTra', 'sv_tra'), ('SvTrv', 'sv_trv')],

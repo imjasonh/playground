@@ -134,6 +134,20 @@ class Segment:
         self.doc = doc
         self.extra = extra or {}
 
+    def lt_of(self, k):
+        """A proof of `k < L.toNat` and `L`, from a bound on `k` that a
+        search states as `k < (L.toNat - 1) + 1` and a proof that `L` isn't 0."""
+        if k in self.lts:
+            return self.lts[k]
+        if k not in self.lts1:
+            return None
+        pf, Lw = self.lts1[k]
+        nz = self.resolve('hnz', f"{Lw} ≠ 0")
+        if not isinstance(nz, str):
+            return None
+        return (f"(show {k} < ({Lw}).toNat from by have h := {pf}; have hz : {Lw} ≠ 0 := {nz}; "
+                f"have h' : ({Lw}).toNat ≠ 0 := fun e => hz (BitVec.eq_of_toNat_eq (by rw [e]; rfl)); omega)", Lw)
+
     def derive_in(self, ptr, n):
         """A proof of `SvIn B ptr n`, with `ptr` and the length `n` in `canon` form."""
         for p, l, pf in self.ins:
@@ -148,6 +162,10 @@ class Segment:
                     base = self.derive_in(P0, N0)
                     if base:
                         return f"SvIn.dropLit (k := {k}) (({base}).nlLine {hp}) {lpf} (by decide)"
+                if lk == k and n == canon(f"(BitVec.ofNat 32 ({ix} - {k})).toNat"):
+                    base = self.derive_in(P0, N0)
+                    if base:
+                        return f"((({base}).nlLine {hp}).drop {lpf}).ofNatLen"
             if ptr == P0 and n in (canon(ix), canon(f"(BitVec.ofNat 32 {ix}).toNat")):
                 base = self.derive_in(P0, N0)
                 if base:
@@ -166,16 +184,16 @@ class Segment:
         mc = re.fullmatch(r"([\w']+)\.toNat", n)
         if mc and mc.group(1) in self.closed:
             cpf, k = self.closed[mc.group(1)]
-            if k in self.lts:
-                kpf, Lw = self.lts[k]
+            if self.lt_of(k):
+                kpf, Lw = self.lt_of(k)
                 S = self.derive_in(ptr, canon(f"({Lw}).toNat"))
                 if S:
                     return f"SvIn.beforeSep ({S}) {kpf} {cpf}"
         m = re.fullmatch(r"(.+) \+ \(([\w']+) \+ BitVec\.ofNat 32 0x1\)", ptr)
         if m and m.group(2) in self.closed:
             cpf, k = self.closed[m.group(2)]
-            if k in self.lts:
-                kpf, Lw = self.lts[k]
+            if self.lt_of(k):
+                kpf, Lw = self.lt_of(k)
                 cand = canon(f"((({Lw}) - ({m.group(2)} + BitVec.ofNat 32 0x1)) >>> 2).toNat * 4")
                 cand_all = canon(f"(({Lw}) - ({m.group(2)} + BitVec.ofNat 32 0x1)).toNat")
                 if n in (cand, cand_all):
@@ -283,15 +301,20 @@ class Segment:
             if piece.startswith('SvIn B '):
                 ptr, n = split_in(piece[len('SvIn B '):])
                 self.ins.append((ptr, n, pf))
-            m = re.fullmatch(r"(\d+|0x[0-9A-Fa-f]+) ≤ (\w+)", piece)
-            if m:
-                self.les[m.group(2)] = (pf, int(m.group(1), 0))
+            conj = top_split(piece, ' ∧ ')
+            for j, c in enumerate(conj):
+                m = re.fullmatch(r"(\d+|0x[0-9A-Fa-f]+) ≤ (\w+)", strip_parens(c))
+                if m and m.group(2) not in self.les:
+                    self.les[m.group(2)] = (pf + ".2" * j + (".1" if j + 1 < len(conj) else ""), int(m.group(1), 0))
             m = re.fullmatch(r"\(?([\w']+)\)? = \(BitVec\.ofNat 32 0x0\) \+ BitVec\.ofNat 32 \((\w+) \* 1\)", piece)
             if m:
                 self.closed[m.group(1)] = (pf, m.group(2))
             m = re.fullmatch(r"(\w+) < (.+)\.toNat", piece)
             if m:
                 self.lts[m.group(1)] = (pf, canon(m.group(2)))
+            m = re.fullmatch(r"(\w+) < \((.+)\.toNat - 1\) \+ 1", piece)
+            if m:
+                self.lts1[m.group(1)] = (pf, canon(m.group(2)))
             m = re.fullmatch(r"nlScan M0 (\S+|\(.+\)) 0 (\S+|\(.+\)) = some (\w+)", piece)
             if m:
                 self.nl[m.group(3)] = (pf, canon(m.group(1)), canon(m.group(2)))
@@ -402,8 +425,11 @@ class Segment:
         if key in facts:
             f = facts[key]
             pre = {'w': 'w0_', 'b': 'b0_', 'a': 'a0_', 'q': 'q0_'}[key[0]]
-            return (getattr(f, 'name', None) or (fname(key, j) if j else f"{pre}{key[1:]}"),
-                    strip_parens(f.rhs) if f.rhs else None)
+            val = strip_parens(f.rhs) if f.rhs else None
+            if val is None and key[0] == 'q':
+                # A range's value is its body's, with `j` free.
+                val = strip_parens(top_split(strip_parens(f.text), ' = ')[-1])
+            return (getattr(f, 'name', None) or (fname(key, j) if j else f"{pre}{key[1:]}"), val)
         if key[0] != 'w':
             return None
         for k2, f in facts.items():
@@ -718,6 +744,16 @@ class Segment:
             pf = self.derive_in(ptr, ln) or self.nonzero_in(ptr, ln)
             if pf:
                 return f"(.inl ({pf}))"
+        m = re.fullmatch(r"\(?BitVec\.ofNat 32 \((\w+) - (\d+)\)\)? ≠ 0", strip_parens(ty))
+        if m and m.group(1) in self.nl:
+            hp, _, n0 = self.nl[m.group(1)]
+            lt = next((pf for pf, piece in self.pieces
+                       if strip_parens(strip_exists(piece)) == f"{m.group(2)} < {m.group(1)}"), None)
+            mw = re.fullmatch(r"\(?([\w']+)\)?\.toNat", n0)
+            if lt and mw:
+                return (f"(by intro h; have h1 := {lt}; have h2 := (nlScan_lt _ _ _ {hp}).2; "
+                        f"have h3 := BitVec.isLt {mw.group(1)}; have h4 := congrArg BitVec.toNat h; "
+                        "simp only [BitVec.toNat_ofNat, Nat.reducePow, BitVec.ofNat_eq_ofNat] at h4; omega)")
         m = re.fullmatch(r"(.+) ≠ 0", strip_parens(ty))
         if m:
             x = canon(strip_parens(m.group(1)))
@@ -797,6 +833,7 @@ class Segment:
         self.les = {}
         self.closed = {}
         self.lts = {}
+        self.lts1 = {}
         for p, t in first.params:
             if t.startswith('SvIn B '):
                 ptr, ln = split_in(t[len('SvIn B '):])

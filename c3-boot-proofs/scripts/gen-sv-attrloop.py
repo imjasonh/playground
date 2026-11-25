@@ -46,7 +46,7 @@ def main():
     X = Stage(*EXIT)
     st, head, loopv = L.st, L.head, L.loopv
     assert loopv == ['dg', 'flag', 'cp', 'rem'], loopv
-    groups_, seen = [], set(loopv) | {'n0'}
+    groups_, seen = [], set(loopv) | {'n0'} | set(L.local)
     for names, ty in lean_binders(*BODY) + lean_binders(*EXIT):
         new = [b for b in names if b not in seen]
         seen |= set(new)
@@ -62,7 +62,7 @@ def main():
     sc = " ∧ ".join(st.sc_parts)
     new = "(" + ", ".join(L.upd[b] for b in loopv) + ")"
     rel = subst(f"{proj['rem']} ≠ 0 ∧ " + (sc + " ∧ " if sc else "") + f"s' = {new}", proj)
-    ok = success_text(*EXIT)
+    ok = subst(success_text(*EXIT), L.local)
     ok_k = re.sub(IDENT.format("n0"), "nk", subst(ok, dict(zip(loopv, ps))))
     T = "Word × Word × Word × Word"
 
@@ -126,8 +126,9 @@ def main():
     O(f"    SvErrRet B out v n0 ∨ ∃ k {' '.join(ps)}, svChain ({STEP} {fixed_names} M0) k {tup} {ptup} ∧")
     O("      ∃ nk, Steps n0 nk ∧ reg nk (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg nk (4 : Fin 32) = reg n0 (4 : Fin 32) ∧")
     O(f"      SvKeepL B n0.mem nk.mem {L.kl} ∧ {OK} {fixed_names} M0 {' '.join(ps)} nk := by")
-    xnamed = " ".join(f"({b} := {b})" for names, _ in lean_binders(*EXIT) for b in names)
-    xargs = " ".join({'hrem': 'h0', 'hflag': 'hflag'}.get(p, p) for p, _ in X.params)
+    xnamed = " ".join(f"({b} := {L.local.get(b, b)})" for names, _ in lean_binders(*EXIT) for b in names)
+    dead = {p for p, t in X.params if strip_parens(t.split(' = ')[-1]) in L.local}
+    xargs = " ".join({'hrem': 'h0', 'hflag': 'hflag'}.get(p, 'rfl' if p in dead else p) for p, _ in X.params)
     intro = f"intro {' '.join(loopv)} n0 hN hflag {' '.join(hn)} {' '.join(per_names)}"
     exit_ok = (f"exact .inr ⟨0, {', '.join(loopv)}, svChain.nil, n0, .refl _, rfl, rfl, SvKeepL.refl.mono (by decide), "
                f"h0, {''.join(p + ', ' for p, _, _ in invs)}okx⟩")
@@ -151,18 +152,21 @@ def main():
     O(f"    have hdec := svRem_le (a := {tl_local}.header + {tl_local}.len) (N := N) "
       f"(by have := derElement_header {tl_pf}; omega)")
     O(f"      (by have := derElement_bound {tl_pf}; rw [memBytes_length] at this; exact this) hN")
+    ws = list(dict.fromkeys(re.findall(r"\btrv_w\w+", dict(proofs)[flag_pf])))
+    es = [f"e{j}" for j in range(len(ws))]
+    ef = es[next(j for j, w in enumerate(ws) if "w7c" in w)]
     pats = []
     paths = paths_of(split([Stage(*v) for v in TSAV], []))
     for vf, vn in TSAV:
         st_v = Stage(vf, vn)
         nm = [f"pc{i}'" for i in range(len(paths[st_v.name]))] + [f"{x}'" for x in sc_pattern(st_v)]
-        pats.append("⟨" + ", ".join(nm + ["e0", "e1", "e2", "e3"]) + "⟩")
+        pats.append("⟨" + ", ".join(nm + es) + "⟩")
     w78 = next(x for x in names1 if "trv_w7c" in x)
     O(f"    have hflag' : {w78} = 0 ∨ {w78} = 1 := by")
     O(f"      rcases {flag_pf} with {' | '.join(pats)}")
-    O("      · exact .inr e1")
-    O("      · rw [e1]; exact hflag")
-    O("      · rw [e1]; exact hflag")
+    O(f"      · exact .inr {ef}")
+    O(f"      · rw [{ef}]; exact hflag")
+    O(f"      · rw [{ef}]; exact hflag")
     O(f"    rcases ih hdec hflag' {' '.join(ih_args)} with e | ⟨k, {', '.join(ps)}, chn, nk, cs, h3, h4, hk, okk⟩")
     O("    · exact .inl (SvErrRet.pre c1 r1_3 r1_4 (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)")
     O(f"    · exact .inr ⟨k + 1, {', '.join(ps)}, svChain.cons ⟨h0, {', '.join(names1)}, rfl⟩ chn, nk, c1.trans cs, "
@@ -170,11 +174,14 @@ def main():
     O("")
     # The loop as a stage.
     pr = dict(zip(loopv, ps))
-    facts = []
+    facts, dropped = [], []
     for f in X.facts:
         if f.key == 'STEPS':
             continue
-        t = subst(f.text, pr)
+        if f.key.startswith('r') and f.rhs is not None and strip_parens(f.rhs) in L.local:
+            dropped.append(f.key)
+            continue
+        t = subst(subst(f.text, L.local), pr)
         if f.key in ('r3', 'r4'):
             t = f"reg n' ({f.key[1]} : Fin 32) = reg n0 ({f.key[1]} : Fin 32)"
         elif f.key == 'KL':
@@ -197,14 +204,15 @@ def main():
     O("    SvErrRet B out v n0 ∨")
     O(f"    (∃ k {' '.join(ps)}, svChain ({STEP} {fixed_names} M0) k {tup} {ptup} ∧")
     O("      rem' = 0 ∧" + "".join(f" ({subst(t, pr)}) ∧" for _, t, _ in invs) +
-      ("" if not X.sc_parts else "\n      " + " ∧ ".join(subst(x, pr) for x in X.sc_parts) + " ∧"))
+      ("" if not X.sc_parts else "\n      " + " ∧ ".join(subst(subst(x, L.local), pr) for x in X.sc_parts) + " ∧"))
     O("    ∃ n', Steps n0 n' ∧")
     O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
     O(f"  rcases {NAME} FW hret hO M0 N hN hflag {' '.join(hn)} {' '.join(per_names)} with e | "
       f"⟨k, {', '.join(ps)}, chn, nk, cs, hr3, hr4, hkl, okh⟩")
     O("  · exact .inl e")
     iv = [f"iv{j}" for j in range(len(invs))]
-    O(f"  obtain ⟨hz, {', '.join(iv + xnm + ['n1', 'cn'] + [f'f_{k}' for k, _ in facts])}⟩ := okh")
+    fnames = [f"f_{f.key}" if f.key not in dropped else "-" for f in X.facts if f.key != 'STEPS']
+    O(f"  obtain ⟨hz, {', '.join(iv + xnm + ['n1', 'cn'] + fnames)}⟩ := okh")
     terms = [{"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}")
              for k, _ in facts]
     O(f"  exact .inr ⟨k, {', '.join(ps)}, chn, hz, {', '.join(iv + xnm + ['n1', 'cs.trans cn'] + terms)}⟩")

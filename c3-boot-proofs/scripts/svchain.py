@@ -160,11 +160,18 @@ class Stage:
         for g in groups(st[hdr_end:k]):
             pn, ty = g.split(' : ', 1)
             self.params.append((pn.strip(), ty.strip()))
-        rest = st[k:].split('\n')[2:]
+        lines = st[k:].split('\n')
+        i = 1
+        while not lines[i].rstrip().endswith('∨'):
+            i += 1
+        rest = lines[i + 1:]
         self.nsc = next(i for i, l in enumerate(rest) if "∃ n', Steps" in l)
-        self.sc_parts = [l.strip().rstrip('∧').strip() for l in rest[:self.nsc]]
-        if self.sc_parts:
-            self.sc_parts[0] = self.sc_parts[0][1:]
+        self.sc_parts, acc = [], ""
+        for j, l in enumerate(rest[:self.nsc]):
+            acc = (acc + " " if acc else "") + (l.strip()[1:] if j == 0 else l.strip())
+            if acc.endswith('∧') or j + 1 == self.nsc:
+                self.sc_parts.append(acc.rstrip('∧').strip())
+                acc = ""
         if self.sc is None:
             self.sc = " ∧ ".join(self.sc_parts)
         body = "\n".join(rest[self.nsc:])
@@ -248,6 +255,8 @@ class Chain:
                 got[pn], val = carried
                 if rhs in bs and rhs not in env:
                     env[rhs] = val
+                elif val is not None:
+                    env.update(unify(rhs, strip_parens(val), [b for b in bs if b not in env]))
             elif key and len(parts) == 2 and rhs in bs and rhs not in env:
                 got[pn] = 'rfl'
                 lhs = strip_parens(parts[0])
