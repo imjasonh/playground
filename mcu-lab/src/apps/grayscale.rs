@@ -4,10 +4,10 @@
 //! Alternates between two steps:
 //! 1. **Full refresh**: factory full refresh to white + power off (~4 s), so
 //!    boot-time BLE telemetry and OTA rollback verification complete quickly.
-//! 2. **Drive cycle**: loads the custom one-frame waveform LUTs, drives the
-//!    boids flock at 20+ refreshes/s for [`FULL_REFRESH_INTERVAL`], drains
-//!    every pixel back to white for DC balance, and powers the panel off
-//!    before returning for the BLE telemetry / OTA window.
+//! 2. **Drive segments**: loads the custom one-frame waveform LUTs and drives the
+//!    boids flock in ~8 s segments (a BLE window follows each). Every ~30 s it drains
+//!    every pixel back to white without flashing, and every 20 drains it runs a full refresh.
+//!    The panel powers off at the end of each segment.
 //!
 //! Uses row-by-row triangle rendering and compact half-plane planning so total
 //! heap usage stays around ~128 KiB alongside NimBLE on a no-PSRAM ESP32.
@@ -41,7 +41,14 @@ const FRAMES_PER_STEP: u8 = 1;
 const SWAP_DRIVE_POLARITY: bool = false;
 
 /// Drive duration before draining back to white and running a factory full refresh.
-const FULL_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+const DRAIN_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Longest uninterrupted drive segment. Between segments the app returns to the
+/// platform loop, which advertises a BLE burst so OTA can connect.
+const DRIVE_SEGMENT: Duration = Duration::from_secs(8);
+
+/// Non-flashing drains (every pixel driven back to white) between factory full refreshes.
+const DRAINS_PER_FULL_REFRESH: u32 = 20;
 
 /// Serial log cadence (in refreshes) inside a drive cycle.
 const STATS_EVERY: u32 = 50;
@@ -61,6 +68,10 @@ pub struct GrayscaleApp {
     flock: Flock,
     triangles: Vec<RenderTriangle>,
     row_luma: Vec<u8>,
+    /// Drive time since the last drain.
+    drive_elapsed: Duration,
+    draining: bool,
+    drains: u32,
 }
 
 impl<B: Board + HasEpd75> App<B> for GrayscaleApp {
@@ -69,7 +80,7 @@ impl<B: Board + HasEpd75> App<B> for GrayscaleApp {
 
     fn run_mode() -> RunMode {
         RunMode::Continuous {
-            burst_ms: 500,
+            burst_ms: 1500,
             min_step_ms: 0,
         }
     }
@@ -91,6 +102,9 @@ impl<B: Board + HasEpd75> App<B> for GrayscaleApp {
             flock,
             triangles,
             row_luma,
+            drive_elapsed: Duration::ZERO,
+            draining: false,
+            drains: 0,
         })
     }
 
@@ -130,6 +144,9 @@ impl GrayscaleApp {
             error!("grayscale: power off after full refresh failed: {err:#}");
         }
         self.planner.reset_white();
+        self.drive_elapsed = Duration::ZERO;
+        self.draining = false;
+        self.drains = 0;
         self.phase = Phase::DriveCycle;
 
         let epd_refresh_us = u32::try_from(end.saturating_sub(start)).unwrap_or(u32::MAX);
@@ -151,7 +168,7 @@ impl GrayscaleApp {
         ctx: &mut StepContext<'_>,
     ) -> Result<StepOutput> {
         ctx.record_attr("grayscale.phase", "drive_cycle");
-        // Always start the next step with a clean full refresh, even on error.
+        // On error, recover with a clean full refresh.
         self.phase = Phase::FullRefresh;
 
         let init_start = now_us();
@@ -159,6 +176,8 @@ impl GrayscaleApp {
             let _ = board.panel().power_off();
             return Err(err);
         }
+        // The controller reset in init_drive lost its old plane.
+        self.planner.invalidate_old();
         let init_end = now_us();
         ctx.record_span("grayscale.init_drive", "epd_refresh", init_start, init_end);
         ctx.feed_watchdog();
@@ -179,6 +198,15 @@ impl GrayscaleApp {
         ctx.feed_watchdog();
 
         let totals = cycle_res?;
+        self.drive_elapsed += totals.total;
+        if self.drive_elapsed >= DRAIN_INTERVAL {
+            self.draining = true;
+        }
+        self.phase = if self.drains >= DRAINS_PER_FULL_REFRESH {
+            Phase::FullRefresh
+        } else {
+            Phase::DriveCycle
+        };
         let n = totals.refreshes.max(1);
         let total_secs = totals.total.as_secs_f64().max(f64::EPSILON);
         let drive_millihz = ((f64::from(n) / total_secs) * 1000.0).round() as i64;
@@ -221,7 +249,6 @@ impl GrayscaleApp {
     ) -> Result<Stats> {
         let row_bytes = self.planner.row_bytes();
         let cycle_start = Instant::now();
-        let mut draining = false;
         let mut window_stats = Stats::default();
         let mut cycle_stats = Stats::default();
 
@@ -253,15 +280,22 @@ impl GrayscaleApp {
             let sent = Instant::now();
             board.panel().start_drive()?;
 
-            if draining && plan.undrained == 0 {
+            if self.draining && plan.undrained == 0 {
                 board.panel().wait_drive()?;
+                self.drains += 1;
+                self.drive_elapsed = Duration::ZERO;
+                self.draining = false;
                 info!("drained after ms={}", cycle_start.elapsed().as_millis());
+                return Ok(cycle_stats);
+            }
+            if cycle_start.elapsed() >= DRIVE_SEGMENT {
+                // Finish the plan already sent; never leave a planned tick unsent.
+                board.panel().wait_drive()?;
                 return Ok(cycle_stats);
             }
             let sent_plan = plan;
 
-            draining |= cycle_start.elapsed() >= FULL_REFRESH_INTERVAL;
-            plan = if draining {
+            plan = if self.draining {
                 self.planner.plan_tick_compact(
                     |_, row| row.fill(255),
                     &mut self.row_luma,

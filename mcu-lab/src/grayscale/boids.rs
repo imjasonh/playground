@@ -86,9 +86,9 @@ impl Default for FlockConfig {
             // seconds at 22 refreshes a second. 0.29 rather than 0.3 keeps
             // `length / max_speed` above the swing in f32, where 0.3 is
             // not exact.
-            max_speed: 0.29,
-            min_speed: 0.16,
-            max_force: 0.0075,
+            max_speed: 0.48,
+            min_speed: 0.27,
+            max_force: 0.0110,
             // Under half of max_force: enough that alignment never fully
             // settles two boids onto the same heading, not so much that
             // the flock looks jittery instead of gliding.

@@ -37,7 +37,7 @@ pub struct DriveConfig {
 impl Default for DriveConfig {
     fn default() -> Self {
         Self {
-            swing: 30,
+            swing: 18,
             flip_hysteresis: 2,
             flip_interval: 4,
         }
@@ -98,6 +98,11 @@ impl DrivePlanner {
 
     /// Call after a factory full refresh to white. The next plan rewrites
     /// the old plane.
+    /// Marks the controller's old plane as lost (after `init_drive` resets it).
+    pub fn invalidate_old(&mut self) {
+        self.old_stale = true;
+    }
+
     pub fn reset_white(&mut self) {
         for row in &mut self.rows {
             row.fill(0);
@@ -416,8 +421,8 @@ mod tests {
     fn target_level_spans_white_to_black() {
         let planner = DrivePlanner::new(4, 1, DriveConfig::default());
         assert_eq!(planner.target_level(255), 0);
-        assert_eq!(planner.target_level(0), 30);
-        assert_eq!(planner.target_level(128), 15);
+        assert_eq!(planner.target_level(0), 18);
+        assert_eq!(planner.target_level(128), 9);
     }
 
     #[test]
@@ -489,7 +494,7 @@ mod tests {
         for _ in 0..config.swing {
             rig.tick(|_, _| 0);
         }
-        let near_black = 16;
+        let near_black = 28;
         assert_eq!(
             rig.planner.target_level(near_black),
             config.swing - config.flip_hysteresis
