@@ -62,7 +62,7 @@ theorem sv_seg_ts {B out bp x20 x21 x22 x23 x24 x25 x26 x27 tsp tsl : Word} {v :
     (pk_in : ∀ i, i < 8 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x100), (x21 + BitVec.ofNat 32 0x308)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0x18)) 0x61)
     (side : ∀ i, i < 8 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x100), (x21 + BitVec.ofNat 32 0x308)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → ∀ M, PvSide M (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0x18)) (B + 0x21A0 + BitVec.ofNat 32 0x420) 32 (B + 0x21A0 + BitVec.ofNat 32 0x190)
       (B + 0x21A0 + BitVec.ofNat 32 0x1C0)) :
-    SvErrRet B out v n0 ∨ Panics n0 ∨
+    SvErrRet B out v n0 ∨ PanicIf n0 ∨
     (∃ tl10_1_1, derElement 0x30 (memBytes M0 (tsp) (tsl).toNat) = .ok tl10_1_1 ∧
       ((tsl) - BitVec.ofNat 32 (tl10_1_1.header + tl10_1_1.len) = 0) ∧
       ∃ tl21_1_1, derElement 0x30 (memBytes M0 ((tsp) + BitVec.ofNat 32 tl10_1_1.header) (BitVec.ofNat 32 tl10_1_1.len).toNat) = .ok tl21_1_1 ∧
@@ -604,7 +604,7 @@ theorem sv_seg_ts {B out bp x20 x21 x22 x23 x24 x25 x26 x27 tsp tsl : Word} {v :
   obtain ⟨mb7_420, hx7⟩ := hx7
   have K7_L := hx7
   rcases sv_tp FW E7 V7 hret hO s7 M0 fR7 r7_2 r7_18 r7_19 r7_20 r7_21 r7_22 r7_23 r7_24 r7_25 r7_26 r7_27 w7_78 mb7_420 ((K7_L.b8 (by decide) (by decide)).trans ((K6_L.b8 (by decide) (by decide)).trans b5_190)) (fun j hj => (K7_L.range (by decide) (by decide) j hj).trans ((fun j hj => (K6_L.range (by decide) (by decide) j hj).trans (q5_191 j hj)) j hj)) (fun j hj => (K7_L.range (by decide) (by decide) j hj).trans ((fun j hj => (K6_L.range (by decide) (by decide) j hj).trans (q5_1c0 j hj)) j hj)) PE0 rfl (pkp_in k_6 x6_0 c'_6 q'_6 x6_2 x6_4) (apk k_6 x6_0 c'_6 q'_6 x6_2 x6_4) (pk_in k_6 x6_0 c'_6 q'_6 x6_2 x6_4) (side k_6 x6_0 c'_6 q'_6 x6_2 x6_4) with ⟨-, e⟩ | hx8
-  · exact .inr (.inl (Panics.of_steps (c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6.trans (c7))))))) e))
+  · exact .inr (.inl (PanicIf.of_steps (c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6.trans (c7))))))) e))
   obtain ⟨pv_8, hx8⟩ := hx8
   obtain ⟨x8_0, hx8⟩ := hx8
   obtain ⟨n8, hx8⟩ := hx8

@@ -131,7 +131,7 @@ theorem acb_ret {B : Word} {n0 n : Machine} {P : Machine → Prop} (K : AcbK B n
 theorem acb_stage {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {L : Nat} {n0 : Machine}
     {o' : Nat} {Q : Machine → Prop} (G : AcbG B Bf g t r v M0 L n0)
     (h : AcbOr B n0 n0 (fun n => n.pc = AC + BitVec.ofNat 32 o' ∧ Q n)) :
-    AcStage B Bf g t r v M0 n0 o' (fun n => Q n ∧ ∀ q : Fin 32, q.val ∈ [21, 25, 27] → reg n q = reg n0 q) := by
+    AcStagePI B Bf g t r v M0 n0 o' (fun n => Q n ∧ ∀ q : Fin 32, q.val ∈ [21, 25, 27] → reg n q = reg n0 q) := by
   obtain ⟨n, c, ⟨K, ex⟩ | ⟨K, hp, hq⟩⟩ := h
   · exact ⟨n, c, Or.inr ⟨G.invW K, Or.inl (Or.inr (Or.inr (Or.inl ⟨ex.1, G.resW K, ex.2⟩)))⟩⟩
   · refine ⟨n, c, Or.inr ⟨G.inv K, Or.inr ⟨hp, hq, fun q hq => ?_⟩⟩⟩

@@ -2,7 +2,7 @@ import C3BootProofs.Proofs.TufRoleKeysMetCmp
 import C3BootProofs.Proofs.Dec384Main
 import C3BootProofs.Image.BootloaderData5
 import C3BootProofs.Image.BootloaderData7
-import C3BootProofs.Proofs.P2vP256
+import C3BootProofs.Proofs.PanicFree
 import C3BootProofs.Proofs.Ed25519VerifyC
 import C3BootProofs.Proofs.Sha384Fn
 import C3BootProofs.Proofs.Sha2OneShot
@@ -31,8 +31,9 @@ gives the registers outside `jClob` that the call keeps.
 
 A signature check that returns nonzero gives the specification's check at
 once, through the closed models: `p256_model_closed`, `p384_model_closed`,
-and `svEdModel_closed`. A check may also panic; `WP.callGenP` passes that
-to the postcondition.
+and `svEdModel_closed`. An ECDSA check may also panic, but only if an
+inversion bound fails (`PanicIf`); `WP.callGenPI` passes that to the
+postcondition with `¬ InvBounds`.
 -/
 
 namespace C3.RV32
@@ -99,22 +100,23 @@ theorem tmc_keepVal {m n : Machine} (h : ∀ q : Fin 32, q.val ∈ [1, 2, 3, 4, 
 section
 variable {code : List Nat} {base : Word} {Q : Post} {M : Word → BitVec 8} {off : Nat} {f : Fin 32 → Word}
 
-/-- `WP.callGen` for a callee that may panic instead of returning. -/
-theorem WP.callGenP {cl : List (Fin 32)} {P : Machine → Prop} {hi lo tb : Word}
+/-- `WP.callGen` for a callee that may panic, but only if an inversion
+bound fails, instead of returning. -/
+theorem WP.callGenPI {cl : List (Fin 32)} {P : Machine → Prop} {hi lo tb : Word}
     (h1 : fetchRel code off = some (.auipc ra hi, 4)) (h2 : fetchRel code (off + 4) = some (.jalr ra ra lo, 4))
     (htgt : (base + BitVec.ofNat 32 off + hi + lo) &&& ~~~1 = tb)
-    (hQ : ∀ m, Halting m → Q m.pc m.mem (reg m))
+    (hQ : ∀ m, ¬ InvBounds → Halting m → Q m.pc m.mem (reg m))
     (hcallee : ∀ m1 : Machine, m1.pc = tb → m1.mem = M →
       (∀ x, reg m1 x = upd f ra (base + BitVec.ofNat 32 (off + 8)) x) → base.toNat % 2 = 0 →
-      Panics m1 ∨
+      PanicIf m1 ∨
       ∃ m2, Steps m1 m2 ∧ m2.pc = base + BitVec.ofNat 32 (off + 8) ∧ P m2 ∧ ∀ x, x ∉ cl → reg m2 x = reg m1 x)
     (hcode : ∀ m2 : Machine, P m2 → CodeIn M base code → CodeIn m2.mem base code)
     (k : ∀ m2 : Machine, P m2 →
       WP code base Q m2.mem (off + 8) (clob (upd f ra (base + BitVec.ofNat 32 (off + 8))) m2 cl)) :
     WP code base Q M off f := by
   refine WP.call h1 h2 fun m1 hpc1 hmem1 hreg1 hb hc => ?_
-  rcases hcallee m1 (by rw [hpc1, htgt]) hmem1 hreg1 hb with ⟨m2, c2, hh⟩ | ⟨m2, c2, pc2, hP, hfr⟩
-  · exact ⟨m2, c2, hQ m2 hh⟩
+  rcases hcallee m1 (by rw [hpc1, htgt]) hmem1 hreg1 hb with ⟨hni, m2, c2, hh⟩ | ⟨m2, c2, pc2, hP, hfr⟩
+  · exact ⟨m2, c2, hQ m2 hni hh⟩
   · refine WP.resume c2 pc2 (fun x => ?_) hb (hcode m2 hP hc) (k m2 hP)
     by_cases hx : x ∈ cl
     · simp only [clob_app, hx, ↓reduceIte]
@@ -125,7 +127,7 @@ theorem WP.callGenP {cl : List (Fin 32)} {P : Machine → Prop} {hi lo tb : Word
 theorem WP.callP2vM {hi lo B pk dg rp sq : Word}
     (h1 : fetchRel code off = some (.auipc ra hi, 4)) (h2 : fetchRel code (off + 4) = some (.jalr ra ra lo, 4))
     (htgt : base + BitVec.ofNat 32 off + hi + lo = P2V) (hev : (off + 8) % 2 = 0)
-    (hQ : ∀ m, Halting m → Q m.pc m.mem (reg m))
+    (hQ : ∀ m, ¬ InvBounds → Halting m → Q m.pc m.mem (reg m))
     (E : P2vEnv M) (K : C3.Models.P256Consts M) (F : Fr B 0x3590) (RS : P2vRoSep B)
     (hsp : f sp = B + 0x3590) (h0 : f a0 = pk) (ha1 : f a1 = dg) (ha2 : f a2 = rp) (ha3 : f a3 = sq)
     (r_in : P2vIn B rp 32) (s_in : P2vIn B sq 32) (k_in : P2vIn B pk 0x41) (dg_in : P2vIn B dg 32)
@@ -135,7 +137,7 @@ theorem WP.callP2vM {hi lo B pk dg rp sq : Word}
       Out M m2.mem (B + 0xFFFFFE60) 0x3730 →
       WP code base Q m2.mem (off + 8) (clob (upd f ra (base + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
     WP code base Q M off f := by
-  refine WP.callGenP (tb := P2V) (cl := jClob)
+  refine WP.callGenPI (tb := P2V) (cl := jClob)
     (P := fun m2 => (reg m2 a0 ≠ 0 →
         p256Verify (memBytes M pk 65) (memBytes M dg 32) (memBytes M rp 32) (memBytes M sq 32) = true) ∧
       Out M m2.mem (B + 0xFFFFFE60) 0x3730)
@@ -143,7 +145,7 @@ theorem WP.callP2vM {hi lo B pk dg rp sq : Word}
     (fun m2 hP hc => hP.2.codeIn hc hSb) (fun m2 hP => k m2 hP.1 hP.2)
   have hr := tmc_regs hreg1
   have hra : reg m1 ra = base + BitVec.ofNat 32 (off + 8) := by rw [hreg1]; rsimp
-  rcases p256VerifyPrehash_correct m1 (by rw [hmem1]; exact E) F hpc1 (by rw [hr sp (by decide), hsp])
+  rcases p256VerifyPrehash_correct_pi m1 (by rw [hmem1]; exact E) F hpc1 (by rw [hr sp (by decide), hsp])
       (by rw [hr a0 (by decide), h0]) (by rw [hr a1 (by decide), ha1]) (by rw [hr a2 (by decide), ha2])
       (by rw [hr a3 (by decide), ha3]) (by rw [hra]; exact even_clear _ (even_at base hb _ hev))
       RS r_in s_in k_in dg_in with hp | ⟨m2, c2, pc2, sp2, sv2, g3, g4, a02, mem2⟩ |
@@ -162,7 +164,7 @@ means `p384Verify` accepts the key, prehash, and signature in memory. -/
 theorem WP.callPvM {hi lo B pk ph rp sq : Word}
     (h1 : fetchRel code off = some (.auipc ra hi, 4)) (h2 : fetchRel code (off + 4) = some (.jalr ra ra lo, 4))
     (htgt : base + BitVec.ofNat 32 off + hi + lo = PV) (hev : (off + 8) % 2 = 0)
-    (hQ : ∀ m, Halting m → Q m.pc m.mem (reg m))
+    (hQ : ∀ m, ¬ InvBounds → Halting m → Q m.pc m.mem (reg m))
     (E : PvEnv7 M) (F : Fr B 0x21A0)
     (hsp : f sp = B + 0x21A0) (h0 : f a0 = pk) (ha1 : f a1 = ph) (ha2 : f a2 = BitVec.ofNat 32 48)
     (ha3 : f a3 = rp) (ha4 : f a4 = sq)
@@ -175,19 +177,18 @@ theorem WP.callPvM {hi lo B pk ph rp sq : Word}
       Out M m2.mem (B + 0xFFFFFE60) 0x2340 →
       WP code base Q m2.mem (off + 8) (clob (upd f ra (base + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
     WP code base Q M off f := by
-  refine WP.callGenP (tb := PV) (cl := jClob)
+  refine WP.callGenPI (tb := PV) (cl := jClob)
     (P := fun m2 => (reg m2 a0 ≠ 0 →
         p384Verify (memBytes M pk 0x61) (memBytes M ph 48) (memBytes M rp 48) (memBytes M sq 48) = true) ∧
       Out M m2.mem (B + 0xFFFFFE60) 0x2340)
     h1 h2 (by rw [htgt]; exact even_clear _ (by decide)) hQ (fun m1 hpc1 hmem1 hreg1 hb => ?_)
     (fun m2 hP hc => hP.2.codeIn hc hSb) (fun m2 hP => k m2 hP.1 hP.2)
   have hr := tmc_regs hreg1
-  rcases p384VerifyPrehash_correct m1 (by rw [hmem1]; exact E) F hpc1 (by rw [hr sp (by decide), hsp])
+  rcases p384VerifyPrehash_correct_pi m1 (by rw [hmem1]; exact E) F hpc1 (by rw [hr sp (by decide), hsp])
       (by rw [hr a0 (by decide), h0]) (by rw [hr a1 (by decide), ha1]) (by rw [hr a2 (by decide), ha2])
       (by rw [hr a3 (by decide), ha3]) (by rw [hr a4 (by decide), ha4]) (by rw [hreg1]; rsimp)
-      (even_clear _ (even_at base hb _ hev)) sPK hPK sR sS sph hph
-      (C3.RV32.Safegcd.pvSide_holds _ _ _ _ _ _) with
-      ⟨-, hp⟩ | ⟨v, hv, m2, c2, pc2, sp2, sv2, g3, g4, a02, mem2⟩
+      (even_clear _ (even_at base hb _ hev)) sPK hPK sR sS sph hph with
+      hp | ⟨v, hv, m2, c2, pc2, sp2, sv2, g3, g4, a02, mem2⟩
   · exact .inl hp
   · rw [hmem1] at hv mem2
     refine .inr ⟨m2, c2, pc2, ⟨fun hne => ?_, fun x hx => mem2 x hx.symm⟩,

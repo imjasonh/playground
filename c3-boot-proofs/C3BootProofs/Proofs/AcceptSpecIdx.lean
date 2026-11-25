@@ -12,7 +12,7 @@ namespace C3.RV32.Ac
 open C3 C3.Image C3.RV32.P3 C3.RV32.BootMainContract C3.Json
 
 set_option maxHeartbeats 4000000 in
-/-- **The index stage, keeping memory**: `AcIndexStage`, and the stage
+/-- **The index stage, keeping memory**: `AcIndexStagePI`, and the stage
 writes only the frame below `sp + 0x34` and from `sp + 0x244` to the
 saves. -/
 theorem acs_indexStage (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romCode : List Nat)
@@ -22,7 +22,7 @@ theorem acs_indexStage (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (ro
     (C : CodeIn n.mem AC bootMainClosure0Code) (F : Fr B 0x5A70) (sRB : Sep B 0x5A70 romBase romCode.length)
     (hR : R ≤ 0x3A50 - 0x150) (hR4 : R % 4 = 0) (s : St n.mem AC n 0x2A6 (reg n))
     (I : AcInv B Bf g t v M0 n) (pre : AcIndexPre B r n) :
-    AcStage B Bf g t r v M0 n 0x4E4 fun n' =>
+    AcStagePI B Bf g t r v M0 n 0x4E4 fun n' =>
       (∃ parts, decodeTufParts (flashBytes flash (reg n (24 : Fin 32)).toNat (reg n (23 : Fin 32)).toNat) =
         some parts ∧
         AcIndexPost B n (flashBytes flash (reg n (24 : Fin 32)).toNat (reg n (23 : Fin 32)).toNat) parts n') ∧
@@ -146,7 +146,7 @@ theorem acs_idxWin {B : Word} (F : Fr B 0x5A70) {M M' : Word → BitVec 8} (h : 
 
 /-- **From 0x2A6**: the index stage, then the pinned-root stage and the
 rest, end the closure. -/
-theorem acs_index (hE : AcExtractStage) 
+theorem acs_index (hE : AcExtractStagePI) 
     {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest} {header : ImageHeader}
     (S : AcsAt2A6 X mf header n) : X.End n := by
   have E := ok.envsAt S.inv

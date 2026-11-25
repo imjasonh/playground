@@ -49,7 +49,7 @@ theorem acs_slotKept {B Bf : Word} {k : Nat} (h1 : 0x34 ≤ k) (h2 : k + 4 ≤ 0
   memLoad32_congr fun j hj => by rw [acf_slot_add]; exact h _ (.inr ⟨_, .inl ⟨by omega, by omega⟩, rfl⟩)
 
 /-- **From 0xC12**: the closure panics or returns with `AcsRes`. -/
-theorem acs_ext (hE : AcExtractStage) {X : AcsCtx} (ok : X.Ok)
+theorem acs_ext (hE : AcExtractStagePI) {X : AcsCtx} (ok : X.Ok)
     {n : Machine} {mf : Manifest} {header : ImageHeader} {parts : TufParts} {ver ex : Nat} {D : Word}
     (S : AcsAtC12 X mf header parts ver ex D n) : X.End n := by
   have E := ok.envsAt S.inv

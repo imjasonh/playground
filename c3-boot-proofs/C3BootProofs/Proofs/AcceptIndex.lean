@@ -57,6 +57,21 @@ def AcIndexStage : Prop :=
         some parts ∧
         AcIndexPost B n (flashBytes flash (reg n (24 : Fin 32)).toNat (reg n (23 : Fin 32)).toNat) parts n'
 
+/-- **`AcIndexStage` with its halt refined**: the stage halts only if an
+inversion bound fails. -/
+def AcIndexStagePI : Prop :=
+  ∀ (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romCode : List Nat), RomRead flash R romBase romCode →
+  ∀ (Rl : Nat), RomFn romBase romCode 0x40000040 Rl (fun _ => True) → Rl ≤ 0x3A50 →
+  ∀ (n : Machine) (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8),
+    (∀ M, (∀ x, Sep x 1 B 0x5A70 → Sep x 1 Bf acBufLen → M x = M0 x) → AcIndexEnv romBase romCode M) →
+    CodeIn n.mem AC bootMainClosure0Code → Fr B 0x5A70 → Sep B 0x5A70 romBase romCode.length →
+    R ≤ 0x3A50 - 0x150 → R % 4 = 0 →
+    St n.mem AC n 0x2A6 (reg n) → AcInv B Bf g t v M0 n → AcIndexPre B r n →
+    AcStagePI B Bf g t r v M0 n 0x4E4 fun n' =>
+      ∃ parts, decodeTufParts (flashBytes flash (reg n (24 : Fin 32)).toNat (reg n (23 : Fin 32)).toNat) =
+        some parts ∧
+        AcIndexPost B n (flashBytes flash (reg n (24 : Fin 32)).toNat (reg n (23 : Fin 32)).toNat) parts n'
+
 theorem acx_flen (f : Nat → BitVec 8) (a len : Nat) : (flashBytes f a len).length = len := by
   rw [flashBytes, List.length_map, List.length_range]
 
@@ -111,7 +126,7 @@ theorem acx_post {P : AcxP} (K : AcxK P) {c : Nat} {n : Machine} (S : AcxS4 P c 
 
 set_option maxHeartbeats 4000000 in
 /-- **The index stage holds.** -/
-theorem acIndexStage : AcIndexStage := by
+theorem acIndexStage_pi : AcIndexStagePI := by
   intro flash R romBase romCode rd Rl log hRl n B Bf g t r v M0 E C F sRB hR hR4 s I pre
   let P : AcxP := ⟨flash, R, Rl, romBase, romCode, B, Bf, g, t, r, v, M0, n⟩
   have K : AcxK P := ⟨rd, log, hRl, hR, hR4, F, sRB, E, I, pre, C⟩
@@ -119,5 +134,10 @@ theorem acIndexStage : AcIndexStage := by
   obtain ⟨n', st, h | ⟨c, S⟩⟩ := acx_to4e4 K A s
   · exact ⟨n', st, .inr ⟨h.1, .inl h.2⟩⟩
   · exact ⟨n', st, .inr ⟨S.ac.inv K, .inr ⟨S.st.pc, acx_post K S⟩⟩⟩
+
+/-- `AcIndexStage`, from `acIndexStage_pi`. -/
+theorem acIndexStage : AcIndexStage :=
+  fun flash R romBase romCode rd Rl log hRl n B Bf g t r v M0 h1 h2 h3 h4 h5 h6 h7 h8 h9 =>
+    (acIndexStage_pi flash R romBase romCode rd Rl log hRl n B Bf g t r v M0 h1 h2 h3 h4 h5 h6 h7 h8 h9).acStage
 
 end C3.RV32.Ac

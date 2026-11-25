@@ -87,7 +87,7 @@ theorem sv_seg_cert {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Ma
     (asgp : (bp + 0x8).toNat % 4 = 0)
     (asgl : (bp + 0xC).toNat % 4 = 0)
     (sg_in : SvIn B (memLoad32 M0 (bp + 0x8)) (memLoad32 M0 (bp + 0xC)).toNat) :
-    SvErrRet B out v n0 ∨ Panics n0 ∨
+    SvErrRet B out v n0 ∨ PanicIf n0 ∨
     (∃ t_1_1, derElement 0x30 (memBytes M0 lp ll.toNat) = .ok t_1_1 ∧ ll - BitVec.ofNat 32 (t_1_1.header + t_1_1.len) = 0 ∧
       ∃ tl1_2_1, derElement 0x30 (memBytes M0 ((lp + BitVec.ofNat 32 t_1_1.header)) ((BitVec.ofNat 32 t_1_1.len)).toNat) = .ok tl1_2_1 ∧
       ∃ tl8_2_1, derElement 0x30 (memBytes M0 (((lp + BitVec.ofNat 32 t_1_1.header)) + BitVec.ofNat 32 (tl1_2_1.header + tl1_2_1.len)) (((BitVec.ofNat 32 t_1_1.len)) - BitVec.ofNat 32 (tl1_2_1.header + tl1_2_1.len)).toNat) = .ok tl8_2_1 ∧
@@ -567,7 +567,7 @@ theorem sv_seg_cert {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Ma
   obtain ⟨q4_f8, hx4⟩ := hx4
   have K4_L := hx4
   rcases sv_lh FW E4 V4 hret hO s4 M0 fR4 r4_2 r4_9 r4_18 r4_19 r4_20 r4_21 r4_22 r4_23 r4_24 r4_26 w4_84 b4_c8 q4_c9 q4_f8 HE0 RS ((((lc_in).content x1_0).ofNatLen).rawW x1_2) PE0 rfl (pkp_in k_4 x4_0 c'_4 q'_4 x4_2 x4_4) (apk k_4 x4_0 c'_4 q'_4 x4_2 x4_4) (pk_in k_4 x4_0 c'_4 q'_4 x4_2 x4_4) (side k_4 x4_0 c'_4 q'_4 x4_2 x4_4) with ⟨-, e⟩ | hx5
-  · exact .inr (.inl (Panics.of_steps (c1.trans (c2.trans (c3.trans (c4)))) e))
+  · exact .inr (.inl (PanicIf.of_steps (c1.trans (c2.trans (c3.trans (c4)))) e))
   obtain ⟨pv_5, hx5⟩ := hx5
   obtain ⟨x5_0, hx5⟩ := hx5
   obtain ⟨n5, hx5⟩ := hx5

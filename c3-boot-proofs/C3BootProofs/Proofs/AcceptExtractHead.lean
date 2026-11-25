@@ -868,6 +868,11 @@ theorem ace_head : AceHeadStage := fun _ O => ace_stage O (ace_c12 O)
 
 /-- **The extract stage**, from the sub-stages of its loops at 0xD8C, 0xEBA,
 0x123A, and 0x1434. -/
+theorem ac_extract_loops_pi (hC : AceCaStage) (hT : AceTlogStage) (hS : AceTsaStage) (hD : AceDupStage) :
+    AcExtractStagePI :=
+  ac_extract_pi ace_head hC hT hS hD ace_tail
+
+/-- `ac_extract_loops` without its refinement. -/
 theorem ac_extract_loops (hC : AceCaStage) (hT : AceTlogStage) (hS : AceTsaStage) (hD : AceDupStage) :
     AcExtractStage :=
   ac_extract ace_head hC hT hS hD ace_tail

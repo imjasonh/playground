@@ -76,7 +76,7 @@ theorem acs_bun {X : AcsCtx} (ok : X.Ok) {n : Machine}
   have sv : Sv.SvIn (X.B + 0x13F0) X.Bf 0x4000 := by
     have h := ok.svBf.sub (c := 0) (l := 0x4000) (by decide)
     rwa [add_ofNat_zero] at h
-  refine acs_stage S.inv (acBundleStage n X.B X.Bf X.g X.t X.r X.v X.M0 mf.bundle.length E.ac E.bun ok.F ok.sB S.st S.inv
+  refine acs_stage S.inv (acBundleStage_pi n X.B X.Bf X.g X.t X.r X.v X.M0 mf.bundle.length E.ac E.bun ok.F ok.sB S.st S.inv
     S.res ⟨S.bf, S.len, S.hL, sv, S.a0, S.a1, S.a2, S.ra⟩) (fun _ => ok.fail) fun n' I' hpc ⟨P, rk⟩ => ?_
   obtain ⟨b, hbd, hbAt⟩ := P.bundle
   rw [S.bundle] at hbd

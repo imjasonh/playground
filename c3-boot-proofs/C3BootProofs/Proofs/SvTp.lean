@@ -9,7 +9,8 @@ set_option maxHeartbeats 4000000 in
 set_option linter.unusedVariables false in
 /-- **The timestamp's signature check**: from 0x1416 to 0x142E,
 `p384_verify_prehash` checks the timestamp's signature on the digest at
-0x420 with the TSA's key, which leaves the result in `a0` or panics. -/
+0x420 with the TSA's key, which leaves the result in `a0` or panics, and then
+some inversion bound fails. -/
 theorem sv_tp {B out bp x20 x21 x22 x23 x24 x25 x27 q pk : Word} {h sr ss : Bytes} {v : Nat → Word}
     {n0 : Machine}
     (FW : Fr (B + 0xFFFFEC10) 0x3A50) (E0 : SvCode n0.mem) (V0 : SvSaves B n0.mem v) (hret : v 0 &&& ~~~1 = v 0)
@@ -36,7 +37,7 @@ theorem sv_tp {B out bp x20 x21 x22 x23 x24 x25 x27 q pk : Word} {h sr ss : Byte
     (side : ∀ M, PvSide M pk (B + 0x21A0 + BitVec.ofNat 32 0x420) 32 (B + 0x21A0 + BitVec.ofNat 32 0x190)
       (B + 0x21A0 + BitVec.ofNat 32 0x1C0)) :
     (¬ (∃ pv, SvPvRes M0 pk (B + 0x21A0 + BitVec.ofNat 32 0x420) 32 h (B + 0x21A0 + BitVec.ofNat 32 0x190)
-      (B + 0x21A0 + BitVec.ofNat 32 0x1C0) sr ss (some pv)) ∧ Panics n0) ∨
+      (B + 0x21A0 + BitVec.ofNat 32 0x1C0) sr ss (some pv)) ∧ PanicIf n0) ∨
     (∃ pv, SvPvRes M0 pk (B + 0x21A0 + BitVec.ofNat 32 0x420) 32 h (B + 0x21A0 + BitVec.ofNat 32 0x190)
       (B + 0x21A0 + BitVec.ofNat 32 0x1C0) sr ss (some pv) ∧
     ∃ n', Steps n0 n' ∧
@@ -68,7 +69,7 @@ theorem sv_tp {B out bp x20 x21 x22 x23 x24 x25 x27 q pk : Word} {h sr ss : Byte
       memBytes_frame q0_1c0⟩
   rcases sv_tpv F E0 (PvEnv7.sv FW PE0 fM) s0 g0_2 g0_26 w0_78 hpk0 apk pk_in (side n0.mem) with
     ⟨hn, pn⟩ | ⟨pv, hv, n1, c1, s1, sp1, rk1, a1, K1, fr1⟩
-  · refine .inl ⟨fun ⟨pv, hpv⟩ => ?_, pn⟩
+  · refine .inl ⟨fun ⟨pv, hpv⟩ => ?_, ⟨pvModel_none_inv hn, pn⟩⟩
     have := hpv _ At
     rw [hn] at this
     cases this

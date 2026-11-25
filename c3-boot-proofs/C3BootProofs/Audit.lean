@@ -166,6 +166,7 @@ import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Fs256Main
 import C3BootProofs.Proofs.Dec256End
 import C3BootProofs.Proofs.Pv384Main
+import C3BootProofs.Proofs.Pv384Np
 import C3BootProofs.Image.BootloaderData5
 import C3BootProofs.Image.BootloaderData7
 import C3BootProofs.Proofs.P2vP256
@@ -277,6 +278,8 @@ import C3BootProofs.Proofs.AcceptExtractDup
 import C3BootProofs.Proofs.AcceptExtractTsa
 import C3BootProofs.Proofs.AcceptExtractCa
 import C3BootProofs.Proofs.ResetLoaded
+import C3BootProofs.Proofs.PanicFree
+import C3BootProofs.Proofs.PanicFreeTargets
 import C3BootProofs.Proofs.SramAlias
 import C3BootProofs.Proofs.AcceptExtractTlogStage
 
@@ -9002,6 +9005,36 @@ end C3
 /-- info: 'C3.RV32.P2v.p256VerifyPrehash_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.P2v.p256VerifyPrehash_correct
 
+/-- info: 'C3.RV32.P2v.p256VerifyPrehash_correct_bound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p256VerifyPrehash_correct_bound
+
+/-- info: 'C3.RV32.P2v.p256VerifyPrehash_correct_np' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p256VerifyPrehash_correct_np
+
+/-- info: 'C3.RV32.P2v.p256_ivf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p256_ivf
+
+/-- info: 'C3.RV32.P2v.p2v_p256_z_np' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p2v_p256_z_np
+
+/-- info: 'C3.RV32.P2v.p2v_p256_z_or' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p2v_p256_z_or
+
+/-- info: 'C3.RV32.P2v.p2vnp_ne' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p2vnp_ne
+
+/-- info: 'C3.RV32.Pv.p384VerifyPrehash_correct_np' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Pv.p384VerifyPrehash_correct_np
+
+/-- info: 'C3.RV32.Pv.pvnp_model' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Pv.pvnp_model
+
+/-- info: 'C3.RV32.Pv.pvnp_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Pv.pvnp_loop
+
+/-- info: 'C3.RV32.Pv.pvnp_mont' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Pv.pvnp_mont
+
 /-- info: 'C3.Models.p256_model_closed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Models.p256_model_closed
 
@@ -9201,6 +9234,18 @@ end C3
 
 /-- info: 'C3.RV32.tufRoleKeysMet_result' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_result
+
+/-- info: 'C3.RV32.tufRoleKeysMet_ret_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_ret_pi
+
+/-- info: 'C3.RV32.tufRoleKeysMet_correct_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_correct_pi
+
+/-- info: 'C3.RV32.tufRoleKeysMet_spec_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_spec_pi
+
+/-- info: 'C3.RV32.tufRoleKeysMet_result_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_result_pi
 
 /-- info: 'C3.RV32.rmr_okBit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.rmr_okBit
@@ -9729,6 +9774,9 @@ end C3
 
 /-- info: 'C3.RV32.Ac.act_metSpec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.act_metSpec
+
+/-- info: 'C3.RV32.Ac.act_metSpec_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.act_metSpec_pi
 
 /-- info: 'C3.RV32.Ac.ActRk.congr' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ActRk.congr
@@ -10728,3 +10776,126 @@ end C3
 
 /-- info: 'C3.RV32.Ac.acetl_pre' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acetl_pre
+
+/-- info: 'C3.RV32.PanicIf.panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.PanicIf.panics
+
+/-- info: 'C3.RV32.PanicIf.absurd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.PanicIf.absurd
+
+/-- info: 'C3.RV32.PanicIf.of_steps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.PanicIf.of_steps
+
+/-- info: 'C3.RV32.panicHaltCode_not_deliberate' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.panicHaltCode_not_deliberate
+
+/-- info: 'C3.RV32.HaltsWith.panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltsWith.panics
+
+/-- info: 'C3.RV32.HaltsWith.of_steps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltsWith.of_steps
+
+/-- info: 'C3.RV32.HaltsDeliberately.panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltsDeliberately.panics
+
+/-- info: 'C3.RV32.HaltsDeliberately.of_steps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltsDeliberately.of_steps
+
+/-- info: 'C3.RV32.HaltOut.panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltOut.panics
+
+/-- info: 'C3.RV32.HaltOut.of_steps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltOut.of_steps
+
+/-- info: 'C3.RV32.HaltOut.np' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltOut.np
+
+/-- info: 'C3.RV32.HaltOut.deliberate' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltOut.deliberate
+
+/-- info: 'C3.RV32.halt_haltCode' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.halt_haltCode
+
+/-- info: 'C3.RV32.beginUnwind_haltCode' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.beginUnwind_haltCode
+
+/-- info: 'C3.RV32.P2v.p256VerifyPrehash_correct_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p256VerifyPrehash_correct_pi
+
+/-- info: 'C3.RV32.Pv.pvModel_none_inv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Pv.pvModel_none_inv
+
+/-- info: 'C3.RV32.Pv.p384VerifyPrehash_correct_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Pv.p384VerifyPrehash_correct_pi
+
+/-- info: 'C3.RV32.WP.callGenPI' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.WP.callGenPI
+
+/-- info: 'C3.RV32.Sv.sv_p2F' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Sv.sv_p2F
+
+/-- info: 'C3.RV32.Sv.sv_verify_spec_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Sv.sv_verify_spec_pi
+
+/-- info: 'C3.RV32.Ac.AcStagePI.acStage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcStagePI.acStage
+
+/-- info: 'C3.RV32.BootMainContract.Closure0ContractPI.weaken' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.BootMainContract.Closure0ContractPI.weaken
+
+/-- info: 'C3.RV32.Ac.AcStagePI.seq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcStagePI.seq
+
+/-- info: 'C3.RV32.Ac.AcReadStagePI.acStage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcReadStagePI.acStage
+
+/-- info: 'C3.RV32.Ac.AcFinishPostPI.post' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcFinishPostPI.post
+
+/-- info: 'C3.RV32.Ac.acceptRead_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acceptRead_pi
+
+/-- info: 'C3.RV32.Ac.acImage_stage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acImage_stage_pi
+
+/-- info: 'C3.RV32.Ac.acIndexStage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acIndexStage_pi
+
+/-- info: 'C3.RV32.Ac.acp_stage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acp_stage_pi
+
+/-- info: 'C3.RV32.Ac.acRootsStage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acRootsStage_pi
+
+/-- info: 'C3.RV32.Ac.act_stage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.act_stage_pi
+
+/-- info: 'C3.RV32.Ac.ac_extract_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_extract_pi
+
+/-- info: 'C3.RV32.Ac.ac_extract_loops_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_extract_loops_pi
+
+/-- info: 'C3.RV32.Ac.acBundleStage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acBundleStage_pi
+
+/-- info: 'C3.RV32.Ac.ac_finish_stage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_finish_stage_pi
+
+/-- info: 'C3.RV32.Ac.acs_contract_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_contract_pi
+
+/-- info: 'C3.RV32.Cur.bootMain_correct_boots' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bootMain_correct_boots
+
+/-- info: 'C3.RV32.Cur.bootMainCorrect_of_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bootMainCorrect_of_pi
+
+/-- info: 'C3.RV32.Cur.reset_correct_loaded_boots' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_correct_loaded_boots
+
+/-- info: 'C3.RV32.Cur.resetCorrectLoaded_of_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.resetCorrectLoaded_of_pi
+
+/-- info: 'C3.RV32.Cur.resetCorrectLoaded_np_of_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.resetCorrectLoaded_np_of_pi

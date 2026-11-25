@@ -634,10 +634,25 @@ def AcPinnedStage : Prop :=
     St n.mem AC n 0x4E4 (reg n) → AcInv B Bf g t v M0 n → AcPinnedPre B r n →
     AcStage B Bf g t r v M0 n 0x584 (AcPinnedPost pinned B n.mem (reg n))
 
-theorem acp_stage : AcPinnedStage := by
+/-- **`AcPinnedStage` with its halt refined**: the stage halts only if an
+inversion bound fails. -/
+def AcPinnedStagePI : Prop :=
+  ∀ (pinned : Bytes) (n : Machine) (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8),
+    (∀ M, (∀ x, Sep x 1 B 0x5A70 → Sep x 1 Bf acBufLen → M x = M0 x) → AcPinnedEnv pinned M) →
+    CodeIn n.mem AC bootMainClosure0Code → Fr B 0x5A70 →
+    Sep B 0x5A70 (BitVec.ofNat 32 (img% roWindowAddress)) 0x2625 →
+    St n.mem AC n 0x4E4 (reg n) → AcInv B Bf g t v M0 n → AcPinnedPre B r n →
+    AcStagePI B Bf g t r v M0 n 0x584 (AcPinnedPost pinned B n.mem (reg n))
+
+theorem acp_stage_pi : AcPinnedStagePI := by
   intro pinned n B Bf g t r v M0 hE C F hro s I P
   obtain ⟨n', st, hq⟩ := acp_wp (f := reg n) hE C F.al F.hi hro I.sp I.gp I.tp I.saves I.out
     P.1 P.2 (by decide) C n s
   exact ⟨n', st, Or.inr (hq n' rfl rfl fun _ => rfl)⟩
+
+/-- `AcPinnedStage`, from `acp_stage_pi`. -/
+theorem acp_stage : AcPinnedStage :=
+  fun pinned n B Bf g t r v M0 h1 h2 h3 h4 h5 h6 h7 =>
+    (acp_stage_pi pinned n B Bf g t r v M0 h1 h2 h3 h4 h5 h6 h7).acStage
 
 end C3.RV32.Ac

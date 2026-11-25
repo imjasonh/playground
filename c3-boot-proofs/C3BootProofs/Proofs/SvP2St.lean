@@ -76,7 +76,7 @@ theorem sv_p2st {B out bp x20 x21 x22 x24 x26 q : Word} {sr ss : Bytes} {v : Nat
     (q0_131 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x131 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0))
     (q0_150 : ∀ j, j < 32 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x150 + j)) = BitVec.ofNat 8 (ss.getD j 0))
     (PE0 : P2vEnv M0) (RS : SvRoSep B) (k_in : SvIn B x24 0x41) (dg_in : SvIn B x20 32) :
-    SvErrRet B out v n0 ∨ Panics n0 ∨
+    SvErrRet B out v n0 ∨ PanicIf n0 ∨
     (SvP256Facts M0 x24 x20 (b32 sr) (b32 ss) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0xA60 (reg n') ∧

@@ -3,8 +3,8 @@ import C3BootProofs.Proofs.AcceptExtract
 /-!
 # The extract stage from its sub-stages
 
-`ac_extract` composes the six sub-stages of `AcceptExtract` into
-`AcExtractStage`. `ace_extract_spec` turns the keys the loops read into
+`ac_extract_pi` composes the six sub-stages of `AcceptExtract` into
+`AcExtractStagePI`, and `ac_extract` weakens it to `AcExtractStage`. `ace_extract_spec` turns the keys the loops read into
 `extractTrustedRoot`'s result, `ace_keys_snoc` is one loop step of the
 spec, and `AceKeysIn.sv` and `AceKeysIn.transfer` hand the arrays to
 `SvRootAt` after later stages copy them.
@@ -16,36 +16,30 @@ open C3 C3.Image C3.RV32.P3 C3.RV32.Sv C3.Json
 
 /-! ## Sequencing -/
 
-/-- A stage that ends where the next one starts. -/
-theorem AcStage.seq {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {n0 : Machine} {o1 o2 : Nat}
-    {Q1 Q2 : Machine → Prop} (h1 : AcStage B Bf g t r v M0 n0 o1 Q1)
-    (h2 : ∀ n1, AcInv B Bf g t v M0 n1 → n1.pc = AC + BitVec.ofNat 32 o1 → Q1 n1 →
-      AcStage B Bf g t r v M0 n1 o2 Q2) :
-    AcStage B Bf g t r v M0 n0 o2 Q2 := by
-  obtain ⟨n1, s1, h⟩ := h1
-  rcases h with h | ⟨I1, h | ⟨hp, hq⟩⟩
-  · exact ⟨n1, s1, .inl h⟩
-  · exact ⟨n1, s1, .inr ⟨I1, .inl h⟩⟩
-  · obtain ⟨n2, s2, h2'⟩ := h2 n1 I1 hp hq
-    exact ⟨n2, s1.trans s2, h2'⟩
-
-/-- **The extract stage**, from its six sub-stages. -/
-theorem ac_extract (hH : AceHeadStage) (hC : AceCaStage) (hT : AceTlogStage) (hS : AceTsaStage)
-    (hD : AceDupStage) (hE : AceTailStage) : AcExtractStage := by
+/-- **The extract stage**, from its six sub-stages: it halts only if an
+inversion bound fails. -/
+theorem ac_extract_pi (hH : AceHeadStage) (hC : AceCaStage) (hT : AceTlogStage) (hS : AceTsaStage)
+    (hD : AceDupStage) (hE : AceTailStage) : AcExtractStagePI := by
   intro n B Bf g t r D v M0 json env lay code st inv pre
   let X : AceCtx := ⟨B, Bf, g, t, r, D, v, M0, n, json⟩
   have ok : X.Ok := ⟨env, lay, code, st, inv, pre⟩
-  refine AcStage.seq (hH X ok) fun n1 _ _ h1 => ?_
+  refine AcStagePI.seq (hH X ok) fun n1 _ _ h1 => ?_
   obtain ⟨fp1, jr, cas, A1, C1⟩ := h1
-  refine AcStage.seq (hC X ok n1 fp1 jr cas [] A1 C1) fun n2 _ _ h2 => ?_
+  refine AcStagePI.seq (hC X ok n1 fp1 jr cas [] A1 C1) fun n2 _ _ h2 => ?_
   obtain ⟨fp2, fs, tlogs, A2, T2⟩ := h2
-  refine AcStage.seq (hT X ok n2 fp2 jr fs tlogs [] A2 T2) fun n3 _ _ h3 => ?_
+  refine AcStagePI.seq (hT X ok n2 fp2 jr fs tlogs [] A2 T2) fun n3 _ _ h3 => ?_
   obtain ⟨fp3, ls, tsas, A3, S3⟩ := h3
-  refine AcStage.seq (hS X ok n3 fp3 jr fs ls tsas [] A3 S3) fun n4 _ _ h4 => ?_
+  refine AcStagePI.seq (hS X ok n3 fp3 jr fs ls tsas [] A3 S3) fun n4 _ _ h4 => ?_
   obtain ⟨fp4, ts, A4, K4⟩ := h4
-  refine AcStage.seq (hD X ok n4 fp4 fs ls ts A4 K4) fun n5 _ _ h5 => ?_
+  refine AcStagePI.seq (hD X ok n4 fp4 fs ls ts A4 K4) fun n5 _ _ h5 => ?_
   obtain ⟨A5, K5, D5⟩ := h5
   exact hE X ok n5 fp4 fs ls ts A5 K5 D5
+
+/-- `ac_extract` without its refinement. -/
+theorem ac_extract (hH : AceHeadStage) (hC : AceCaStage) (hT : AceTlogStage) (hS : AceTsaStage)
+    (hD : AceDupStage) (hE : AceTailStage) : AcExtractStage :=
+  fun n B Bf g t r D v M0 json h1 h2 h3 h4 h5 h6 =>
+    (ac_extract_pi hH hC hT hS hD hE n B Bf g t r D v M0 json h1 h2 h3 h4 h5 h6).acStage
 
 /-! ## The spec -/
 

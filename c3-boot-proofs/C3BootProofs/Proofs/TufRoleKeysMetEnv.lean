@@ -88,8 +88,12 @@ structure RmEnv (M0 M1 : Word → BitVec 8) (s F R MP SP : Word) (ML SL : Nat) (
 /-- A halt in a panic. -/
 abbrev rmH : Post := fun pc M g => pc = romPrintfEntry ∧ g ra = haltBase + 0x16 ∧ PanicCode M
 
-theorem rmQ_halt {M0 : Word → BitVec 8} {s : Word} {g0 : Fin 32 → Word} {S : Prop} :
-    ∀ m, Halting m → rmQ rmH M0 s g0 S m.pc m.mem (reg m) := fun _ h => .inl h
+/-- `rmH`, the `RoleKeys::met` postcondition's halting case, when some
+inversion bound fails. -/
+abbrev rmHI : Post := fun pc M g => ¬ InvBounds ∧ rmH pc M g
+
+theorem rmQ_haltI {M0 : Word → BitVec 8} {s : Word} {g0 : Fin 32 → Word} {S : Prop} :
+    ∀ m, ¬ InvBounds → Halting m → rmQ rmHI M0 s g0 S m.pc m.mem (reg m) := fun _ hB h => .inl ⟨hB, h⟩
 
 section
 variable {M0 M1 Mk : Word → BitVec 8} {s F R MP SP : Word} {ML SL : Nat} {g0 : Fin 32 → Word}

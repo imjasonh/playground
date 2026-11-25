@@ -1,42 +1,51 @@
 #!/usr/bin/env bash
-# Writes the composed theorems of `sigstore::verify` in an order that works:
-# sv_p256 as a stage, merges (gen-sv-segs.py writes them, and loops use
-# them), then searches and loops, then the segments, since segments use
-# loops, then the loops over segments, then the segments that use those, and
-# last the theorems from 0x72 and from the entry to the return, and the
-# latter for a Bundle and a SigstoreRoot.
+# Writes the composed theorems of `sigstore::verify` in an order that works.
+# Each phase writes files that a later phase reads:
+#
+# 1. The merges and segments that no loop runs through (gen-sv-segs.py
+#    writes them), then the searches and the loops over one stage.
+# 2. `SvEkuLoop`, then the segments that end in it, one at a time, up to
+#    `SvSegExt`, then `SvExtLoop`, whose body `SvSegExt` is.
+# 3. Every segment, then the loops over `SvSegAttr` and `SvSegCosig`, then
+#    every segment again, since `SvSegTs` and `SvSegLog` run through those
+#    loops.
+# 4. The theorems from 0x5C and from the entry to the return, and the latter
+#    for a Bundle and a SigstoreRoot.
+#
 # The scripts ask Lean for some theorems' binders, so each phase builds the
-# files it wrote before the next phase runs. A file whose imports a later
-# phase rewrites may fail to build until then, so only the last build, of
-# every file the phases wrote, has to pass. Run from c3-boot-proofs/ after
-# the stages' .olean files are built.
+# files it wrote before the next phase runs, and stops the script if they
+# don't build. Run from c3-boot-proofs/ after the stages' .olean files are
+# built.
 set -euo pipefail
 stamp=$(mktemp)
-first=$(mktemp)
-trap 'rm -f "$stamp" "$first"' EXIT
+trap 'rm -f "$stamp"' EXIT
 
 phase() {
   touch "$stamp"
   sleep 1
+  echo "== $*"
   python3 "$@"
   local mods
   mods=$(find C3BootProofs/Proofs -name '*.lean' -newer "$stamp" | sed 's|/|.|g; s|\.lean$||')
   if [[ -n "$mods" ]]; then
     # shellcheck disable=SC2086
-    lake build $mods >/dev/null 2>&1 || echo "$1: some files don't build yet"
+    lake build $mods
   fi
 }
 
-phase scripts/gen-sv-p256st.py
-phase scripts/gen-sv-segs.py --keep-going
+phase scripts/gen-sv-segs.py SvTt4n SvSegTt4x1 SvSegTt4x0 SvTt4b SvSegTt4o SvTt4 SvDbc2m SvSegDbc SvSegDku \
+  SvWin0 SvWin1 SvWin2 SvWin3 SvWin4 SvWin5 SvWin6 SvWin7 SvTr5 SvCr1 SvCk2 SvTrv SvTt3 SvTt5 SvTt6 SvCg SvCm
 phase scripts/gen-sv-search.py
 phase scripts/gen-sv-loop.py
+phase scripts/gen-sv-relloop.py SvEkuLoop
+for f in SvSegEku SvSegX2c SvX2 SvD SvSegExt; do
+  phase scripts/gen-sv-segs.py "$f"
+done
+phase scripts/gen-sv-relloop.py SvExtLoop
+phase scripts/gen-sv-segs.py
 phase scripts/gen-sv-attrloop.py
-phase scripts/gen-sv-segs.py --keep-going
-phase scripts/gen-sv-relloop.py
+phase scripts/gen-sv-relloop.py SvCosigLoop
 phase scripts/gen-sv-segs.py
 phase scripts/gen-sv-top.py
 phase scripts/gen-sv-entry.py
 phase scripts/gen-sv-layout.py
-# shellcheck disable=SC2046
-lake build $(find C3BootProofs/Proofs -name '*.lean' -newer "$first" | sed 's|/|.|g; s|\.lean$||')

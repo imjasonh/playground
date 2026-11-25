@@ -124,6 +124,31 @@ def AcFinishStage : Prop :=
     AcInv B Bf g t v M0 n → AcFinishPre B r bundle root expiry n →
     AcFinishPost B Bf g t r v M0 bundle root expiry n
 
+/-- **`AcFinishPost` with its halt refined**: the closure halts only if an
+inversion bound fails. -/
+def AcFinishPostPI (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (bundle : Bundle)
+    (root : SigstoreRoot) (expiry : Nat) (n0 : Machine) : Prop :=
+  ∃ n', Steps n0 n' ∧ ((¬ InvBounds ∧ Halting n') ∨
+    (AcFinishInv B Bf g t v M0 n' ∧ AcFail B r n') ∨
+    (n'.pc = v 0 ∧ reg n' sp = B + 0x5A70 ∧ (∀ k, k < 13 → reg n' (savedReg k) = v k) ∧
+      reg n' (3 : Fin 32) = g ∧ reg n' (4 : Fin 32) = t ∧
+      AcFinishRes B Bf r M0 bundle root expiry n0 n'.mem))
+
+theorem AcFinishPostPI.post {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {bundle : Bundle}
+    {root : SigstoreRoot} {expiry : Nat} {n0 : Machine} (h : AcFinishPostPI B Bf g t r v M0 bundle root expiry n0) :
+    AcFinishPost B Bf g t r v M0 bundle root expiry n0 :=
+  let ⟨n', c, hn⟩ := h; ⟨n', c, hn.imp_left And.right⟩
+
+/-- **`AcFinishStage` with its halt refined**: the stage halts only if an
+inversion bound fails. -/
+def AcFinishStagePI : Prop :=
+  ∀ (n : Machine) (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (bundle : Bundle)
+    (root : SigstoreRoot) (expiry : Nat),
+    (∀ M, (∀ x, Sep x 1 B 0x5A70 → Sep x 1 Bf acBufLen → M x = M0 x) → AcFinishEnv M) →
+    CodeIn n.mem AC bootMainClosure0Code → Fr B 0x5A70 → v 0 &&& ~~~1 = v 0 →
+    AcInv B Bf g t v M0 n → AcFinishPre B r bundle root expiry n →
+    AcFinishPostPI B Bf g t r v M0 bundle root expiry n
+
 /-! ### Addresses -/
 
 theorem acf_ofNatToNat (x : Word) : BitVec.ofNat 32 x.toNat = x := by
@@ -915,9 +940,10 @@ theorem acf_exit {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8}
 
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 4000000 in
-/-- **The last stage holds.** -/
-theorem ac_finish_stage : AcFinishStage := by
-  unfold AcFinishStage AcFinishPost
+/-- **The last stage holds**, and it halts only if an inversion bound
+fails. -/
+theorem ac_finish_stage_pi : AcFinishStagePI := by
+  unfold AcFinishStagePI AcFinishPostPI
   intro n B Bf g t r v M0 bundle root expiry hE C F hret I P
   have E := hE n.mem I.out
   have hz := P.st.zero
@@ -936,7 +962,7 @@ theorem ac_finish_stage : AcFinishStage := by
     rw [R1 _ (by decide), I.sp, BitVec.add_assoc]; rfl
   have hv1 : (fun k => reg n1 (savedReg k)) 0 &&& ~~~1 = (fun k => reg n1 (savedReg k)) 0 := by
     show reg n1 ra &&& ~~~1 = reg n1 ra; rw [ra1]; decide
-  have sv := sv_verify_spec (B := B + 0x13F0) (by rw [R1 _ (by decide), P.a1]; exact P.bundle)
+  have sv := sv_verify_spec_pi (B := B + 0x13F0) (by rw [R1 _ (by decide), P.a1]; exact P.bundle)
     (by rw [R1 _ (by decide), P.a2]; exact P.root) E.sv E.svc (acf_frW F) s1 sp1 hv1
     (by rw [a0_1]; exact acf_svOut F) E.p2 E.svd E.hf P.ro E.pv E.p2v
     (by rw [R1 _ (by decide), P.a3]; exact acf_svIn F) E.sha2 E.ck E.ev E.iv E.rk
@@ -944,7 +970,7 @@ theorem ac_finish_stage : AcFinishStage := by
     E.rekor
   rw [R1 a3 (by decide), P.a3] at sv
   rw [a0_1] at sv
-  rcases sv with ⟨n2, c2, pc2, sp2, sv2, r3, r4, m2, oc2, K2⟩ | ⟨n', c', hh⟩ | ⟨vv, hv, n2, c2, pc2, sp2, sv2, r3, r4, m2, mlo, mhi, -, -, K2⟩
+  rcases sv with ⟨n2, c2, pc2, sp2, sv2, r3, r4, m2, oc2, K2⟩ | ⟨hni, n', c', hh⟩ | ⟨vv, hv, n2, c2, pc2, sp2, sv2, r3, r4, m2, mlo, mhi, -, -, K2⟩
   · -- `Err`.
     have sp2' : reg n2 sp = B + 0x3A50 := by rw [sp2, BitVec.add_assoc]; rfl
     have K : ∀ x, Sep x 1 (B + 0xFFFFFE60) 0x5C10 → n2.mem x = n.mem x := fun x hw => by
@@ -967,7 +993,7 @@ theorem ac_finish_stage : AcFinishStage := by
     · rw [hg _ (by decide), r3, R1 _ (by decide), I.gp]
     · rw [hg _ (by decide), r4, R1 _ (by decide), I.tp]
     · rw [s5v, s0, acf_zx_and, ← acf_slot1]; exact oc2
-  · exact ⟨n', .cons e1 c', .inl hh⟩
+  · exact ⟨n', .cons e1 c', .inl ⟨hni, hh⟩⟩
   · -- `Ok`.
     have sp2' : reg n2 sp = B + 0x3A50 := by rw [sp2, BitVec.add_assoc]; rfl
     have K : ∀ x, Sep x 1 (B + 0xFFFFFE60) 0x5C10 → n2.mem x = n.mem x := fun x hw => by
@@ -1044,5 +1070,10 @@ theorem ac_finish_stage : AcFinishStage := by
       · rw [w9, acf_ld fun j hj => KS _ (by omega) (by omega)]
       · rw [w10, r27]
       · rw [w11 x hw hx, K x hw]; exact I.out x (acf_wB hw) hb
+
+/-- **The last stage holds.** -/
+theorem ac_finish_stage : AcFinishStage :=
+  fun n B Bf g t r v M0 bundle root expiry h1 h2 h3 h4 h5 h6 =>
+    (ac_finish_stage_pi n B Bf g t r v M0 bundle root expiry h1 h2 h3 h4 h5 h6).post
 
 end C3.RV32.Ac

@@ -1,5 +1,5 @@
 import C3BootProofs.Proofs.P2vP256A
-import C3BootProofs.Proofs.P2vP256C
+import C3BootProofs.Proofs.P2vP256Np
 import C3BootProofs.Proofs.P2vZE
 import C3BootProofs.Models.SafegcdP256
 
@@ -11,6 +11,13 @@ decode, the inversion of `s` (`ivLoop8`), the tables and wNAF digits, the
 main loop (`mlMain2`), the inversion of the sum's `Z` (`zvLoop`), and the
 comparison with `r`. The function returns 1 only when `SvP256Facts` holds,
 returns 0 otherwise, or panics.
+
+It panics only when the inversion of `s` leaves `|f| ≠ 1`
+(`p256VerifyPrehash_correct_bound`), so given safegcd's divstep bound
+(`P256InvBound`) it doesn't panic (`p256VerifyPrehash_correct_np`).
+`PanicFree.lean` states the contract that callers use,
+`p256VerifyPrehash_correct_pi`, and `p256VerifyPrehash_correct` follows
+from it.
 -/
 
 namespace C3.RV32.Sv
@@ -52,6 +59,7 @@ structure P2vEnv (M : Word → BitVec 8) : Prop where
   GD : CodeIn M (BitVec.ofNat 32 (img% p256GMontAddress)) p256GMontData
   OD : CodeIn M (BitVec.ofNat 32 (img% p256MontOneAddress)) p256MontOneData
   AD : CodeIn M (BitVec.ofNat 32 (img% p256AffineIdXAddress)) p256AffineIdXData
+  UD : CodeIn M (BitVec.ofNat 32 (img% p256OneAddress)) p256OneData
 
 theorem p256_zx (b : BitVec 8) : (b.zeroExtend 32).toNat = b.toNat := by
   rw [BitVec.toNat_setWidth, Nat.mod_eq_of_lt (by have := b.isLt; omega)]
@@ -62,18 +70,45 @@ theorem p256_nzw (Z : Nat) : (((if Z = 0 then 0 else 1 : Word)) &&& BitVec.ofNat
   · rw [ite_eq_left h]; exact .inl (by decide)
   · rw [ite_eq_right h]; exact .inr (by decide)
 
+/-- **Safegcd's divstep bound** for `p256VerifyPrehash`'s inversion of
+`s`: for every `x` in `[1, n)`, `ivLoop8`'s 591 divsteps from `f = n`,
+`g = x`, `d = 0`, and `e = 1` end with `|f| = 1`. crypto-bigint 0.7.11 runs
+`(45907·256 + 30179) / 19929 = 591` divsteps (`safegcd.rs`, `iterations`),
+which is the bound from <https://github.com/sipa/safegcd-bounds>. That
+bound is checked by computer search, not proved here. -/
+def P256InvBound : Prop :=
+  ∀ x : Nat, 0 < x → x < C3.p256.n → (ivLoop8 C3.p256.n 10 ⟨1, (C3.p256.n : Int), (x : Int), 0, 1, 0x24F⟩).f.natAbs = 1
+
+/-- Given safegcd's bound, the inversion of a nonzero `s` below `n` leaves
+`|f| = 1`. -/
+theorem p256_ivf (hB : P256InvBound) {σ A : Nat} {M0 : Word → BitVec 8} {sq : Word}
+    (hN : accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8 = C3.p256.n)
+    (h1 : accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8 = 1)
+    (hs0 : beNat (memBytes M0 sq 32) ≠ 0) (hsn : beNat (memBytes M0 sq 32) < C3.p256.n)
+    (hv : sgnVal σ A = (ivLoop8 (accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8) 10
+      (p256Iv0 M0 (memBytes M0 sq 32))).f) :
+    A = 1 := by
+  have e := congrArg Int.natAbs hv
+  rw [Safegcd.sgnVal_natAbs] at e
+  rw [e]
+  unfold p256Iv0
+  rw [hN, h1, b32_mem]
+  exact hB _ (Nat.pos_of_ne_zero hs0) hsn
+
 set_option maxHeartbeats 64000000 in
 /-- **`p256VerifyPrehash`**, from its entry to its return: it panics,
 returns 0, or returns 1 with `SvP256Facts` for the key at `pk`, the digest
-at `dg`, and the scalars at `rp` and `sq`. It returns with `sp`, `ra`, `s0`
-to `s11`, `gp`, and `tp` as they were, and changes no memory outside its
-frame. -/
-theorem p256VerifyPrehash_correct (m : Machine) {B pk dg rp sq : Word}
+at `dg`, and the scalars at `rp` and `sq`. It panics only if safegcd's
+divstep bound fails or the image's 1 isn't 1. It returns with `sp`, `ra`,
+`s0` to `s11`, `gp`, and `tp` as they were, and changes no memory outside
+its frame. -/
+theorem p256VerifyPrehash_correct_bound (m : Machine) {B pk dg rp sq : Word}
     (E : P2vEnv m.mem) (F : Fr B 0x3590) (hpc : m.pc = P2V) (hsp : reg m sp = B + 0x3590)
     (ha0 : reg m a0 = pk) (ha1 : reg m a1 = dg) (ha2 : reg m a2 = rp) (ha3 : reg m a3 = sq)
     (hret : reg m ra &&& ~~~1 = reg m ra) (RS : P2vRoSep B)
     (r_in : P2vIn B rp 32) (s_in : P2vIn B sq 32) (k_in : P2vIn B pk 0x41) (dg_in : P2vIn B dg 32) :
-    Panics m ∨ P2vRet B (fun k => reg m (savedReg k)) m 0 ∨
+    ((P256InvBound → accV m.mem (BitVec.ofNat 32 (img% p256OneAddress)) 8 ≠ 1) ∧ Panics m) ∨
+    P2vRet B (fun k => reg m (savedReg k)) m 0 ∨
     (SvP256Facts m.mem pk dg (memBytes m.mem rp 32) (memBytes m.mem sq 32) ∧
       P2vRet B (fun k => reg m (savedReg k)) m 1) := by
   have hN : 0 < accV m.mem (BitVec.ofNat 32 (img% b2sOrder256Address)) 8 := by
@@ -113,9 +148,10 @@ theorem p256VerifyPrehash_correct (m : Machine) {B pk dg rp sq : Word}
   obtain ⟨n3, c3, fr3, s3, I3⟩ := p2v_ivloop F hret hN 10 s2 I2 (by show (0x24F : Nat) ≠ 0; decide)
     (by show (0x24F : Nat) ≤ 62 * 10; decide)
   have fM3 : ∀ x, P2vR B x → n3.mem x = m.mem x := fun x hx => (fr3 x hx).trans (fM2 x hx)
-  rcases p2v_p256_z F hret s3 I3 m.mem fM3 E.EC E.UC E.UE E.N8 RS E.PM E.WM E.PT E.WN E.ME hG hQ E.IC E.hid with
-    e | ⟨hSC, stm, hst, l4, n4, c4, fM4, s4, I4⟩
-  · exact .inl (Panics.of_steps (c1.trans (c2.trans c3)) e)
+  rcases p2v_p256_z_or F hret s3 I3 m.mem fM3 E.EC E.UC E.UE E.N8 RS E.PM E.WM E.PT E.WN E.ME hG hQ E.IC E.hid with
+    ⟨hF, e⟩ | ⟨hSC, stm, hst, l4, n4, c4, fM4, s4, I4⟩
+  · refine .inl ⟨fun hB h1 => hF ?_, Panics.of_steps (c1.trans (c2.trans c3)) e⟩
+    rw [p256_ivf hB E.BY.ord h1 hR.2.2.2.2.2.1 hR.2.2.2.1 I3.vf, h1]
   obtain ⟨n5, c5, fr5, s5, I5⟩ := p2v_zvloop F hret hP 10 s4 I4 (by show (0x24F : Nat) ≠ 0; decide)
     (by show (0x24F : Nat) ≤ 62 * 10; decide)
   have fM5 : ∀ x, P2vR B x → n5.mem x = m.mem x := fun x hx => (fr5 x hx).trans (fM4 x hx)
@@ -150,5 +186,26 @@ theorem p256VerifyPrehash_correct (m : Machine) {B pk dg rp sq : Word}
   unfold SvP256Facts
   rw [b32_mem, b32_mem]
   exact ⟨hR, _, _, _, _, I3.ld, W3, V3, I3.vd, hSC, stm, hst, _, _, _, _, I5.ld, W5, V5, I5.vd, h6, trivial⟩
+
+/-- **`p256VerifyPrehash` without the panic**: given safegcd's divstep
+bound, it returns 0, or returns 1 with `SvP256Facts` for the key at `pk`,
+the digest at `dg`, and the scalars at `rp` and `sq`. It returns with `sp`,
+`ra`, `s0` to `s11`, `gp`, and `tp` as they were, and changes no memory
+outside its frame. -/
+theorem p256VerifyPrehash_correct_np (m : Machine) {B pk dg rp sq : Word}
+    (E : P2vEnv m.mem) (F : Fr B 0x3590) (hpc : m.pc = P2V) (hsp : reg m sp = B + 0x3590)
+    (ha0 : reg m a0 = pk) (ha1 : reg m a1 = dg) (ha2 : reg m a2 = rp) (ha3 : reg m a3 = sq)
+    (hret : reg m ra &&& ~~~1 = reg m ra) (RS : P2vRoSep B)
+    (r_in : P2vIn B rp 32) (s_in : P2vIn B sq 32) (k_in : P2vIn B pk 0x41) (dg_in : P2vIn B dg 32)
+    (hB : P256InvBound) :
+    P2vRet B (fun k => reg m (savedReg k)) m 0 ∨
+    (SvP256Facts m.mem pk dg (memBytes m.mem rp 32) (memBytes m.mem sq 32) ∧
+      P2vRet B (fun k => reg m (savedReg k)) m 1) := by
+  rcases p256VerifyPrehash_correct_bound m E F hpc hsp ha0 ha1 ha2 ha3 hret RS r_in s_in k_in dg_in with
+    ⟨h, -⟩ | h
+  · have z := code_accV E.UD 0 8 (by decide)
+    rw [add_ofNat_zero] at z
+    exact absurd (z.trans (by decide)) (h hB)
+  · exact h
 
 end C3.RV32.P2v

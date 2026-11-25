@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.SvPv
+import C3BootProofs.Proofs.PanicFree
 
 /-!
 # `sigstore::verify`: the leaf's hash and signature check
@@ -6,7 +7,8 @@ import C3BootProofs.Proofs.SvPv
 `sv_lh` runs from the intermediates search's hit at 0x95C to the result's
 check at 0x980: it hashes the leaf's `tbsCertificate` with `sha384` into
 offset 0x170 and checks the leaf's signature with `p384_verify_prehash` on
-the issuer's key, which leaves the result in `a0` or panics.
+the issuer's key, which leaves the result in `a0` or panics, and then some
+inversion bound fails.
 -/
 
 namespace C3.RV32.Sv
@@ -52,7 +54,7 @@ theorem sv_lh {B out bp x9 x20 x21 x22 x24 x26 q w84 pk : Word} {sr ss : Bytes} 
     (side : ∀ M, PvSide M pk (B + 0x21A0 + BitVec.ofNat 32 0x170) 48 (B + 0x21A0 + BitVec.ofNat 32 0xC8)
       (B + 0x21A0 + BitVec.ofNat 32 0xF8)) :
     (¬ (∃ pv, SvPvRes M0 pk (B + 0x21A0 + BitVec.ofNat 32 0x170) 48 (sha384 (memBytes M0 x9 w84.toNat))
-      (B + 0x21A0 + BitVec.ofNat 32 0xC8) (B + 0x21A0 + BitVec.ofNat 32 0xF8) sr ss (some pv)) ∧ Panics n0) ∨
+      (B + 0x21A0 + BitVec.ofNat 32 0xC8) (B + 0x21A0 + BitVec.ofNat 32 0xF8) sr ss (some pv)) ∧ PanicIf n0) ∨
     (∃ pv, SvPvRes M0 pk (B + 0x21A0 + BitVec.ofNat 32 0x170) 48 (sha384 (memBytes M0 x9 w84.toNat))
       (B + 0x21A0 + BitVec.ofNat 32 0xC8) (B + 0x21A0 + BitVec.ofNat 32 0xF8) sr ss (some pv) ∧
     ∃ n', Steps n0 n' ∧
@@ -126,7 +128,7 @@ theorem sv_lh {B out bp x9 x20 x21 x22 x24 x26 q w84 pk : Word} {sr ss : Bytes} 
       pk_in.pvSep (by have := pk_in.lo; omega) (sv_pvSep F (by decide)) (sv_pvSep F (by decide))
       (sv_pvSep F (by decide)) (by rw [sv_at F _ (by decide)]; omega) (side n3.mem) with
     ⟨hn, hp⟩ | ⟨pv, hv, n4, c4, s4, sp4, k4, a4, K4, f4⟩
-  · refine .inl ⟨fun ⟨pv, hpv⟩ => ?_, Panics.of_steps (c1.trans (c2.trans c3)) hp⟩
+  · refine .inl ⟨fun ⟨pv, hpv⟩ => ?_, PanicIf.of_steps (c1.trans (c2.trans c3)) ⟨pvModel_none_inv hn, hp⟩⟩
     have := hpv _ At
     rw [hn] at this
     cases this

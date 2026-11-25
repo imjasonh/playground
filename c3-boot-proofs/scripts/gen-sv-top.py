@@ -3,9 +3,9 @@
 
 `sv_seg_sv` runs from 0x5C to the successful exit at 0x1A9E, and
 `sv_ok_1a9e` from there to the return of `Ok`. `sv_verify_5c` joins them:
-`sigstore::verify` returns `Err`, panics, or meets the success condition
-and returns `Ok` with the timestamp's and the entry's index's words in
-`out`.
+`sigstore::verify` returns `Err`, panics only if an inversion bound fails, or
+meets the success condition and returns `Ok` with the timestamp's and the
+entry's index's words in `out`.
 
 Usage: python3 scripts/gen-sv-top.py   (from c3-boot-proofs/)
 """
@@ -58,12 +58,12 @@ def main():
             break
     O("set_option maxHeartbeats 64000000 in")
     O("set_option maxRecDepth 100000 in")
-    O("/-- **`sigstore::verify` from 0x5C to its return**: it returns `Err`, panics, or meets the success "
-      "condition and returns `Ok`. -/")
+    O("/-- **`sigstore::verify` from 0x5C to its return**: it returns `Err`, panics only if an inversion "
+      "bound fails, or meets the success condition and returns `Ok`. -/")
     O(f"theorem sv_verify_5c {header}")
     O("\n".join(f"    ({g})" for g in hyps))
     O("    (hOk : SvOutOk B out) :")
-    O("    SvErrRet B out v n0 ∨ Panics n0 ∨")
+    O("    SvErrRet B out v n0 ∨ PanicIf n0 ∨")
     O("    (" + " ∧\n      ".join(st.sc_parts) + " ∧")
     O(f"      SvOkRet B out v n0 ({vals['w3c']}) ({vals['w7c']}) ({vals['r21']}) ({vals['r24']})) := by")
     O(f"  rcases {SEG[1]} {' '.join(names)} with e | e | hx")

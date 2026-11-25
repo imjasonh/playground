@@ -115,14 +115,14 @@ def main():
     O("set_option maxHeartbeats 64000000 in")
     O("set_option maxRecDepth 100000 in")
     O("/-- **`sigstore::verify`**: called with the bundle at `a1`, the trust root at `a2`, the artifact's "
-      "digest at `a3`, and the result at `a0`, it returns `Err`, panics, or meets the success condition and "
+      "digest at `a3`, and the result at `a0`, it returns `Err`, panics only if an inversion bound fails, or meets the success condition and "
       "returns `Ok`. -/")
     O(f"theorem sv_verify {new_binders}")
     O("    (C : CodeIn Me SV sigstoreVerifyCode) (E : SvCode Me) (FW : Fr (B + 0xFFFFEC10) 0x3A50)")
     O("    (s : St Me SV n 0 (reg n)) (rsp : reg n sp = B + 0x2660) (hb : (reg n a1).toNat % 4 = 0)")
     O("    (sb : Sep (reg n a1) 8 (B + BitVec.ofNat 32 0x262C) 0x34)")
     O("\n".join(f"    ({p} : {t})" for p, t in kept) + " :")
-    O("    SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ Panics n ∨")
+    O("    SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ PanicIf n ∨")
     O("    (" + " ∧\n      ".join(S(x) for x in parts) + " ∧")
     O(f"      {S(ok).replace('SvOkRet B out v n0', 'SvOkRet B (reg n a0) (fun k => reg n (savedReg k)) n')}) := by")
     O("  have F := sv_frW FW")
@@ -134,7 +134,7 @@ def main():
                      if b not in ('n0',))
     O(f"  rcases sv_verify_5c {named} (n0 := n1) {args} with e | e | hx")
     O("  · exact .inl (SvErrRet.pre c1 (rk _ (by decide)) (rk _ (by decide)) hm e)")
-    O("  · exact .inr (.inl (Panics.of_steps c1 e))")
+    O("  · exact .inr (.inl (PanicIf.of_steps c1 e))")
     for x in names:
         O(f"  obtain ⟨{x}, hx⟩ := hx")
     O("  refine .inr (.inr ?_)")

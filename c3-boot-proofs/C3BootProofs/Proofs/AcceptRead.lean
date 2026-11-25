@@ -1844,8 +1844,8 @@ end segs
 
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 16000000 in
-/-- **The read stage**, from 0x32 to 0x1AA. -/
-theorem acceptRead : AcReadStage AcReadEnv := by
+/-- **The read stage**, from 0x32 to 0x1AA: it never halts. -/
+theorem acceptRead_pi : AcReadStagePI AcReadEnv := by
   intro flash R romBase romCode rom n B Bf g t r slot level v M0 hE C F sB hBa hBw hR CR hrb hrl hR4 s I h19 h26
     h21 h8 ha3 h24
   have hBL : acBufLen = 0xB954 := rfl
@@ -1913,5 +1913,8 @@ theorem acceptRead : AcReadStage AcReadEnv := by
     rw [acr_tn _ _ (by rw [hBo]; omega), hBo]
   have hx : AcrFr B Bf (Bf + 0xB840 + BitVec.ofNat 32 i) := by unfold AcrFr; rw [e]; exact ⟨by omega, by omega, by omega⟩
   rw [fr6 _ hx, P5.fr _ hx, fr4 _ (by rw [e]; omega), hb i hi]
+
+/-- **The read stage**, from 0x32 to 0x1AA. -/
+theorem acceptRead : AcReadStage AcReadEnv := acceptRead_pi.acStage
 
 end C3.RV32.Ac

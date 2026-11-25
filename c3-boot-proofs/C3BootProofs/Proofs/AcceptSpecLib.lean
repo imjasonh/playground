@@ -60,27 +60,28 @@ structure AcsCtx where
   v : Nat → Word
   M0 : Word → BitVec 8
 
-/-- From `n`, the closure panics or returns with `AcsRes`. -/
+/-- From `n`, the closure panics, and then an inversion bound fails, or
+returns with `AcsRes`. -/
 def AcsCtx.End (X : AcsCtx) (n : Machine) : Prop :=
-  Panics n ∨
+  PanicIf n ∨
     AcRet X.B X.v n (AcsRes X.flash X.pinned X.policy X.level.toNat X.slot X.B X.Bf X.r X.M0)
 
 theorem acs_end_pre {X : AcsCtx} {n0 n1 : Machine} (h : Steps n0 n1)
     (h3 : reg n1 (3 : Fin 32) = reg n0 (3 : Fin 32)) (h4 : reg n1 (4 : Fin 32) = reg n0 (4 : Fin 32))
     (e : X.End n1) : X.End n0 := by
   rcases e with e | e
-  · exact .inl (Panics.of_steps h e)
+  · exact .inl (PanicIf.of_steps h e)
   · exact .inr (e.pre h h3 h4)
 
 /-- A stage that keeps `AcInv` ends the closure as its two ways on do. -/
 theorem acs_stage {X : AcsCtx} {n0 : Machine} {o : Nat} {Q : Machine → Prop}
-    (I0 : AcInv X.B X.Bf X.g X.t X.v X.M0 n0) (h : AcStage X.B X.Bf X.g X.t X.r X.v X.M0 n0 o Q)
+    (I0 : AcInv X.B X.Bf X.g X.t X.v X.M0 n0) (h : AcStagePI X.B X.Bf X.g X.t X.r X.v X.M0 n0 o Q)
     (hf : ∀ n, AcInv X.B X.Bf X.g X.t X.v X.M0 n → AcFail X.B X.r n → X.End n)
     (hk : ∀ n, AcInv X.B X.Bf X.g X.t X.v X.M0 n → n.pc = AC + BitVec.ofNat 32 o → Q n → X.End n) :
     X.End n0 := by
   obtain ⟨n1, s1, h⟩ := h
-  rcases h with h | ⟨I1, h | ⟨hp, hq⟩⟩
-  · exact .inl ⟨n1, s1, h⟩
+  rcases h with ⟨hni, h⟩ | ⟨I1, h | ⟨hp, hq⟩⟩
+  · exact .inl ⟨hni, n1, s1, h⟩
   · exact acs_end_pre s1 (by rw [I1.gp, I0.gp]) (by rw [I1.tp, I0.tp]) (hf n1 I1 h)
   · exact acs_end_pre s1 (by rw [I1.gp, I0.gp]) (by rw [I1.tp, I0.tp]) (hk n1 I1 hp hq)
 
