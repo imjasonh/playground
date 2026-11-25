@@ -757,6 +757,122 @@ theorem AcetsM.mv {X : AceCtx} (O : X.Ok) {n0 : Machine} {fp : Word} {M M' : Wor
     w2C := (hs 0x3A7C (by decide) (.inl (by decide))).trans H.w2C
     w30 := (hs 0x3A80 (by decide) (.inl (by decide))).trans H.w30 }
 
+theorem acets_tsaNone {t : Json} {c : CertInfo} {w : Window} (h : readChain t = some (c, w))
+    (hk : c.p384Key = none) : aceTsa t = some none := by
+  unfold aceTsa; rw [h]; dsimp only [bind, Option.bind]; rw [hk]; rfl
+
+theorem acets_tsaSome {t : Json} {c : CertInfo} {w : Window} {k : Bytes} (h : readChain t = some (c, w))
+    (hk : c.p384Key = some k) {d : Bytes} (hd : derLen (c.issuer.length + c.serial.length) = some d) :
+    aceTsa t = some (some ⟨[0x30] ++ d ++ (c.issuer ++ c.serial), k, w⟩) := by
+  unfold aceTsa; rw [h]; dsimp only [bind, Option.bind]; rw [hk]; dsimp only; rw [List.length_append, hd]; rfl
+
+/-- `trustedRootReadChain_correct`, with the error byte that `read_chain`
+leaves at `out + 4` below 0x27 when it fails. The model names that byte
+only when the error has a code. -/
+def AcetsRcErr : Prop :=
+  ∀ (m : Machine) {sp0 out p fr fp retAddr : Word} {n fl : Nat},
+    RcCode m.mem → m.pc = TRC → reg m a0 = out → reg m a1 = p → reg m a2 = BitVec.ofNat 32 n →
+    reg m a3 = fr → reg m ra = retAddr → retAddr &&& ~~~1 = retAddr → reg m sp = sp0 →
+    sp0.toNat % 16 = 0 → 0x740 ≤ sp0.toNat → sp0.toNat ≤ 0x40000000 →
+    P3.Fr (sp0 + 0xFFFFF8C0 + BitVec.ofNat 32 0x1A0) 0x420 → Sep (sp0 + 0xFFFFF8C0) 0x740 TVF_RO 0x1400 →
+    out.toNat % 4 = 0 → out.toNat + 0x40 ≤ 0x40000000 → Sep out 0x40 (sp0 + 0xFFFFF8C0) 0x740 →
+    Sep out 0x40 fr 8 → Sep out 0x40 fp fl →
+    fr.toNat % 4 = 0 → fr.toNat + 8 ≤ 0x40000000 → Sep fr 8 (sp0 + 0xFFFFF8C0) 0x740 →
+    Sep fr 8 TVF_RO 0x1400 → Sep fr 8 fp fl →
+    fp.toNat + fl + 14 ≤ 0x40000000 → fp.toNat ≠ 0 → Sep fp (fl + 14) (sp0 + 0xFFFFF8C0) 0x740 →
+    Sep fp fl TVF_RO 0x1400 →
+    memLoad32 m.mem fr = fp → memLoad32 m.mem (fr + 4) = BitVec.ofNat 32 fl →
+    p.toNat + n + 4 ≤ 0x40000000 → p.toNat ≠ 0 → Sep p (n + 4) (sp0 + 0xFFFFF8C0) 0x740 →
+    Sep p n fr 8 → Sep p n fp fl →
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+      (∀ q : Fin 32, q.val ∈ trSaved → reg m' q = reg m q) ∧
+      rcMem m.mem (sp0 + 0xFFFFF8C0) out fr fp fl (readChainPos m.mem p n fp fl) m'.mem ∧
+      ∀ e, readChainPos m.mem p n fp fl = .error e → (m'.mem (out + 4)).toNat < 0x27
+
+/-- The call to `read_chain` at 0x127E, with `out` at `sp + 0x1320` and
+`fr` at `sp + 0x1FDC`, on the `l` bytes at `q` in the document. -/
+theorem acets_rc (H : AcetsRcErr) {X : AceCtx} (O : X.Ok) {M : Word → BitVec 8} (E : AcExtractEnv M)
+    {Q : Post} {f : Fin 32 → Word} {fp q : Word} {l : Nat} (hc : CodeIn M AC bootMainClosure0Code)
+    (hsp : f (2 : Fin 32) = X.B + 0x3A50) (h0 : f a0 = X.B + BitVec.ofNat 32 0x4D70) (h1 : f a1 = q)
+    (h2 : f a2 = BitVec.ofNat 32 l) (h3 : f a3 = X.B + BitVec.ofNat 32 0x5A2C)
+    (hf : X.Bf.toNat + 0x6800 ≤ fp.toNat) (hf2 : fp.toNat ≤ X.Bf.toNat + 0xB840)
+    (hq0 : X.Bf.toNat + 0x4000 ≤ q.toNat) (hq1 : q.toNat + l ≤ X.Bf.toNat + 0x6800)
+    (hfp : memLoad32 M (X.B + BitVec.ofNat 32 0x5A2C) = fp)
+    (hfl : memLoad32 M (X.B + BitVec.ofNat 32 0x5A30) = BitVec.ofNat 32 (X.Bf.toNat + 0xB840 - fp.toNat))
+    (k : ∀ m2 : Machine, rcMem M (X.B + BitVec.ofNat 32 0x3310) (X.B + BitVec.ofNat 32 0x4D70)
+        (X.B + BitVec.ofNat 32 0x5A2C) fp (X.Bf.toNat + 0xB840 - fp.toNat)
+        (readChainPos M q l fp (X.Bf.toNat + 0xB840 - fp.toNat)) m2.mem →
+      (∀ e, readChainPos M q l fp (X.Bf.toNat + 0xB840 - fp.toNat) = .error e →
+        (m2.mem (X.B + BitVec.ofNat 32 0x4D74)).toNat < 0x27) →
+      WP bootMainClosure0Code AC Q m2.mem (0x127E + 8)
+        (clob (upd f ra (AC + BitVec.ofNat 32 (0x127E + 8))) m2 jClob)) :
+    WP bootMainClosure0Code AC Q M 0x127E f := by
+  have F := O.lay.fr
+  have ⟨_, _, _, _, _, _, lay, _⟩ := acets_n O
+  have hAC := ace_AC
+  have eG : X.B + 0x3A50 + 0xFFFFF8C0 = X.B + BitVec.ofNat 32 0x3310 := by rw [BitVec.add_assoc]; rfl
+  have e4 : X.B + BitVec.ofNat 32 0x4D70 + 4 = X.B + BitVec.ofNat 32 0x4D74 := add_ofNat_assoc _ _ _
+  have e30 : X.B + BitVec.ofNat 32 0x5A2C + 4 = X.B + BitVec.ofNat 32 0x5A30 := add_ofNat_assoc _ _ _
+  have tS : (X.B + 0x3A50 : Word).toNat = X.B.toNat + 0x3A50 := F.at 0x3A50 (by decide)
+  have tG := F.at 0x3310 (by decide)
+  have tO := F.at 0x4D70 (by decide)
+  have tR := F.at 0x5A2C (by decide)
+  have := F.hi
+  have := F.lo
+  have := F.al
+  refine WP.trCallSaved (tb := TRC) (P := fun m2 => rcMem M (X.B + BitVec.ofNat 32 0x3310)
+      (X.B + BitVec.ofNat 32 0x4D70) (X.B + BitVec.ofNat 32 0x5A2C) fp (X.Bf.toNat + 0xB840 - fp.toNat)
+      (readChainPos M q l fp (X.Bf.toNat + 0xB840 - fp.toNat)) m2.mem ∧
+      ∀ e, readChainPos M q l fp (X.Bf.toNat + 0xB840 - fp.toNat) = .error e →
+        (m2.mem (X.B + BitVec.ofNat 32 0x4D74)).toNat < 0x27)
+    ac_at_127e ac_at_1282 (by decide) (fun m1 hpc1 hmem1 hreg1 hb => ?_)
+    (fun m2 hP _ i hi => ?_) (fun m2 hP => k m2 hP.1 hP.2)
+  · have hRB : Sep fp (X.Bf.toNat + 0xB840 - fp.toNat) (BitVec.ofNat 32 roWindowAddress) roWindowSize := by
+      have h := O.lay.roBuf.sub (c := fp.toNat - X.Bf.toNat) (l := X.Bf.toNat + 0xB840 - fp.toNat)
+        (by unfold acBufLen; omega)
+      have e : X.Bf + BitVec.ofNat 32 (fp.toNat - X.Bf.toNat) = fp := by
+        apply BitVec.eq_of_toNat_eq
+        rw [acets_tn (by omega)]; omega
+      rwa [e] at h
+    obtain ⟨m2, hs, hpc2, hsp2, hk2, hR2, he2⟩ := H m1 (sp0 := X.B + 0x3A50) (out := X.B + BitVec.ofNat 32 0x4D70)
+      (p := q) (fr := X.B + BitVec.ofNat 32 0x5A2C) (fp := fp) (n := l)
+      (retAddr := AC + BitVec.ofNat 32 (0x127E + 8)) (fl := X.Bf.toNat + 0xB840 - fp.toNat)
+      (by rw [hmem1]; exact E.chain) hpc1 (by rw [hreg1]; rsimp; exact h0) (by rw [hreg1]; rsimp; exact h1)
+      (by rw [hreg1]; rsimp; exact h2) (by rw [hreg1]; rsimp; exact h3) (by rw [hreg1]; rsimp)
+      (even_clear _ (even_at AC hb _ (by decide))) (by rw [hreg1]; rsimp; exact hsp)
+      (by rw [tS]; omega) (by rw [tS]; omega) (by rw [tS]; omega)
+      (by
+        rw [eG, add_ofNat_assoc]
+        exact acets_subFr F (by decide) (by decide) (by decide))
+      (by rw [eG]; exact O.lay.ro.sub (by decide))
+      (by rw [tO]; omega) (by rw [tO]; omega)
+      (by rw [eG]; exact ace_sepB' F (.inr (by decide)) (by decide) (by decide))
+      (ace_sepB' F (.inl (by decide)) (by decide) (by decide))
+      (acets_sepO F (by decide) (by omega) (by omega))
+      (by rw [tR]; omega) (by rw [tR]; omega)
+      (by rw [eG]; exact ace_sepB' F (.inr (by decide)) (by decide) (by decide))
+      (O.lay.ro.sub (by decide))
+      (acets_sepO F (by decide) (by omega) (by omega))
+      (by omega) (by omega)
+      (by rw [eG]; exact (acets_sepO F (by decide) (by omega) (by omega)).symm)
+      hRB
+      (by rw [hmem1]; exact hfp) (by rw [hmem1, e30]; exact hfl)
+      (by omega) (by omega)
+      (by rw [eG]; exact (acets_sepO F (by decide) (by omega) (by omega)).symm)
+      (acets_sepO F (by decide) (by omega) (by omega)).symm
+      (acets_sep (by omega) (by omega) (by omega))
+    rw [hmem1, eG] at hR2
+    rw [hmem1] at he2
+    refine ⟨m2, hs, hpc2, ⟨hR2, fun e he => ?_⟩, by rw [hsp2, hreg1]; rsimp; exact hsp.symm,
+      hk2⟩
+    rw [← e4]; exact he2 e he
+  · have hx := (AC + BitVec.ofNat 32 i).isLt
+    have ti : (AC + BitVec.ofNat 32 i).toNat = AC.toNat + i := acets_tn (by omega)
+    rw [hP.1.2 _ (lowSep (by rw [tG]; omega) (by omega) (by omega))
+      (lowSep (by rw [tO]; omega) (by omega) (by omega)) (lowSep (by rw [tR]; omega) (by omega) (by omega))
+      (lowSep (by omega) (by omega) (by omega))]
+    exact hc i hi
+
 section Pass
 variable {X : AceCtx} (O : X.Ok) {n0 : Machine} {fp : Word} {jr : Json} {fs : List FulcioKey}
   {ls : List LogKey} {j : Json} {rest : List Json} {ts : List TsaKey} {q : Word} {l a : Nat}
