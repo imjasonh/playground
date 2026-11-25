@@ -103,7 +103,8 @@ def AcImagePost (flash : Nat → BitVec 8) (B slot level : Word) (mf : Manifest)
     (level &&& 0xFF).toNat ≤ header.securityVersion ∧
     reg n (27 : Fin 32) = BitVec.ofNat 32 header.securityVersion ∧
     ∃ sv entry cnt segs, header = toHdr (BitVec.ofNat 32 mf.image.length) (sv, entry, cnt, segs) ∧
-      OutOk n.mem (acSlot B 0x1870) sv entry cnt (BitVec.ofNat 32 mf.image.length) segs) ∧
+      OutOk n.mem (acSlot B 0x1870) sv entry cnt (BitVec.ofNat 32 mf.image.length) segs ∧
+      segs.length = cnt.toNat ∧ 0 < segs.length ∧ ∀ s ∈ segs, (3 : BitVec 8).ult s.kind = false) ∧
   reg n (9 : Fin 32) = acSlot B 0x1310 ∧
   reg n (20 : Fin 32) = reg n0 (20 : Fin 32) ∧
   reg n (21 : Fin 32) = (n.mem (acSlot B 0x1870)).zeroExtend 32 ∧
@@ -121,6 +122,7 @@ def AcImagePost (flash : Nat → BitVec 8) (B slot level : Word) (mf : Manifest)
   memLoad32 n.mem (acSlot B 0x130) = reg n0 (9 : Fin 32) ∧
   memBytes n.mem (acSlot B 0x108) 32 = memBytes n0.mem (acSlot B 0xD4) 32 ∧
   memBytes n.mem (acSlot B 0x139) 0xFF = memBytes n.mem (acSlot B 0x187D) 0xFF ∧
+  (∀ i, i < 11 → n.mem (acSlot B (0x238 + i)) = n.mem (acSlot B (0x1871 + i))) ∧
   ∀ x, Sep B 0x3A50 x 1 → Sep (acSlot B 0xF4) 0x14F x 1 → Sep (acSlot B 0x1870) 0x110 x 1 →
     n.mem x = n0.mem x
 
@@ -488,6 +490,117 @@ theorem aci_z (x : Word) : 0 + x = x := BitVec.zero_add x
 
 /-! ## The stage -/
 
+theorem acs_x4 (b0 b1 b2 b3 : BitVec 8) :
+    (b3 ++ b2 ++ b1 ++ b0).extractLsb' 0 8 = b0 ∧ (b3 ++ b2 ++ b1 ++ b0).extractLsb' 8 8 = b1 ∧
+      (b3 ++ b2 ++ b1 ++ b0).extractLsb' 16 8 = b2 ∧ (b3 ++ b2 ++ b1 ++ b0).extractLsb' 24 8 = b3 := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> apply BitVec.eq_of_getLsbD_eq <;> intro i hi <;>
+    simp only [BitVec.getLsbD_extractLsb', BitVec.getLsbD_append, hi, decide_true, Bool.true_and]
+  · simp [show i < 8 from hi]
+  · simp [show ¬ 8 + i < 8 by omega, show 8 + i - 8 = i by omega, hi]
+  · simp [show ¬ 16 + i < 8 by omega, show ¬ 16 + i - 8 < 8 by omega, show 16 + i - 8 - 8 = i by omega, hi]
+  · simp [show ¬ 24 + i < 8 by omega, show ¬ 24 + i - 8 < 8 by omega, show ¬ 24 + i - 8 - 8 < 8 by omega,
+      show 24 + i - 8 - 8 - 8 = i by omega]
+
+theorem acs_shA (b0 b1 b2 b3 : BitVec 8) :
+    aluEval AluOp.or (aluEval AluOp.or (aluEval AluOp.sll (b3.zeroExtend 32) 24)
+      (aluEval AluOp.sll (b2.zeroExtend 32) 16))
+      (aluEval AluOp.or (b0.zeroExtend 32) (aluEval AluOp.sll (b1.zeroExtend 32) 8)) = b3 ++ b2 ++ b1 ++ b0 := by
+  rw [← C3.RV32.Cur.or_assemble]; simp only [aluEval, BitVec.reduceToNat, Nat.reduceMod]
+  rw [BitVec.or_comm _ (b0.zeroExtend 32 ||| _), BitVec.or_comm (b3.zeroExtend 32 <<< 24)]
+
+theorem acs_shB (b0 b1 b2 b3 : BitVec 8) :
+    aluEval AluOp.or (aluEval AluOp.or (aluEval AluOp.sll (b1.zeroExtend 32) 8) (b0.zeroExtend 32))
+      (aluEval AluOp.or (aluEval AluOp.sll (b2.zeroExtend 32) 16) (aluEval AluOp.sll (b3.zeroExtend 32) 24)) =
+      b3 ++ b2 ++ b1 ++ b0 := by
+  rw [← C3.RV32.Cur.or_assemble]; simp only [aluEval, BitVec.reduceToNat, Nat.reduceMod]
+  rw [BitVec.or_comm (b1.zeroExtend 32 <<< 8)]
+
+theorem acs_x2 (b0 b1 : BitVec 8) :
+    (aluEval AluOp.or (aluEval AluOp.sll (b1.zeroExtend 32) 8) (b0.zeroExtend 32)).extractLsb' 0 8 = b0 ∧
+      (aluEval AluOp.or (aluEval AluOp.sll (b1.zeroExtend 32) 8) (b0.zeroExtend 32)).extractLsb' 8 8 = b1 := by
+  simp only [aluEval, BitVec.reduceToNat, Nat.reduceMod]
+  refine ⟨?_, ?_⟩ <;> apply BitVec.eq_of_getLsbD_eq <;> intro i hi <;>
+    simp only [BitVec.getLsbD_extractLsb', BitVec.getLsbD_or, BitVec.getLsbD_shiftLeft, BitVec.getLsbD_setWidth, hi,
+      decide_true, Bool.true_and]
+  · simp [show i < 8 from hi]; intro; omega
+  · simp [show 8 + i - 8 = i by omega, show 8 + i < 32 by omega, show ¬ 8 + i < 8 by omega,
+      show i < 32 by omega]
+
+theorem acs_ilo8 (b : BitVec 8) : (b.zeroExtend 32).extractLsb' 0 8 = b := by
+  apply BitVec.eq_of_getLsbD_eq; intro i hi; simp [hi]; omega
+
+theorem acs_st32a (M : Word → BitVec 8) (a v : Word) :
+    memStore32 M a v a = v.extractLsb' 0 8 ∧ memStore32 M a v (a + 1) = v.extractLsb' 8 8 ∧
+      memStore32 M a v (a + 2) = v.extractLsb' 16 8 ∧ memStore32 M a v (a + 3) = v.extractLsb' 24 8 := by
+  have n : ∀ i j : Nat, i < 4 → j < 4 → i ≠ j → a + BitVec.ofNat 32 i ≠ a + BitVec.ofNat 32 j :=
+    fun i j hi hj h => add_ofNat_ne a (by omega) (by omega) h
+  have n0 : ∀ j : Nat, 0 < j → j < 4 → a ≠ a + BitVec.ofNat 32 j := fun j h1 h2 e =>
+    n 0 j (by omega) h2 (by omega) (by rw [add_ofNat_zero]; exact e)
+  unfold memStore32
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rw [memStore8_ne (x := a) (a := a + 3) (n0 3 (by omega) (by omega)),
+      memStore8_ne (x := a) (a := a + 2) (n0 2 (by omega) (by omega)),
+      memStore8_ne (x := a) (a := a + 1) (n0 1 (by omega) (by omega)), memStore8_same]
+  · rw [memStore8_ne (x := a + 1) (a := a + 3) (n 1 3 (by omega) (by omega) (by omega)),
+      memStore8_ne (x := a + 1) (a := a + 2) (n 1 2 (by omega) (by omega) (by omega)), memStore8_same]
+  · rw [memStore8_ne (x := a + 2) (a := a + 3) (n 2 3 (by omega) (by omega) (by omega)), memStore8_same]
+  · rw [memStore8_same]
+
+theorem acs_st32 (M : Word → BitVec 8) (B v : Word) (k : Nat) :
+    memStore32 M (acSlot B k) v (acSlot B k) = v.extractLsb' 0 8 ∧
+      memStore32 M (acSlot B k) v (acSlot B (k + 1)) = v.extractLsb' 8 8 ∧
+      memStore32 M (acSlot B k) v (acSlot B (k + 2)) = v.extractLsb' 16 8 ∧
+      memStore32 M (acSlot B k) v (acSlot B (k + 3)) = v.extractLsb' 24 8 := by
+  rw [← aci_ad B k 1, ← aci_ad B k 2, ← aci_ad B k 3]; exact acs_st32a M _ v
+
+theorem acs_st2 (M M' : Word → BitVec 8) (B : Word) (k d i : Nat) (hi : i < 8) (hk : k + 8 ≤ 0x2000) :
+    memStore32 (memStore32 M (acSlot B k) (M' (acSlot B (d + 3)) ++ M' (acSlot B (d + 2)) ++
+      M' (acSlot B (d + 1)) ++ M' (acSlot B d))) (acSlot B (k + 4)) (M' (acSlot B (d + 7)) ++
+      M' (acSlot B (d + 6)) ++ M' (acSlot B (d + 5)) ++ M' (acSlot B (d + 4))) (acSlot B (k + i)) =
+      M' (acSlot B (d + i)) := by
+  have L : ∀ j, j < 4 → memStore32 (memStore32 M (acSlot B k) (M' (acSlot B (d + 3)) ++ M' (acSlot B (d + 2)) ++
+      M' (acSlot B (d + 1)) ++ M' (acSlot B d))) (acSlot B (k + 4)) (M' (acSlot B (d + 7)) ++
+      M' (acSlot B (d + 6)) ++ M' (acSlot B (d + 5)) ++ M' (acSlot B (d + 4))) (acSlot B (k + j)) =
+      memStore32 M (acSlot B k) (M' (acSlot B (d + 3)) ++ M' (acSlot B (d + 2)) ++
+      M' (acSlot B (d + 1)) ++ M' (acSlot B d)) (acSlot B (k + j)) := fun j hj =>
+    aci_s32 (k + 4) (k + j) (.inr (by omega)) (by omega) (by omega)
+  have S0 := acs_st32 M B (M' (acSlot B (d + 3)) ++ M' (acSlot B (d + 2)) ++
+      M' (acSlot B (d + 1)) ++ M' (acSlot B d)) k
+  have S1 := acs_st32 (memStore32 M (acSlot B k) (M' (acSlot B (d + 3)) ++ M' (acSlot B (d + 2)) ++
+      M' (acSlot B (d + 1)) ++ M' (acSlot B d))) B (M' (acSlot B (d + 7)) ++
+      M' (acSlot B (d + 6)) ++ M' (acSlot B (d + 5)) ++ M' (acSlot B (d + 4))) (k + 4)
+  have X0 := acs_x4 (M' (acSlot B d)) (M' (acSlot B (d + 1))) (M' (acSlot B (d + 2))) (M' (acSlot B (d + 3)))
+  have X1 := acs_x4 (M' (acSlot B (d + 4))) (M' (acSlot B (d + 5))) (M' (acSlot B (d + 6)))
+    (M' (acSlot B (d + 7)))
+  match i, hi with
+  | 0, _ => rw [L 0 (by omega)]; exact S0.1.trans X0.1
+  | 1, _ => rw [L 1 (by omega)]; exact S0.2.1.trans X0.2.1
+  | 2, _ => rw [L 2 (by omega)]; exact S0.2.2.1.trans X0.2.2.1
+  | 3, _ => rw [L 3 (by omega)]; exact S0.2.2.2.trans X0.2.2.2
+  | 4, _ => exact S1.1.trans X1.1
+  | 5, _ => rw [show k + 5 = k + 4 + 1 by omega, show d + 5 = d + 4 + 1 by omega] at *; exact S1.2.1.trans X1.2.1
+  | 6, _ => exact (show k + 6 = k + 4 + 2 by omega) ▸ S1.2.2.1.trans X1.2.2.1
+  | 7, _ => exact (show k + 7 = k + 4 + 3 by omega) ▸ S1.2.2.2.trans X1.2.2.2
+
+theorem acs_s8 {M : Word → BitVec 8} {B : Word} {v : BitVec 8} (k d : Nat) (h : k ≠ d)
+    (hk : k + 1 ≤ 0x2000) (hd : d + 1 ≤ 0x2000) :
+    memStore8 M (acSlot B k) v (acSlot B d) = M (acSlot B d) :=
+  memStore8_ne (aci_ne (sep_offsets B (by omega) (by omega) (by omega)))
+
+/-- `imgW`'s segment list has the header's count. -/
+theorem acs_imgW_cnt {M : Word → BitVec 8} {ptr len ilen : Word} {sv cnt : BitVec 8} {entry : Word}
+    {segs : List SegW} (h : imgW M ptr len ilen = .ok (sv, entry, cnt, segs)) : segs.length = cnt.toNat := by
+  unfold imgW at h
+  obtain ⟨⟨sv', cnt', entry', pos⟩, hh, h1⟩ := aci_bind_ok h
+  obtain ⟨⟨segs', pos', prev⟩, hr, h2⟩ := aci_bind_ok h1
+  dsimp only at h2
+  split at h2
+  · obtain ⟨_, h3, -⟩ := aci_bind_ok h2
+    cases h3
+  · obtain ⟨_, -, h3⟩ := aci_bind_ok h2
+    obtain ⟨_, -, h4⟩ := aci_bind_ok h3
+    cases h4; exact aci_readSegsW_len hr
+
 set_option maxHeartbeats 8000000 in
 /-- **From 0x1AA to 0x2A6.** -/
 theorem acImage_stage : AcImageStage AcImageEnv := by
@@ -722,6 +835,14 @@ theorem acImage_stage : AcImageStage AcImageEnv := by
       fun q hq => by
         rw [u7.regs, runBlock_reg _ _ _ q s5.zero (by simp only [aciD]; revert hq; revert q; decide)]
     have s7 : St n7.mem AC n7 0x258 (reg n7) := ⟨u7.pc, rfl, fun _ => rfl⟩
+    have P7 : ∀ i, i < 8 → n7.mem (acSlot B (0x238 + i)) = n5.mem (acSlot B (0x1871 + i)) := fun i hi => by
+      rw [u7.mem]; simp only [runBlock, BInstr.run, aciD]; simp +decide only [upd, ↓reduceIte]; rw [rsp5, r95]; aci_norm
+      rw [acs_shA, acs_shB]; exact acs_st2 n5.mem n5.mem B 0x238 0x1871 i hi (by decide)
+    have r177 : reg n7 (17 : Fin 32) = aluEval AluOp.or (aluEval AluOp.sll ((n5.mem (acSlot B 0x187A)).zeroExtend 32) 8)
+        ((n5.mem (acSlot B 0x1879)).zeroExtend 32) := by
+      rw [u7.regs]; simp +decide only [runBlock, BInstr.run, aciD, upd, ↓reduceIte]; rw [r95]; aci_norm
+    have ra67 : reg n7 a6 = (n5.mem (acSlot B 0x187B)).zeroExtend 32 := by
+      rw [u7.regs]; simp +decide only [runBlock, BInstr.run, aciD, upd, ↓reduceIte]; rw [r95]; aci_norm
     have rsp7 : reg n7 sp = B + BitVec.ofNat 32 0x3A50 := by rw [k7 sp (by decide), rsp5]
     have WW7 : ∀ x, aciW B x → n7.mem x = n.mem x := fun x hx => by rw [W7 x (aci_WL hx), m5, W4 x hx]
     obtain ⟨n8, e8, s8⟩ := s7.sh (off' := 0x25C) (aci_code F C WW7) ac_at_258 (by decide)
@@ -742,6 +863,33 @@ theorem acImage_stage : AcImageStage AcImageEnv := by
     have k9 : ∀ q : Fin 32, q.val ∉ [10, 11, 12] → reg n9 q = reg n8 q := fun q hq => by
       rw [u9.regs, runBlock_reg _ _ _ q s8'.zero (by simp only [aciE]; revert hq; revert q; decide)]
     have rsp9 : reg n9 sp = B + BitVec.ofNat 32 0x3A50 := by rw [k9 sp (by decide), rsp8]
+    have P9 : ∀ i, i < 11 → n9.mem (acSlot B (0x238 + i)) = n5.mem (acSlot B (0x1871 + i)) := fun i hi => by
+      have E9 : ∀ j, j < 10 → n9.mem (acSlot B (0x238 + j)) = n8.mem (acSlot B (0x238 + j)) := fun j hj => by
+        rw [u9.mem]; simp only [runBlock, BInstr.run, aciE]; rw [rsp8]; aci_norm
+        exact acs_s8 0x242 (0x238 + j) (by omega) (by decide) (by omega)
+      have E8 : ∀ j, j < 8 → n8.mem (acSlot B (0x238 + j)) = n7.mem (acSlot B (0x238 + j)) := fun j hj => by
+        rw [s8.mem, rsp7]; aci_norm
+        rw [acs_s8 0x241 (0x238 + j) (by omega) (by decide) (by omega),
+          acs_s8 0x240 (0x238 + j) (by omega) (by decide) (by omega)]
+      rcases Nat.lt_or_ge i 8 with h | h
+      · rw [E9 i (by omega), E8 i h, P7 i h]
+      · obtain ⟨j, rfl⟩ : ∃ j, i = 8 + j := ⟨i - 8, by omega⟩
+        match j, hi with
+        | 0, _ =>
+          refine (E9 8 (by omega)).trans ?_
+          show n8.mem (acSlot B 0x240) = n5.mem (acSlot B 0x1879)
+          rw [s8.mem, rsp7]; aci_norm
+          rw [acs_s8 0x241 0x240 (by omega) (by decide) (by omega), memStore8_same, r177]; exact (acs_x2 _ _).1
+        | 1, _ =>
+          refine (E9 9 (by omega)).trans ?_
+          show n8.mem (acSlot B 0x241) = n5.mem (acSlot B 0x187A)
+          rw [s8.mem, rsp7]; aci_norm
+          rw [memStore8_same, r177]; exact (acs_x2 _ _).2
+        | 2, _ =>
+          show n9.mem (acSlot B 0x242) = n5.mem (acSlot B 0x187B)
+          rw [u9.mem]; simp only [runBlock, BInstr.run, aciE]; rw [rsp8]; aci_norm
+          rw [memStore8_same, s8.regs, ra67]; exact acs_ilo8 _
+        | j + 3, h => exact absurd h (by omega)
     have a09 : reg n9 a0 = acSlot B 0x139 := by
       rw [u9.regs]; simp +decide only [runBlock, BInstr.run, aciE, upd, ↓reduceIte, aluEval]; rw [rsp8]; aci_norm
     have a19 : reg n9 a1 = acSlot B 0x187D := by
@@ -841,6 +989,15 @@ theorem acImage_stage : AcImageStage AcImageEnv := by
             aci_s8i 0x136 0x139 i (by omega) (by decide) (by omega), m11]
       have L13w : ∀ k, k + 4 ≤ 0x136 → memLoad32 n13.mem (acSlot B k) = memLoad32 n3.mem (acSlot B k) :=
         fun k hk => aci_ldL E13 k hk
+      have P13 : ∀ i, i < 11 → n13.mem (acSlot B (0x238 + i)) = n4.mem (acSlot B (0x1871 + i)) :=
+        fun i hi => by
+          rw [u13.mem]; simp only [runBlock, BInstr.run, aciG]; rw [rsp12]; aci_norm
+          rw [acs_s8 0x138 (0x238 + i) (by omega) (by decide) (by omega), s12.mem, rsp11]; aci_norm
+          rw [acs_s8 0x137 (0x238 + i) (by omega) (by decide) (by omega),
+            acs_s8 0x136 (0x238 + i) (by omega) (by decide) (by omega), m11,
+            mem10 _ (sep_offsets B (by omega) (by omega) (by omega)),
+            copyBytes_sep (dst := acSlot B 0x139) (n := 0xFF) (sep_offsets B (by omega) (by omega) (by omega))
+              (Nat.le_refl _), P9 i hi, m5]
       have e14m : n14.mem = n13.mem := s14.mem
       have e14r : ∀ q, reg n14 q = reg n13 q := s14.regs
       refine ⟨n14, T13.trans (.single e14), Or.inr ⟨aci_inv I ?_ ?_ ?_ ?_, Or.inr ⟨s14.pc, ?_⟩⟩⟩
@@ -850,10 +1007,10 @@ theorem acImage_stage : AcImageStage AcImageEnv := by
       · intro x hx; rw [e14m]; exact WW13 x hx
       simp only [AcImagePost, e14m, e14r]
       refine ⟨⟨_, Dd, aci_ge sv _ hb, ?_, sv, entry, cnt, segs, rfl, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-        ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+        ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · rw [r2713]; exact (BitVec.ofNat_toNat 32 sv).symm
-      · exact aci_outok res4 hl16 fun i hi => by
-          rw [aci_ad]; exact L13 _ (aci_ptL (by omega) (by omega) (by omega))
+      · exact ⟨aci_outok res4 hl16 fun i hi => by
+          rw [aci_ad]; exact L13 _ (aci_ptL (by omega) (by omega) (by omega)), acs_imgW_cnt hi, hp0, hkind⟩
       · rw [r13, k11 9 (by decide), r910]
       · exact g13 20 (by decide)
       · rw [r13, k11 21 (by decide), k10 21 (by decide), k9 21 (by decide), s8.regs, k7 21 (by decide), r215,
@@ -892,6 +1049,8 @@ theorem acImage_stage : AcImageStage AcImageEnv := by
         rw [Q13 i hi, mem10 (acSlot B 0x139 + BitVec.ofNat 32 i)
           (by rw [aci_ad]; exact sep_offsets B (by omega) (by omega) (by omega)), aci_cp hi (by decide),
           L13 _ hp, W9 _ hp, W8 _ hp, W7 _ hp, m5]
+      · intro i hi
+        rw [P13 i hi, L13 _ (aci_ptL (by omega) (by omega) (.inr (by omega)))]
       · intro x h1 h2 h3
         exact WW13 x ⟨by rw [add_ofNat_zero]; exact h1, h2, h3⟩
 
