@@ -1600,7 +1600,7 @@ class Gen:
         self.frame_after(k, [], {})
         return k
 
-    def gt(self, off, oc, p, nl, inp, ha2):
+    def gt(self, off, oc, p, nl, inp, ha2, at=0x28A0, exit_lemma="sv_fail_2c60"):
         """`time::generalized_time` on the `nl` bytes at `p`, split on its answer:
         `None` reads the error flag at `oc + 0x60 - 0x60` with `lbu`, `beqz` not
         taken, `lbu s0`, and `j` to 0x2C60. Returns (k, the time's name)."""
@@ -1620,22 +1620,23 @@ class Gen:
         self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
         self.emit(f"  rcases r{k} with _ | {tt}")
         self.sc.append(("eq", ex, f"some {tt}", [tt], f"hr{k}"))
-        self.fork(lambda sub: sub.gt_none(k, oc))
+        self.fork(lambda sub: sub.gt_none(k, oc, at, exit_lemma))
         self.emit(f"  obtain ⟨-, y0_{k}, y8_{k}, y12_{k}⟩ := Ok{k} {tt} hr{k}")
         self.frame_after(k, [(oc, 16)], {oc + 8: (f"BitVec.ofNat 32 ({tt} % 2 ^ 32)", f"y8_{k}"),
                                          oc + 12: (f"BitVec.ofNat 32 ({tt} / 2 ^ 32)", f"y12_{k}")},
                          {oc: ("(0 : BitVec 8)", f"y0_{k}")})
         return k, tt
 
-    def gt_none(self, k, oc):
-        """`gt`'s failing case at 0x28A0."""
+    def gt_none(self, k, oc, at, exit_lemma):
+        """`gt`'s failing case: `lbu` of the flag at `at`, `beqz` not taken,
+        `lbu s0`, and `j`."""
         self.emit(f"  obtain ⟨y0_{k}, y1_{k}⟩ := Er{k} hr{k}")
         self.frame_after(k, [(oc, 16)], {}, {oc: ("(1 : BitVec 8)", f"y0_{k}"), oc + 1: ("(0x19 : BitVec 8)", f"y1_{k}")})
-        self.load(0x28A0, "lbu")
-        self.branch(0x28A4, False, f"by rw [g{self.k}_10, s{self.k}.zero]; decide")
-        self.load(0x28A6, "lbu")
-        self.jump(0x28AA)
-        self.fail(self.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
+        self.load(at, "lbu")
+        self.branch(at + 4, False, f"by rw [g{self.k}_10, s{self.k}.zero]; decide")
+        self.load(at + 6, "lbu")
+        self.jump(at + 0xA)
+        self.fail(self.fail_proof(("eq", f"hr{k}")), exit_lemma)
 
     def ds32(self, off, oc, dc, fail_tail):
         """`der::scalar::<32>` on the reader at `dc`, with the result at `oc`,
@@ -6494,19 +6495,19 @@ def stage_tst2():
     return g, info
 
 
-def tst_opt_err(sub, k, dc, lbu_off, inverted):
+def tst_opt_err(sub, k, dc, lbu_off, inverted, err=(0x298E, "sv_fail_2c60")):
     """A malformed optional field: `lbu`, then the error byte at 0x421 and 0x2C60."""
     sub.emit(f"  rw [hr{k}] at R{k}")
     sub.emit(f"  obtain ⟨y0_{k}, -⟩ := R{k}")
     sub.frame_after(k, [(0x420, 0x18), (dc + 8, 8)], {}, {0x420: ("(1 : BitVec 8)", f"y0_{k}")})
     sub.load(lbu_off, "lbu")
     sub.branch(lbu_off + 4, not inverted, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
-    sub.load_any(0x298E)
-    sub.jump(0x2992)
-    sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
+    sub.load_any(err[0])
+    sub.jump(err[0] + 4)
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")), err[1])
 
 
-def tst_opt(g, off, dc, tag, present, lbu_off, inverted=False):
+def tst_opt(g, off, dc, tag, present, lbu_off, inverted=False, err=(0x298E, "sv_fail_2c60")):
     """`Der::optional` at `off` on the reader at `dc`, whose field is present
     or not as the stage's `hce` says; then `lbu` of the error flag at `lbu_off`
     and its branch, which `inverted` says is a `beqz` to continue rather than a
@@ -6519,7 +6520,7 @@ def tst_opt(g, off, dc, tag, present, lbu_off, inverted=False):
         g.emit(f"  rcases r{k} with _ | (er{k} | {t})")
         g.sc.append(("eq", ex, f"some (.ok {t})", [t], f"hr{k}"))
         g.fork(lambda sub: sub.emit(f"  exact absurd hr{k} hce"))
-        g.fork(lambda sub: tst_opt_err(sub, k, dc, lbu_off, inverted))
+        g.fork(lambda sub: tst_opt_err(sub, k, dc, lbu_off, inverted, err))
         g.emit(f"  rw [hr{k}] at R{k}")
         g.emit(f"  obtain ⟨y0_{k}, y4_{k}, y8_{k}, y12_{k}, y16_{k}, y20_{k}, d8_{k}, d12_{k}⟩ := R{k}")
         h = f"BitVec.ofNat 32 {t}.header"
@@ -9362,12 +9363,339 @@ def stage_trx():
     return g, info
 
 
+
+def t_rest_j(g, at, reg, hname):
+    """A `beqz` at `at` on the reader length in `reg`, which must be zero; when
+    it isn't, `j` at `at` + 2 to 0x14C (code 1)."""
+    rem = lean_val(g.regs[reg])
+
+    def fail(sub):
+        sub.branch(at, False, f"by rw [g{sub.k}_{reg}, s{sub.k}.zero]; exact br_beq_f {hname}")
+        sub.jump(at + 2)
+        sub.block(0x14C, 0x14E)
+        sub.jump(0x14E)
+        sub.fail(sub.fail_proof(("prop", hname)))
+    g.prop_check(f"{rem} = 0", hname, fail)
+    g.branch(at, True, f"by rw [g{g.k}_{reg}, s{g.k}.zero]; exact br_beq_t {hname}")
+
+
+TT_ERR = (0x12A2, "sv_fail")
+TT_BINDERS = T_BINDERS0.replace("tsp tsl", "rp rl")
+
+
+def tt_start(g, a0=False):
+    """The TSTInfo's reader at 0x25C holds (`rp`, `rl`)."""
+    params = start(g, t_regs0(), {0x264: "rp", 0x268: "rl"}, {("rp", "rl"): "rd_in"}) + ["(D0 : SvData M0)"]
+    if a0:
+        g.regs[10] = ("U", "(M0 rp).zeroExtend 32")
+        params.insert(0, "(g0_10 : reg n0 a0 = (M0 rp).zeroExtend 32)")
+    return params
+
+
+def stage_tt1():
+    """From 0x10A4: the TSTInfo sequence, its version, policy, and message
+    imprint."""
+    g = Gen("Tt1")
+    params = start(g, t_regs0(), {0x74: "tp", 0x78: "tl"}, {("tp", "tl"): "tst_in"}) + ["(D0 : SvData M0)"]
+    g.load(0x10A4, "lw")
+    g.store(0x10A6, "sw")
+    g.load(0x10AA, "lw")
+    g.block(0x10AC, 0x10AE)
+    for o in (0x10AE, 0x10B0, 0x10B2):
+        g.store(o, "sw")
+    g.block(0x10B4, 0x10BA)
+    k, t, rd = t_read(g, 0x10BA, 0x27C)
+    t_sub(g, 0x10D8, 0x25C, t)
+    g.load(0x10E0, "lw")
+    t_sub_stores(g, 0x10E4, 0x25C, t)
+    t_rest_j(g, 0x10EC, 10, "hrest0")
+    g.block(0x10F2, 0x10F6)
+    t_iis(g, 0x10F6, 0x25C, short=True)
+    g.block(0x110C, 0x1112)
+    k, op, ol = g.oid(0x1112, 0x420, 0x25C, t_oid_tail(0x111A))
+    g.load(0x111A, "lw")
+    g.branch(0x111E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({g.slices[(op, ol)]}.pos_ne)")
+    g.block(0x1122, 0x1128)
+    k, t, rd = t_read(g, 0x1128, 0x25C)
+    t_sub(g, 0x1146, 0x3E0, t)
+    t_sub_stores(g, 0x114E, 0x3E0, t)
+    g.block(0x1156, 0x1158)
+    t_issha(g, 0x1158, 0x3E0)
+    g.block(0x1172, 0x1178)
+
+    def oct_tail(sub):
+        sub.load(0x1180, "lw")
+        sub.branch(0x1184, True, f"by rw [g{sub.k}_27, s{sub.k}.zero]; rfl")
+        sub.load_any(0x12AA)
+        sub.jump(0x12AE)
+    k, vp, vl = g.oct(0x1178, 0x420, 0x3E0, oct_tail)
+    g.load(0x1180, "lw")
+    g.branch(0x1184, False, f"by rw [g{g.k}_27, s{g.k}.zero]; exact br_beq_f ({g.slices[(vp, vl)]}.pos_ne)")
+    g.load(0x1188, "lw")
+    g.block(0x118C, 0x118E)
+
+    def len_fail(sub):
+        sub.branch(0x118E, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_m32_t h32")
+        sub.fail(sub.fail_proof(("prop", "h32")))
+    g.prop_check(f"{vl} = 32", "h32", len_fail)
+    g.branch(0x118E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_m32_f h32")
+    g.load(0x1192, "lw")
+    t_rest_j(g, 0x1196, 10, "hrest1")
+    stmt, proof = finish(g, 0x119C, T_REGS, {0x264, 0x268}, set())
+    info = {"name": "sv_tt1", "title": "the TSTInfo's version, policy, and message imprint",
+            "doc": "From 0x10A4 to 0x119C: the encapsulated content is one `TSTInfo` sequence whose version is "
+            "`INTEGER 1`, whose policy is an OID, and whose message imprint is a SHA-256 algorithm identifier "
+            "and a 32-byte digest with nothing after them.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": T_BINDERS0.replace("tsp tsl", "tp tl"),
+            "start": 0x10A4, "import": "C3BootProofs.Proofs.SvGt"}
+    return g, info
+
+
+def stage_tt2():
+    """From 0x119C: the serial number and the generation time."""
+    g = Gen("Tt2")
+    params = tt_start(g)
+    g.block(0x119C, 0x11A2)
+    g.pinned |= {f"ipin{g.k + 1}", f"ilpos{g.k + 1}"}
+    k, rd = g.pos(0x11A2, 0x420, 0x25C, t_oid_tail(0x11AA))
+    inp = rd[2]
+    g.emit(f"  obtain ⟨ipin{k}, ilpos{k}⟩ := {inp}.posIntIn hr{k} hr{k}b")
+    g.load(0x11AA, "lw")
+    g.branch(0x11AE, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({inp}.serial_ne hr{k} hr{k}b)")
+    g.load(0x11B0, "lw")
+    g.branch(0x11B4, False, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_beq_f fun e => by rw [e] at ilpos{k}; "
+             f"exact absurd ilpos{k} (by decide)")
+    g.load_in(0x11B6, f"ipin{k}", f"ilpos{k}")
+    b0 = lean_val(g.regs[10])
+    g.block(0x11BA, 0x11BE, {10: (f"aluEval .sltu ({b0}) 1",
+                                  "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svTt211ba, upd, ↓reduceIte]; "
+                                  "rw [g{p}_10]")})
+    a0v = lean_val(g.regs[10])
+    a1v = lean_val(g.regs[11])
+    g.block(0x11BE, 0x11C0, {11: (f"({a1v}) - ({a0v})",
+                                  "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svTt211be, upd, ↓reduceIte]; "
+                                  "rw [g{p}_11, g{p}_10]; rfl")})
+    g.block(0x11C0, 0x11C2)
+    big = lean_val(g.regs[11])
+    le20 = "(by rw [show (BitVec.ofNat 32 0x14).toNat = 20 from rfl]; omega)"
+
+    def fail_long(sub):
+        sub.branch(0x11C2, True, f"by rw [g{sub.k}_10, g{sub.k}_11]; exact br_bltu_t {le20}")
+        sub.fail(sub.fail_proof(("prop", "hser")))
+    g.prop_check(f"({big}).toNat ≤ 20", "hser", fail_long)
+    g.branch(0x11C2, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bltu_f {le20}")
+    g.block(0x11C6, 0x11CE)
+    k, ex, rd = g.elem(0x11CE, 0x420, 0x25C, 0x18)
+
+    def gt_elem_tail(sub):
+        sub.load(0x11D6, "lw")
+        sub.branch(0x11DA, True, f"by rw [g{sub.k}_11, s{sub.k}.zero]; rfl")
+        sub.load_any(0x12AA)
+        sub.jump(0x12AE)
+    t = g.elem_split(k, ex, 0x420, 0x25C, rd, gt_elem_tail)
+    g.load(0x11D6, "lw")
+    g.branch(0x11DA, False, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_beq_f ({rd[2]}.ok_ne hr{k})")
+    g.load(0x11DC, "lw")
+    g.block(0x11E0, 0x11E4)
+    cp = f"({rd[0]}) + BitVec.ofNat 32 {t}.header"
+    cl = f"BitVec.ofNat 32 {t}.len"
+    g.gt(0x11E4, 0x400, cp, f"({cl}).toNat", g.slices[(cp, cl)], f"(by rw [g{g.k}_12, ofNat_toNat_self])",
+         0x11EC, "sv_fail")
+    g.load(0x11EC, "lbu")
+    g.branch(0x11F0, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.load(0x11FA, "lw")
+    g.store(0x11FE, "sw")
+    g.load(0x1200, "lw")
+    g.store(0x1204, "sw")
+    stmt, proof = finish(g, 0x1206, T_REGS, {0x264, 0x268, 0x3C, 0x7C}, set())
+    info = {"name": "sv_tt2", "title": "the TSTInfo's serial number and time",
+            "doc": "From 0x119C to 0x1206: the TSTInfo's serial number is a positive integer of at most 20 "
+            "bytes, not counting a leading zero, and its `genTime` is a `GeneralizedTime`, whose seconds "
+            "go to the words at offsets 0x3C and 0x7C.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": TT_BINDERS, "start": 0x119C,
+            "import": "C3BootProofs.Proofs.SvGt"}
+    return g, info
+
+
+def tt_opt_info(name, present, title, doc, params, stmt, proof, start_):
+    return {"name": name, "title": title + ("" if present else ", absent"), "doc": doc, "params": params,
+            "stmt": stmt, "proof": proof, "binders": TT_BINDERS, "start": start_,
+            "import": "C3BootProofs.Proofs.SvGt"}
+
+
+def stage_tt3(present):
+    """From 0x1206 to 0x121E: the optional accuracy."""
+    g = Gen("Tt3" + ("s" if present else "n"))
+    params = tt_start(g)
+    params.append(f"(hce : derOptRes 0x30 (memBytes M0 (rp) (rl).toNat) {'≠' if present else '='} none)")
+    g.block(0x1206, 0x1210)
+    tst_opt(g, 0x1210, 0x25C, 0x30, present, 0x1218, err=TT_ERR)
+    stmt, proof = finish(g, 0x121E, T_REGS, {0x264, 0x268}, set())
+    return g, tt_opt_info("sv_tt3" + ("s" if present else "n"), present, "the TSTInfo's accuracy",
+                          "From 0x1206 to 0x121E: the TSTInfo's optional `accuracy` sequence is "
+                          + ("present and well formed." if present else "absent."), params, stmt, proof, 0x1206)
+
+
+TT4_DOC = {
+    "e0": (0x121E, 0x1272, "the TSTInfo ends after its accuracy", "nothing follows the accuracy."),
+    "o": (0x121E, 0x124A, "the TSTInfo's ordering", "the next field is a `BOOLEAN` `ordering`, which is TRUE."),
+    "x0": (0x121E, 0x1258, "the TSTInfo's next field", "the next field isn't a `BOOLEAN`; its tag goes to `a0`."),
+    "e1": (0x124A, 0x1272, "the TSTInfo ends after its ordering", "nothing follows the ordering."),
+    "x1": (0x124A, 0x1258, "the TSTInfo's field after ordering", "a field follows the ordering; its tag goes to `a0`."),
+    "nn": (0x1258, 0x1272, "no nonce", "the next field isn't an `INTEGER` nonce."),
+    "ns": (0x1258, 0x1272, "the TSTInfo's nonce", "the next field is an `INTEGER` nonce."),
+}
+
+
+def tt4_bool(g):
+    """From 0x122C: the tag is 1, and `Der::boolean` at 0x1234 reads TRUE."""
+    g.block(0x122C, 0x122E)
+    g.branch(0x122E, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bne_byte_f (by decide) hb1")
+    g.block(0x1232, 0x1234)
+    kb, ex, rd = g.boolt(0x1234, 0x25C)
+    g.emit(f"  obtain ⟨r{kb}, hr{kb}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{kb} with eb{kb} | ⟨⟩")
+    g.sc.append(("eq", ex, ".ok ()", [], f"hr{kb}"))
+
+    def bad_bool(sub):
+        sub.emit(f"  have g{kb}_10 : reg n{kb} a0 = (derErrByte eb{kb}).zeroExtend 32 := by rw [a0_{kb}, hr{kb}]; rfl")
+        sub.regs[10] = ("U", f"(derErrByte eb{kb}).zeroExtend 32")
+        sub.frame_after(kb, [(0x264, 8)], {})
+        sub.block(0x123C, 0x123E)
+        sub.block(0x123E, 0x1242)
+        sub.block(0x1242, 0x1246)
+        sub.branch(0x1246, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t (derErr_ff_ne eb{kb})")
+        sub.fail(sub.fail_proof(("eq", f"hr{kb}")))
+    g.fork(bad_bool)
+    g.emit(f"  have g{kb}_10 : reg n{kb} a0 = BitVec.ofNat 32 0xFFFFFFFF := by rw [a0_{kb}, hr{kb}]; rfl")
+    g.regs[10] = ("C", 0xFFFFFFFF)
+    rp, rl, inp = rd
+    tb = f"tb{kb}"
+    g.emit(f"  obtain ⟨{tb}, htb{kb}⟩ := bool_ok_elem hr{kb}")
+    L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
+    g.sc.append(("eq", f"derElement 1 {L}", f".ok {tb}", [tb], f"htb{kb}"))
+    g.emit(f"  obtain ⟨d8_{kb}, d12_{kb}⟩ := A{kb} {tb} htb{kb}")
+    hl = f"BitVec.ofNat 32 ({tb}.header + {tb}.len)"
+    g.frame_after(kb, [(0x264, 8)], {0x264: (f"({rp}) + {hl}", f"d8_{kb}"), 0x268: (f"({rl}) - {hl}", f"d12_{kb}")})
+    g.slices[(f"({rp}) + {hl}", f"({rl}) - {hl}")] = f"({inp}.restW htb{kb})"
+    g.block(0x123C, 0x1246)
+    g.branch(0x1246, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+
+
+def tt4_nonce(g):
+    """From 0x125E: `Der::integer` at 0x1264, which must succeed."""
+    g.block(0x125E, 0x1264)
+    ki, ex, rd = g.intc(0x1264, 0x420, 0x25C)
+    g.emit(f"  obtain ⟨r{ki}, hr{ki}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{ki} with ei{ki} | ⟨ip{ki}, il{ki}⟩")
+    g.sc.append(("eq", ex, f".ok (ip{ki}, il{ki})", [f"ip{ki}", f"il{ki}"], f"hr{ki}"))
+
+    def bad_int(sub):
+        sub.emit(f"  obtain ⟨z{ki}, -⟩ := Er{ki} ei{ki} hr{ki}")
+        sub.frame_after(ki, [(0x420, 8), (0x264, 8)], {0x420: ("0", f"z{ki}")})
+        sub.load(0x126C, "lw")
+        sub.branch(0x1270, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl")
+        sub.load_any(0x12AA)
+        sub.jump(0x12AE)
+        sub.fail(sub.fail_proof(("eq", f"hr{ki}")))
+    g.fork(bad_int)
+    rp, rl, inp = rd
+    g.emit(f"  obtain ⟨ti{ki}, hti{ki}⟩ := int_ok_elem hr{ki}")
+    L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
+    g.sc.append(("eq", f"derElement 2 {L}", f".ok ti{ki}", [f"ti{ki}"], f"hti{ki}"))
+    g.emit(f"  obtain ⟨p0_{ki}, p4_{ki}⟩ := Ok{ki} ip{ki} il{ki} hr{ki}")
+    g.emit(f"  obtain ⟨d8_{ki}, d12_{ki}⟩ := A{ki} ti{ki} hti{ki}")
+    hl = f"BitVec.ofNat 32 (ti{ki}.header + ti{ki}.len)"
+    g.frame_after(ki, [(0x420, 8), (0x264, 8)],
+                  {0x420: (f"ip{ki}", f"p0_{ki}"), 0x424: (f"il{ki}", f"p4_{ki}"),
+                   0x264: (f"({rp}) + {hl}", f"d8_{ki}"), 0x268: (f"({rl}) - {hl}", f"d12_{ki}")})
+    g.slices[(f"({rp}) + {hl}", f"({rl}) - {hl}")] = f"({inp}.restW hti{ki})"
+    g.load(0x126C, "lw")
+    g.branch(0x1270, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({inp}.int_ne hr{ki})")
+
+
+def stage_tt4(kind):
+    """The TSTInfo's optional `ordering` and `nonce`, in pieces that end where
+    the code's paths meet."""
+    g = Gen("Tt4" + kind)
+    start_, end, title, what = TT4_DOC[kind]
+    params = tt_start(g, kind in ("nn", "ns"))
+    at = start_
+    if kind in ("e0", "e1"):
+        params.append("(hrl : rl = 0)")
+        g.load(at, "lw")
+        g.branch(at + 4, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hrl")
+    elif kind in ("o", "x0", "x1"):
+        params.append("(hrl : rl ≠ 0)")
+        if kind != "x1":
+            params.append(f"(hb1 : M0 rp {'=' if kind == 'o' else '≠'} BitVec.ofNat 8 1)")
+        g.load(at, "lw")
+        g.branch(at + 4, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hrl")
+        g.load(at + 6, "lw")
+        g.load_in(at + 0xA, "rd_in", "(toNat_pos_of_ne hrl)")
+        if kind == "o":
+            tt4_bool(g)
+        elif kind == "x0":
+            g.block(0x122C, 0x122E)
+            g.branch(0x122E, True, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bne_byte_t (by decide) hb1")
+    else:
+        params.append("(hrl : rl ≠ 0)")
+        params.append(f"(hb2 : M0 rp {'≠' if kind == 'nn' else '='} BitVec.ofNat 8 2)")
+        g.block(0x1258, 0x125A)
+        if kind == "nn":
+            g.branch(0x125A, True, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bne_byte_t (by decide) hb2")
+        else:
+            g.branch(0x125A, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bne_byte_f (by decide) hb2")
+            tt4_nonce(g)
+    keep_regs = T_REGS + ([10] if end == 0x1258 else [])
+    stmt, proof = finish(g, end, sorted(keep_regs), {0x264, 0x268}, set())
+    info = {"name": "sv_tt4" + kind, "title": title, "doc": f"From 0x{start_:X} to 0x{end:X}: {what}",
+            "params": params, "stmt": stmt, "proof": proof, "binders": TT_BINDERS, "start": start_,
+            "import": "C3BootProofs.Proofs.SvGt"}
+    return g, info
+
+
+def stage_tt5(tag, present):
+    """From 0x1272: the optional `[0]` TSA name (to 0x128A), or from 0x128A the
+    optional `[1]` extensions and the TSTInfo's end (to 0x12BE)."""
+    g = Gen(f"Tt{5 if tag == 0xA0 else 6}" + ("s" if present else "n"))
+    params = tt_start(g)
+    params.append(f"(hce : derOptRes 0x{tag:X} (memBytes M0 (rp) (rl).toNat) {'≠' if present else '='} none)")
+    if tag == 0xA0:
+        g.block(0x1272, 0x127C)
+        tst_opt(g, 0x127C, 0x25C, 0xA0, present, 0x1284, err=TT_ERR)
+        start_, end = 0x1272, 0x128A
+    else:
+        g.block(0x128A, 0x1294)
+        tst_opt(g, 0x1294, 0x25C, 0xA1, present, 0x129C, inverted=True, err=TT_ERR)
+        g.load(0x12B2, "lw")
+        rem = lean_val(g.regs[10])
+
+        def trailing(sub):
+            sub.branch(0x12B6, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_f hend")
+            sub.block(0x12B8, 0x12BA)
+            sub.jump(0x12BA)
+            sub.fail(sub.fail_proof(("prop", "hend")))
+        g.prop_check(f"{rem} = 0", "hend", trailing)
+        g.branch(0x12B6, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hend")
+        start_, end = 0x128A, 0x12BE
+    stmt, proof = finish(g, end, T_REGS, {0x264, 0x268}, set())
+    if tag == 0xA0:
+        title, doc = "the TSTInfo's TSA name", "the TSTInfo's optional `[0]` TSA name is " + (
+            "present and well formed." if present else "absent.")
+    else:
+        title, doc = "the TSTInfo's extensions", "the TSTInfo's optional `[1]` extensions are " + (
+            "present and well formed" if present else "absent") + ", and nothing follows."
+    return g, tt_opt_info(f"sv_tt{5 if tag == 0xA0 else 6}" + ("s" if present else "n"), present, title,
+                          f"From 0x{start_:X} to 0x{end:X}: {doc}", params, stmt, proof, start_)
+
+
 def stages():
     return {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c, "X2t": stage_x2t,
                 **{f"Dp{i}": stage_dpol(i) for i in range(6)}, "Dbc1": stage_dbc1, "Dbc2e": stage_dbc2e, "Dbc2": stage_dbc2, "Dku1": stage_dku1, "Dku2": stage_dku2,
                 "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3,
                 "L7": stage_l7, "L8a": stage_l8a,
-                "Tr1": stage_tr1, "Tr2": stage_tr2, "Tr3": stage_tr3, "Tr4": stage_tr4, "Tr6": stage_tr6, "Tr7": stage_tr7, "Tra": stage_tra, "Trvct": lambda: stage_trv("ct"), "Trvmd": lambda: stage_trv("md"), "Trvother": lambda: stage_trv("other"), "Trl": stage_trl, "Trx": stage_trx, "Tr5s": lambda: stage_tr5(True), "Tr5n": lambda: stage_tr5(False), "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv, "Ts1": stage_ts1, "Tsa1": stage_tsa1, "Tsa2": stage_tsa2, "Tsa3": stage_tsa3,
+                "Tr1": stage_tr1, "Tr2": stage_tr2, "Tr3": stage_tr3, "Tr4": stage_tr4, "Tr6": stage_tr6, "Tr7": stage_tr7, "Tra": stage_tra, "Trvct": lambda: stage_trv("ct"), "Trvmd": lambda: stage_trv("md"), "Trvother": lambda: stage_trv("other"), "Trl": stage_trl, "Trx": stage_trx, "Tt1": stage_tt1, "Tt2": stage_tt2, "Tt3s": lambda: stage_tt3(True), "Tt3n": lambda: stage_tt3(False), **{f"Tt4{k}": (lambda k=k: stage_tt4(k)) for k in TT4_DOC}, "Tt5s": lambda: stage_tt5(0xA0, True), "Tt5n": lambda: stage_tt5(0xA0, False), "Tt6s": lambda: stage_tt5(0xA1, True), "Tt6n": lambda: stage_tt5(0xA1, False), "Tr5s": lambda: stage_tr5(True), "Tr5n": lambda: stage_tr5(False), "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv, "Ts1": stage_ts1, "Tsa1": stage_tsa1, "Tsa2": stage_tsa2, "Tsa3": stage_tsa3,
                 "Tsa4n": lambda: stage_tsa4(False), "Tsa4s": lambda: stage_tsa4(True), "Tsa5": stage_tsa5, "Tsaa": stage_tsaa,
                 **{f"Tsav{x}": (lambda x=x: stage_tsav(x)) for x in ("ct", "md", "other")},
                 "Tsal": stage_tsal, "Tsax": stage_tsax, "Tst1": stage_tst1, "Tst2": stage_tst2,
