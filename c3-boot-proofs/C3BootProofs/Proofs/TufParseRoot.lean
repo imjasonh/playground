@@ -1,0 +1,524 @@
+import C3BootProofs.Proofs.TufParseMetadataHead
+import C3BootProofs.Proofs.JsonU64
+import C3BootProofs.Proofs.AllAsciiDigit
+
+/-!
+# `tuf::parse_root`, as compiled
+
+`parse_root(doc)` runs `parse_metadata(doc, "root")`, reads the `version`
+member of `signed` with `field` and `u64`, and rejects version 0. The
+compiler passes the document's slice in `a1` and `a2` and the result's
+address in `a0`. A `Result<Root, TufError>` keeps the `signed` and
+`signatures` slices in its first 16 bytes and the version's low and high
+words at `out + 0x10` and `out + 0x14`. An error keeps the zero word at
+`out` and the error byte at `out + 4`.
+
+The function saves seven registers in a 64-byte frame, and
+`parse_metadata` uses 532 more bytes below it, so the stack region is the
+596 bytes below `sp`. `prModel` gives the result on the document's bytes,
+and `tufParseRoot_correct` is the machine-level contract.
+-/
+
+namespace C3.Json
+
+/-- `tuf::parse_root` on the document `d`: the positions in `d` of `signed`
+and `signatures`, and the version, or the error byte (`0x21` for a missing,
+malformed, or zero `version`). -/
+def prModel (d : Bytes) : Except Nat (Nat × Nat × Nat × Nat × Nat) :=
+  match pmModel d (ascii!"root") with
+  | .error e => .error e
+  | .ok (gp, gl, sp, sl) =>
+    match objField (slice d gp gl) (ascii!"version") with
+    | .error e => .error e
+    | .ok (vp, vl) =>
+      match u64Val (slice (slice d gp gl) vp vl) with
+      | none => .error 0x21
+      | some v => if v = 0 then .error 0x21 else .ok (gp, gl, sp, sl, v)
+
+/-- The values `pmObj` returns lie inside the object. -/
+theorem pmObj_bnd {t kind : Bytes} {a b c e : Nat} (h : pmObj t kind = .ok (a, b, c, e)) :
+    a + b ≤ t.length ∧ c + e ≤ t.length := by
+  unfold pmObj pmMembers at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  · cases h
+  rename_i h1
+  unfold pmTwo at h
+  split at h
+  · cases h
+  · cases h
+  rename_i h2
+  split at h
+  · unfold pmThen at h
+    split at h
+    · cases h
+    · cases h
+      exact ⟨(nextMember_lt h2).2.2.2.2.2, (nextMember_lt h1).2.2.2.2.2⟩
+  · cases h
+
+/-- The values `pmModel` returns lie inside the document. -/
+theorem pmModel_bnd {d kind : Bytes} {a b c e : Nat} (h : pmModel d kind = .ok (a, b, c, e)) :
+    a + b ≤ d.length ∧ c + e ≤ d.length := by
+  unfold pmModel at h
+  split at h
+  · cases h
+  rename_i tp tl hp
+  obtain ⟨rfl, rfl⟩ := parseModel_ok_canon hp
+  split at h
+  · cases h
+  rename_i a' b' c' e' ho
+  cases h
+  have hs : slice d 0 d.length = d := by
+    show (d.drop 0).take d.length = d
+    rw [List.drop_zero, List.take_length]
+  rw [hs] at ho
+  have := pmObj_bnd ho
+  exact ⟨by omega, by omega⟩
+
+end C3.Json
+
+namespace C3.RV32
+
+open C3.Image C3.Json
+
+set_option maxRecDepth 20000
+
+abbrev TPR : Word := BitVec.ofNat 32 tufParseRootAddress
+abbrev TPR_JU : Word := BitVec.ofNat 32 jsonU64Address
+abbrev TPR_KR : Word := BitVec.ofNat 32 tufRootKindAddress
+abbrev TPR_KV : Word := BitVec.ofNat 32 tufVersionKeyAddress
+
+theorem pr_at_0 : fetchRel tufParseRootCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFC0, 2) := by decide
+theorem pr_at_2 : fetchRel tufParseRootCode 0x2 = some (.store .sw sp ra 0x3C, 2) := by decide
+theorem pr_at_4 : fetchRel tufParseRootCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x38, 2) := by decide
+theorem pr_at_6 : fetchRel tufParseRootCode 0x6 = some (.store .sw sp (9 : Fin 32) 0x34, 2) := by decide
+theorem pr_at_8 : fetchRel tufParseRootCode 0x8 = some (.store .sw sp (18 : Fin 32) 0x30, 2) := by decide
+theorem pr_at_a : fetchRel tufParseRootCode 0xA = some (.store .sw sp (19 : Fin 32) 0x2C, 2) := by decide
+theorem pr_at_c : fetchRel tufParseRootCode 0xC = some (.store .sw sp (20 : Fin 32) 0x28, 2) := by decide
+theorem pr_at_e : fetchRel tufParseRootCode 0xE = some (.store .sw sp (21 : Fin 32) 0x24, 2) := by decide
+theorem pr_at_10 : fetchRel tufParseRootCode 0x10 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
+theorem pr_at_12 : fetchRel tufParseRootCode 0x12 = some (.lui a3 0x3FCC4000, 4) := by decide
+theorem pr_at_16 : fetchRel tufParseRootCode 0x16 = some (.aluImm .add a3 a3 0x76E, 4) := by decide
+theorem pr_at_1a : fetchRel tufParseRootCode 0x1A = some (.aluImm .add a0 sp 0x8, 2) := by decide
+theorem pr_at_1c : fetchRel tufParseRootCode 0x1C = some (.aluImm .add a4 x0 0x4, 2) := by decide
+theorem pr_at_1e : fetchRel tufParseRootCode 0x1E = some (.auipc ra 0x0, 4) := by decide
+theorem pr_at_22 : fetchRel tufParseRootCode 0x22 = some (.jalr ra ra 0xC4, 4) := by decide
+theorem pr_at_26 : fetchRel tufParseRootCode 0x26 = some (.load .lw (9 : Fin 32) sp 0x8, 2) := by decide
+theorem pr_at_28 : fetchRel tufParseRootCode 0x28 = some (.load .lbu (18 : Fin 32) sp 0xC, 4) := by decide
+theorem pr_at_2c : fetchRel tufParseRootCode 0x2C = some (.branch .beq (9 : Fin 32) x0 0x56, 2) := by decide
+theorem pr_at_2e : fetchRel tufParseRootCode 0x2E = some (.load .lbu a0 sp 0xE, 4) := by decide
+theorem pr_at_32 : fetchRel tufParseRootCode 0x32 = some (.load .lbu a1 sp 0xD, 4) := by decide
+theorem pr_at_36 : fetchRel tufParseRootCode 0x36 = some (.load .lbu a2 sp 0xF, 4) := by decide
+theorem pr_at_3a : fetchRel tufParseRootCode 0x3A = some (.load .lw (19 : Fin 32) sp 0x10, 2) := by decide
+theorem pr_at_3c : fetchRel tufParseRootCode 0x3C = some (.aluImm .sll a0 a0 0x8, 2) := by decide
+theorem pr_at_3e : fetchRel tufParseRootCode 0x3E = some (.alu .or a0 a0 a1, 2) := by decide
+theorem pr_at_40 : fetchRel tufParseRootCode 0x40 = some (.aluImm .sll a2 a2 0x10, 2) := by decide
+theorem pr_at_42 : fetchRel tufParseRootCode 0x42 = some (.load .lw (20 : Fin 32) sp 0x14, 2) := by decide
+theorem pr_at_44 : fetchRel tufParseRootCode 0x44 = some (.alu .or (21 : Fin 32) a0 a2, 4) := by decide
+theorem pr_at_48 : fetchRel tufParseRootCode 0x48 = some (.aluImm .sll a0 (21 : Fin 32) 0x8, 4) := by decide
+theorem pr_at_4c : fetchRel tufParseRootCode 0x4C = some (.alu .or a2 a0 (18 : Fin 32), 4) := by decide
+theorem pr_at_50 : fetchRel tufParseRootCode 0x50 = some (.lui a3 0x3FCC5000, 4) := by decide
+theorem pr_at_54 : fetchRel tufParseRootCode 0x54 = some (.aluImm .add a3 a3 0xFFFFF8A1, 4) := by decide
+theorem pr_at_58 : fetchRel tufParseRootCode 0x58 = some (.aluImm .add a0 sp 0x1C, 2) := by decide
+theorem pr_at_5a : fetchRel tufParseRootCode 0x5A = some (.aluImm .add a4 x0 0x7, 2) := by decide
+theorem pr_at_5c : fetchRel tufParseRootCode 0x5C = some (.alu .add a1 x0 (9 : Fin 32), 2) := by decide
+theorem pr_at_5e : fetchRel tufParseRootCode 0x5E = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem pr_at_62 : fetchRel tufParseRootCode 0x62 = some (.jalr ra ra 0xFFFFFDDA, 4) := by decide
+theorem pr_at_66 : fetchRel tufParseRootCode 0x66 = some (.load .lw a1 sp 0x1C, 2) := by decide
+theorem pr_at_68 : fetchRel tufParseRootCode 0x68 = some (.branch .beq a1 x0 0x24, 2) := by decide
+theorem pr_at_6a : fetchRel tufParseRootCode 0x6A = some (.load .lw a2 sp 0x20, 2) := by decide
+theorem pr_at_6c : fetchRel tufParseRootCode 0x6C = some (.aluImm .add a0 sp 0x8, 2) := by decide
+theorem pr_at_6e : fetchRel tufParseRootCode 0x6E = some (.auipc ra 0xFFFFF000, 4) := by decide
+theorem pr_at_72 : fetchRel tufParseRootCode 0x72 = some (.jalr ra ra 0xFFFFF98C, 4) := by decide
+theorem pr_at_76 : fetchRel tufParseRootCode 0x76 = some (.load .lbu a0 sp 0x8, 4) := by decide
+theorem pr_at_7a : fetchRel tufParseRootCode 0x7A = some (.branch .beq a0 x0 0x18, 2) := by decide
+theorem pr_at_7c : fetchRel tufParseRootCode 0x7C = some (.load .lbu a0 sp 0x9, 4) := by decide
+theorem pr_at_80 : fetchRel tufParseRootCode 0x80 = some (.jal x0 0x48, 2) := by decide
+theorem pr_at_82 : fetchRel tufParseRootCode 0x82 = some (.store .sw (8 : Fin 32) x0 0x0, 4) := by decide
+theorem pr_at_86 : fetchRel tufParseRootCode 0x86 = some (.store .sb (8 : Fin 32) (18 : Fin 32) 0x4, 4) := by decide
+theorem pr_at_8a : fetchRel tufParseRootCode 0x8A = some (.jal x0 0x46, 2) := by decide
+theorem pr_at_8c : fetchRel tufParseRootCode 0x8C = some (.load .lbu a0 sp 0x20, 4) := by decide
+theorem pr_at_90 : fetchRel tufParseRootCode 0x90 = some (.jal x0 0x38, 2) := by decide
+theorem pr_at_92 : fetchRel tufParseRootCode 0x92 = some (.load .lw a0 sp 0x10, 2) := by decide
+theorem pr_at_94 : fetchRel tufParseRootCode 0x94 = some (.load .lw a1 sp 0x14, 2) := by decide
+theorem pr_at_96 : fetchRel tufParseRootCode 0x96 = some (.alu .or a2 a0 a1, 4) := by decide
+theorem pr_at_9a : fetchRel tufParseRootCode 0x9A = some (.branch .beq a2 x0 0x2A, 2) := by decide
+theorem pr_at_9c : fetchRel tufParseRootCode 0x9C = some (.aluImm .srl a2 (21 : Fin 32) 0x8, 4) := by decide
+theorem pr_at_a0 : fetchRel tufParseRootCode 0xA0 = some (.aluImm .srl a3 (21 : Fin 32) 0x10, 4) := by decide
+theorem pr_at_a4 : fetchRel tufParseRootCode 0xA4 = some (.store .sw (8 : Fin 32) (9 : Fin 32) 0x0, 2) := by decide
+theorem pr_at_a6 : fetchRel tufParseRootCode 0xA6 = some (.store .sb (8 : Fin 32) (18 : Fin 32) 0x4, 4) := by decide
+theorem pr_at_aa : fetchRel tufParseRootCode 0xAA = some (.store .sb (8 : Fin 32) (21 : Fin 32) 0x5, 4) := by decide
+theorem pr_at_ae : fetchRel tufParseRootCode 0xAE = some (.store .sb (8 : Fin 32) a2 0x6, 4) := by decide
+theorem pr_at_b2 : fetchRel tufParseRootCode 0xB2 = some (.store .sb (8 : Fin 32) a3 0x7, 4) := by decide
+theorem pr_at_b6 : fetchRel tufParseRootCode 0xB6 = some (.store .sw (8 : Fin 32) (19 : Fin 32) 0x8, 4) := by decide
+theorem pr_at_ba : fetchRel tufParseRootCode 0xBA = some (.store .sw (8 : Fin 32) (20 : Fin 32) 0xC, 4) := by decide
+theorem pr_at_be : fetchRel tufParseRootCode 0xBE = some (.store .sw (8 : Fin 32) a0 0x10, 2) := by decide
+theorem pr_at_c0 : fetchRel tufParseRootCode 0xC0 = some (.store .sw (8 : Fin 32) a1 0x14, 2) := by decide
+theorem pr_at_c2 : fetchRel tufParseRootCode 0xC2 = some (.jal x0 0xE, 2) := by decide
+theorem pr_at_c4 : fetchRel tufParseRootCode 0xC4 = some (.aluImm .add a0 x0 0x21, 4) := by decide
+theorem pr_at_c8 : fetchRel tufParseRootCode 0xC8 = some (.store .sw (8 : Fin 32) x0 0x0, 4) := by decide
+theorem pr_at_cc : fetchRel tufParseRootCode 0xCC = some (.store .sb (8 : Fin 32) a0 0x4, 4) := by decide
+theorem pr_at_d0 : fetchRel tufParseRootCode 0xD0 = some (.load .lw ra sp 0x3C, 2) := by decide
+theorem pr_at_d2 : fetchRel tufParseRootCode 0xD2 = some (.load .lw (8 : Fin 32) sp 0x38, 2) := by decide
+theorem pr_at_d4 : fetchRel tufParseRootCode 0xD4 = some (.load .lw (9 : Fin 32) sp 0x34, 2) := by decide
+theorem pr_at_d6 : fetchRel tufParseRootCode 0xD6 = some (.load .lw (18 : Fin 32) sp 0x30, 2) := by decide
+theorem pr_at_d8 : fetchRel tufParseRootCode 0xD8 = some (.load .lw (19 : Fin 32) sp 0x2C, 2) := by decide
+theorem pr_at_da : fetchRel tufParseRootCode 0xDA = some (.load .lw (20 : Fin 32) sp 0x28, 2) := by decide
+theorem pr_at_dc : fetchRel tufParseRootCode 0xDC = some (.load .lw (21 : Fin 32) sp 0x24, 2) := by decide
+theorem pr_at_de : fetchRel tufParseRootCode 0xDE = some (.aluImm .add sp sp 0x40, 2) := by decide
+theorem pr_at_e0 : fetchRel tufParseRootCode 0xE0 = some (.jalr x0 ra 0x0, 2) := by decide
+
+/-! The bytes of the `signed` slice's length, which the function loads one
+at a time and stores back one at a time. -/
+
+theorem pr_s5 (b13 b14 b15 : BitVec 8) :
+    ((b14.zeroExtend 32 <<< 8 ||| b13.zeroExtend 32) ||| b15.zeroExtend 32 <<< 16 : Word) =
+      0#8 ++ b15 ++ b14 ++ b13 := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_or, BitVec.getLsbD_append, BitVec.getLsbD_shiftLeft, BitVec.getLsbD_setWidth,
+    BitVec.getLsbD_zero]
+  iterate 32 (rcases i with _ | i; · simp)
+  omega
+
+theorem pr_w (b12 b13 b14 b15 : BitVec 8) :
+    ((0#8 ++ b15 ++ b14 ++ b13) <<< 8 ||| b12.zeroExtend 32 : Word) = b15 ++ b14 ++ b13 ++ b12 := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_or, BitVec.getLsbD_append, BitVec.getLsbD_shiftLeft, BitVec.getLsbD_setWidth,
+    BitVec.getLsbD_zero]
+  iterate 32 (rcases i with _ | i; · simp)
+  omega
+
+theorem pr_e0 (b13 b14 b15 : BitVec 8) : (0#8 ++ b15 ++ b14 ++ b13 : Word).extractLsb' 0 8 = b13 := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_append, BitVec.getLsbD_extractLsb', BitVec.getLsbD_zero]
+  iterate 8 (rcases i with _ | i; · simp)
+  omega
+
+theorem pr_e1 (b13 b14 b15 : BitVec 8) : ((0#8 ++ b15 ++ b14 ++ b13 : Word) >>> 8).extractLsb' 0 8 = b14 := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_append, BitVec.getLsbD_extractLsb', BitVec.getLsbD_ushiftRight, BitVec.getLsbD_zero]
+  iterate 8 (rcases i with _ | i; · simp)
+  omega
+
+theorem pr_e2 (b13 b14 b15 : BitVec 8) : ((0#8 ++ b15 ++ b14 ++ b13 : Word) >>> 16).extractLsb' 0 8 = b15 := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_append, BitVec.getLsbD_extractLsb', BitVec.getLsbD_ushiftRight, BitVec.getLsbD_zero]
+  iterate 8 (rcases i with _ | i; · simp)
+  omega
+
+theorem pr_x (b12 b13 b14 b15 : BitVec 8) :
+    (b15 ++ b14 ++ b13 ++ b12 : Word).extractLsb' 0 8 = b12 ∧ (b15 ++ b14 ++ b13 ++ b12 : Word).extractLsb' 8 8 = b13 ∧
+      (b15 ++ b14 ++ b13 ++ b12 : Word).extractLsb' 16 8 = b14 ∧
+      (b15 ++ b14 ++ b13 ++ b12 : Word).extractLsb' 24 8 = b15 := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> apply BitVec.eq_of_getLsbD_eq <;> intro i hi <;>
+    simp only [BitVec.getLsbD_append, BitVec.getLsbD_extractLsb'] <;>
+    (iterate 8 (rcases i with _ | i; · simp)) <;> omega
+
+/-- The code `parse_root` runs, and the keys it passes. -/
+structure PrCode (M : Word → BitVec 8) : Prop where
+  self : CodeIn M TPR tufParseRootCode
+  pm : PmCode M
+  u64 : CodeIn M TPR_JU jsonU64Code
+  aad : CodeIn M AAD allAsciiDigitCode
+  kr : CodeIn M TPR_KR tufRootKindData
+  kv : CodeIn M TPR_KV tufVersionKeyData
+
+theorem PrCode.of_out {M M' : Word → BitVec 8} {s : Word} {k : Nat} (h : PrCode M) (hO : Out M M' s k)
+    (hs : s.toNat + k ≤ 0x40000000) (hro : Sep s k (BitVec.ofNat 32 roWindowAddress) roWindowSize) :
+    PrCode M' :=
+  ⟨tpm_codeIn h.self hO hs (by decide) (by decide), h.pm.of_out hO hs hro,
+    tpm_codeIn h.u64 hO hs (by decide) (by decide), tpm_codeIn h.aad hO hs (by decide) (by decide),
+    hO.codeIn h.kr (tuf_sep_ro hro (by decide) (by decide)), hO.codeIn h.kv (tuf_sep_ro hro (by decide) (by decide))⟩
+
+theorem tpr_kr {M : Word → BitVec 8} (h : PrCode M) : memBytes M TPR_KR 4 = ascii!"root" :=
+  tuf_codeIn_memBytes h.kr (by decide)
+
+theorem tpr_kv {M : Word → BitVec 8} (h : PrCode M) : memBytes M TPR_KV 7 = ascii!"version" :=
+  tuf_codeIn_memBytes h.kv (by decide)
+
+theorem PmRes.frame {M M' : Word → BitVec 8} {s out : Word} {r : Except Nat (Word × Nat × Word × Nat)}
+    (h : PmRes M M' s out r) : ∀ x, Sep x 1 s 532 → Sep x 1 out 16 → M' x = M x := by
+  rcases r with _ | ⟨_, _, _, _⟩
+  · exact h.1
+  · exact h.1
+
+section
+variable {code : List Nat} {base : Word} {Q : Post} {M : Word → BitVec 8} {off : Nat} {f : Fin 32 → Word}
+
+/-- A call to `parse_metadata(doc, kind)` on the `n` bytes at `p`, with the
+type the `kl` bytes at `kq`. -/
+theorem WP.callPm {hi lo out s p kq : Word} {n kl : Nat}
+    (h1 : fetchRel code off = some (.auipc ra hi, 4)) (h2 : fetchRel code (off + 4) = some (.jalr ra ra lo, 4))
+    (htgt : base + BitVec.ofNat 32 off + hi + lo = TPM) (hev : (off + 8) % 2 = 0)
+    (hc : PmCode M) (h0 : f a0 = out) (ha1 : f a1 = p) (ha2 : f a2 = BitVec.ofNat 32 n) (ha3 : f a3 = kq)
+    (ha4 : f a4 = BitVec.ofNat 32 kl) (hsp : f sp = s + BitVec.ofNat 32 532)
+    (hal : s.toNat % 4 = 0) (hsw : s.toNat + 532 ≤ 0x40000000)
+    (hro : Sep s 532 (BitVec.ofNat 32 roWindowAddress) roWindowSize) (halo : out.toNat % 4 = 0)
+    (how : out.toNat + 16 ≤ 0x40000000) (hso : Sep out 16 s 532) (hn : n < 2 ^ 31) (hp0 : p.toNat ≠ 0)
+    (hpn : p.toNat + n < 2 ^ 32) (hSp : Sep s 532 p n) (hKL : kl < 2 ^ 32) (hSK : Sep s 532 kq kl)
+    (hSb : Sep s 532 base code.length) (hsb : Sep out 16 base code.length)
+    (k : ∀ m2 : Machine, PmRes M m2.mem s out (pmRes p (pmModel (memBytes M p n) (memBytes M kq kl))) →
+      WP code base Q m2.mem (off + 8) (clob (upd f ra (base + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
+    WP code base Q M off f := by
+  refine WP.callGen (tb := TPM) (cl := jClob)
+    (P := fun m2 => PmRes M m2.mem s out (pmRes p (pmModel (memBytes M p n) (memBytes M kq kl))))
+    h1 h2 (by rw [htgt]; exact even_clear _ (by decide)) (fun m1 hpc1 hmem1 hreg1 hb => ?_)
+    (fun m2 hP hc' i hi => by
+      rw [hP.frame _ (hSb.symm.sub (c := i) (l := 1) hi) (hsb.symm.sub (c := i) (l := 1) hi)]
+      exact hc' i hi) k
+  obtain ⟨m2, c2, pc2, hR, hfr⟩ := tufParseMetadata_correct m1 (retAddr := base + BitVec.ofNat 32 (off + 8))
+    (by rw [hmem1]; exact hc) hpc1 (by rw [hreg1]; rsimp; exact h0) (by rw [hreg1]; rsimp; exact ha1)
+    (by rw [hreg1]; rsimp; exact ha2) (by rw [hreg1]; rsimp; exact ha3) (by rw [hreg1]; rsimp; exact ha4)
+    (by rw [hreg1]; rsimp; exact hsp) (by rw [hreg1]; rsimp) (even_clear _ (even_at base hb _ hev))
+    hal hsw hro halo how hso hn hp0 hpn hSp hKL hSK
+  rw [hmem1] at hR
+  exact ⟨m2, c2, pc2, hR, hfr⟩
+
+/-- A call to `Value::u64` on the `n` bytes at `p`. -/
+theorem WP.callU64 {hi lo out s p : Word} {n : Nat}
+    (h1 : fetchRel code off = some (.auipc ra hi, 4)) (h2 : fetchRel code (off + 4) = some (.jalr ra ra lo, 4))
+    (htgt : base + BitVec.ofNat 32 off + hi + lo = TPR_JU) (hev : (off + 8) % 2 = 0)
+    (hcu : CodeIn M TPR_JU jsonU64Code) (hca : CodeIn M AAD allAsciiDigitCode)
+    (h0 : f a0 = out) (ha1 : f a1 = p) (ha2 : f a2 = BitVec.ofNat 32 n) (hsp : f sp = s + BitVec.ofNat 32 32)
+    (hn : n < 2 ^ 32) (hal : s.toNat % 4 = 0) (halo : out.toNat % 4 = 0) (hsw : s.toNat + 32 ≤ 0x40000000)
+    (hSp : Sep s 32 p n) (hso : Sep out 16 s 32) (how : out.toNat + 16 ≤ 0x40000000)
+    (hSb : Sep s 32 base code.length) (hsb : Sep out 16 base code.length)
+    (k : ∀ m2 : Machine, U64ResF M m2.mem out s 32 (u64Val (memBytes M p n)) →
+      WP code base Q m2.mem (off + 8) (clob (upd f ra (base + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
+    WP code base Q M off f := by
+  have hA : TPR_JU + 0x158 = AAD := by decide
+  refine WP.callGen (tb := TPR_JU) (cl := jClob)
+    (P := fun m2 => U64ResF M m2.mem out s 32 (u64Val (memBytes M p n)))
+    h1 h2 (by rw [htgt]; exact even_clear _ (by decide)) (fun m1 hpc1 hmem1 hreg1 hb => ?_)
+    (fun m2 hP hc => by
+      obtain ⟨M1, hO, hU⟩ := hP
+      exact hU.outside.codeIn (hO.codeIn hc hSb) hsb) k
+  obtain ⟨m2, c2, pc2, hR, hfr⟩ := jsonU64_correct m1 (base := TPR_JU) (out := out) (s := s) (p := p) (n := n)
+    (by decide) (by rw [hmem1]; exact hcu) (by rw [hmem1, hA]; exact hca) hpc1
+    (by rw [hreg1]; rsimp; exact h0) (by rw [hreg1]; rsimp; exact ha1) (by rw [hreg1]; rsimp; exact ha2)
+    (by rw [hreg1]; rsimp; exact hsp) hn hal halo
+    (retAddr := base + BitVec.ofNat 32 (off + 8)) (by rw [hreg1]; rsimp) (even_clear _ (even_at base hb _ hev))
+    (lowSep hsw (by decide) (by decide)) (by rw [hA]; exact lowSep hsw (by decide) (by decide)) hSp hso
+    (lowSep how (by decide) (by decide))
+  rw [hmem1] at hR
+  exact ⟨m2, c2, pc2, hR, hfr⟩
+
+end
+
+/-- What `parse_root` leaves: memory outside the 596 bytes at `s` and the
+24 bytes at `out` as before, and `r` at `out`. -/
+def PrRes (M M' : Word → BitVec 8) (s out : Word) : Except Nat (Word × Nat × Word × Nat × Nat) → Prop
+  | .error e => (∀ x, Sep x 1 s 596 → Sep x 1 out 24 → M' x = M x) ∧ memLoad32 M' out = 0 ∧
+      M' (out + 4) = BitVec.ofNat 8 e
+  | .ok (q1, l1, q2, l2, v) => (∀ x, Sep x 1 s 596 → Sep x 1 out 24 → M' x = M x) ∧ memLoad32 M' out = q1 ∧
+      memLoad32 M' (out + 4) = BitVec.ofNat 32 l1 ∧ memLoad32 M' (out + 8) = q2 ∧
+      memLoad32 M' (out + 0xC) = BitVec.ofNat 32 l2 ∧
+      (memLoad32 M' (out + 0x14)).toNat * 2 ^ 32 + (memLoad32 M' (out + 0x10)).toNat = v
+
+/-- The word-level result of `parse_root` on the document at `p`. -/
+def prRes (p : Word) (r : Except Nat (Nat × Nat × Nat × Nat × Nat)) : Except Nat (Word × Nat × Word × Nat × Nat) :=
+  r.map fun x => (p + BitVec.ofNat 32 x.1, x.2.1, p + BitVec.ofNat 32 x.2.2.1, x.2.2.2.1, x.2.2.2.2)
+
+/-- The registers `parse_root` changes before its epilogue restores the
+saved ones. -/
+abbrev prE : List (Fin 32) := jClob ++ [ra, sp, 8, 9, 18, 19, 20, 21]
+
+/-- The saved registers in the frame at `F`. -/
+def PrSaved (F : Word) (g0 : Fin 32 → Word) (M1 : Word → BitVec 8) : Prop :=
+  memLoad32 M1 (F + BitVec.ofNat 32 0x3C) = g0 ra ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0x38) = g0 8 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0x34) = g0 9 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0x30) = g0 18 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0x2C) = g0 19 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0x28) = g0 20 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0x24) = g0 21
+
+/-- Memory after the prologue. -/
+def prM1 (M : Word → BitVec 8) (F : Word) (g0 : Fin 32 → Word) : Word → BitVec 8 :=
+  memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 M (F + 0x3C) (g0 ra))
+    (F + 0x38) (g0 8))
+    (F + 0x34) (g0 9))
+    (F + 0x30) (g0 18))
+    (F + 0x2C) (g0 19))
+    (F + 0x28) (g0 20))
+    (F + 0x24) (g0 21)
+
+theorem tpr_pro (M : Word → BitVec 8) (F : Word) (g0 : Fin 32 → Word) :
+    Out M (prM1 M F g0) F 64 ∧ PrSaved F g0 (prM1 M F g0) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact (((((((out_store32 _ _ _).widen (d := 0x3C) (by decide)).trans
+      ((out_store32 _ _ _).widen (d := 0x38) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0x34) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0x30) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0x2C) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0x28) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0x24) (by decide))
+  · exact pa_ld 0x3C (by decide) [0x38, 0x34, 0x30, 0x2C, 0x28, 0x24] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 8, g0 9, g0 18, g0 19, g0 20, g0 21]
+  · exact pa_ld 0x38 (by decide) [0x34, 0x30, 0x2C, 0x28, 0x24] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 9, g0 18, g0 19, g0 20, g0 21]
+  · exact pa_ld 0x34 (by decide) [0x30, 0x2C, 0x28, 0x24] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 18, g0 19, g0 20, g0 21]
+  · exact pa_ld 0x30 (by decide) [0x2C, 0x28, 0x24] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 19, g0 20, g0 21]
+  · exact pa_ld 0x2C (by decide) [0x28, 0x24] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 20, g0 21]
+  · exact pa_ld 0x28 (by decide) [0x24] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 21]
+  · exact memLoad32_store32_same _ _ _
+
+/-- What the function's body may assume after the prologue: the frame at
+`F = s + 532`, the saved registers in `M1`, and the bounds on the stack and
+`out`. -/
+structure PrEnv (M0 M1 : Word → BitVec 8) (s out F : Word) (g0 : Fin 32 → Word) : Prop where
+  hF : s + BitVec.ofNat 32 532 = F
+  hal : s.toNat % 4 = 0
+  hsw : s.toNat + 596 ≤ 0x40000000
+  halo : out.toNat % 4 = 0
+  how : out.toNat + 24 ≤ 0x40000000
+  hso : Sep out 24 s 596
+  hro : Sep s 596 (BitVec.ofNat 32 roWindowAddress) roWindowSize
+  hc : PrCode M0
+  hO1 : Out M0 M1 s 596
+  hv : PrSaved F g0 M1
+  hsp0 : g0 sp = F + BitVec.ofNat 32 0x40
+  hret : g0 ra &&& ~~~1 = g0 ra
+  hz0 : g0 0 = 0
+
+section
+variable {M0 M1 Mk : Word → BitVec 8} {s out F : Word} {g0 : Fin 32 → Word}
+
+theorem PrEnv.Fc (E : PrEnv M0 M1 s out F g0) (c : Nat) :
+    F + BitVec.ofNat 32 c = s + BitVec.ofNat 32 (532 + c) := by
+  rw [← E.hF, add_ofNat_assoc]
+
+theorem PrEnv.FN (E : PrEnv M0 M1 s out F g0) {c : Nat} (hc : c ≤ 64) :
+    (F + BitVec.ofNat 32 c).toNat = s.toNat + 532 + c := by
+  rw [E.Fc, tex_toNat (by have := E.hsw; omega)]; omega
+
+theorem PrEnv.halF (E : PrEnv M0 M1 s out F g0) : F.toNat % 4 = 0 := by
+  have := E.FN (c := 0) (by decide); rw [add_ofNat_zero] at this; have := E.hal; omega
+
+/-- A word of the frame at or above the saved registers is apart from the
+568 bytes below them. -/
+theorem PrEnv.sepHi (E : PrEnv M0 M1 s out F g0) {c : Nat} (hc : 36 ≤ c) (hc' : c + 4 ≤ 64) :
+    Sep s 568 (F + BitVec.ofNat 32 c) 4 := by
+  rw [E.Fc]; exact tex_sepS (by omega) (by have := E.hsw; omega)
+
+theorem PrEnv.code (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mk s 568) : PrCode Mk :=
+  E.hc.of_out (E.hO1.trans (hO.mono (by decide))) E.hsw E.hro
+
+theorem PrEnv.saved (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mk s 568) : PrSaved F g0 Mk := by
+  obtain ⟨v0, v1, v2, v3, v4, v5, v6⟩ := E.hv
+  exact ⟨(hO.load32 (E.sepHi (by decide) (by decide))).trans v0, (hO.load32 (E.sepHi (by decide) (by decide))).trans v1,
+    (hO.load32 (E.sepHi (by decide) (by decide))).trans v2, (hO.load32 (E.sepHi (by decide) (by decide))).trans v3,
+    (hO.load32 (E.sepHi (by decide) (by decide))).trans v4, (hO.load32 (E.sepHi (by decide) (by decide))).trans v5,
+    (hO.load32 (E.sepHi (by decide) (by decide))).trans v6⟩
+
+/-- `out` is apart from each saved register. -/
+theorem PrEnv.outHi (E : PrEnv M0 M1 s out F g0) {c : Nat} (hc' : c + 4 ≤ 64) :
+    Sep out 24 (F + BitVec.ofNat 32 c) 4 := by
+  rw [E.Fc]; exact E.hso.subR (by omega)
+
+theorem PrEnv.outT (E : PrEnv M0 M1 s out F g0) : Sep out 24 TPR tufParseRootCode.length :=
+  lowSep E.how (by decide) (by decide)
+
+theorem PrEnv.savedOut {Mf Mf' : Word → BitVec 8} (E : PrEnv M0 M1 s out F g0) (hv : PrSaved F g0 Mf)
+    (hO : Out Mf Mf' out 24) : PrSaved F g0 Mf' := by
+  obtain ⟨v0, v1, v2, v3, v4, v5, v6⟩ := hv
+  exact ⟨(hO.load32 (E.outHi (by decide))).trans v0, (hO.load32 (E.outHi (by decide))).trans v1,
+    (hO.load32 (E.outHi (by decide))).trans v2, (hO.load32 (E.outHi (by decide))).trans v3,
+    (hO.load32 (E.outHi (by decide))).trans v4, (hO.load32 (E.outHi (by decide))).trans v5,
+    (hO.load32 (E.outHi (by decide))).trans v6⟩
+
+/-- Memory that agrees with `M1` outside the 568 bytes at `s` agrees with
+`M0` outside the 596. -/
+theorem PrEnv.agree (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mk s 568) : ∀ x, Sep x 1 s 596 → Mk x = M0 x :=
+  fun x hx => (hO x (by have := hx.subR (c := 0) (l := 568) (by decide); rwa [add_ofNat_zero] at this)).trans
+    (E.hO1 x hx)
+
+end
+
+section
+variable {M0 M1 Mf : Word → BitVec 8} {s out F : Word} {g g0 : Fin 32 → Word}
+
+theorem pr_epi {R : (Word → BitVec 8) → Prop} (hsp : g sp = F) (hv : PrSaved F g0 Mf)
+    (hsp0 : g0 sp = F + BitVec.ofNat 32 0x40) (hret : g0 ra &&& ~~~1 = g0 ra) (hal : F.toNat % 4 = 0)
+    (hz0 : g0 0 = 0) (hfr : ∀ x, x ∉ prE → g x = g0 x) (hR : R Mf) :
+    WP tufParseRootCode TPR (RPost (g0 ra) R g0) Mf 0xD0 g := by
+  obtain ⟨e0, e1, e2, e3, e4, e5, e6⟩ := hv
+  refine WP.lw pr_at_d0 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x3C) (by decide)) ?_; wn
+  refine WP.lw pr_at_d2 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x38) (by decide)) ?_; wn
+  refine WP.lw pr_at_d4 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x34) (by decide)) ?_; wn
+  refine WP.lw pr_at_d6 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x30) (by decide)) ?_; wn
+  refine WP.lw pr_at_d8 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x2C) (by decide)) ?_; wn
+  refine WP.lw pr_at_da (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x28) (by decide)) ?_; wn
+  refine WP.lw pr_at_dc (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x24) (by decide)) ?_; wn
+  refine WP.aluImm pr_at_de ?_; wn
+  refine WP.ret pr_at_e0 ⟨?_, hR, ?_⟩
+  · rsimp; rw [hsp]; erw [e0]; rw [add_lit_zero, hret]
+  refine frame_of (L2 := [ra, sp, 8, 9, 18, 19, 20, 21]) (by keepz hz0) fun x hx => ?_
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+  rcases hx with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rsimp <;> rw [hsp]
+  · exact e0
+  · rw [hsp0]; rfl
+  · exact e1
+  · exact e2
+  · exact e3
+  · exact e4
+  · exact e5
+  · exact e6
+
+end
+
+/-- The postcondition: return to the caller with `r` at `out`. -/
+abbrev prQ (M0 : Word → BitVec 8) (s out : Word) (g0 : Fin 32 → Word)
+    (r : Except Nat (Word × Nat × Word × Nat × Nat)) : Post :=
+  RPost (g0 ra) (fun M' => PrRes M0 M' s out r) g0
+
+section
+variable {M0 M1 Mf : Word → BitVec 8} {s out F : Word} {g g0 : Fin 32 → Word} {e : Nat}
+
+theorem pr_errRes (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) :
+    PrRes M0 (memStore8 (memStore32 Mf out 0) (out + 4) (BitVec.ofNat 8 e)) s out (.error e) ∧
+      Out Mf (memStore8 (memStore32 Mf out 0) (out + 4) (BitVec.ofNat 8 e)) out 24 := by
+  have hR := pa_err_res Mf out _ e rfl
+  exact ⟨⟨fun x hx ho => (hR.1 x (ho.subR (c := 0) (l := 8) (by decide) |> fun h => by rwa [add_ofNat_zero] at h)).trans
+      (E.agree hO x hx), hR.2.1, hR.2.2⟩, hR.out.mono (by decide)⟩
+
+/-- The error tail at 0xC8: the zero word at `out`, the error byte from
+`a0` at `out + 4`, and the epilogue. -/
+theorem pr_c8 (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) (h8 : g 8 = out) (hsp : g sp = F)
+    (ha0 : (g a0).extractLsb' 0 8 = BitVec.ofNat 8 e) (hz : g 0 = 0) (hfr : ∀ x, x ∉ prE → g x = g0 x) :
+    WP tufParseRootCode TPR (prQ M0 s out g0 (.error e)) Mf 0xC8 g := by
+  refine WP.sw pr_at_c8 (by (try rsimp); rw [h8, add_lit_zero]; exact E.halo)
+    (by (try rsimp); rw [h8, add_lit_zero]; exact tex_sepL E.outT (by decide)) ?_; wn
+  refine WP.sb pr_at_cc (by (try rsimp); rw [h8]; exact E.outT.sub (c := 4) (l := 1) (by decide)) ?_; wn
+  (try rsimp)
+  rw [h8, add_lit_zero, hz, ha0]
+  obtain ⟨hR, hOo⟩ := pr_errRes (e := e) E hO
+  exact pr_epi hsp (E.savedOut (E.saved hO) hOo) E.hsp0 E.hret E.halF E.hz0 hfr hR
+
+/-- The error tail at 0x82, with the error byte in `s2`. -/
+theorem pr_82 (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) (h8 : g 8 = out) (hsp : g sp = F)
+    (h18 : (g 18).extractLsb' 0 8 = BitVec.ofNat 8 e) (hz : g 0 = 0) (hfr : ∀ x, x ∉ prE → g x = g0 x) :
+    WP tufParseRootCode TPR (prQ M0 s out g0 (.error e)) Mf 0x82 g := by
+  refine WP.sw pr_at_82 (by (try rsimp); rw [h8, add_lit_zero]; exact E.halo)
+    (by (try rsimp); rw [h8, add_lit_zero]; exact tex_sepL E.outT (by decide)) ?_; wn
+  refine WP.sb pr_at_86 (by (try rsimp); rw [h8]; exact E.outT.sub (c := 4) (l := 1) (by decide)) ?_; wn
+  refine WP.jal pr_at_8a (by decide) ?_; wn
+  (try rsimp)
+  rw [h8, add_lit_zero, hz, h18]
+  obtain ⟨hR, hOo⟩ := pr_errRes (e := e) E hO
+  exact pr_epi hsp (E.savedOut (E.saved hO) hOo) E.hsp0 E.hret E.halF E.hz0 hfr hR
+
+end
+
+end C3.RV32
