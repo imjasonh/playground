@@ -55,7 +55,6 @@ import C3BootProofs.Proofs.SvExtLink
 import C3BootProofs.Proofs.SvExtListLink
 import C3BootProofs.Proofs.SvExtLoop
 import C3BootProofs.Proofs.SvFail2
-import C3BootProofs.Proofs.SvGt
 import C3BootProofs.Proofs.SvILoop
 import C3BootProofs.Proofs.SvISearch
 import C3BootProofs.Proofs.SvLeafH
