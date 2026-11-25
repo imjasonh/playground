@@ -1,4 +1,5 @@
-import C3BootProofs.Proofs.SvLayout
+import C3BootProofs.Proofs.SvRoot
+import C3BootProofs.Proofs.SvVerify
 import C3BootProofs.Image.BootloaderData6
 
 /-!

@@ -24,7 +24,7 @@ POLICY = {0x0: 'issuer', 0x8: 'buildSignerUri', 0x10: 'repositoryId', 0x18: 'own
 FIELDS = {0x0: 'leaf', 0x8: 'imageSignature', 0x10: 'inclusionProof', 0x18: 'checkpoint', 0x20: 'timestamp'}
 # A search's start pointer from the root: the array it walks, that array's
 # offset, and where an entry starts from the search's pointer.
-ARRAYS = {0x3C: ('fulcio', 0x38, -4), 0x98: ('logs', 0xB8, 0x20), 0x198: ('tsas', 0x1B8, 0x20)}
+ARRAYS = {0x2C: ('fulcio', 0x28, -4), 0x108: ('logs', 0x128, 0x20), 0x308: ('tsas', 0x328, 0x20)}
 EQ = "(by rw [hy]; bv_omega)"
 
 
@@ -177,7 +177,8 @@ def main():
 
     out = []
     O = out.append
-    O("import C3BootProofs.Proofs.SvLayout")
+    O("import C3BootProofs.Proofs.SvRoot")
+    O("import C3BootProofs.Proofs.SvVerify")
     O("")
     O("/-!\n# `sigstore::verify` for a `Bundle` and a `SigstoreRoot`\n\nWritten by `scripts/gen-sv-layout.py` "
       "from `sv_verify`.\n-/")

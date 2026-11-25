@@ -1,4 +1,4 @@
-import C3BootProofs.Proofs.SvVerify
+import C3BootProofs.Proofs.SvCongr
 
 /-!
 # `sigstore::verify`: how its arguments lie in memory
@@ -11,8 +11,9 @@ here say instead that a `Bundle` and a `SigstoreRoot`, the values that
 - `Bundle` (0x30 bytes): the leaf certificate's slice at 0x0, the image
   signature's at 0x8, the inclusion proof's at 0x10, the checkpoint's at
   0x18, the timestamp's at 0x20, and the log index at 0x28.
-- `TrustRoot` (0x238 bytes): the policy's five slices at 0x0, then arrays of
-  4 Fulcio intermediates at 0x38, 8 logs at 0xB8, and 4 TSAs at 0x1B8.
+- `TrustRoot` (0x428 bytes): the policy's five slices at 0x0, then arrays of
+  8 Fulcio intermediates at 0x28, 16 logs at 0x128, and 8 TSAs at 0x328,
+  the caps `MAX_FULCIO`, `MAX_LOGS`, and `MAX_TSAS` in `trustroot.rs`.
   Each entry is 0x20 bytes: its name's slice, its window's two 64-bit
   bounds at 0x8 and 0x10, and a pointer to its key at 0x18. The entries
   after the listed ones have a null name pointer, as `Option` encodes
@@ -56,15 +57,15 @@ def SvArrayAt {α : Type} (M : Word → BitVec 8) (a : Word) (cap : Nat) (l : Li
 /-- A `SigstoreRoot`, as the `TrustRoot` struct at `r`. -/
 structure SvRootAt (B : Word) (M : Word → BitVec 8) (r : Word) (root : SigstoreRoot) : Prop where
   al : r.toNat % 4 = 0
-  inn : SvIn B r 0x238
+  inn : SvIn B r 0x428
   issuer : SvRoBytesAt B M (memLoad32 M r) (memLoad32 M (r + 0x4)) root.policy.issuer
   buildSignerUri : SvRoBytesAt B M (memLoad32 M (r + 0x8)) (memLoad32 M (r + 0xC)) root.policy.buildSignerUri
   repositoryId : SvRoBytesAt B M (memLoad32 M (r + 0x10)) (memLoad32 M (r + 0x14)) root.policy.repositoryId
   ownerId : SvRoBytesAt B M (memLoad32 M (r + 0x18)) (memLoad32 M (r + 0x1C)) root.policy.ownerId
   trigger : SvRoBytesAt B M (memLoad32 M (r + 0x20)) (memLoad32 M (r + 0x24)) root.policy.trigger
-  fulcio : SvArrayAt M (r + 0x38) 4 root.fulcio fun e k => SvEntryAt B M e k.subject k.publicKey 0x61 k.window
-  logs : SvArrayAt M (r + 0xB8) 8 root.logs fun e k => SvEntryAt B M e k.origin k.publicKey 32 k.window
-  tsas : SvArrayAt M (r + 0x1B8) 4 root.tsas fun e k => SvEntryAt B M e k.signerId k.publicKey 0x61 k.window
+  fulcio : SvArrayAt M (r + 0x28) 8 root.fulcio fun e k => SvEntryAt B M e k.subject k.publicKey 0x61 k.window
+  logs : SvArrayAt M (r + 0x128) 16 root.logs fun e k => SvEntryAt B M e k.origin k.publicKey 32 k.window
+  tsas : SvArrayAt M (r + 0x328) 8 root.tsas fun e k => SvEntryAt B M e k.signerId k.publicKey 0x61 k.window
 
 /-- A `Bundle`, as the struct at `bp`. -/
 structure SvBundleAt (B : Word) (M : Word → BitVec 8) (bp : Word) (b : Bundle) : Prop where
@@ -108,10 +109,10 @@ theorem SvRo.load2 {B p q p' q' : Word} {M : Word → BitVec 8} (h : SvRo B (mem
 
 /-- The bundle struct sits apart from the saved registers. -/
 theorem SvBundleAt.sep {B bp : Word} {M : Word → BitVec 8} {b : Bundle} (Bd : SvBundleAt B M bp b) :
-    Sep bp 8 (B + BitVec.ofNat 32 0x37FC) 0x34 := by
-  have h := (Bd.inn.sep14.sub (c := 0) (l := 8) (by decide)).symm.sub (c := 0x399C) (l := 0x34) (by decide)
-  rw [show B + 0xFFFFFE60 + BitVec.ofNat 32 0x399C = B + BitVec.ofNat 32 0x37FC by bv_omega,
-    add_ofNat_zero] at h
+    Sep bp 8 (B + BitVec.ofNat 32 0x262C) 0x34 := by
+  have h := (Bd.inn.sep14.sub (c := 0) (l := 8) (by decide)).symm.sub (c := 0x3BBC) (l := 0x34) (by decide)
+  rw [show B + 0xFFFFEA70 + BitVec.ofNat 32 0x3BBC = B + BitVec.ofNat 32 0x262C by
+    rw [BitVec.add_assoc]; rfl, add_ofNat_zero] at h
   exact h.symm
 
 /-- A listed entry of an array, from its name pointer being non-null. -/
@@ -122,16 +123,5 @@ theorem SvArrayAt.listed {α : Type} {M : Word → BitVec 8} {a : Word} {cap i :
   by_cases hl : i < l.length
   · exact ⟨hl, A.2.1 i hl⟩
   · exact absurd (A.2.2 i (by omega) hi) hne
-
-/-- A search's pointer after `i` steps of 0x20 bytes. -/
-theorem svIter_ptr2 {d : Word} {c q y0 y1 : Word} {i : Nat}
-    (h : (y0, y1) = svIter (fun s => (s.1 + d, s.2 + BitVec.ofNat 32 0x20)) i (c, q)) :
-    y1 = q + BitVec.ofNat 32 (i * 0x20) :=
-  (congrArg Prod.snd h).trans (svIter_add Prod.snd (by intro _; rfl) i (c, q))
-
-theorem svIter_ptr3 {d : Word} {f : Word × Word × Word → Word} {c q w y0 y1 y2 : Word} {i : Nat}
-    (h : (y0, y1, y2) = svIter (fun s => (s.1 + d, s.2.1 + BitVec.ofNat 32 0x20, f s)) i (c, q, w)) :
-    y1 = q + BitVec.ofNat 32 (i * 0x20) :=
-  (congrArg (fun s => s.2.1) h).trans (svIter_add (fun s => s.2.1) (by intro _; rfl) i (c, q, w))
 
 end C3.RV32.Sv

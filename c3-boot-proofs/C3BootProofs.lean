@@ -360,6 +360,7 @@ import C3BootProofs.Proofs.SvLib2
 import C3BootProofs.Proofs.SvDer
 import C3BootProofs.Proofs.SvDer2
 import C3BootProofs.Proofs.SvDer3
+import C3BootProofs.Proofs.SvRoot
 import C3BootProofs.Proofs.SvDer4
 import C3BootProofs.Proofs.SvDerBridge
 import C3BootProofs.Proofs.SvCongr
