@@ -348,4 +348,83 @@ theorem ace_d04 {X : AceCtx} (O : X.Ok) {M : Word → BitVec 8} {f : Fin 32 → 
       ace_ld2 F hf2 (.inr (by omega)) (.inr (by omega)) (by omega) (by decide) (by decide)]
     exact hz i hi
 
+set_option maxHeartbeats 4000000 in
+/-- The loop at 0xCF8 that zeroes the Fulcio array, with `m` entries left. -/
+theorem ace_zl {X : AceCtx} (O : X.Ok) {jr : Json} {p0 w30 : Word} (hroot : AceRootJ X.json jr)
+    (hobj : AceVal X.D X.json p0 w30.toNat jr) :
+    ∀ m, m ≤ 8 → 0 < m → ∀ (M : Word → BitVec 8) (f : Fin 32 → Word), AceHM X M → AceHR X f → f 26 = p0 →
+      memLoad32 M (acSlot X.B 0x30) = w30 → f 10 = acSlot X.B (0x1ED0 + 0x20 * (8 - m)) →
+      f 11 = BitVec.ofNat 32 m → (∀ i, i < 8 - m → memLoad32 M (acSlot X.B (0x1ED0 + 0x20 * i)) = 0) →
+      WP bootMainClosure0Code AC (aceHQ X (aceHP X)) M 0xCF8 f := by
+  have F := O.lay.fr
+  have hh := F.hi
+  intro m
+  induction m with
+  | zero => intro _ h; exact absurd h (Nat.lt_irrefl 0)
+  | succ m ih =>
+    intro hm _ M f H R h26 h30 h10 h11 hz
+    have ea : acSlot X.B (0x1ED0 + 0x20 * (8 - (m + 1))) + 0 = X.B + BitVec.ofNat 32 (0x5920 + 0x20 * (7 - m)) := by
+      unfold acSlot; rw [show (0 : Word) = BitVec.ofNat 32 0 from rfl, add_ofNat_assoc]; congr 2; omega
+    refine WP.sw ac_at_cf8 (by rw [h10, ea]; exact ace_al4 F (by omega) (by omega))
+      (by rw [h10, ea]; exact ace_cs F (by omega)) ?_
+    wn
+    rw [h10, ea]
+    have hx0 : f x0 = 0 := R.rz
+    rw [hx0]
+    have ha : f a0 = acSlot X.B (0x1ED0 + 0x20 * (8 - (m + 1))) := h10
+    have hb : f a1 = BitVec.ofNat 32 (m + 1) := h11
+    have hS : ∀ x, AceL X.B x → memStore32 M (X.B + BitVec.ofNat 32 (0x5920 + 0x20 * (7 - m))) 0 x = M x :=
+      fun x hx => memStore32_get_sep (hx.s1ED0 F (by omega) (by omega)).symm
+    have H' := H.mono F hS
+    have h30' : memLoad32 (memStore32 M (X.B + BitVec.ofNat 32 (0x5920 + 0x20 * (7 - m))) 0) (acSlot X.B 0x30) = w30 := by
+      rw [memLoad32_store32_sep (ace_sepB' F (.inr (by omega)) (by omega) (by decide)), h30]
+    have hz' : ∀ i, i < 8 - m → memLoad32 (memStore32 M (X.B + BitVec.ofNat 32 (0x5920 + 0x20 * (7 - m))) 0)
+        (acSlot X.B (0x1ED0 + 0x20 * i)) = 0 := by
+      intro i hi
+      rcases Nat.lt_or_ge i (8 - (m + 1)) with hl | hl
+      · rw [show acSlot X.B (0x1ED0 + 0x20 * i) = X.B + BitVec.ofNat 32 (0x3A50 + (0x1ED0 + 0x20 * i)) from rfl,
+          memLoad32_store32_sep (ace_sepB' F (.inr (by omega)) (by omega) (by omega))]
+        exact hz i hl
+      · rw [show acSlot X.B (0x1ED0 + 0x20 * i) = X.B + BitVec.ofNat 32 (0x5920 + 0x20 * (7 - m)) by
+          unfold acSlot; congr 2; omega, memLoad32_store32_same]
+    refine WP.aluImm ac_at_cfc ?_; wn
+    refine WP.aluImm ac_at_d00 ?_; wn
+    have r11 : aluEval .add (f a1) 4294967295 = BitVec.ofNat 32 m := by
+      rw [hb, ev_add]; apply BitVec.eq_of_toNat_eq
+      have : (4294967295 : Word).toNat = 4294967295 := rfl
+      rw [BitVec.toNat_add, this, BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega
+    refine WP.branch ac_at_d02 (fun eb => ?_) (fun eb => ?_) <;> wn
+    · rcases Nat.eq_zero_or_pos m with h0 | h0
+      · exfalso; rsimp at eb; rw [r11, h0] at eb; simp [branchTaken] at eb
+      refine ih (by omega) h0 _ _ H' (by hr) (by rsimp; exact h26) h30' ?_ (by rsimp; exact r11) hz'
+      rsimp; rw [ha, ev_add, show (32 : Word) = BitVec.ofNat 32 32 from rfl]; unfold acSlot
+      rw [add_ofNat_assoc, show 0x3A50 + (0x1ED0 + 0x20 * (8 - (m + 1))) + 32 = 0x3A50 + (0x1ED0 + 0x20 * (8 - m)) by
+        omega]
+    · rcases Nat.eq_zero_or_pos m with h0 | h0
+      · subst h0
+        exact ace_d04 O H' (by hr) hroot (by rsimp; exact h26) h30' hobj hz'
+      · exfalso; rsimp at eb; rw [r11] at eb
+        have : BitVec.ofNat 32 m ≠ 0 := by
+          intro e; have h := congrArg BitVec.toNat e; rw [BitVec.toNat_ofNat] at h
+          have : (0 : Word).toNat = 0 := rfl
+          omega
+        simp [branchTaken] at eb
+        exact this eb
+
+set_option maxHeartbeats 4000000 in
+/-- From 0xCEC, after the `mediaType` check. -/
+theorem ace_cec {X : AceCtx} (O : X.Ok) {M : Word → BitVec 8} {f : Fin 32 → Word}
+    (H : AceHM X M) (R : AceHR X f) {jr : Json} {p0 w30 : Word} (hroot : AceRootJ X.json jr)
+    (h26 : f 26 = p0) (h30 : memLoad32 M (acSlot X.B 0x30) = w30) (hobj : AceVal X.D X.json p0 w30.toNat jr) :
+    WP bootMainClosure0Code AC (aceHQ X (aceHP X)) M 0xCEC f := by
+  refine WP.lui ac_at_cec ?_; wn
+  refine WP.aluImm ac_at_cee ?_; wn
+  refine WP.alu ac_at_cf2 ?_; wn
+  refine WP.aluImm ac_at_cf4 ?_; wn
+  refine WP.branch ac_at_cf6 (fun eb => ?_) (fun _ => ?_) <;> wn
+  · exfalso; rsimp at eb
+  refine ace_zl O hroot hobj 8 (by decide) (by decide) M _ H (by hr) (by rsimp; exact h26) h30 ?_ (by rsimp <;> rfl)
+    (fun i hi => absurd hi (Nat.not_lt_zero _))
+  rsimp; rw [R.rsp]; simp only [ev_add, acSlot]; bv_omega
+
 end C3.RV32.Ac
