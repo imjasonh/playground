@@ -513,7 +513,10 @@ enum MCULabProtocol {
             return .commit
         case "ABORT" where parts.count == 1:
             return .abort
-        case "BEGIN", "BEGIN_DATA" where parts.count == 3 || parts.count == 4:
+        case "BEGIN", "BEGIN_DATA":
+            guard parts.count == 3 || parts.count == 4 else {
+                return nil
+            }
             guard let size = UInt32(parts[1]), size > 0, size <= otaSlotBytes else {
                 return nil
             }
