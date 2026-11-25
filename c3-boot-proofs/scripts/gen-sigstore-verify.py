@@ -7794,103 +7794,96 @@ def stage_cr1(eqhi):
     return g, info
 
 
-def rk_start(g):
-    """After the entry's index check at 0x300E: `s7` and `s9` hold the index,
-    `s0` the checkpoint's fields at offset 0x1020, whose root is at 0x1048."""
-    params = cs_start(g)
-    params = [q for q in params if not (q.startswith("(g0_23 :") or q.startswith("(g0_25 :"))]
-    g.regs[23] = ("U", "lih")
-    g.regs[25] = ("U", "lil")
-    g.regs[8] = ("S", 0x1020)
-    g.words[0x74] = ("U", "w74")
-    params.append(f"(w0_74 : memLoad32 n0.mem ({fa(0x74)}) = w74)")
-    rb = "((BitVec.ofNat 8 (rt.getD 0 0)).zeroExtend 32).extractLsb' 0 8"
-    g.bytes[0x1048] = rb
-    g.ranges[0x1049] = (31, "BitVec.ofNat 8 (rt.getD (1 + j) 0)")
-    params += ["(g0_23 : reg n0 (23 : Fin 32) = lih)", "(g0_25 : reg n0 (25 : Fin 32) = lil)",
-               "(g0_8 : reg n0 (8 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1020)",
-               f"(b0_1048 : n0.mem ({fa(0x1048)}) = {rb})",
-               "(q0_1049 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1049 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0))",
-               "(S2 : SvSha2Code M0)", "(KS : SvK2Sep B)", "(RS : SvRoSep B)", "(RK0 : SvRkCode M0)"]
+def rk_start(g, words=None):
+    """After the entry's index check at 0x189A, for the leaf hash and the
+    inclusion proof."""
+    w = {0x64: "w64", 0x74: "w74"}
+    w.update(words or {})
+    params = start(g, t_regs0(), w, {})
+    params += ["(S2 : SvSha2Code M0)", "(RS : SvRoSep B)", "(RK0 : SvRkCode M0)"]
     return params
 
 
 def stage_rl():
-    """From 0x300E to 0x30EC: the log entry's leaf hash."""
+    """From 0x189A to 0x1974: the log entry's leaf hash."""
     g = Gen("Rl")
     g.generic_alu = True
-    params = rk_start(g)
-    params += ["(dgi_in : SvIn B w84 32)", "(sig_in : SvIn B w68 w64.toNat)", "(crt_in : SvIn B w6c x26.toNat)"]
+    params = rk_start(g, {0x70: "w70", 0x68: "w68", 0x6C: "w6c"})
+    params += ["(dgi_in : SvIn B x20 32)", "(sig_in : SvIn B w70 w68.toNat)", "(crt_in : SvIn B w6c x22.toNat)"]
     ro = "(Or.inr ⟨by decide, by decide⟩)"
-    g.store(0x300E, "sb")
-    g.block(0x3012, 0x3022)
-    g.mcRo(0x3022, 0x460, "BitVec.ofNat 32 (img% shaIVAddress)", 0x20, ro)
-    g.store(0x302A, "sw")
-    g.store(0x302E, "sw")
+    g.store(0x189A, "sb")
+    g.block(0x189E, 0x18AE)
+    g.mcRo(0x18AE, 0x460, "BitVec.ofNat 32 (img% shaIVAddress)", 0x20, ro)
+    g.store(0x18B6, "sw")
+    g.store(0x18BA, "sw")
     g.hinit()
-    g.block(0x3032, 0x3040)
-    g.upd(0x3040, "BitVec.ofNat 32 (img% svRekorLeafAddress)", "0x1", ro, "(by decide)", "")
-    g.block(0x3048, 0x3058)
-    g.upd(0x3058, "BitVec.ofNat 32 (img% svRekorPreAddress)", "0x71", ro, "(by decide)", "")
-    g.block(0x3060, 0x3068)
+    g.block(0x18BE, 0x18CC)
+    g.upd(0x18CC, "BitVec.ofNat 32 (img% svRekorLeafAddress)", "0x1", ro, "(by decide)", "")
+    g.block(0x18D4, 0x18E4)
+    g.upd(0x18E4, "BitVec.ofNat 32 (img% svRekorPreAddress)", "0x71", ro, "(by decide)", "")
+    g.block(0x18EC, 0x18F6)
+    g.b64e(0x18F6, "x20", "32", "(.inl dgi_in)", f"g{g.k}_11", "")
+    g.block(0x18FE, 0x190E)
+    g.upd(0x190E, "BitVec.ofNat 32 (img% svRekorMid1Address)", "0x1B", ro, "(by decide)", "")
+    g.block(0x1916, 0x191A)
     g.carry_hasher()
-    g.load(0x3068, "lw")
-    g.b64e(0x306A, "w84", "32", "(.inl dgi_in)", f"g{g.k}_11", "")
-    g.block(0x3072, 0x3082)
-    g.upd(0x3082, "BitVec.ofNat 32 (img% svRekorMid1Address)", "0x1B", ro, "(by decide)", "")
-    g.block(0x308A, 0x308E)
+    g.load(0x191A, "lw")
     g.carry_hasher()
-    g.load(0x308E, "lw")
+    g.load(0x191C, "lw")
+    g.b64e(0x191E, "w70", "(w68).toNat", "(.inl sig_in)", f"(by rw [g{g.k}_11, ofNat_toNat_self])", "have := sig_in.lo")
+    g.block(0x1926, 0x1936)
+    g.upd(0x1936, "BitVec.ofNat 32 (img% svRekorMid2Address)", "0x54", ro, "(by decide)", "have := sig_in.lo")
+    g.block(0x193E, 0x1942)
     g.carry_hasher()
-    g.load(0x3090, "lw")
-    g.b64e(0x3092, "w68", "(w64).toNat", "(.inl sig_in)", f"(by rw [g{g.k}_11, ofNat_toNat_self])", "have := sig_in.lo")
-    g.block(0x309A, 0x30AA)
-    g.upd(0x30AA, "BitVec.ofNat 32 (img% svRekorMid2Address)", "0x54", ro, "(by decide)", "have := sig_in.lo")
-    g.block(0x30B2, 0x30B6)
+    g.load(0x1942, "lw")
     g.carry_hasher()
-    g.load(0x30B6, "lw")
-    g.carry_hasher()
-    g.block(0x30B8, 0x30BA)
-    g.b64e(0x30BA, "w6c", "(x26).toNat", "(.inl crt_in)", f"(by rw [g{g.k}_11, ofNat_toNat_self])",
+    g.block(0x1944, 0x1946)
+    g.b64e(0x1946, "w6c", "(x22).toNat", "(.inl crt_in)", f"(by rw [g{g.k}_11, ofNat_toNat_self])",
            "have := sig_in.lo; have := crt_in.lo")
-    g.block(0x30C2, 0x30D0)
-    g.upd(0x30D0, "BitVec.ofNat 32 (img% svRekorPostAddress)", "0x7", ro, "(by decide)", "have := sig_in.lo; have := crt_in.lo")
-    g.block(0x30D8, 0x30E4)
-    g.fin(0x30E4, 0x1380)
+    g.block(0x194E, 0x195C)
+    g.upd(0x195C, "BitVec.ofNat 32 (img% svRekorPostAddress)", "0x7", ro, "(by decide)", "have := sig_in.lo; have := crt_in.lo")
+    g.block(0x1964, 0x196C)
+    g.fin(0x196C, 0x400)
     kd, oc, ex = g.digest
     g.extra.append((f"memBytes n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x{oc:X}) 32 = {ex}", f"D{kd}"))
-    stmt, proof = finish(g, 0x30EC, sorted(set(CL_KEEP_REGS + [8, 23])), set(g.words) - {0x480, 0x484})
+    stmt, proof = finish(g, 0x1974, sorted(set(CL_KEEP_REGS)), set(g.words) - {0x480, 0x484})
     info = {"name": "sv_rl", "title": "the log entry's leaf hash",
-            "doc": "From 0x300E to 0x30EC: SHA-256 of the entry's canonical body, built from its constant parts and "
-            "the base64 of the image digest, the image signature, and the leaf certificate, goes to offset 0x1380.",
-            "params": params, "stmt": stmt, "proof": proof, "binders": RK_BINDERS.replace("op ol : Word}", "op ol lih lil : Word}"),
-            "start": 0x300E, "import": "C3BootProofs.Proofs.SvRk"}
+            "doc": "From 0x189A to 0x1974: SHA-256 of the entry's canonical body, built from its constant parts and "
+            "the base64 of the image digest, the image signature, and the leaf certificate, goes to offset 0x400.",
+            "params": params, "stmt": stmt, "proof": proof,
+            "binders": RK_BINDERS.replace("kp w1c w40 q w64 w74 : Word} {rt : Bytes}", "w64 w74 w70 w68 w6c : Word}"),
+            "start": 0x189A, "import": "C3BootProofs.Proofs.SvRk"}
     return g, info
 
 
 def stage_rm():
-    """From 0x30EC to 0x316E: the inclusion proof's root is the checkpoint's."""
+    """From 0x1974 to 0x19D0: the inclusion proof's root is the checkpoint's."""
     g = Gen("Rm")
     g.generic_alu = True
     params = rk_start(g)
-    g.digest = (0, 0x1380, "lh")
+    rb = "((BitVec.ofNat 8 (rt.getD 0 0)).zeroExtend 32).extractLsb' 0 8"
+    g.bytes[0x3A8] = rb
+    g.ranges[0x3A9] = (31, "BitVec.ofNat 8 (rt.getD (1 + j) 0)")
+    g.digest = (0, 0x400, "lh")
     g.pinned.add("D0")
-    params += ["(D0 : memBytes n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 32 = lh)",
+    params += [f"(b0_3a8 : n0.mem ({fa(0x3A8)}) = {rb})",
+               "(q0_3a9 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x3A9 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0))",
+               "(D0 : memBytes n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x400) 32 = lh)",
                "(hpp : memLoad32 M0 (bp + 0x10) = pp)", "(hpl : memLoad32 M0 (bp + 0x14) = pl)",
                "(pp_in4 : SvIn B (bp + 0x10) 4)", "(pl_in4 : SvIn B (bp + 0x14) 4)",
                "(a_pp : (bp + 0x10).toNat % 4 = 0)", "(a_pl : (bp + 0x14).toNat % 4 = 0)",
                "(pp_in : SvIn B pp pl.toNat)"]
-    g.load_mem(0x30EC, "pp", "hpp", "pp_in4", "a_pp")
+    g.load_mem(0x1974, "pp", "hpp", "pp_in4", "a_pp")
     g.carry_digest()
-    g.load_mem(0x30F0, "pl", "hpl", "pl_in4", "a_pl")
+    g.load_mem(0x1978, "pl", "hpl", "pl_in4", "a_pl")
     g.carry_digest()
-    g.block(0x30F4, 0x3106)
+    g.block(0x197C, 0x1988)
     g.carry_digest()
-    g.load(0x3106, "lw")
+    g.load(0x1988, "lw")
     g.carry_digest()
-    g.load(0x3108, "lw")
+    g.load(0x198A, "lw")
     g.carry_digest()
-    k, ex = g.rfi(0x310A, "pp", "(pl).toNat", "(Or.inl pp_in)", f"(by rw [g{g.k}_17, ofNat_toNat_self])")
+    k, ex = g.rfi(0x198C, "pp", "(pl).toNat", "(Or.inl pp_in)", f"(by rw [g{g.k}_17, ofNat_toNat_self])")
     g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
     g.emit(f"  rw [hr{k}] at R{k}")
     g.emit(f"  rcases r{k} with _ | root{k}")
@@ -7899,12 +7892,12 @@ def stage_rm():
     def none(sub):
         sub.emit(f"  obtain ⟨z{k}, y{k}⟩ := R{k}")
         sub.frame_after(k, [(0x420, 33)], {}, {0x420: ("(1 : BitVec 8)", f"z{k}"), 0x421: ("(0x1B : BitVec 8)", f"y{k}")})
-        sub.load(0x3112, "lbu")
-        sub.load(0x3116, "lbu")
-        sub.branch(0x311A, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
-        sub.block(0x311C, 0x311E)
-        sub.jump(0x311E)
-        sub.fail(sub.fail_proof(("eq", f"hr{k}")))
+        sub.load(0x1994, "lbu")
+        sub.load(0x1998, "lbu")
+        sub.branch(0x199C, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.block(0x199E, 0x19A0)
+        sub.jump(0x19A0)
+        sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_1ab8")
     g.fork(none)
     g.emit(f"  obtain ⟨z{k}, rb{k}⟩ := R{k}")
     g.pinned.add(f"rb{k}")
@@ -7912,87 +7905,77 @@ def stage_rm():
     g.ranges[0x421] = (32, f"BitVec.ofNat 8 (root{k}.getD j 0)")
     g.emit(f"  have q{k}_421 : ∀ j, j < 32 → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x421 + j)) = BitVec.ofNat 8 (root{k}.getD j 0) :=")
     g.emit(f"    fun j hj => by rw [← add_ofNat_assoc]; exact memBytes_range rb{k} j hj")
-    g.load(0x3112, "lbu")
-    g.load(0x3116, "lbu")
-    g.branch(0x311A, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    g.block(0x312A, 0x3134)
-    g.block(0x3134, 0x3142)
-    g.mc(0x3142, 0x1481, 0x422, 0x1F)
-    g.block(0x314A, 0x3152)
-    g.store(0x3152, "sb")
-    g.block(0x3156, 0x3160)
-    ke = g.a32eq(0x3160, 0x1480, 0x1048, lambda k: [
-        f"  rw [join32 b{k-1}_1480 q{k-1}_1481, join32 (b{k-1}_1048.trans (zext_lo8 _)) q{k-1}_1049] at a0_{k}"])
+    g.load(0x1994, "lbu")
+    g.load(0x1998, "lbu")
+    g.branch(0x199C, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0x19AA, 0x19B6)
+    g.mc(0x19B6, 0x1FD, 0x422, 0x1F)
+    g.store(0x19BE, "sb")
+    g.block(0x19C2, 0x19C6)
+    ke = g.a32eq(0x19C6, 0x1FC, 0x3A8, lambda k: [
+        f"  rw [join32 b{k-1}_1fc q{k-1}_1fd, join32 (b{k-1}_3a8.trans (zext_lo8 _)) q{k-1}_3a9] at a0_{k}"])
     eq = f"b32 root{k} = b32 rt"
 
     def differ(sub):
         sub.set_a0(ke, 0, "ite_eq_right hroot")
-        sub.branch(0x3168, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
-        sub.jump(0x316A)
-        sub.fail(sub.fail_proof(("prop", "hroot")))
+        sub.branch(0x19CE, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.fail(sub.fail_proof(("prop", "hroot")), "sv_fail_1ab8")
     g.prop_check(eq, "hroot", differ)
     g.set_a0(ke, 1, "ite_eq_left hroot")
-    g.branch(0x3168, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    stmt, proof = finish(g, 0x316E, sorted(set(CL_KEEP_REGS + [8, 23])), set(g.words) - {0x420, 0x424, 0x428, 0x42C})
+    g.branch(0x19CE, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    stmt, proof = finish(g, 0x19D0, sorted(set(CL_KEEP_REGS)), set(g.words) - {0x420, 0x424, 0x428, 0x42C})
     info = {"name": "sv_rm", "title": "the inclusion proof",
-            "doc": "From 0x30EC to 0x316E: `root_from_inclusion` rebuilds a root from the leaf hash at offset 0x1380, the "
+            "doc": "From 0x1974 to 0x19D0: `root_from_inclusion` rebuilds a root from the leaf hash at offset 0x400, the "
             "entry's index, the checkpoint's size, and the bundle's proof, and the root is the checkpoint's.",
             "params": params, "stmt": stmt, "proof": proof,
-            "binders": RK_BINDERS.replace("op ol : Word}", "op ol lih lil pp pl : Word}").replace("{rt sg : Bytes}", "{rt sg lh : Bytes}"),
-            "start": 0x30EC, "import": "C3BootProofs.Proofs.SvRk"}
+            "binders": RK_BINDERS.replace("kp w1c w40 q w64 w74 : Word} {rt : Bytes}", "w64 w74 pp pl : Word} {rt lh : Bytes}"),
+            "start": 0x1974, "import": "C3BootProofs.Proofs.SvRk"}
     return g, info
 
 
-# The validity-window checks after 0x316E. Each compares the timestamp's
-# 64-bit time (words 0x3C and 0x78) with one bound, high words first. For
-# each: its first offset, whether `beq` puts the bound first, the loads on
-# the equal and unequal paths, `sltu`'s offset, whether it computes
-# time < bound (else bound < time), the `beqz` and its target, and the
-# `j 0x966` it skips.
+# The validity-window checks after 0x19D0. Each compares the timestamp's
+# 64-bit time (words 0x3C and 0x7C) with one bound, high words first. For
+# each: its first offset, the loads of the high words, the `beq` and whether
+# it puts `a0` first, its target and the loads there, the loads on the
+# unequal path and its jump, `sltu`'s offset, whether it computes
+# time < bound (else bound < time), blocks after `sltu`, the `bne` to the
+# error exit at 0x1AB8, and the next check's offset.
 WIN = [
-    # (start, hi loads, beq, eq target, eq loads, ne loads, ne jump, sltu, time_lt_bound, extra, beqz, next, fail_j)
-    (0x316E, [(0x316E, "lw"), (0x3170, "lw")], (0x3172, "a0a1"), 0x317C, [(0x317C, "lw"), (0x317E, "lw")],
-     [(0x3176, "lw"), (0x3178, "lw")], 0x317A, 0x3180, True, [(0x3184, 0x3186)], 0x3186, 0x318C, 0x3188),
-    (0x318C, [(0x318C, "lw"), (0x318E, "lw")], (0x3190, "a1a0"), 0x319A, [(0x319A, "lw"), (0x319C, "lw")],
-     [(0x3194, "lw"), (0x3196, "lw")], 0x3198, 0x319E, False, [], 0x31A2, 0x31A8, 0x31A4),
-    (0x31A8, [(0x31A8, "lw"), (0x31AA, "mem:i2h"), (0x31AE, "lw")], (0x31B0, "a0a1"), 0x31B8,
-     [(0x31B8, "lw"), (0x31BA, "mem:i2l"), (0x31BE, "lw")], [(0x31B4, "lw")], 0x31B6, 0x31C0, True, [], 0x31C4, 0x31CA, 0x31C6),
-    (0x31CA, [(0x31CA, "lw"), (0x31CC, "mem:i3h"), (0x31D0, "lw")], (0x31D2, "a1a0"), 0x31DA,
-     [(0x31DA, "lw"), (0x31DC, "mem:i3l"), (0x31E0, "lw")], [(0x31D6, "lw")], 0x31D8, 0x31E2, False, [], 0x31E6, 0x31EC, 0x31E8),
-    (0x31EC, [(0x31EC, "lw"), (0x31EE, "mem:t4h"), (0x31F0, "lw")], (0x31F2, "a0a1"), 0x31FA,
-     [(0x31FA, "lw"), (0x31FC, "mem:t4l"), (0x31FE, "lw")], [(0x31F6, "lw")], 0x31F8, 0x3200, True, [], 0x3204, 0x320A, 0x3206),
-    (0x320A, [(0x320A, "lw"), (0x320C, "mem:t5h"), (0x320E, "lw")], (0x3210, "a1a0"), 0x3218,
-     [(0x3218, "lw"), (0x321A, "mem:t5l"), (0x321C, "lw")], [(0x3214, "lw")], 0x3216, 0x321E, False, [], 0x3222, 0x3228, 0x3224),
-    (0x3228, [(0x3228, "lw"), (0x322C, "lw")], (0x322E, "a0a1"), 0x3236, [(0x3236, "lw"), (0x323A, "lw")],
-     [(0x3232, "lw")], 0x3234, 0x323C, True, [], 0x3240, 0x3246, 0x3242),
-    (0x3246, [(0x3246, "lw"), (0x324A, "lw")], (0x324C, "a1a0"), 0x3254, [(0x3254, "lw"), (0x3258, "lw")],
-     [(0x3250, "lw")], 0x3252, 0x325A, False, [], 0x325E, 0x3264, 0x3260),
+    (0x19D0, [(0x19D0, "lw"), (0x19D2, "lw")], (0x19D4, "a0a1"), 0x19DE, [(0x19DE, "lw"), (0x19E0, "lw")],
+     [(0x19D8, "lw"), (0x19DA, "lw")], 0x19DC, 0x19E2, True, [(0x19E6, 0x19E8)], 0x19E8, 0x19EA),
+    (0x19EA, [(0x19EA, "lw"), (0x19EC, "lw")], (0x19EE, "a1a0"), 0x19F8, [(0x19F8, "lw"), (0x19FA, "lw")],
+     [(0x19F2, "lw"), (0x19F4, "lw")], 0x19F6, 0x19FC, False, [], 0x1A00, 0x1A02),
+    (0x1A02, [(0x1A02, "mem:i2h"), (0x1A06, "lw")], (0x1A08, "a0a1"), 0x1A10, [(0x1A10, "mem:i2l"), (0x1A14, "lw")],
+     [(0x1A0C, "lw")], 0x1A0E, 0x1A16, True, [], 0x1A1A, 0x1A1C),
+    (0x1A1C, [(0x1A1C, "mem:i3h"), (0x1A20, "lw")], (0x1A22, "a1a0"), 0x1A2A, [(0x1A2A, "mem:i3l"), (0x1A2E, "lw")],
+     [(0x1A26, "lw")], 0x1A28, 0x1A30, False, [], 0x1A34, 0x1A36),
+    (0x1A36, [(0x1A36, "lw"), (0x1A38, "mem:t4h"), (0x1A3A, "lw")], (0x1A3C, "a0a1"), 0x1A44,
+     [(0x1A44, "lw"), (0x1A46, "mem:t4l"), (0x1A48, "lw")], [(0x1A40, "lw")], 0x1A42, 0x1A4A, True, [], 0x1A4E, 0x1A50),
+    (0x1A50, [(0x1A50, "lw"), (0x1A52, "mem:t5h"), (0x1A54, "lw")], (0x1A56, "a1a0"), 0x1A5E,
+     [(0x1A5E, "lw"), (0x1A60, "mem:t5l"), (0x1A62, "lw")], [(0x1A5A, "lw")], 0x1A5C, 0x1A64, False, [], 0x1A68, 0x1A6A),
+    (0x1A6A, [(0x1A6A, "lw"), (0x1A6E, "lw")], (0x1A70, "a0a1"), 0x1A78, [(0x1A78, "lw"), (0x1A7C, "lw")],
+     [(0x1A74, "lw")], 0x1A76, 0x1A7E, True, [], 0x1A82, 0x1A84),
+    (0x1A84, [(0x1A84, "lw"), (0x1A88, "lw")], (0x1A8A, "a1a0"), 0x1A92, [(0x1A92, "lw"), (0x1A96, "lw")],
+     [(0x1A8E, "lw")], 0x1A90, 0x1A98, False, [], 0x1A9C, 0x1A9E),
 ]
 
 # The words outside the stack that the intermediate and TSA windows load:
-# name -> (base word, offset as the instruction writes it).
-WIN_MEM = {"i2h": ("w7c", "0xFFFFFFE8"), "i2l": ("w7c", "0xFFFFFFE4"), "i3h": ("w7c", "0xFFFFFFF0"),
-           "i3l": ("w7c", "0xFFFFFFEC"), "t4h": ("w74", "0xC"), "t4l": ("w74", "0x8"),
-           "t5h": ("w74", "0x14"), "t5l": ("w74", "0x10")}
+# name -> (base, offset as the instruction writes it).
+WIN_MEM = {"i2h": ("x23", "0xFFFFFFE8"), "i2l": ("x23", "0xFFFFFFE4"), "i3h": ("x23", "0xFFFFFFF0"),
+           "i3l": ("x23", "0xFFFFFFEC"), "t4h": ("w78", "0xC"), "t4l": ("w78", "0x8"),
+           "t5h": ("w78", "0x14"), "t5l": ("w78", "0x10")}
+
+WIN_WORDS = {0x3C: "w3c", 0x54: "w54", 0x58: "w58", 0x5C: "w5c", 0x60: "w60", 0x78: "w78", 0x7C: "w7c",
+             0x388: "k88", 0x38C: "k8c", 0x390: "k90", 0x394: "k94"}
 
 
 def stage_win(i, eq):
     """Validity-window check `i`, with the time's high word equal to the
     bound's (`eq`) or not."""
-    (st, hi, (beq, order), eqt, eql, nel, nej, sl, tlb, extra, bz, nxt, fj) = WIN[i]
+    (st, hi, (beq, order), eqt, eql, nel, nej, sl, tlb, extra, bne, nxt) = WIN[i]
     g = Gen(f"Win{i}{'e' if eq else 'n'}")
     g.generic_alu = True
-    params = rk_start(g)
-    # `sv_rm` writes the computed root over the cosignature at 0x1480, and
-    # leaves `s0` at the checkpoint's root.
-    del g.ranges[0x1480]
-    g.regs[8] = ("S", 0x1048)
-    params = [q for q in params if not q.startswith("(q0_1480 :")]
-    params = [q.replace("(g0_8 : reg n0 (8 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1020)",
-                        "(g0_8 : reg n0 (8 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1048)") for q in params]
-    for e, nm in ((0x1028, "k28"), (0x102C, "k2c"), (0x1030, "k30"), (0x1034, "k34")):
-        g.words[e] = ("U", nm)
-        params.append(f"(w0_{e:x} : memLoad32 n0.mem ({fa(e)}) = {nm})")
+    params = start(g, t_regs0(), dict(WIN_WORDS), {})
 
     def loads(lst):
         for o, kind in lst:
@@ -8021,12 +8004,11 @@ def stage_win(i, eq):
     r = lean_val(g.regs[10])
 
     def out(sub):
-        sub.branch(bz, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_f hwin")
-        sub.jump(fj)
-        sub.fail(sub.fail_proof(("prop", "hwin")))
+        sub.branch(bne, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t hwin")
+        sub.fail(sub.fail_proof(("prop", "hwin")), "sv_fail_1ab8")
     g.prop_check(f"{r} = 0", "hwin", out)
-    g.branch(bz, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hwin")
-    stmt, proof = finish(g, nxt, sorted(set(CL_KEEP_REGS + [8, 23])), set(g.words))
+    g.branch(bne, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f hwin")
+    stmt, proof = finish(g, nxt, sorted(set(CL_KEEP_REGS)), set(g.words))
     which = ["the leaf certificate's start", "the leaf certificate's end", "the intermediate's start",
              "the intermediate's end", "the TSA certificate's start", "the TSA certificate's end",
              "the log key's start", "the log key's end"][i]
@@ -8035,7 +8017,8 @@ def stage_win(i, eq):
             + ("before " if tlb else "after ") + which + ", with the high words "
             + ("equal." if eq else "different."),
             "params": params, "stmt": stmt, "proof": proof,
-            "binders": RK_BINDERS.replace("op ol : Word}", "op ol lih lil k28 k2c k30 k34 i2h i2l i3h i3l t4h t4l t5h t5l : Word}"),
+            "binders": ("{B out bp x20 x21 x22 x23 x24 x25 x26 x27 " + " ".join(WIN_WORDS.values())
+                        + " i2h i2l i3h i3l t4h t4l t5h t5l : Word} {v : Nat → Word} {n0 : Machine}"),
             "start": st, "import": "C3BootProofs.Proofs.SvRk"}
     return g, info
 
