@@ -320,4 +320,218 @@ theorem tvf_okMem (M : Word → BitVec 8) (out a b c d : Word) :
   · rw [memLoad32_store32_sep wC14, memLoad32_store32_sep wC10, memLoad32_store32_same]
   · rw [memLoad32_store32_sep w1014, memLoad32_store32_same]
 
+/-- The facts about `valid_for`'s entry that every block of its proof uses.
+`G` is the bottom of the stack that it and its callees use, `F` its frame,
+`p` and `n` the object's bytes, and `g0` the registers at entry. -/
+structure TvfCtx (M0 : Word → BitVec 8) (G F out p : Word) (n : Nat) (g0 : Fin 32 → Word) : Prop where
+  code : TvfCode M0
+  fg : G + BitVec.ofNat 32 0x104 = F
+  ga : G.toNat % 4 = 0
+  gw : G.toNat + 0x144 ≤ 0x40000000
+  oa : out.toNat % 4 = 0
+  ow : out.toNat + 0x18 ≤ 0x40000000
+  og : Sep out 0x18 G 0x144
+  pw : p.toNat + n + 4 ≤ 0x40000000
+  p0 : p.toNat ≠ 0
+  pg : Sep p (n + 4) G 0x144
+  ro : Sep G 0x144 TVF_RO 0x1400
+  ks : memBytes M0 tvfStartKey 5 = ascii!"start"
+  ke : memBytes M0 tvfEndKey 3 = ascii!"end"
+  sp0 : g0 sp = F + BitVec.ofNat 32 0x40
+  ret : g0 ra &&& ~~~1 = g0 ra
+
+/-- The registers that `valid_for` keeps from its prologue to its
+epilogue. -/
+def TvfRegs (F out p : Word) (n : Nat) (g0 f : Fin 32 → Word) : Prop :=
+  f 0 = 0 ∧ f sp = F ∧ f 8 = p ∧ f 9 = BitVec.ofNat 32 n ∧ f 18 = out ∧
+    ∀ q : Fin 32, q.val ∈ [3, 4, 21, 22, 23, 24, 25, 26, 27] → f q = g0 q
+
+/-- The memory between the prologue and the epilogue: changed only in
+`[G, G + 0x144)`, with the saved registers in the frame. -/
+def TvfMemInv (M0 : Word → BitVec 8) (G F : Word) (g0 : Fin 32 → Word) (M : Word → BitVec 8) : Prop :=
+  Out M0 M G 0x144 ∧ memLoad32 M (F + 0x3C) = g0 ra ∧ memLoad32 M (F + 0x38) = g0 8 ∧
+    memLoad32 M (F + 0x34) = g0 9 ∧ memLoad32 M (F + 0x30) = g0 18 ∧ memLoad32 M (F + 0x2C) = g0 19 ∧
+    memLoad32 M (F + 0x28) = g0 20
+
+theorem tvf_rest_ne : ∀ q rd : Fin 32, q.val ∈ [3, 4, 21, 22, 23, 24, 25, 26, 27] →
+    rd.val ∈ [1, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30, 31] → q.val ≠ 0 ∧ q ≠ rd := by decide
+
+theorem tvf_rest_nc : ∀ q : Fin 32, q.val ∈ [3, 4, 21, 22, 23, 24, 25, 26, 27] → q ∉ jClob := by decide
+
+/-- A write to a register that `valid_for` doesn't keep. -/
+theorem TvfRegs.set {F out p : Word} {n : Nat} {g0 f : Fin 32 → Word} {rd : Fin 32} {v : Word}
+    (h : TvfRegs F out p n g0 f) (hr : rd.val ∈ [1, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30, 31]) :
+    TvfRegs F out p n g0 (upd f rd v) := by
+  obtain ⟨h0, h1, h2, h3, h4, h5⟩ := h
+  have ne : ∀ q : Fin 32, q.val ∈ [2, 8, 9, 18] → q.val ≠ 0 ∧ q ≠ rd := by
+    revert hr; revert rd; decide
+  refine ⟨rfl, ?_, ?_, ?_, ?_, fun q hq => ?_⟩
+  · rw [upd_app, ite_eq_right (ne sp (by decide)).1, ite_eq_right (ne sp (by decide)).2, h1]
+  · rw [upd_app, ite_eq_right (ne 8 (by decide)).1, ite_eq_right (ne 8 (by decide)).2, h2]
+  · rw [upd_app, ite_eq_right (ne 9 (by decide)).1, ite_eq_right (ne 9 (by decide)).2, h3]
+  · rw [upd_app, ite_eq_right (ne 18 (by decide)).1, ite_eq_right (ne 18 (by decide)).2, h4]
+  · rw [upd_app, ite_eq_right (tvf_rest_ne q rd hq hr).1, ite_eq_right (tvf_rest_ne q rd hq hr).2, h5 q hq]
+
+/-- The registers after a call that keeps everything outside `jClob`. -/
+theorem TvfRegs.clob {F out p : Word} {n : Nat} {g0 f : Fin 32 → Word} {m : Machine} {v : Word}
+    (h : TvfRegs F out p n g0 f) : TvfRegs F out p n g0 (clob (upd f ra v) m jClob) := by
+  obtain ⟨h0, h1, h2, h3, h4, h5⟩ := h.set (rd := ra) (v := v) (by decide)
+  refine ⟨?_, ?_, ?_, ?_, ?_, fun q hq => ?_⟩
+  · rw [clob_app, ite_eq_right (by decide), h0]
+  · rw [clob_app, ite_eq_right (by decide), h1]
+  · rw [clob_app, ite_eq_right (by decide), h2]
+  · rw [clob_app, ite_eq_right (by decide), h3]
+  · rw [clob_app, ite_eq_right (by decide), h4]
+  · rw [clob_app, ite_eq_right (tvf_rest_nc q hq), h5 q hq]
+
+/-- Proves `TvfRegs` of a register file that `upd` builds from one that
+`hR` covers. -/
+macro "tvf_regs " h:term : tactic => `(tactic| (
+  repeat (refine TvfRegs.set ?_ (by decide))
+  first | exact $h | exact TvfRegs.clob $h))
+
+section
+variable {M0 : Word → BitVec 8} {G F out p : Word} {n : Nat} {g0 : Fin 32 → Word}
+
+theorem TvfCtx.fG (X : TvfCtx M0 G F out p n g0) (c : Nat) :
+    F + BitVec.ofNat 32 c = G + BitVec.ofNat 32 (0x104 + c) := by
+  rw [← X.fg, add_ofNat_assoc]
+
+theorem TvfCtx.gc (X : TvfCtx M0 G F out p n g0) {c : Nat} (hc : c ≤ 0x144) :
+    (G + BitVec.ofNat 32 c).toNat = G.toNat + c := by
+  have := X.gw; rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+
+theorem TvfCtx.fn (X : TvfCtx M0 G F out p n g0) : F.toNat = G.toNat + 0x104 := by
+  rw [← X.fg]; exact X.gc (by decide)
+
+theorem TvfCtx.fa (X : TvfCtx M0 G F out p n g0) : F.toNat % 4 = 0 := by
+  have := X.fn; have := X.ga; omega
+
+theorem TvfCtx.flo (X : TvfCtx M0 G F out p n g0) {c k : Nat} (h : 0x104 + c + k ≤ 0x144) :
+    Sep (F + BitVec.ofNat 32 c) k TVF trustedRootValidForCode.length :=
+  tr_lowAt (by have := X.fn; have := X.gw; omega) (by decide) (by decide)
+
+theorem TvfCtx.olo (X : TvfCtx M0 G F out p n g0) {c k : Nat} (h : c + k ≤ 0x18) :
+    Sep (out + BitVec.ofNat 32 c) k TVF trustedRootValidForCode.length :=
+  tr_lowAt (by have := X.ow; omega) (by decide) (by decide)
+
+/-- The frame's word at `F + d` doesn't change when only the `l` bytes at
+`G + c` do, for a range below the saved registers. -/
+theorem TvfCtx.slot (X : TvfCtx M0 G F out p n g0) {M M' : Word → BitVec 8} {c l : Nat}
+    (h : Out M M' (G + BitVec.ofNat 32 c) l) (hc : c + l ≤ 0x12C) (d : Nat) (hd1 : 0x28 ≤ d) (hd2 : d + 4 ≤ 0x40) :
+    memLoad32 M' (F + BitVec.ofNat 32 d) = memLoad32 M (F + BitVec.ofNat 32 d) := by
+  rw [X.fG]
+  exact Out.load32 h (sep_offsets G (Or.inl (by omega)) (by omega) (by omega))
+
+theorem TvfMemInv.step (X : TvfCtx M0 G F out p n g0) {M M' : Word → BitVec 8} {c l : Nat}
+    (I : TvfMemInv M0 G F g0 M) (h : Out M M' (G + BitVec.ofNat 32 c) l) (hc : c + l ≤ 0x12C) :
+    TvfMemInv M0 G F g0 M' :=
+  ⟨fun x hx => (h x (sep_in hx (by omega))).trans (I.1 x hx),
+    (X.slot h hc 0x3C (by decide) (by decide)).trans I.2.1,
+    (X.slot h hc 0x38 (by decide) (by decide)).trans I.2.2.1,
+    (X.slot h hc 0x34 (by decide) (by decide)).trans I.2.2.2.1,
+    (X.slot h hc 0x30 (by decide) (by decide)).trans I.2.2.2.2.1,
+    (X.slot h hc 0x2C (by decide) (by decide)).trans I.2.2.2.2.2.1,
+    (X.slot h hc 0x28 (by decide) (by decide)).trans I.2.2.2.2.2.2⟩
+
+/-- A write of the 0x18 bytes at `out` leaves the frame's saved words. -/
+theorem TvfCtx.slotOut (X : TvfCtx M0 G F out p n g0) {M M' : Word → BitVec 8} (h : Out M M' out 0x18)
+    (d : Nat) (hd : d + 4 ≤ 0x40) :
+    memLoad32 M' (F + BitVec.ofNat 32 d) = memLoad32 M (F + BitVec.ofNat 32 d) := by
+  rw [X.fG]; exact Out.load32 h (X.og.subR (by omega))
+
+/-- The return through the epilogue, after `out` holds the result. -/
+theorem TvfCtx.exit (X : TvfCtx M0 G F out p n g0) {M Mf : Word → BitVec 8} {f : Fin 32 → Word}
+    {r : Except Nat (Nat × Nat)} (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
+    (hO : Out M Mf out 0x18) (hr : TvfOut Mf out r) :
+    WP trustedRootValidForCode TVF (trPost (tvfMem M0 G out r) g0) Mf 0xB6 f := by
+  obtain ⟨-, r1, -, -, -, r5⟩ := hR
+  exact tvf_epi r1 ((X.slotOut hO 0x3C (by decide)).trans hI.2.1) ((X.slotOut hO 0x38 (by decide)).trans hI.2.2.1)
+    ((X.slotOut hO 0x34 (by decide)).trans hI.2.2.2.1) ((X.slotOut hO 0x30 (by decide)).trans hI.2.2.2.2.1)
+    ((X.slotOut hO 0x2C (by decide)).trans hI.2.2.2.2.2.1) ((X.slotOut hO 0x28 (by decide)).trans hI.2.2.2.2.2.2)
+    X.sp0 X.ret X.fa r5 ⟨hr, fun x sG sO => (hO x sO.symm).trans (hI.1 x sG.symm)⟩
+
+/-- The `Err` writer at 0xAC, with the error byte in `a0`. -/
+theorem TvfCtx.errAC (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {e : Nat}
+    {r : Except Nat (Nat × Nat)} (hr : r = .error e) (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
+    (ha0 : f a0 = (BitVec.ofNat 8 e).zeroExtend 32) :
+    WP trustedRootValidForCode TVF (trPost (tvfMem M0 G out r) g0) M 0xAC f := by
+  have r4 := hR.2.2.2.2.1
+  have rz : f x0 = 0 := hR.1
+  refine WP.aluImm tvf_at_ac ?_; wn
+  refine WP.sb tvf_at_ae (by trsimp; rw [r4]; exact X.olo (c := 0) (by decide)) ?_; wn
+  refine WP.sb tvf_at_b2 (by trsimp; rw [r4]; exact X.olo (c := 1) (by decide)) ?_; wn
+  simp only [rz, ev0, r4, add_lit_zero, ha0, ri_ze]
+  rw [show BitVec.extractLsb' 0 8 (1 : Word) = (1 : BitVec 8) from rfl]
+  obtain ⟨hO, h0, h1⟩ := tvf_errMem M out (BitVec.ofNat 8 e)
+  refine X.exit (by tvf_regs hR) hI hO ?_
+  rw [hr]; exact ⟨h0, h1⟩
+
+/-- The error path at 0x70: the error byte of a result at `F + 0x10`. -/
+theorem TvfCtx.err70 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {e : Nat}
+    {r : Except Nat (Nat × Nat)} (hr : r = .error e) (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
+    (hb : M (F + 0x11) = BitVec.ofNat 8 e) :
+    WP trustedRootValidForCode TVF (trPost (tvfMem M0 G out r) g0) M 0x70 f := by
+  refine WP.lbu tvf_at_70 ?_; wn
+  refine WP.jal tvf_at_74 (by decide) ?_; wn
+  exact X.errAC hr (by tvf_regs hR) hI (by trsimp; rw [hR.2.1, hb])
+
+/-- The error path at 0xA8: the error byte of a result at `F + 0x20`. -/
+theorem TvfCtx.errA8 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {e : Nat}
+    {r : Except Nat (Nat × Nat)} (hr : r = .error e) (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
+    (hb : M (F + 0x24) = BitVec.ofNat 8 e) :
+    WP trustedRootValidForCode TVF (trPost (tvfMem M0 G out r) g0) M 0xA8 f := by
+  refine WP.lbu tvf_at_a8 ?_; wn
+  exact X.errAC hr (by tvf_regs hR) hI (by trsimp; rw [hR.2.1, hb])
+
+/-- The error path at 0x76: the error byte of a result at `F + 8`. -/
+theorem TvfCtx.err76 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {e : Nat}
+    {r : Except Nat (Nat × Nat)} (hr : r = .error e) (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
+    (hb : M (F + 0xC) = BitVec.ofNat 8 e) :
+    WP trustedRootValidForCode TVF (trPost (tvfMem M0 G out r) g0) M 0x76 f := by
+  refine WP.lbu tvf_at_76 ?_; wn
+  refine WP.jal tvf_at_7a (by decide) ?_; wn
+  exact X.errAC hr (by tvf_regs hR) hI (by trsimp; rw [hR.2.1, hb])
+
+/-- The `Ok` writer at 0xCA, with `not_before` in `s3`/`s4` and `not_after`
+in `a0`/`a1`. -/
+theorem TvfCtx.okCA (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {t u : Nat}
+    {r : Except Nat (Nat × Nat)} (hr : r = .ok (t, u)) (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
+    (h19 : f 19 = BitVec.ofNat 32 (t % 2 ^ 32)) (h20 : f 20 = BitVec.ofNat 32 (t / 2 ^ 32))
+    (ha0 : f a0 = BitVec.ofNat 32 (u % 2 ^ 32)) (ha1 : f a1 = BitVec.ofNat 32 (u / 2 ^ 32)) :
+    WP trustedRootValidForCode TVF (trPost (tvfMem M0 G out r) g0) M 0xCA f := by
+  have r0 : f x0 = 0 := hR.1
+  have r4 := hR.2.2.2.2.1
+  refine WP.sb tvf_at_ca (by rw [r4]; exact X.olo (c := 0) (by decide)) ?_; wn
+  refine WP.sw tvf_at_ce (by rw [r4]; exact aligned_add X.oa (k := 8) (by decide))
+    (by rw [r4]; exact X.olo (c := 8) (by decide)) ?_; wn
+  refine WP.sw tvf_at_d2 (by rw [r4]; exact aligned_add X.oa (k := 0xC) (by decide))
+    (by rw [r4]; exact X.olo (c := 0xC) (by decide)) ?_; wn
+  refine WP.alu tvf_at_d6 ?_; wn
+  refine WP.sw tvf_at_d8 (by trsimp; rw [r0, ev0, r4]; exact aligned_add X.oa (k := 0x10) (by decide))
+    (by trsimp; rw [r0, ev0, r4]; exact X.olo (c := 0x10) (by decide)) ?_; wn
+  refine WP.sw tvf_at_da (by trsimp; rw [r0, ev0, r4]; exact aligned_add X.oa (k := 0x14) (by decide))
+    (by trsimp; rw [r0, ev0, r4]; exact X.olo (c := 0x14) (by decide)) ?_; wn
+  refine WP.jal tvf_at_dc (by decide) ?_; wn
+  simp only [r0, ev0, r4, add_lit_zero, h19, h20, ha0, ha1]
+  rw [show BitVec.extractLsb' 0 8 (0 : Word) = (0 : BitVec 8) from rfl]
+  obtain ⟨hO, e0, e1, e2, e3, e4⟩ := tvf_okMem M out (BitVec.ofNat 32 (t % 2 ^ 32)) (BitVec.ofNat 32 (t / 2 ^ 32))
+    (BitVec.ofNat 32 (u % 2 ^ 32)) (BitVec.ofNat 32 (u / 2 ^ 32))
+  refine X.exit (by tvf_regs hR) hI hO ?_
+  rw [hr]; exact ⟨e0, e1, e2, e3, e4⟩
+
+/-- The path at 0xC6 for an object without `end`: `not_after` is
+`u64::MAX`. -/
+theorem TvfCtx.noneC6 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {t : Nat}
+    {r : Except Nat (Nat × Nat)} (hr : r = .ok (t, 2 ^ 64 - 1)) (hR : TvfRegs F out p n g0 f)
+    (hI : TvfMemInv M0 G F g0 M) (h19 : f 19 = BitVec.ofNat 32 (t % 2 ^ 32))
+    (h20 : f 20 = BitVec.ofNat 32 (t / 2 ^ 32)) :
+    WP trustedRootValidForCode TVF (trPost (tvfMem M0 G out r) g0) M 0xC6 f := by
+  refine WP.aluImm tvf_at_c6 ?_; wn
+  refine WP.aluImm tvf_at_c8 ?_; wn
+  exact X.okCA hr (by tvf_regs hR) hI (by trsimp; exact h19) (by trsimp; exact h20)
+    (by trsimp <;> rw [show f x0 = 0 from hR.1] <;> decide) (by trsimp <;> rw [show f x0 = 0 from hR.1] <;> decide)
+
+end
+
 end C3.RV32
