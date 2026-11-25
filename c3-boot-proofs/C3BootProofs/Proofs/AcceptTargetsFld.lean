@@ -72,12 +72,12 @@ theorem ActKp.out {c0 n0 : Nat} (h : ActKp B c0 n0 M M') (hres : ∀ x, ActOut B
     ∀ x, ActOut B Bf x → M' x = M x := fun x hx => h x hx.1 (hres x hx)
 
 theorem ActKp.tid (X : ActX romBase romCode B Bf M0) {c0 n0 : Nat} (h : ActKp B c0 n0 M M')
-    (hc0 : c0 + n0 ≤ 0x5A70) (h2 : 0x3A50 + 0x350 ≤ c0) (i : Nat) :
+    (hc0 : c0 + n0 ≤ 0x5A70) (h2 : 0x3A50 + 0x350 ≤ c0 ∨ c0 + n0 ≤ 0x3C94) (i : Nat) :
     tufIndexDocSpec M' (acSlot B 0x244) i = tufIndexDocSpec M (acSlot B 0x244) i :=
   act_tid_congr (fun j hj => by rw [add_ofNat_assoc]; exact h.at X hc0 (by omega) (by omega) (by omega)) i
 
 theorem ActKp.doc (X : ActX romBase romCode B Bf M0) {c0 n0 : Nat} (h : ActKp B c0 n0 M M')
-    (hc0 : c0 + n0 ≤ 0x5A70) (h2 : 0x3A50 + 0x350 ≤ c0) {flash : Nat → BitVec 8} {s : Word} {i : Nat} {d : Bytes}
+    (hc0 : c0 + n0 ≤ 0x5A70) (h2 : 0x3A50 + 0x350 ≤ c0 ∨ c0 + n0 ≤ 0x3C94) {flash : Nat → BitVec 8} {s : Word} {i : Nat} {d : Bytes}
     (hd : ActDoc flash M (acSlot B 0x244) s i d) : ActDoc flash M' (acSlot B 0x244) s i d :=
   fun o l e => hd o l (by rw [← h.tid X hc0 h2]; exact e)
 
@@ -257,7 +257,7 @@ theorem act_a46 {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R rom
     fun c h1 h2 => (k2.ld X (by decide) (by omega) h1 (Or.inl (by omega))).trans (L1 c h1 h2)
   have hdoc2 : ActDoc flash m2.mem (acSlot B 0x244) (f 24) ((memLoad32 m2.mem (acSlot B 0x1C)).toNat + 1)
       parts.trustedRoot := by
-    rw [L _ (by decide) (by decide)]; exact k2.doc X (by decide) (by decide) (k1.doc X (by decide) (by decide) hdoc)
+    rw [L _ (by decide) (by decide)]; exact k2.doc X (by decide) (Or.inl (by decide)) (k1.doc X (by decide) (Or.inl (by decide)) hdoc)
   have hsl1 : (slice d p4 l4).length = l4 := act_slice_len (by omega)
   wn
   rcases h2 : objField (slice d p4 l4) (ascii!"sha256") with e | ⟨p5, l5⟩
@@ -293,6 +293,243 @@ theorem act_a46 {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R rom
     (by act_r; exact hs11)
   rw [k2.bf X (by decide) (by omega) (by omega), ← act_slice_mem (n := l4) (by omega), hsl] at hb
   exact hspec p4 l4 p5 l5 body h1 h2 hb
+
+theorem act_ures_kp {c : Nat} {r : Option Nat}
+    (h : U64ResF M M' (B + BitVec.ofNat 32 c) (B + BitVec.ofNat 32 0x3A30) 32 r) : ActKp B c 16 M M' := by
+  obtain ⟨M1, h1, h2⟩ := h
+  exact fun x a b => (h2.outside x b).trans (h1 x (a.subR (c := 0x3A30) (l := 32) (by decide)))
+
+theorem act_ures_val {out s : Word} {k : Nat} {r : Option Nat} (h : U64ResF M M' out s k r) :
+    U64Res M' M' out r := by
+  obtain ⟨M1, _, h2⟩ := h
+  rcases r with _ | _
+  · exact ⟨fun _ _ => rfl, h2.2⟩
+  · exact ⟨fun _ _ => rfl, h2.2⟩
+
+theorem act_out_1870w : ∀ x, ActOut B Bf x → Sep x 1 (B + BitVec.ofNat 32 0x52C0) 16 := fun x hx => by
+  have := act_ks hx.2.2.2.2.1 0x10 16 (by decide); exact this
+
+theorem act_out_14 : ∀ x, ActOut B Bf x → Sep x 1 (B + BitVec.ofNat 32 0x3A64) 8 := fun x hx => by
+  have := hx.2.1.subR (c := 0) (l := 8) (by decide)
+  rwa [add_ofNat_assoc] at this
+
+theorem act_st_kp (w1 w2 : Word) :
+    ActKp B 0x3A64 8 M (memStore32 (memStore32 M (B + BitVec.ofNat 32 0x3A64) w1) (B + BitVec.ofNat 32 0x3A68) w2) :=
+  fun x _ b => by
+    rw [memStore32_get_sep (by have := b.symm.sub (c := 4) (l := 4) (by decide); rwa [add_ofNat_assoc] at this),
+      memStore32_get_sep (by have := b.symm.sub (c := 0) (l := 4) (by decide); rwa [BitVec.add_zero] at this)]
+
+/-- **From 0xA16**: `u64` on the `length` value at `E + p3`, the length
+to `sp + 0x14`, then `act_a46`. -/
+theorem act_a16 {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R romBase romCode)
+    (hR4 : R % 4 = 0) (hR : R ≤ 0x3A50 - 0x180)
+    (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
+    (hr : memLoad32 M (acSlot B 0x40) = r) {pinned : Bytes} {parts : TufParts} {root : TufRoot} {re te : Nat}
+    {x21 x25 x27 : Word} {Mi : Word → BitVec 8} {E : Word} {n p3 l3 : Nat} {d : Bytes}
+    (hO : ∀ x, ActOut B Bf x → M x = Mi x)
+    (hdoc : ActDoc flash M (acSlot B 0x244) (f 24) ((memLoad32 M (acSlot B 0x1C)).toNat + 1) parts.trustedRoot)
+    (hs4 : f 20 = Bf + 0x4000)
+    (hs0 : f 8 = E) (hs2 : f 18 = BitVec.ofNat 32 n) (hE1 : Bf.toNat + 0x4000 ≤ E.toNat)
+    (hE2 : E.toNat + n ≤ Bf.toNat + 0x6800) (hd : memBytes M E n = d)
+    (ha1 : f 11 = E + BitVec.ofNat 32 p3) (h354 : memLoad32 M (acSlot B 0x354) = BitVec.ofNat 32 l3)
+    (hp3 : p3 + l3 ≤ n)
+    (hspec : ∀ val p4 l4 p5 l5 body, u64Val (slice d p3 l3) = some val →
+      objField d (ascii!"hashes") = .ok (p4, l4) →
+      objField (slice d p4 l4) (ascii!"sha256") = .ok (p5, l5) →
+      strBody (slice (slice d p4 l4) p5 l5) = some body → val = parts.trustedRoot.length →
+      body = hexBytes (sha256 parts.trustedRoot) → verifyTuf pinned parts = some (root.version, min re te))
+    (h20 : memLoad32 M (acSlot B 0x20) = BitVec.ofNat 32 te)
+    (h24 : memLoad32 M (acSlot B 0x24) = BitVec.ofNat 32 (te / 2 ^ 32))
+    (h28 : memLoad32 M (acSlot B 0x28) = BitVec.ofNat 32 re)
+    (h2C : memLoad32 M (acSlot B 0x2C) = BitVec.ofNat 32 (re / 2 ^ 32))
+    (hs3 : f 19 = acSlot B 0x890) (hs1 : f 9 = acSlot B 0x1310)
+    (hs5 : f 21 = x21) (hs9 : f 25 = x25) (hs11 : f 27 = x27) :
+    WP bootMainClosure0Code AC (actQ B Bf g t r v M0 (AcTargetsPost pinned parts root re B Bf x21 x25 x27 Mi))
+      M 0xA16 f := by
+  have F := X.F
+  have hbh := X.bhi
+  have hbl : acBufLen = 0xB954 := rfl
+  have hdl : d.length = n := by rw [← hd, memBytes_length]
+  refine WP.zero fun hz => ?_
+  refine WP.lw ac_at_a16 (by rw [act_spc hI.rsp _ _ rfl]; exact X.al (by decide) (by decide)) ?_; wn
+  refine WP.lui ac_at_a1a ?_; wn
+  refine WP.aluImm ac_at_a1c ?_; wn
+  refine WP.alu ac_at_a20 ?_; wn
+  have hP3 : (E + BitVec.ofNat 32 p3).toNat = E.toNat + p3 := act_toNat_add (by omega)
+  refine act_u64 (c := 0x52C0) (p := E + BitVec.ofNat 32 p3) (n := l3) X
+    (hI.regs (by act_r) (by act_r) (by act_r)) ac_at_a22 ac_at_a26 (by decide) (by decide)
+    (by act_r; rw [BitVec.add_comm _ (f sp)]; exact act_spc hI.rsp _ _ rfl) (by act_r; exact ha1)
+    (by act_r; rw [act_spc hI.rsp _ _ rfl]; exact h354) (by decide) (by omega)
+    (X.sfb (by decide) (by omega) (by omega)) fun m2 hf2 => ?_
+  have k2 := act_ures_kp hf2
+  have v2 := act_ures_val hf2
+  have hsl : memBytes M (E + BitVec.ofNat 32 p3) l3 = slice d p3 l3 := by
+    rw [← act_slice_mem (n := n) (by omega), hd]
+  rw [hsl] at v2
+  have hI2 := hI.mem F X.sB (k2.out act_out_1870w)
+  have L : ∀ c, 0x3A50 ≤ c → c + 4 ≤ 0x52C0 →
+      memLoad32 m2.mem (B + BitVec.ofNat 32 c) = memLoad32 M (B + BitVec.ofNat 32 c) :=
+    fun c h1 h2 => k2.ld X (by decide) (by omega) h1 (Or.inl (by omega))
+  have e9 : f 9 + 1376 = B + BitVec.ofNat 32 0x52C0 := by
+    rw [hs1, acSlot, BitVec.add_assoc]; exact congrArg (B + ·) (by decide)
+  have e9' : f 9 + 1377 = B + BitVec.ofNat 32 0x52C0 + 1 := by
+    rw [hs1, acSlot, BitVec.add_assoc, BitVec.add_assoc]; exact congrArg (B + ·) (by decide)
+  wn
+  refine WP.lbu ac_at_a2a ?_; wn
+  rcases hv : u64Val (slice d p3 l3) with _ | val
+  · rw [hv] at v2
+    obtain ⟨_, h0, h1⟩ := v2
+    refine WP.branch ac_at_a2e (fun _ => ?_) (fun hb => ?_)
+    · wn
+      refine WP.lbu ac_at_9e0 ?_; wn
+      refine WP.jal ac_at_9e4 (by decide) ?_; wn
+      refine act_x6a (hI2.regs (by act_r) (by act_r) (by act_r)) ((L _ (by decide) (by decide)).trans hr) ?_
+      act_r; rw [e9', h1]; decide
+    · exfalso; revert hb; act_r; rw [e9, h0]; decide
+  rw [hv] at v2
+  obtain ⟨_, h0, h1⟩ := v2
+  refine WP.branch ac_at_a2e (fun hb => ?_) (fun _ => ?_)
+  · exfalso; revert hb; act_r; rw [e9, h0]; decide
+  wn
+  refine WP.lui ac_at_a30 ?_; wn
+  refine WP.aluImm ac_at_a32 ?_; wn
+  refine WP.alu ac_at_a36 ?_; wn
+  have e568 : f sp + (4096 + 784) + 1384 = B + BitVec.ofNat 32 0x52C0 + 8 := by
+    rw [act_spc2 hI.rsp _ _ 0x52C8 rfl, BitVec.add_assoc]; exact congrArg (B + ·) (by decide)
+  have e56C : f sp + (4096 + 784) + 1388 = B + BitVec.ofNat 32 0x52C0 + 12 := by
+    rw [act_spc2 hI.rsp _ _ 0x52CC rfl, BitVec.add_assoc]; exact congrArg (B + ·) (by decide)
+  refine WP.lw ac_at_a3a (by act_r; rw [act_spc2 hI.rsp _ _ 0x52C8 rfl]; exact X.al (by decide) (by decide)) ?_; wn
+  refine WP.sw ac_at_a3e (by act_r; rw [act_spc hI.rsp _ 0x3A64 rfl]; exact X.al (by decide) (by decide))
+    (by act_r; rw [act_spc hI.rsp _ 0x3A64 rfl]; exact X.sc (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.lw ac_at_a40 (by act_r; rw [act_spc2 hI.rsp _ _ 0x52CC rfl]; exact X.al (by decide) (by decide)) ?_; wn
+  refine WP.sw ac_at_a44 (by act_r; rw [act_spc hI.rsp _ 0x3A68 rfl]; exact X.al (by decide) (by decide))
+    (by act_r; rw [act_spc hI.rsp _ 0x3A68 rfl]; exact X.sc (by decide) (by decide) (by decide)) ?_; wn
+  have es : aluEval AluOp.add (f sp) (aluEval AluOp.add 4096 784) = acSlot B 0x1310 := act_spc hI.rsp _ _ rfl
+  rw [es, act_spc hI.rsp 20 0x3A64 rfl, act_spc hI.rsp 24 0x3A68 rfl]
+  have K3 := act_st_kp (M := m2.mem) (B := B) (memLoad32 m2.mem (acSlot B 0x1310 + 1384))
+    (memLoad32 (memStore32 m2.mem (B + BitVec.ofNat 32 0x3A64) (memLoad32 m2.mem (acSlot B 0x1310 + 1384)))
+      (acSlot B 0x1310 + 1388))
+  have eA : acSlot B 0x1310 + 1384 = B + BitVec.ofNat 32 0x52C8 := by
+    rw [acSlot, BitVec.add_assoc]; exact congrArg (B + ·) (by decide)
+  have eB : acSlot B 0x1310 + 1388 = B + BitVec.ofNat 32 0x52CC := by
+    rw [acSlot, BitVec.add_assoc]; exact congrArg (B + ·) (by decide)
+  have e8 : B + BitVec.ofNat 32 0x52C0 + 8 = B + BitVec.ofNat 32 0x52C8 := by
+    rw [BitVec.add_assoc]; exact congrArg (B + ·) (by decide)
+  have e12 : B + BitVec.ofNat 32 0x52C0 + 12 = B + BitVec.ofNat 32 0x52CC := by
+    rw [BitVec.add_assoc]; exact congrArg (B + ·) (by decide)
+  rw [e8, e12] at h1
+  have L3 : ∀ c, 0x3A6C ≤ c → c + 4 ≤ 0x52C0 → memLoad32 (memStore32 (memStore32 m2.mem (B + BitVec.ofNat 32 0x3A64)
+      (memLoad32 m2.mem (acSlot B 0x1310 + 1384))) (B + BitVec.ofNat 32 0x3A68)
+      (memLoad32 (memStore32 m2.mem (B + BitVec.ofNat 32 0x3A64) (memLoad32 m2.mem (acSlot B 0x1310 + 1384)))
+        (acSlot B 0x1310 + 1388))) (B + BitVec.ofNat 32 c) = memLoad32 M (B + BitVec.ofNat 32 c) :=
+    fun c h1 h2 => (K3.ld X (by decide) (by omega) (by omega) (Or.inr (by omega))).trans (L c (by omega) h2)
+  refine act_a46 (hiW := memLoad32 m2.mem (B + BitVec.ofNat 32 0x52CC))
+    (loW := memLoad32 m2.mem (B + BitVec.ofNat 32 0x52C8)) (val := val) hROM hR4 hR X
+    ((hI2.mem F X.sB (K3.out act_out_14)).regs (by act_r) (by act_r) (by act_r))
+    ((L3 _ (by decide) (by decide)).trans hr)
+    (fun x hx => (K3.out act_out_14 x hx).trans ((k2.out act_out_1870w x hx).trans (hO x hx)))
+    (by rw [show acSlot B 0x18 = B + BitVec.ofNat 32 0x3A68 from rfl, memLoad32_store32_same, eB,
+      memLoad32_store32_sep (X.ss (by decide) (by decide) (Or.inl (by decide)))])
+    (by rw [show acSlot B 0x14 = B + BitVec.ofNat 32 0x3A64 from rfl,
+      memLoad32_store32_sep (X.ss (by decide) (by decide) (Or.inr (by decide))), memLoad32_store32_same, eA]) h1
+    (by rw [L3 _ (by decide) (by decide)]; act_r
+        exact K3.doc X (by decide) (Or.inr (by decide)) (k2.doc X (by decide) (Or.inl (by decide)) hdoc))
+    (by act_r; exact hs4) (by act_r; exact hs0) (by act_r; exact hs2) hE1 hE2
+    (by rw [K3.bf X (by decide) (by omega) (by omega), k2.bf X (by decide) (by omega) (by omega), hd])
+    (fun p4 l4 p5 l5 body e1 e2 e3 e4 e5 => hspec val p4 l4 p5 l5 body hv e1 e2 e3 e4 e5)
+    ((L3 _ (by decide) (by decide)).trans h20) ((L3 _ (by decide) (by decide)).trans h24)
+    ((L3 _ (by decide) (by decide)).trans h28) ((L3 _ (by decide) (by decide)).trans h2C)
+    (by act_r; exact hs3) (by act_r) (by act_r; exact hs5) (by act_r; exact hs9) (by act_r; exact hs11)
+
+/-- **From 0x9F0**: `field(length)` on the entry `d` at `E`, then
+`act_a16`. -/
+theorem act_9f0 {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R romBase romCode)
+    (hR4 : R % 4 = 0) (hR : R ≤ 0x3A50 - 0x180)
+    (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
+    (hr : memLoad32 M (acSlot B 0x40) = r) {pinned : Bytes} {parts : TufParts} {root : TufRoot} {re te : Nat}
+    {x21 x25 x27 : Word} {Mi : Word → BitVec 8} {E : Word} {n : Nat} {d : Bytes}
+    (hO : ∀ x, ActOut B Bf x → M x = Mi x)
+    (hdoc : ActDoc flash M (acSlot B 0x244) (f 24) ((memLoad32 M (acSlot B 0x1C)).toNat + 1) parts.trustedRoot)
+    (hs4 : f 20 = Bf + 0x4000)
+    (hs0 : f 8 = E) (h878 : memLoad32 M (acSlot B 0x1878) = BitVec.ofNat 32 n) (hE1 : Bf.toNat + 0x4000 ≤ E.toNat)
+    (hE2 : E.toNat + n ≤ Bf.toNat + 0x6800) (hd : memBytes M E n = d)
+    (hspec : ∀ p3 l3 val p4 l4 p5 l5 body, objField d (ascii!"length") = .ok (p3, l3) →
+      u64Val (slice d p3 l3) = some val →
+      objField d (ascii!"hashes") = .ok (p4, l4) →
+      objField (slice d p4 l4) (ascii!"sha256") = .ok (p5, l5) →
+      strBody (slice (slice d p4 l4) p5 l5) = some body → val = parts.trustedRoot.length →
+      body = hexBytes (sha256 parts.trustedRoot) → verifyTuf pinned parts = some (root.version, min re te))
+    (h20 : memLoad32 M (acSlot B 0x20) = BitVec.ofNat 32 te)
+    (h24 : memLoad32 M (acSlot B 0x24) = BitVec.ofNat 32 (te / 2 ^ 32))
+    (h28 : memLoad32 M (acSlot B 0x28) = BitVec.ofNat 32 re)
+    (h2C : memLoad32 M (acSlot B 0x2C) = BitVec.ofNat 32 (re / 2 ^ 32))
+    (hs3 : f 19 = acSlot B 0x890) (hs1 : f 9 = acSlot B 0x1310)
+    (hs5 : f 21 = x21) (hs9 : f 25 = x25) (hs11 : f 27 = x27) :
+    WP bootMainClosure0Code AC (actQ B Bf g t r v M0 (AcTargetsPost pinned parts root re B Bf x21 x25 x27 Mi))
+      M 0x9F0 f := by
+  have F := X.F
+  have hbh := X.bhi
+  have hbl : acBufLen = 0xB954 := rfl
+  have hdl : d.length = n := by rw [← hd, memBytes_length]
+  have e9 : f 9 + 1384 = B + BitVec.ofNat 32 0x52C8 := by
+    rw [hs1, acSlot, BitVec.add_assoc]; exact congrArg (B + ·) (by decide)
+  refine WP.zero fun hz => ?_
+  refine WP.lw ac_at_9f0 (by rw [e9]; exact X.al (by decide) (by decide)) ?_; wn
+  refine WP.lui ac_at_9f4 ?_; wn
+  refine WP.aluImm ac_at_9f8 ?_; wn
+  refine WP.aluImm ac_at_9fc ?_; wn
+  refine WP.aluImm ac_at_9fe ?_; wn
+  refine WP.alu ac_at_a00 ?_; wn
+  refine WP.alu ac_at_a02 ?_; wn
+  have hE0 : E.toNat ≠ 0 := by omega
+  refine act_fld (c := 0x3DA0) (p := E) (n := n)
+    (kq := BitVec.ofNat 32 acTargetsKeysAddress + BitVec.ofNat 32 0x18) (kl := 6) X
+    (hI.regs (by act_r) (by act_r) (by act_r)) ac_at_a04 ac_at_a08 (by decide) (by decide)
+    (by act_r; exact act_spc hI.rsp _ _ rfl) (by act_r; exact hs0)
+    (by act_r; rw [e9]; exact h878) (by act_r <;> decide) (by act_r <;> decide) (by decide) (by decide) hE0 (by omega)
+    (X.sfb (by decide) (by omega) (by omega)) (X.key (by decide) (by decide)) fun m1 hf1 => ?_
+  have k1 := act_fres_kp hf1
+  have v1 := act_fres_val hf1
+  rw [act_keyB (X.E hI) (by decide), hd, show (acTargetsKeysData.drop 0x18).take 6 = ascii!"length" from by decide]
+    at v1
+  have hI1 := hI.mem F X.sB (k1.out act_out_350)
+  have L : ∀ c, 0x3A50 ≤ c → c + 4 ≤ 0x3DA0 →
+      memLoad32 m1.mem (B + BitVec.ofNat 32 c) = memLoad32 M (B + BitVec.ofNat 32 c) :=
+    fun c h1 h2 => k1.ld X (by decide) (by omega) h1 (Or.inl (by omega))
+  wn
+  refine WP.lw ac_at_a0c (by act_r; rw [act_spc hI.rsp _ 0x3DA0 rfl]; exact X.al (by decide) (by decide)) ?_; wn
+  rcases h1 : objField d (ascii!"length") with e | ⟨p3, l3⟩
+  · rw [h1] at v1
+    have he := act_eb_objField _ _ e h1
+    obtain ⟨_, hl0, hb4⟩ := v1
+    refine WP.branch ac_at_a10 (fun hb => ?_) (fun _ => ?_)
+    · exfalso; revert hb; act_r; rw [act_spc hI.rsp _ 0x3DA0 rfl, hl0]; decide
+    wn
+    refine WP.jal ac_at_a12 (by decide) ?_; wn
+    refine act_x66 (hI1.regs (by act_r) (by act_r) (by act_r)) ((L _ (by decide) (by decide)).trans hr) ?_
+    rw [show acSlot B 0x354 = B + BitVec.ofNat 32 0x3DA0 + 4 from (act_w4 _ _).symm, hb4, BitVec.toNat_ofNat]
+    omega
+  rw [h1] at v1
+  obtain ⟨_, hq3, hl3⟩ := v1
+  obtain ⟨hp3a, hp3b⟩ := objField_val h1
+  have hP3 : (E + BitVec.ofNat 32 p3).toNat = E.toNat + p3 := act_toNat_add (by omega)
+  refine WP.branch ac_at_a10 (fun _ => ?_) (fun hb => by
+    exfalso; revert hb; act_r; rw [act_spc hI.rsp _ 0x3DA0 rfl, hq3]; simp only [branchTaken]; intro hb
+    have := congrArg BitVec.toNat (bne_eq_false_iff_eq.mp hb); rw [hP3] at this; simp at this; omega)
+  wn
+  refine act_a16 (p3 := p3) (l3 := l3) hROM hR4 hR X (hI1.regs (by act_r) (by act_r) (by act_r))
+    ((L _ (by decide) (by decide)).trans hr)
+    (fun x hx => (k1.out act_out_350 x hx).trans (hO x hx))
+    (by act_r; rw [L _ (by decide) (by decide)]
+        exact k1.doc X (by decide) (Or.inl (by decide)) hdoc)
+    (by act_r; exact hs4) (by act_r; exact hs0) (by act_r; rw [e9]; exact h878) hE1 hE2
+    (by rw [k1.bf X (by decide) (by omega) (by omega), hd])
+    (by act_r; rw [act_spc hI.rsp _ 0x3DA0 rfl]; exact hq3)
+    (by rw [show acSlot B 0x354 = B + BitVec.ofNat 32 0x3DA0 + 4 from (act_w4 _ _).symm]; exact hl3) (by omega)
+    (fun val p4 l4 p5 l5 body e1 e2 e3 e4 e5 e6 => hspec p3 l3 val p4 l4 p5 l5 body h1 e1 e2 e3 e4 e5 e6)
+    ((L _ (by decide) (by decide)).trans h20) ((L _ (by decide) (by decide)).trans h24)
+    ((L _ (by decide) (by decide)).trans h28) ((L _ (by decide) (by decide)).trans h2C)
+    (by act_r; exact hs3) (by act_r; exact hs1) (by act_r; exact hs5) (by act_r; exact hs9) (by act_r; exact hs11)
 
 end
 
