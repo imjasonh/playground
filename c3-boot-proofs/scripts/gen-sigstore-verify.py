@@ -7282,83 +7282,81 @@ def stage_csa():
 
 
 def cn_start(g):
+    """The name scan at 0x1694: `s8` indexes the `s0` bytes at `s11`."""
     params = cs_start(g)
-    g.regs.update({9: ("U", "c"), 10: ("U", "pa"), 8: ("U", "nl0")})
-    params += ["(g0_8 : reg n0 (8 : Fin 32) = nl0)", "(g0_10 : reg n0 a0 = pa)"]
+    g.regs.update({27: ("U", "np"), 24: ("U", "ni"), 8: ("U", "nl")})
+    params = [q for q in params if not any(q.startswith(f"(g0_{r} :") for r in (8, 24, 27))]
+    params += ["(g0_8 : reg n0 (8 : Fin 32) = nl)", "(g0_24 : reg n0 (24 : Fin 32) = ni)",
+               "(g0_27 : reg n0 (27 : Fin 32) = np)"]
     return params
 
 
 def stage_cn(kind):
-    """The name scan at 0x2DCC: a byte that isn't a space ("m", back to
-    0x2DCC), the line's end ("e"), or the space ("s", on to the base64 groups
-    at 0x2E0C)."""
+    """The name scan at 0x1694: a byte that isn't a space ("m", back to
+    0x1694), the line's end ("e"), or the space ("s", on to the base64 groups
+    at 0x16D4)."""
     g = Gen("Cn" + kind)
     g.generic_alu = True
-    params = cn_start(g)
-    g.load(0x2DCC, "lw")
+    params = cn_start(g) + ["(pa_in : SvIn B (np + ni) 1)", f"(hsp : M0 (np + ni) {'=' if kind == 's' else '≠'} 0x20)"]
+    g.block(0x1694, 0x1698)
+    g.load_in(0x1698, "pa_in", "(by decide)")
+    g.block(0x169C, 0x169E, {10: ("(M0 ((np) + (ni))).zeroExtend 32 + 0xFFFFFFE0",
+                                  "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svCn" + kind + "169c, upd, ↓reduceIte]; rw [g{p}_10]; rfl")})
+    keep = CL_KEEP_REGS
+    if kind != "s":
+        g.branch(0x169E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f fun e => hsp ((space_iff _).mp e)")
+        g.block(0x16A0, 0x16A2)
     if kind == "e":
-        params.append("(heq : w40 = c)")
+        params.append("(heq : nl = ni + BitVec.ofNat 32 0x1)")
 
         def end(sub):
-            sub.branch(0x2DCE, True, f"by rw [g{sub.k}_11, g{sub.k}_9]; exact br_beq_t heq")
+            sub.branch(0x16A2, True, f"by rw [g{sub.k}_8, g{sub.k}_24]; exact br_beq_t heq")
             ck_fail_1878(sub, "hf")
         g.prop_check("False", "hf", end)
-        stmt, _ = finish(g, 0x2DCC, [2], set(), set())
+        stmt, _ = finish(g, 0x1694, [2], set(), set())
         g.emit("  exact hf.elim")
         proof = ""
-        title, doc = "a signature line without a space", "The name scan at 0x2DCC reaches the line's end: `sigstore::verify` fails."
+        title, doc = "a signature line without a space", "The name scan at 0x1694 reaches the line's end: `sigstore::verify` fails."
     else:
-        params += ["(hne : w40 ≠ c)", "(pa_in : SvIn B pa 1)",
-                   f"(hsp : M0 pa {'≠' if kind == 'm' else '='} 0x20)"]
-        g.branch(0x2DCE, False, f"by rw [g{g.k}_11, g{g.k}_9]; exact br_beq_f hne")
-        g.load_in(0x2DD2, "pa_in", "(by decide)")
-        g.block(0x2DD6, 0x2DD8, {11: ("(M0 pa).zeroExtend 32 + 0xFFFFFFE0",
-                                      "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svCn" + kind + "2dd6, upd, ↓reduceIte]; rw [g{p}_11]; rfl")})
         if kind == "m":
-            g.branch(0x2DD8, False, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_beq_f fun e => hsp ((space_iff _).mp e)")
-            g.block(0x2DDA, 0x2DDC)
-            g.block(0x2DDC, 0x2DDE)
-            g.jump(0x2DDE)
-            end, keep = 0x2DCC, CL_KEEP_REGS + [8, 10]
-            title, doc = "a byte of a signature line's name", ("One pass of the name scan, from 0x2DCC back to it: "
-                                                              "the next byte of the line isn't a space.")
+            params.append("(hne : nl ≠ ni + BitVec.ofNat 32 0x1)")
+            g.branch(0x16A2, False, f"by rw [g{g.k}_8, g{g.k}_24]; exact br_beq_f hne")
+            g.jump(0x16A6)
+            end = 0x1694
+            title, doc = "a byte of a signature line's name", ("One pass of the name scan, from 0x1694 back to it: "
+                                                              "the next byte of the line isn't a space, and isn't its last.")
         else:
-            g.branch(0x2DD8, True, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_beq_t ((space_iff _).mpr hsp)")
+            g.branch(0x169E, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t ((space_iff _).mpr hsp)")
 
             def empty(sub):
-                sub.branch(0x2DE0, True, f"by rw [g{sub.k}_9, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hc0)")
+                sub.branch(0x16A8, True, f"by rw [g{sub.k}_24, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hc0)")
                 ck_fail_1878(sub, "hc0")
-            g.prop_check("c ≠ 0", "hc0", empty)
-            g.branch(0x2DE0, False, f"by rw [g{g.k}_9, s{g.k}.zero]; exact br_beq_f hc0")
-            g.block(0x2DE4, 0x2DE8)
-            g.load(0x2DE8, "lw")
-            g.block(0x2DEA, 0x2DEE)
-            g.block(0x2DEE, 0x2DF2)
+            g.prop_check("ni ≠ 0", "hc0", empty)
+            g.branch(0x16A8, False, f"by rw [g{g.k}_24, s{g.k}.zero]; exact br_beq_f hc0")
+            g.block(0x16AC, 0x16B6)
+            g.block(0x16B6, 0x16BA)
             r = lean_val(g.regs[10])
 
             def ragged(sub):
-                sub.branch(0x2DF2, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t h4m")
+                sub.branch(0x16BA, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t h4m")
                 ck_fail_1878(sub, "h4m")
             g.prop_check(f"{r} = 0", "h4m", ragged)
-            g.branch(0x2DF2, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f h4m")
-            g.block(0x2DF6, 0x2DF8)
-            g.block(0x2DF8, 0x2DFA)
-            g.block(0x2DFA, 0x2DFE)
-            g.load(0x2DFE, "lw")
-            g.block(0x2E00, 0x2E02)
-            g.store(0x2E02, "sw")
-            g.block(0x2E04, 0x2E06)
-            g.block(0x2E06, 0x2E08)
-            g.store(0x2E08, "sw")
-            g.block(0x2E0A, 0x2E0C)
-            end, keep = 0x2E0C, CL_KEEP_REGS + [8, 10, 21, 22, 23]
+            g.branch(0x16BA, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f h4m")
+            g.block(0x16BE, 0x16C8)
+            g.store(0x16C8, "sw")
+            g.block(0x16CA, 0x16CC)
+            g.block(0x16CC, 0x16CE)
+            g.store(0x16CE, "sw")
+            g.store(0x16D0, "sw")
+            g.block(0x16D2, 0x16D4)
+            end, keep = 0x16D4, CL_KEEP_REGS + [10, 11]
             title, doc = "the space after a signature line's name", (
-                "From the name scan at 0x2DCC to the base64 groups at 0x2E0C: the name isn't empty, and the base64 "
+                "From the name scan at 0x1694 to the base64 groups at 0x16D4: the name isn't empty, and the base64 "
                 "after the space has a multiple of four bytes.")
         stmt, proof = finish(g, end, sorted(set(keep)), set(g.words), set(g.bytes))
     info = {"name": "sv_cn" + kind, "title": title, "doc": doc,
-            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS.replace("op ol : Word}", "op ol c pa nl0 : Word}"),
-            "start": 0x2DCC, "import": "C3BootProofs.Proofs.SvCs"}
+            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS.replace("bl : Word}", "bl np ni nl : Word}"),
+            "start": 0x1694, "import": "C3BootProofs.Proofs.SvCs"}
     return g, info
 
 

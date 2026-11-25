@@ -23,9 +23,6 @@ import C3BootProofs.Proofs.SvCmk
 import C3BootProofs.Proofs.SvCmn
 import C3BootProofs.Proofs.SvCms
 import C3BootProofs.Proofs.SvCmx
-import C3BootProofs.Proofs.SvCne
-import C3BootProofs.Proofs.SvCnm
-import C3BootProofs.Proofs.SvCns
 import C3BootProofs.Proofs.SvConstsLink
 import C3BootProofs.Proofs.SvCosigLink
 import C3BootProofs.Proofs.SvCosigLoop
