@@ -5,7 +5,6 @@ import C3BootProofs.Proofs.SvCSearch
 import C3BootProofs.Proofs.SvCs1
 import C3BootProofs.Proofs.SvCosigLoop
 import C3BootProofs.Proofs.SvSegWin
-import C3BootProofs.Image.BootloaderData6
 
 /-!
 # `sigstore::verify`: The transparency log entry
@@ -20,104 +19,28 @@ open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2
 set_option maxRecDepth 100000
 
 set_option maxHeartbeats 64000000 in
-/-- **The transparency log entry**: from the checkpoint at 0x2B34 to the successful exit at 0x3264: the checkpoint, the log that signed it, its signatures, the entry's index, and the validity windows. -/
-theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {n0 : Machine} {w8 : Word} {wc : Word} {w10 : Word} {w14 : Word} {w18 : Word} {w1c : Word}
-    (F : Fr B 0x3830)
+/-- **The transparency log entry**: from the checkpoint at 0x142E to the successful exit at 0x1A9E: the checkpoint, the log that signed it, its signatures, the entry's index, and the validity windows. -/
+theorem sv_seg_log {B out bp x20 x21 x22 x23 x24 x25 x26 x27 pv ckp ckl : Word} {v : Nat → Word} {n0 : Machine} {w68 : Word} {w6c : Word} {w70 : Word} {w3c : Word} {w54 : Word} {w58 : Word} {w5c : Word} {w60 : Word} {w78 : Word} {w7c : Word}
+    (FW : Fr (B + 0xFFFFEC10) 0x3A50)
     (E0 : SvCode n0.mem)
     (V0 : SvSaves B n0.mem v)
     (hret : v 0 &&& ~~~1 = v 0)
     (hO : SvOut B out)
-    (s0 : St n0.mem SV n0 0x2B34 (reg n0))
+    (s0 : St n0.mem SV n0 0x142E (reg n0))
     (M0 : Word → BitVec 8)
     (fM : ∀ x, SvR B x → n0.mem x = M0 x)
     (g0_2 : reg n0 sp = B + 0x21A0)
     (g0_10 : reg n0 a0 = pv)
     (g0_18 : reg n0 (18 : Fin 32) = out)
     (g0_19 : reg n0 (19 : Fin 32) = bp)
+    (g0_20 : reg n0 (20 : Fin 32) = x20)
     (g0_21 : reg n0 (21 : Fin 32) = x21)
-    (g0_22 : reg n0 (22 : Fin 32) = dp)
-    (g0_23 : reg n0 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA40)
-    (g0_24 : reg n0 (24 : Fin 32) = dg)
+    (g0_22 : reg n0 (22 : Fin 32) = x22)
+    (g0_23 : reg n0 (23 : Fin 32) = x23)
+    (g0_24 : reg n0 (24 : Fin 32) = x24)
+    (g0_25 : reg n0 (25 : Fin 32) = x25)
     (g0_26 : reg n0 (26 : Fin 32) = x26)
-    (g0_27 : reg n0 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20)
-    (w0_24 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24)
-    (w0_28 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28)
-    (w0_2c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c)
-    (w0_30 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = w30)
-    (w0_34 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x34) = w34)
-    (w0_38 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x38) = w38)
-    (w0_3c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x3C) = w3c)
-    (w0_40 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x40) = w40)
-    (w0_44 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x44) = w44)
-    (w0_48 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x48) = w48)
-    (w0_4c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x4C) = w4c)
-    (w0_50 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = w50)
-    (w0_54 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54)
-    (w0_58 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58)
-    (w0_5c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c)
-    (w0_60 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = w60)
-    (w0_64 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x64) = w64)
-    (w0_68 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = w68)
-    (w0_6c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x6C) = w6c)
-    (w0_70 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70)
-    (w0_74 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = q)
-    (w0_78 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = w78)
-    (w0_7c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = w7c)
-    (w0_80 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x80) = w80)
-    (w0_84 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x84) = w84)
-    (w0_88 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x88) = w88)
-    (w0_8c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x8C) = w8c)
-    (w0_90 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x90) = w90)
-    (w0_94 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x94) = w94)
-    (w0_98 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x98) = w98)
-    (w0_9c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x9C) = w9c)
-    (w0_a0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA0) = wa0)
-    (w0_a4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA4) = wa4)
-    (w0_a8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA8) = wa8)
-    (w0_ac : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAC) = wac)
-    (w0_b0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xB0) = wb0)
-    (w0_b4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xB4) = wb4)
-    (w0_b8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xB8) = wb8)
-    (w0_bc : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xBC) = wbc)
-    (w0_c0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xC0) = wc0)
-    (w0_c4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xC4) = wc4)
-    (w0_c8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xC8) = wc8)
-    (w0_cc : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xCC) = wcc)
-    (w0_d0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xD0) = wd0)
-    (w0_d4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xD4) = wd4)
-    (w0_d8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xD8) = wd8)
-    (w0_dc : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xDC) = wdc)
-    (w0_e0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xE0) = we0)
-    (w0_e4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xE4) = we4)
-    (w0_e8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xE8) = we8)
-    (w0_ec : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xEC) = wec)
-    (w0_f0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xF0) = wf0)
-    (w0_f4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xF4) = wf4)
-    (w0_f8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xF8) = wf8)
-    (w0_fc : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xFC) = wfc)
-    (w0_100 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x100) = w100)
-    (w0_104 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x104) = w104)
-    (w0_108 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x108) = w108)
-    (w0_10c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x10C) = w10c)
-    (w0_110 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x110) = w110)
-    (w0_114 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x114) = w114)
-    (w0_118 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x118) = w118)
-    (w0_11c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x11C) = w11c)
-    (w0_120 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x120) = w120)
-    (w0_124 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x124) = w124)
-    (w0_128 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x128) = w128)
-    (w0_12c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x12C) = w12c)
-    (w0_130 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x130) = w130)
-    (w0_a20 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) = w70)
-    (w0_a24 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA24) = x21)
-    (w0_a28 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA28) = w5c)
-    (w0_a2c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA2C) = w48)
-    (w0_a30 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA30) = w44)
-    (w0_a34 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA34) = w60)
-    (w0_a38 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = w3c)
-    (w0_a3c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = w78)
-    (w0_aa0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp)
-    (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg)
+    (g0_27 : reg n0 (27 : Fin 32) = x27)
     (CK0 : SvCkCode M0)
     (hckp : memLoad32 M0 (bp + 0x18) = ckp)
     (hckl : memLoad32 M0 (bp + 0x1C) = ckl)
@@ -126,213 +49,154 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
     (a_ckp : (bp + 0x18).toNat % 4 = 0)
     (a_ckl : (bp + 0x1C).toNat % 4 = 0)
     (ck_in : SvIn B ckp ckl.toNat)
-    (w0_8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x8) = w8)
-    (w0_c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xC) = wc)
-    (w0_10 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x10) = w10)
-    (w0_14 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = w14)
-    (w0_18 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x18) = w18)
-    (w0_1c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x1C) = w1c)
-    (H' : ∀ i, i < 8 → ∀ c'_3 q'_3 w80'_3, (c'_3, q'_3, w80'_3) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i ((BitVec.ofNat 32 0x100), ((w80) + BitVec.ofNat 32 0x98), w80) → (SvIn B (q'_3 + 0x20) 4) ∧ (SvIn B (q'_3 + 0x24) 4) ∧ ((q'_3 + 0x20).toNat % 4 = 0) ∧ ((q'_3 + 0x24).toNat % 4 = 0) ∧ ((memLoad32 M0 (q'_3 + 0x20)) ≠ 0 → SvIn B (memLoad32 M0 (q'_3 + 0x20)) (memLoad32 M0 (q'_3 + 0x24)).toNat))
+    (H' : ∀ i, i < 16 → ∀ c'_3 q'_3, (c'_3, q'_3) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x200), ((x21) + BitVec.ofNat 32 0x108)) → (SvIn B (q'_3 + 0x20) 4) ∧ (SvIn B (q'_3 + 0x24) 4) ∧ ((q'_3 + 0x20).toNat % 4 = 0) ∧ ((q'_3 + 0x24).toNat % 4 = 0) ∧ ((memLoad32 M0 (q'_3 + 0x20)) ≠ 0 → SvIn B (memLoad32 M0 (q'_3 + 0x20)) (memLoad32 M0 (q'_3 + 0x24)).toNat))
     (S2 : SvSha2Code M0)
-    (KS : SvK2Sep B)
-    (kp_in4 : ∀ i, i < 8 → ∀ y0 y1 y2, (y0, y1, y2) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2.1 + BitVec.ofNat 32 0x20, (memLoad32 M0 (s.2.1 + 0x20)))) i ((BitVec.ofNat 32 0x100), ((w80) + BitVec.ofNat 32 0x98), w80) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (((y1) + BitVec.ofNat 32 0x20) + 0x18) 4)
-    (kw_in4 : ∀ i, i < 8 → ∀ y0 y1 y2, (y0, y1, y2) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2.1 + BitVec.ofNat 32 0x20, (memLoad32 M0 (s.2.1 + 0x20)))) i ((BitVec.ofNat 32 0x100), ((w80) + BitVec.ofNat 32 0x98), w80) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (((y1) + BitVec.ofNat 32 0x20) + 0x1C) 4)
-    (a_kp : ∀ i, i < 8 → ∀ y0 y1 y2, (y0, y1, y2) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2.1 + BitVec.ofNat 32 0x20, (memLoad32 M0 (s.2.1 + 0x20)))) i ((BitVec.ofNat 32 0x100), ((w80) + BitVec.ofNat 32 0x98), w80) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → (((y1) + BitVec.ofNat 32 0x20) + 0x18).toNat % 4 = 0)
-    (a_kw : ∀ i, i < 8 → ∀ y0 y1 y2, (y0, y1, y2) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2.1 + BitVec.ofNat 32 0x20, (memLoad32 M0 (s.2.1 + 0x20)))) i ((BitVec.ofNat 32 0x100), ((w80) + BitVec.ofNat 32 0x98), w80) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → (((y1) + BitVec.ofNat 32 0x20) + 0x1C).toNat % 4 = 0)
-    (kp_in : ∀ i, i < 8 → ∀ y0 y1 y2, (y0, y1, y2) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2.1 + BitVec.ofNat 32 0x20, (memLoad32 M0 (s.2.1 + 0x20)))) i ((BitVec.ofNat 32 0x100), ((w80) + BitVec.ofNat 32 0x98), w80) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0x18)) 32)
-    (EE0 : EvEnv M0)
     (RS : SvRoSep B)
+    (kp_in4 : ∀ i, i < 16 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x200), (x21 + BitVec.ofNat 32 0x108)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (((y1) + BitVec.ofNat 32 0x20) + 0x18) 4)
+    (kw_in4 : ∀ i, i < 16 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x200), (x21 + BitVec.ofNat 32 0x108)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (((y1) + BitVec.ofNat 32 0x20) + 0x1C) 4)
+    (a_kp : ∀ i, i < 16 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x200), (x21 + BitVec.ofNat 32 0x108)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → (((y1) + BitVec.ofNat 32 0x20) + 0x18).toNat % 4 = 0)
+    (a_kw : ∀ i, i < 16 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x200), (x21 + BitVec.ofNat 32 0x108)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → (((y1) + BitVec.ofNat 32 0x20) + 0x1C).toNat % 4 = 0)
+    (kp_in : ∀ i, i < 16 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x200), (x21 + BitVec.ofNat 32 0x108)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0x18)) 32)
+    (EE0 : EvEnv M0)
     (hiv : (s5Hv M0 (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)
-    (pk_in : ∀ i, i < 8 → ∀ y0 y1 y2, (y0, y1, y2) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2.1 + BitVec.ofNat 32 0x20, (memLoad32 M0 (s.2.1 + 0x20)))) i ((BitVec.ofNat 32 0x100), ((w80) + BitVec.ofNat 32 0x98), w80) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0x18)) 32)
-    (lid_in : ∀ i, i < 8 → ∀ y0 y1 y2, (y0, y1, y2) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2.1 + BitVec.ofNat 32 0x20, (memLoad32 M0 (s.2.1 + 0x20)))) i ((BitVec.ofNat 32 0x100), ((w80) + BitVec.ofNat 32 0x98), w80) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (((y1) + BitVec.ofNat 32 0x20) + BitVec.ofNat 32 0x5) 19)
+    (pk_in : ∀ i, i < 16 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x200), (x21 + BitVec.ofNat 32 0x108)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0x18)) 32)
+    (w0_68 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = w68)
+    (w0_6c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x6C) = w6c)
+    (w0_70 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70)
+    (w0_3c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x3C) = w3c)
+    (w0_54 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54)
+    (w0_58 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58)
+    (w0_5c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c)
+    (w0_60 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = w60)
+    (w0_78 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = w78)
+    (w0_7c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = w7c)
+    (lid_in : ∀ i, i < 16 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x200), (x21 + BitVec.ofNat 32 0x108)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (((y1) + BitVec.ofNat 32 0x20) + BitVec.ofNat 32 0x5) 19)
     (lih_in : SvIn B (bp + 0x2C) 4)
     (lil_in : SvIn B (bp + 0x28) 4)
     (a_lih : (bp + 0x2C).toNat % 4 = 0)
     (a_lil : (bp + 0x28).toNat % 4 = 0)
     (RK0 : SvRkCode M0)
-    (dgi_in : SvIn B w84 32)
-    (sig_in : SvIn B w68 w64.toNat)
-    (crt_in : SvIn B w6c x26.toNat)
+    (dgi_in : SvIn B x20 32)
+    (sig_in : SvIn B w70 w68.toNat)
+    (crt_in : SvIn B w6c x22.toNat)
     (pp_in4 : SvIn B (bp + 0x10) 4)
     (pl_in4 : SvIn B (bp + 0x14) 4)
     (a_pp : (bp + 0x10).toNat % 4 = 0)
     (a_pl : (bp + 0x14).toNat % 4 = 0)
     (pp_in : SvIn B (memLoad32 M0 (bp + 0x10)) (memLoad32 M0 (bp + 0x14)).toNat)
-    (ii2h : SvIn B (w7c + 0xFFFFFFE8) 4)
-    (ai2h : (w7c + 0xFFFFFFE8).toNat % 4 = 0)
-    (ii2l : SvIn B (w7c + 0xFFFFFFE4) 4)
-    (ai2l : (w7c + 0xFFFFFFE4).toNat % 4 = 0)
-    (ii3h : SvIn B (w7c + 0xFFFFFFF0) 4)
-    (ai3h : (w7c + 0xFFFFFFF0).toNat % 4 = 0)
-    (ii3l : SvIn B (w7c + 0xFFFFFFEC) 4)
-    (ai3l : (w7c + 0xFFFFFFEC).toNat % 4 = 0)
-    (it4h : SvIn B (q + 0xC) 4)
-    (at4h : (q + 0xC).toNat % 4 = 0)
-    (it4l : SvIn B (q + 0x8) 4)
-    (at4l : (q + 0x8).toNat % 4 = 0)
-    (it5h : SvIn B (q + 0x14) 4)
-    (at5h : (q + 0x14).toNat % 4 = 0)
-    (it5l : SvIn B (q + 0x10) 4)
-    (at5l : (q + 0x10).toNat % 4 = 0) :
+    (ii2h : SvIn B (x23 + 0xFFFFFFE8) 4)
+    (ai2h : (x23 + 0xFFFFFFE8).toNat % 4 = 0)
+    (ii2l : SvIn B (x23 + 0xFFFFFFE4) 4)
+    (ai2l : (x23 + 0xFFFFFFE4).toNat % 4 = 0)
+    (ii3h : SvIn B (x23 + 0xFFFFFFF0) 4)
+    (ai3h : (x23 + 0xFFFFFFF0).toNat % 4 = 0)
+    (ii3l : SvIn B (x23 + 0xFFFFFFEC) 4)
+    (ai3l : (x23 + 0xFFFFFFEC).toNat % 4 = 0)
+    (it4h : SvIn B (w78 + 0xC) 4)
+    (at4h : (w78 + 0xC).toNat % 4 = 0)
+    (it4l : SvIn B (w78 + 0x8) 4)
+    (at4l : (w78 + 0x8).toNat % 4 = 0)
+    (it5h : SvIn B (w78 + 0x14) 4)
+    (at5h : (w78 + 0x14).toNat % 4 = 0)
+    (it5l : SvIn B (w78 + 0x10) 4)
+    (at5l : (w78 + 0x10).toNat % 4 = 0) :
     SvErrRet B out v n0 ∨
     ((pv ≠ 0) ∧
-      ∃ ix7_1_1, nlScan M0 (ckp) 0 ((ckl).toNat) = some ix7_1_1 ∧
-      ∃ ix17_1_1, nlScan M0 ((ckp) + BitVec.ofNat 32 (ix7_1_1 + 1)) 0 (((ckl).toNat) - (ix7_1_1 + 1)) = some ix17_1_1 ∧
-      ∃ ix25_1_1, nlScan M0 (((ckp) + BitVec.ofNat 32 (ix7_1_1 + 1)) + BitVec.ofNat 32 (ix17_1_1 + 1)) 0 ((((ckl).toNat) - (ix7_1_1 + 1)) - (ix17_1_1 + 1)) = some ix25_1_1 ∧
-      ∃ ix33_1_1, nlScan M0 ((((ckp) + BitVec.ofNat 32 (ix7_1_1 + 1)) + BitVec.ofNat 32 (ix17_1_1 + 1)) + BitVec.ofNat 32 (ix25_1_1 + 1)) 0 (((((ckl).toNat) - (ix7_1_1 + 1)) - (ix17_1_1 + 1)) - (ix25_1_1 + 1)) = some ix33_1_1 ∧
-      (BitVec.ofNat 32 ix33_1_1 = 0) ∧
-      (BitVec.ofNat 32 (((((ckl).toNat) - (ix7_1_1 + 1)) - (ix17_1_1 + 1)) - (ix25_1_1 + 1)) - BitVec.ofNat 32 (ix33_1_1 + 1) ≠ 0) ∧
-      (((1 < (BitVec.ofNat 32 ix17_1_1).toNat) ∧ ((BitVec.ofNat 32 (((((ckl).toNat) - (ix7_1_1 + 1)) - (ix17_1_1 + 1)) - (ix25_1_1 + 1)) - BitVec.ofNat 32 (ix33_1_1 + 1)).toNat < ckl.toNat) ∧ (¬ (ckl).toNat < ((aluEval .xor ((BitVec.ofNat 32 (((((ckl).toNat) - (ix7_1_1 + 1)) - (ix17_1_1 + 1)) - (ix25_1_1 + 1)) - BitVec.ofNat 32 (ix33_1_1 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + (ckl)).toNat) ∧ (¬ (((BitVec.ofNat 32 ix17_1_1)) + BitVec.ofNat 32 0xFFFFFFEC).toNat < (BitVec.ofNat 32 0xFFFFFFED).toNat) ∧ (M0 ((ckp) + BitVec.ofNat 32 (ix7_1_1 + 1)) ≠ 0x30)) ∨ ((¬ (1 < (BitVec.ofNat 32 ix17_1_1).toNat)) ∧ ((BitVec.ofNat 32 (((((ckl).toNat) - (ix7_1_1 + 1)) - (ix17_1_1 + 1)) - (ix25_1_1 + 1)) - BitVec.ofNat 32 (ix33_1_1 + 1)).toNat < ckl.toNat) ∧ (¬ (ckl).toNat < ((aluEval .xor ((BitVec.ofNat 32 (((((ckl).toNat) - (ix7_1_1 + 1)) - (ix17_1_1 + 1)) - (ix25_1_1 + 1)) - BitVec.ofNat 32 (ix33_1_1 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + (ckl)).toNat) ∧ (¬ (((BitVec.ofNat 32 ix17_1_1)) + BitVec.ofNat 32 0xFFFFFFEC).toNat < (BitVec.ofNat 32 0xFFFFFFED).toNat))) ∧
-      ∃ c'_2 p'_2 x21'_2 w60'_2 w70'_2, (c'_2, p'_2, x21'_2, w60'_2, w70'_2) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) (BitVec.ofNat 32 ix17_1_1).toNat ((BitVec.ofNat 32 ix17_1_1), ((ckp) + BitVec.ofNat 32 (ix7_1_1 + 1)), x21, (BitVec.ofNat 32 0x0), (BitVec.ofNat 32 0x0)) ∧ (∀ i, i < (BitVec.ofNat 32 ix17_1_1).toNat → ∀ c'_2 p'_2 x21'_2 w60'_2 w70'_2, (c'_2, p'_2, x21'_2, w60'_2, w70'_2) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) i ((BitVec.ofNat 32 ix17_1_1), ((ckp) + BitVec.ofNat 32 (ix7_1_1 + 1)), x21, (BitVec.ofNat 32 0x0), (BitVec.ofNat 32 0x0)) → ((((((M0 (p'_2)).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF).toNat < (BitVec.ofNat 32 0xA).toNat)) ∧ (((aluEval .sltu ((aluEval .mul (w70'_2) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu (w60'_2) (BitVec.ofNat 32 0xA))) (aluEval .mulhu (w60'_2) (BitVec.ofNat 32 0xA))) ||| (aluEval .sltu (BitVec.ofNat 32 0x0) (aluEval .mulhu (w70'_2) (BitVec.ofNat 32 0xA))) = 0)) ∧ (((aluEval .sltu (((((M0 (p'_2)).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul (w60'_2) (BitVec.ofNat 32 0xA))) (aluEval .mul (w60'_2) (BitVec.ofNat 32 0xA))) &&& (aluEval .sltu (((aluEval .mul (w70'_2) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu (w60'_2) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 (p'_2)).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul (w60'_2) (BitVec.ofNat 32 0xA))) (aluEval .mul (w60'_2) (BitVec.ofNat 32 0xA)))) ((aluEval .mul (w70'_2) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu (w60'_2) (BitVec.ofNat 32 0xA)))) = 0))) ∧
-      (w70'_2.toNat < 2 ^ 31) ∧ ∃ bs7_2, base64Decode (memBytes M0 ((((ckp) + BitVec.ofNat 32 (ix7_1_1 + 1)) + BitVec.ofNat 32 (ix17_1_1 + 1))) (((BitVec.ofNat 32 ix25_1_1)).toNat)) = some bs7_2 ∧ (bs7_2.length = 32) ∧
-      ∃ k_3, k_3 < 8 ∧
-      (∀ i, i < k_3 → ∀ c'_3 q'_3 w80'_3, (c'_3, q'_3, w80'_3) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i ((BitVec.ofNat 32 0x100), ((w80) + BitVec.ofNat 32 0x98), w80) → ¬ (memBytes M0 (memLoad32 M0 (q'_3 + 0x20)) (memLoad32 M0 (q'_3 + 0x24)).toNat = memBytes M0 ckp (BitVec.ofNat 32 ix7_1_1).toNat)) ∧
-      ∃ c'_3 q'_3 w80'_3, (c'_3, q'_3, w80'_3) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) k_3 ((BitVec.ofNat 32 0x100), ((w80) + BitVec.ofNat 32 0x98), w80) ∧ (memBytes M0 (memLoad32 M0 (q'_3 + 0x20)) (memLoad32 M0 (q'_3 + 0x24)).toNat = memBytes M0 ckp (BitVec.ofNat 32 ix7_1_1).toNat) ∧
+      ∃ ix8_1_1, nlScan M0 (ckp) 0 ((ckl).toNat) = some ix8_1_1 ∧
+      ∃ ix18_1_1, nlScan M0 ((ckp) + BitVec.ofNat 32 (ix8_1_1 + 1)) 0 (((ckl).toNat) - (ix8_1_1 + 1)) = some ix18_1_1 ∧
+      ∃ ix26_1_1, nlScan M0 (((ckp) + BitVec.ofNat 32 (ix8_1_1 + 1)) + BitVec.ofNat 32 (ix18_1_1 + 1)) 0 ((((ckl).toNat) - (ix8_1_1 + 1)) - (ix18_1_1 + 1)) = some ix26_1_1 ∧
+      ∃ ix34_1_1, nlScan M0 ((((ckp) + BitVec.ofNat 32 (ix8_1_1 + 1)) + BitVec.ofNat 32 (ix18_1_1 + 1)) + BitVec.ofNat 32 (ix26_1_1 + 1)) 0 (((((ckl).toNat) - (ix8_1_1 + 1)) - (ix18_1_1 + 1)) - (ix26_1_1 + 1)) = some ix34_1_1 ∧
+      (BitVec.ofNat 32 ix34_1_1 = 0) ∧
+      (BitVec.ofNat 32 (((((ckl).toNat) - (ix8_1_1 + 1)) - (ix18_1_1 + 1)) - (ix26_1_1 + 1)) - BitVec.ofNat 32 (ix34_1_1 + 1) ≠ 0) ∧
+      (((1 < (BitVec.ofNat 32 ix18_1_1).toNat) ∧ ((BitVec.ofNat 32 (((((ckl).toNat) - (ix8_1_1 + 1)) - (ix18_1_1 + 1)) - (ix26_1_1 + 1)) - BitVec.ofNat 32 (ix34_1_1 + 1)).toNat < ckl.toNat) ∧ (¬ (ckl).toNat < ((aluEval .xor ((BitVec.ofNat 32 (((((ckl).toNat) - (ix8_1_1 + 1)) - (ix18_1_1 + 1)) - (ix26_1_1 + 1)) - BitVec.ofNat 32 (ix34_1_1 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + (ckl)).toNat) ∧ (¬ (((BitVec.ofNat 32 ix18_1_1)) + BitVec.ofNat 32 0xFFFFFFEC).toNat < (BitVec.ofNat 32 0xFFFFFFED).toNat) ∧ (M0 ((ckp) + BitVec.ofNat 32 (ix8_1_1 + 1)) ≠ 0x30)) ∨ ((¬ (1 < (BitVec.ofNat 32 ix18_1_1).toNat)) ∧ ((BitVec.ofNat 32 (((((ckl).toNat) - (ix8_1_1 + 1)) - (ix18_1_1 + 1)) - (ix26_1_1 + 1)) - BitVec.ofNat 32 (ix34_1_1 + 1)).toNat < ckl.toNat) ∧ (¬ (ckl).toNat < ((aluEval .xor ((BitVec.ofNat 32 (((((ckl).toNat) - (ix8_1_1 + 1)) - (ix18_1_1 + 1)) - (ix26_1_1 + 1)) - BitVec.ofNat 32 (ix34_1_1 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + (ckl)).toNat) ∧ (¬ (((BitVec.ofNat 32 ix18_1_1)) + BitVec.ofNat 32 0xFFFFFFEC).toNat < (BitVec.ofNat 32 0xFFFFFFED).toNat))) ∧
+      ∃ c'_2 p'_2 w64'_2 w74'_2, (c'_2, p'_2, w64'_2, w74'_2) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.1)) (BitVec.ofNat 32 0xA))))) (BitVec.ofNat 32 ix18_1_1).toNat ((BitVec.ofNat 32 ix18_1_1), ((ckp) + BitVec.ofNat 32 (ix8_1_1 + 1)), (BitVec.ofNat 32 0x0), (BitVec.ofNat 32 0x0)) ∧ (∀ i, i < (BitVec.ofNat 32 ix18_1_1).toNat → ∀ c'_2 p'_2 w64'_2 w74'_2, (c'_2, p'_2, w64'_2, w74'_2) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.1)) (BitVec.ofNat 32 0xA))))) i ((BitVec.ofNat 32 ix18_1_1), ((ckp) + BitVec.ofNat 32 (ix8_1_1 + 1)), (BitVec.ofNat 32 0x0), (BitVec.ofNat 32 0x0)) → ((((((M0 (p'_2)).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF).toNat < (BitVec.ofNat 32 0xA).toNat)) ∧ (((aluEval .sltu ((aluEval .mul (w74'_2) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu (w64'_2) (BitVec.ofNat 32 0xA))) (aluEval .mulhu (w64'_2) (BitVec.ofNat 32 0xA))) ||| (aluEval .sltu (BitVec.ofNat 32 0x0) (aluEval .mulhu (w74'_2) (BitVec.ofNat 32 0xA))) = 0)) ∧ (((aluEval .sltu (((((M0 (p'_2)).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul (w64'_2) (BitVec.ofNat 32 0xA))) (aluEval .mul (w64'_2) (BitVec.ofNat 32 0xA))) &&& (aluEval .sltu (((aluEval .mul (w74'_2) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu (w64'_2) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 (p'_2)).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul (w64'_2) (BitVec.ofNat 32 0xA))) (aluEval .mul (w64'_2) (BitVec.ofNat 32 0xA)))) ((aluEval .mul (w74'_2) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu (w64'_2) (BitVec.ofNat 32 0xA)))) = 0))) ∧
+      (w74'_2.toNat < 2 ^ 31) ∧ ∃ bs7_2, base64Decode (memBytes M0 ((((ckp) + BitVec.ofNat 32 (ix8_1_1 + 1)) + BitVec.ofNat 32 (ix18_1_1 + 1))) (((BitVec.ofNat 32 ix26_1_1)).toNat)) = some bs7_2 ∧ (bs7_2.length = 32) ∧
+      ∃ k_3, k_3 < 16 ∧
+      (∀ i, i < k_3 → ∀ c'_3 q'_3, (c'_3, q'_3) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x200), ((x21) + BitVec.ofNat 32 0x108)) → ¬ (memBytes M0 (memLoad32 M0 (q'_3 + 0x20)) (memLoad32 M0 (q'_3 + 0x24)).toNat = memBytes M0 ckp (BitVec.ofNat 32 ix8_1_1).toNat)) ∧
+      ∃ c'_3 q'_3, (c'_3, q'_3) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) k_3 ((BitVec.ofNat 32 0x200), ((x21) + BitVec.ofNat 32 0x108)) ∧ (memBytes M0 (memLoad32 M0 (q'_3 + 0x20)) (memLoad32 M0 (q'_3 + 0x24)).toNat = memBytes M0 ckp (BitVec.ofNat 32 ix8_1_1).toNat) ∧
       ((memLoad32 M0 (q'_3 + 0x20)) ≠ 0) ∧
-      ∃ sg_5, ∃ k_5 c'_5 x21'_5 rl'_5 rp'_5 dg'_5 w8'_5 wc'_5 w28'_5 w2c'_5 w30'_5 w38'_5 w40'_5 w5c'_5 sg'_5, svChain (sv_cosigStep dp B out bp x26 ((q'_3) + BitVec.ofNat 32 0x20) bs7_2 (le4 (sha256 (memBytes M0 (ckp) (((BitVec.ofNat 32 ix7_1_1)).toNat) ++ memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x38)) (1) ++ memBytes M0 (BitVec.ofNat 32 (img% merklePrefixAddress)) (1) ++ memBytes M0 ((memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x18))) (32))) 0) (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x1C)) ((aluEval .xor ((BitVec.ofNat 32 (((((ckl).toNat) - (ix7_1_1 + 1)) - (ix17_1_1 + 1)) - (ix25_1_1 + 1)) - BitVec.ofNat 32 (ix33_1_1 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + (ckl)) ckp (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x18)) w3c (BitVec.ofNat 32 ix7_1_1) ckp w4c w50 w54 w58 w60'_2 w64 w68 w6c w70'_2 w78 w7c (memLoad32 M0 (q'_3 + 0x20)) w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 w70 x21 w5c w48 w44 w60 w3c w78 dg v 0 0 0 M0) k_5 (((c'_3) + BitVec.ofNat 32 0xFFFFFFE0), x21'_2, (BitVec.ofNat 32 ix25_1_1), (((ckp) + BitVec.ofNat 32 (ix7_1_1 + 1)) + BitVec.ofNat 32 (ix17_1_1 + 1)), dg, w8, wc, w28, w2c, (BitVec.ofNat 32 0x0), (((((ckp) + BitVec.ofNat 32 (ix7_1_1 + 1)) + BitVec.ofNat 32 (ix17_1_1 + 1)) + BitVec.ofNat 32 (ix25_1_1 + 1)) + BitVec.ofNat 32 (ix33_1_1 + 1)), w40, (BitVec.ofNat 32 (((((ckl).toNat) - (ix7_1_1 + 1)) - (ix17_1_1 + 1)) - (ix25_1_1 + 1)) - BitVec.ofNat 32 (ix33_1_1 + 1)), sg_5) (c'_5, x21'_5, rl'_5, rp'_5, dg'_5, w8'_5, wc'_5, w28'_5, w2c'_5, w30'_5, w38'_5, w40'_5, w5c'_5, sg'_5) ∧
-      w5c'_5 = 0 ∧
-      ((w30'_5) &&& BitVec.ofNat 32 0x1 ≠ 0) ∧ (evSpec (sigMem M0 (B + 0x21A0 + BitVec.ofNat 32 0x420) sg'_5) (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x18)) (B + 0x21A0 + BitVec.ofNat 32 0x420) ckp (((aluEval .xor ((BitVec.ofNat 32 (((((ckl).toNat) - (ix7_1_1 + 1)) - (ix17_1_1 + 1)) - (ix25_1_1 + 1)) - BitVec.ofNat 32 (ix33_1_1 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + (ckl))).toNat = true) ∧
-      ((((memLoad32 M0 (bp + 0x2C)) = w70'_2) ∧ (aluEval .sltu ((memLoad32 M0 (bp + 0x28))) (w60'_2) ≠ 0)) ∨ ((¬ ((memLoad32 M0 (bp + 0x2C)) = w70'_2)) ∧ (aluEval .sltu ((memLoad32 M0 (bp + 0x2C))) (w70'_2) ≠ 0))) ∧
-      ∃ root6_3_6, rootFromInclusion (pair64 ((memLoad32 M0 (bp + 0x28))) ((memLoad32 M0 (bp + 0x2C)))) (pair64 (w60'_2) (w70'_2)) ((sha256 ([] ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorLeafAddress)) (0x1) ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorPreAddress)) (0x71) ++ base64Encode (memBytes M0 (w84) (32)) ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorMid1Address)) (0x1B) ++ base64Encode (memBytes M0 (w68) ((w64).toNat)) ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorMid2Address)) (0x54) ++ base64Encode (memBytes M0 (w6c) ((x26).toNat)) ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorPostAddress)) (0x7)))) (memBytes M0 ((memLoad32 M0 (bp + 0x10))) (((memLoad32 M0 (bp + 0x14))).toNat)) = some root6_3_6 ∧
+      ∃ sg_5, ∃ k_5 f'_5 w38'_5 w50'_5 sg'_5, svChain (sv_cosigStep B out bp x20 x22 x23 (memLoad32 M0 (q'_3 + 0x24)) (le4 (sha256 (memBytes M0 (ckp) (((BitVec.ofNat 32 ix8_1_1)).toNat) ++ memBytes M0 (BitVec.ofNat 32 (img% svNewlineAddress)) (1) ++ memBytes M0 (BitVec.ofNat 32 (img% merklePrefixAddress)) (1) ++ memBytes M0 ((memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x18))) (32))) 0) ckp (BitVec.ofNat 32 ix8_1_1) (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x18)) ckp ((aluEval .xor ((BitVec.ofNat 32 (((((ckl).toNat) - (ix8_1_1 + 1)) - (ix18_1_1 + 1)) - (ix26_1_1 + 1)) - BitVec.ofNat 32 (ix34_1_1 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + (ckl)) v M0) k_5 ((BitVec.ofNat 32 0x0), (((((ckp) + BitVec.ofNat 32 (ix8_1_1 + 1)) + BitVec.ofNat 32 (ix18_1_1 + 1)) + BitVec.ofNat 32 (ix26_1_1 + 1)) + BitVec.ofNat 32 (ix34_1_1 + 1)), (BitVec.ofNat 32 (((((ckl).toNat) - (ix8_1_1 + 1)) - (ix18_1_1 + 1)) - (ix26_1_1 + 1)) - BitVec.ofNat 32 (ix34_1_1 + 1)), sg_5) (f'_5, w38'_5, w50'_5, sg'_5) ∧
+      w50'_5 = 0 ∧
+      ((f'_5) &&& BitVec.ofNat 32 0x1 ≠ 0) ∧ (evSpec (sigMem M0 (B + 0x21A0 + BitVec.ofNat 32 0x420) sg'_5) (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x18)) (B + 0x21A0 + BitVec.ofNat 32 0x420) ckp (((aluEval .xor ((BitVec.ofNat 32 (((((ckl).toNat) - (ix8_1_1 + 1)) - (ix18_1_1 + 1)) - (ix26_1_1 + 1)) - BitVec.ofNat 32 (ix34_1_1 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + (ckl))).toNat = true) ∧
+      ((((memLoad32 M0 (bp + 0x2C)) = w74'_2) ∧ (aluEval .sltu ((memLoad32 M0 (bp + 0x28))) (w64'_2) ≠ 0)) ∨ ((¬ ((memLoad32 M0 (bp + 0x2C)) = w74'_2)) ∧ (aluEval .sltu ((memLoad32 M0 (bp + 0x2C))) (w74'_2) ≠ 0))) ∧
+      ∃ root6_3_6, rootFromInclusion (pair64 ((memLoad32 M0 (bp + 0x28))) ((memLoad32 M0 (bp + 0x2C)))) (pair64 (w64'_2) (w74'_2)) ((sha256 ([] ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorLeafAddress)) (0x1) ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorPreAddress)) (0x71) ++ base64Encode (memBytes M0 (x20) (32)) ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorMid1Address)) (0x1B) ++ base64Encode (memBytes M0 (w70) ((w68).toNat)) ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorMid2Address)) (0x54) ++ base64Encode (memBytes M0 (w6c) ((x22).toNat)) ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorPostAddress)) (0x7)))) (memBytes M0 ((memLoad32 M0 (bp + 0x10))) (((memLoad32 M0 (bp + 0x14))).toNat)) = some root6_3_6 ∧
       (b32 root6_3_6 = b32 bs7_2) ∧
-      (((w54 = w78) ∧ (aluEval .sltu (w3c) (w58) = 0)) ∨ ((¬ (w54 = w78)) ∧ (aluEval .sltu (w78) (w54) = 0))) ∧
-      (((w78 = w4c) ∧ (aluEval .sltu (w50) (w3c) = 0)) ∨ ((¬ (w78 = w4c)) ∧ (aluEval .sltu (w4c) (w78) = 0))) ∧
-      ((((memLoad32 M0 (w7c + 0xFFFFFFE8)) = w78) ∧ (aluEval .sltu (w3c) ((memLoad32 M0 (w7c + 0xFFFFFFE4))) = 0)) ∨ ((¬ ((memLoad32 M0 (w7c + 0xFFFFFFE8)) = w78)) ∧ (aluEval .sltu (w78) ((memLoad32 M0 (w7c + 0xFFFFFFE8))) = 0))) ∧
-      (((w78 = (memLoad32 M0 (w7c + 0xFFFFFFF0))) ∧ (aluEval .sltu ((memLoad32 M0 (w7c + 0xFFFFFFEC))) (w3c) = 0)) ∨ ((¬ (w78 = (memLoad32 M0 (w7c + 0xFFFFFFF0)))) ∧ (aluEval .sltu ((memLoad32 M0 (w7c + 0xFFFFFFF0))) (w78) = 0))) ∧
-      ((((memLoad32 M0 (q + 0xC)) = w78) ∧ (aluEval .sltu (w3c) ((memLoad32 M0 (q + 0x8))) = 0)) ∨ ((¬ ((memLoad32 M0 (q + 0xC)) = w78)) ∧ (aluEval .sltu (w78) ((memLoad32 M0 (q + 0xC))) = 0))) ∧
-      (((w78 = (memLoad32 M0 (q + 0x14))) ∧ (aluEval .sltu ((memLoad32 M0 (q + 0x10))) (w3c) = 0)) ∨ ((¬ (w78 = (memLoad32 M0 (q + 0x14)))) ∧ (aluEval .sltu ((memLoad32 M0 (q + 0x14))) (w78) = 0))) ∧
-      ((((memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7)) = w78) ∧ (aluEval .sltu (w3c) ((memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 3))) = 0)) ∨ ((¬ ((memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7)) = w78)) ∧ (aluEval .sltu (w78) ((memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7))) = 0))) ∧
-      (((w78 = (memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15))) ∧ (aluEval .sltu ((memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 11))) (w3c) = 0)) ∨ ((¬ (w78 = (memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15)))) ∧ (aluEval .sltu ((memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15))) (w78) = 0))) ∧
+      (((w5c = w7c) ∧ (aluEval .sltu (w3c) (w60) = 0)) ∨ ((¬ (w5c = w7c)) ∧ (aluEval .sltu (w7c) (w5c) = 0))) ∧
+      (((w7c = w54) ∧ (aluEval .sltu (w58) (w3c) = 0)) ∨ ((¬ (w7c = w54)) ∧ (aluEval .sltu (w54) (w7c) = 0))) ∧
+      ((((memLoad32 M0 (x23 + 0xFFFFFFE8)) = w7c) ∧ (aluEval .sltu (w3c) ((memLoad32 M0 (x23 + 0xFFFFFFE4))) = 0)) ∨ ((¬ ((memLoad32 M0 (x23 + 0xFFFFFFE8)) = w7c)) ∧ (aluEval .sltu (w7c) ((memLoad32 M0 (x23 + 0xFFFFFFE8))) = 0))) ∧
+      (((w7c = (memLoad32 M0 (x23 + 0xFFFFFFF0))) ∧ (aluEval .sltu ((memLoad32 M0 (x23 + 0xFFFFFFEC))) (w3c) = 0)) ∨ ((¬ (w7c = (memLoad32 M0 (x23 + 0xFFFFFFF0)))) ∧ (aluEval .sltu ((memLoad32 M0 (x23 + 0xFFFFFFF0))) (w7c) = 0))) ∧
+      ((((memLoad32 M0 (w78 + 0xC)) = w7c) ∧ (aluEval .sltu (w3c) ((memLoad32 M0 (w78 + 0x8))) = 0)) ∨ ((¬ ((memLoad32 M0 (w78 + 0xC)) = w7c)) ∧ (aluEval .sltu (w7c) ((memLoad32 M0 (w78 + 0xC))) = 0))) ∧
+      (((w7c = (memLoad32 M0 (w78 + 0x14))) ∧ (aluEval .sltu ((memLoad32 M0 (w78 + 0x10))) (w3c) = 0)) ∨ ((¬ (w7c = (memLoad32 M0 (w78 + 0x14)))) ∧ (aluEval .sltu ((memLoad32 M0 (w78 + 0x14))) (w7c) = 0))) ∧
+      ((((memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7)) = w7c) ∧ (aluEval .sltu (w3c) ((memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 3))) = 0)) ∨ ((¬ ((memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7)) = w7c)) ∧ (aluEval .sltu (w7c) ((memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7))) = 0))) ∧
+      (((w7c = (memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15))) ∧ (aluEval .sltu ((memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 11))) (w3c) = 0)) ∨ ((¬ (w7c = (memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15)))) ∧ (aluEval .sltu ((memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15))) (w7c) = 0))) ∧
     ∃ n', Steps n0 n' ∧
         (∀ x, SvR B x → n'.mem x = M0 x) ∧
-        St n'.mem SV n' 0x3264 (reg n') ∧
+        St n'.mem SV n' 0x1A9E (reg n') ∧
         SvCode n'.mem ∧
         SvSaves B n'.mem v ∧
         reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧
         reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
         reg n' sp = B + 0x21A0 ∧
-        reg n' (8 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1048 ∧
-        reg n' (9 : Fin 32) = ((BitVec.ofNat 8 (root6_3_6.getD 0 0)).zeroExtend 32) ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
-        reg n' (21 : Fin 32) = x21'_5 ∧
-        reg n' (22 : Fin 32) = rl'_5 ∧
-        reg n' (23 : Fin 32) = (memLoad32 M0 (bp + 0x2C)) ∧
-        reg n' (24 : Fin 32) = dg'_5 ∧
-        reg n' (25 : Fin 32) = (memLoad32 M0 (bp + 0x28)) ∧
-        reg n' (26 : Fin 32) = x26 ∧
-        reg n' (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x8) = w8'_5 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xC) = wc'_5 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = (le4 (sha256 (memBytes M0 (ckp) (((BitVec.ofNat 32 ix7_1_1)).toNat) ++ memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x38)) (1) ++ memBytes M0 (BitVec.ofNat 32 (img% merklePrefixAddress)) (1) ++ memBytes M0 ((memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x18))) (32))) 0) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x18) = (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x1C)) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1C) = (BitVec.ofNat 8 (bs7_2.getD 0 0)).zeroExtend 32 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x20) = ((aluEval .xor ((BitVec.ofNat 32 (((((ckl).toNat) - (ix7_1_1 + 1)) - (ix17_1_1 + 1)) - (ix25_1_1 + 1)) - BitVec.ofNat 32 (ix33_1_1 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + (ckl)) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = ckp ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28'_5 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = ((w30'_5) &&& BitVec.ofNat 32 0x1) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = w30'_5 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x34) = (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x18)) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x38) = w38'_5 ∧
+        reg n' (20 : Fin 32) = (BitVec.ofNat 32 0x1E) ∧
+        reg n' (21 : Fin 32) = (memLoad32 M0 (bp + 0x28)) ∧
+        reg n' (22 : Fin 32) = x22 ∧
+        reg n' (23 : Fin 32) = x23 ∧
+        reg n' (24 : Fin 32) = (memLoad32 M0 (bp + 0x2C)) ∧
+        reg n' (25 : Fin 32) = (memLoad32 M0 (q'_3 + 0x24)) ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x3C) = w3c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x40) = w40'_5 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x44) = (BitVec.ofNat 32 ix7_1_1) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x48) = ckp ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x4C) = w4c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = w50 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c'_5 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = w60'_2 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x64) = w64 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = w68 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x6C) = w6c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70'_2 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = q ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = w60 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = w78 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = w7c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x80) = (memLoad32 M0 (q'_3 + 0x20)) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x84) = w84 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x88) = w88 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x8C) = w8c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x90) = w90 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x94) = w94 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x98) = w98 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x9C) = w9c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA0) = wa0 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA4) = wa4 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA8) = wa8 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xAC) = wac ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xB0) = wb0 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xB4) = wb4 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xB8) = wb8 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xBC) = wbc ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xC0) = wc0 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xC4) = wc4 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xC8) = wc8 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xCC) = wcc ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xD0) = wd0 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xD4) = wd4 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xD8) = wd8 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xDC) = wdc ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xE0) = we0 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xE4) = we4 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xE8) = we8 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xEC) = wec ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xF0) = wf0 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xF4) = wf4 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xF8) = wf8 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xFC) = wfc ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x100) = w100 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x104) = w104 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x108) = w108 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x10C) = w10c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x110) = w110 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x114) = w114 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x118) = w118 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x11C) = w11c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x120) = w120 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x124) = w124 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x128) = w128 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x12C) = w12c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x130) = w130 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) = w70 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA24) = x21 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA28) = w5c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA2C) = w48 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA30) = w44 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA34) = w60 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = w3c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = w78 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = (memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 3)) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = (memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7)) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = (memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 11)) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1034) = (memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15)) ∧
-        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x10) = BitVec.ofNat 8 (sg'_5.getD 0 0) ∧
-        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1048) = ((BitVec.ofNat 8 (bs7_2.getD 0 0)).zeroExtend 32).extractLsb' 0 8 ∧
-        (∀ j, j < 31 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (bs7_2.getD (1 + j) 0)) ∧
-        (∀ j, j < 31 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1049 + j)) = BitVec.ofNat 8 (bs7_2.getD (1 + j) 0)) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = (memLoad32 M0 (q'_3 + 0x20)) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1038) = (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x18)) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x103C) = (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x1C)) ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = w60'_2 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1044) = w70'_2 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x388) = (memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 3)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x38C) = (memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x390) = (memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 11)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x394) = (memLoad32 M0 (((((q'_3) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1C) = (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x1C)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x20) = (BitVec.ofNat 8 (bs7_2.getD 0 0)).zeroExtend 32 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x34) = (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x18)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x40) = (memLoad32 M0 (q'_3 + 0x20)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x4C) = ((q'_3) + BitVec.ofNat 32 0x20) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x64) = w64'_2 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = w74'_2 ∧
+        (∀ j, j < 31 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x3E0 + j)) = BitVec.ofNat 8 (bs7_2.getD (1 + j) 0)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x380) = (memLoad32 M0 (q'_3 + 0x20)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x398) = (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x18)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x39C) = (memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x1C)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x3A0) = w64'_2 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x3A4) = w74'_2 ∧
+        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x384) = ((memLoad32 M0 (q'_3 + 0x24))).extractLsb' 0 8 ∧
+        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x3A8) = ((BitVec.ofNat 8 (bs7_2.getD 0 0)).zeroExtend 32).extractLsb' 0 8 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = w68 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x6C) = w6c ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70 ∧
+        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1FC) = BitVec.ofNat 8 (root6_3_6.getD 0 0) ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (0 : BitVec 8) ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x421) = BitVec.ofNat 8 (root6_3_6.getD 0 0) ∧
-        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) = BitVec.ofNat 8 (root6_3_6.getD 0 0) ∧
-        SvKeepL B n0.mem n'.mem [(0x24, 0x4), (0x420, 0x10), (0x48, 0x4), (0x44, 0x4), (0x420, 0x10), (0x420, 0x10), (0x420, 0x10), (0x5C, 0x4), (0x20, 0x4), (0x38, 0x4), (0x60, 0x4), (0x70, 0x4), (0x420, 0x60), (0x1380, 0x8), (0x1C, 0x4), (0x320, 0x1F), (0x80, 0x4), (0x18, 0x4), (0x420, 0x4), (0x424, 0x4), (0x428, 0x4), (0x42C, 0x4), (0x430, 0x4), (0x434, 0x4), (0x34, 0x4), (0x438, 0x4), (0x43C, 0x4), (0x1380, 0x20), (0x30, 0x4), (0x14, 0x4), (0x2C, 0x4), (0x40, 0x4), (0x28, 0x4), (0xC, 0x4), (0x8, 0x4), (0x1380, 0x4), (0x420, 0x8), (0x200, 0x3), (0x10, 0x4), (0x1480, 0x3F), (0x421, 0x3F), (0x420, 0x1), (0x240, 0x13), (0x1320, 0x1F), (0x1025, 0x13), (0x1038, 0x4), (0x103C, 0x4), (0x1048, 0x1), (0x1049, 0x1F), (0x1020, 0x4), (0x1024, 0x1), (0x1040, 0x4), (0x1044, 0x4), (0x45F, 0x1), (0x460, 0x20), (0x480, 0x4), (0x484, 0x4), (0x420, 0x68), (0x420, 0x68), (0x420, 0x68), (0x420, 0x68), (0x420, 0x68), (0x420, 0x68), (0x420, 0x68), (0x420, 0x68), (0x420, 0x21), (0x1481, 0x1F), (0x1480, 0x1)]) := by
-  rcases sv_seg_ck F E0 V0 hret hO s0 M0 fM g0_2 g0_10 g0_18 g0_19 g0_21 g0_22 g0_23 g0_24 g0_26 g0_27 w0_24 w0_28 w0_2c w0_30 w0_34 w0_38 w0_3c w0_40 w0_44 w0_48 w0_4c w0_50 w0_54 w0_58 w0_5c w0_60 w0_64 w0_68 w0_6c w0_70 w0_74 w0_78 w0_7c w0_80 w0_84 w0_88 w0_8c w0_90 w0_94 w0_98 w0_9c w0_a0 w0_a4 w0_a8 w0_ac w0_b0 w0_b4 w0_b8 w0_bc w0_c0 w0_c4 w0_c8 w0_cc w0_d0 w0_d4 w0_d8 w0_dc w0_e0 w0_e4 w0_e8 w0_ec w0_f0 w0_f4 w0_f8 w0_fc w0_100 w0_104 w0_108 w0_10c w0_110 w0_114 w0_118 w0_11c w0_120 w0_124 w0_128 w0_12c w0_130 w0_a20 w0_a24 w0_a28 w0_a2c w0_a30 w0_a34 w0_a38 w0_a3c w0_aa0 w0_aa4 CK0 hckp hckl ckp_in4 ckl_in4 a_ckp a_ckl ck_in with e | hx1
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = ((aluEval .xor ((BitVec.ofNat 32 (((((ckl).toNat) - (ix8_1_1 + 1)) - (ix18_1_1 + 1)) - (ix26_1_1 + 1)) - BitVec.ofNat 32 (ix34_1_1 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + (ckl)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x38) = w38'_5 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = w50'_5 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = ckp ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x44) = (BitVec.ofNat 32 ix8_1_1) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x48) = ckp ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x18) = (le4 (sha256 (memBytes M0 (ckp) (((BitVec.ofNat 32 ix8_1_1)).toNat) ++ memBytes M0 (BitVec.ofNat 32 (img% svNewlineAddress)) (1) ++ memBytes M0 (BitVec.ofNat 32 (img% merklePrefixAddress)) (1) ++ memBytes M0 ((memLoad32 M0 (((q'_3) + BitVec.ofNat 32 0x20) + 0x18))) (32))) 0) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f'_5 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = (f'_5) &&& BitVec.ofNat 32 0x1 ∧
+        SvKeepL B n0.mem n'.mem [(0x28, 0x4), (0x420, 0x10), (0x48, 0x4), (0x44, 0x4), (0x420, 0x10), (0x420, 0x10), (0x420, 0x10), (0x50, 0x4), (0x24, 0x4), (0x38, 0x4), (0x64, 0x4), (0x74, 0x4), (0x420, 0x60), (0x400, 0x8), (0x20, 0x4), (0x3E0, 0x1F), (0x4C, 0x4), (0x40, 0x4), (0x1C, 0x4), (0x420, 0x4), (0x424, 0x4), (0x428, 0x4), (0x42C, 0x4), (0x430, 0x4), (0x434, 0x4), (0x34, 0x4), (0x438, 0x4), (0x43C, 0x4), (0x400, 0x20), (0x30, 0x4), (0x18, 0x4), (0x2C, 0x4), (0xC, 0x4), (0x8, 0x4), (0x10, 0x4), (0x4, 0x4), (0x400, 0x4), (0x420, 0x8), (0x370, 0x3), (0x14, 0x4), (0x1FC, 0x3F), (0x421, 0x3F), (0x420, 0x1), (0x27C, 0x13), (0x25C, 0x1F), (0x385, 0x13), (0x398, 0x4), (0x39C, 0x4), (0x3A8, 0x1), (0x3A9, 0x1F), (0x380, 0x4), (0x384, 0x1), (0x3A0, 0x4), (0x3A4, 0x4), (0x45F, 0x1), (0x460, 0x20), (0x480, 0x4), (0x484, 0x4), (0x420, 0x68), (0x420, 0x68), (0x420, 0x68), (0x420, 0x68), (0x420, 0x68), (0x420, 0x68), (0x420, 0x68), (0x420, 0x68), (0x420, 0x21), (0x1FD, 0x1F), (0x1FC, 0x1)]) := by
+  rcases sv_seg_ck FW E0 V0 hret hO s0 M0 fM g0_2 g0_10 g0_18 g0_19 g0_20 g0_21 g0_22 g0_23 g0_24 g0_25 g0_26 g0_27 CK0 hckp hckl ckp_in4 ckl_in4 a_ckp a_ckl ck_in with e | hx1
   · exact .inl e
   obtain ⟨x1_0, hx1⟩ := hx1
-  obtain ⟨ix7_1_1, hx1⟩ := hx1
+  obtain ⟨ix8_1_1, hx1⟩ := hx1
   obtain ⟨x1_1, hx1⟩ := hx1
-  obtain ⟨ix17_1_1, hx1⟩ := hx1
+  obtain ⟨ix18_1_1, hx1⟩ := hx1
   obtain ⟨x1_2, hx1⟩ := hx1
-  obtain ⟨ix25_1_1, hx1⟩ := hx1
+  obtain ⟨ix26_1_1, hx1⟩ := hx1
   obtain ⟨x1_3, hx1⟩ := hx1
-  obtain ⟨ix33_1_1, hx1⟩ := hx1
+  obtain ⟨ix34_1_1, hx1⟩ := hx1
   obtain ⟨x1_4, hx1⟩ := hx1
   obtain ⟨x1_5, hx1⟩ := hx1
   obtain ⟨x1_6, hx1⟩ := hx1
@@ -351,6 +215,7 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨r1_a0, hx1⟩ := hx1
   obtain ⟨r1_18, hx1⟩ := hx1
   obtain ⟨r1_19, hx1⟩ := hx1
+  obtain ⟨r1_20, hx1⟩ := hx1
   obtain ⟨r1_21, hx1⟩ := hx1
   obtain ⟨r1_22, hx1⟩ := hx1
   obtain ⟨r1_23, hx1⟩ := hx1
@@ -358,96 +223,24 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨r1_25, hx1⟩ := hx1
   obtain ⟨r1_26, hx1⟩ := hx1
   obtain ⟨r1_27, hx1⟩ := hx1
-  obtain ⟨w1_20, hx1⟩ := hx1
   obtain ⟨w1_24, hx1⟩ := hx1
-  obtain ⟨w1_28, hx1⟩ := hx1
-  obtain ⟨w1_2c, hx1⟩ := hx1
-  obtain ⟨w1_30, hx1⟩ := hx1
-  obtain ⟨w1_34, hx1⟩ := hx1
   obtain ⟨w1_38, hx1⟩ := hx1
-  obtain ⟨w1_3c, hx1⟩ := hx1
-  obtain ⟨w1_40, hx1⟩ := hx1
+  obtain ⟨w1_50, hx1⟩ := hx1
+  obtain ⟨w1_64, hx1⟩ := hx1
+  obtain ⟨w1_74, hx1⟩ := hx1
+  obtain ⟨w1_428, hx1⟩ := hx1
+  obtain ⟨w1_28, hx1⟩ := hx1
   obtain ⟨w1_44, hx1⟩ := hx1
   obtain ⟨w1_48, hx1⟩ := hx1
-  obtain ⟨w1_4c, hx1⟩ := hx1
-  obtain ⟨w1_50, hx1⟩ := hx1
-  obtain ⟨w1_54, hx1⟩ := hx1
-  obtain ⟨w1_58, hx1⟩ := hx1
-  obtain ⟨w1_5c, hx1⟩ := hx1
-  obtain ⟨w1_60, hx1⟩ := hx1
-  obtain ⟨w1_64, hx1⟩ := hx1
-  obtain ⟨w1_68, hx1⟩ := hx1
-  obtain ⟨w1_6c, hx1⟩ := hx1
-  obtain ⟨w1_70, hx1⟩ := hx1
-  obtain ⟨w1_74, hx1⟩ := hx1
-  obtain ⟨w1_78, hx1⟩ := hx1
-  obtain ⟨w1_7c, hx1⟩ := hx1
-  obtain ⟨w1_80, hx1⟩ := hx1
-  obtain ⟨w1_84, hx1⟩ := hx1
-  obtain ⟨w1_88, hx1⟩ := hx1
-  obtain ⟨w1_8c, hx1⟩ := hx1
-  obtain ⟨w1_90, hx1⟩ := hx1
-  obtain ⟨w1_94, hx1⟩ := hx1
-  obtain ⟨w1_98, hx1⟩ := hx1
-  obtain ⟨w1_9c, hx1⟩ := hx1
-  obtain ⟨w1_a0, hx1⟩ := hx1
-  obtain ⟨w1_a4, hx1⟩ := hx1
-  obtain ⟨w1_a8, hx1⟩ := hx1
-  obtain ⟨w1_ac, hx1⟩ := hx1
-  obtain ⟨w1_b0, hx1⟩ := hx1
-  obtain ⟨w1_b4, hx1⟩ := hx1
-  obtain ⟨w1_b8, hx1⟩ := hx1
-  obtain ⟨w1_bc, hx1⟩ := hx1
-  obtain ⟨w1_c0, hx1⟩ := hx1
-  obtain ⟨w1_c4, hx1⟩ := hx1
-  obtain ⟨w1_c8, hx1⟩ := hx1
-  obtain ⟨w1_cc, hx1⟩ := hx1
-  obtain ⟨w1_d0, hx1⟩ := hx1
-  obtain ⟨w1_d4, hx1⟩ := hx1
-  obtain ⟨w1_d8, hx1⟩ := hx1
-  obtain ⟨w1_dc, hx1⟩ := hx1
-  obtain ⟨w1_e0, hx1⟩ := hx1
-  obtain ⟨w1_e4, hx1⟩ := hx1
-  obtain ⟨w1_e8, hx1⟩ := hx1
-  obtain ⟨w1_ec, hx1⟩ := hx1
-  obtain ⟨w1_f0, hx1⟩ := hx1
-  obtain ⟨w1_f4, hx1⟩ := hx1
-  obtain ⟨w1_f8, hx1⟩ := hx1
-  obtain ⟨w1_fc, hx1⟩ := hx1
-  obtain ⟨w1_100, hx1⟩ := hx1
-  obtain ⟨w1_104, hx1⟩ := hx1
-  obtain ⟨w1_108, hx1⟩ := hx1
-  obtain ⟨w1_10c, hx1⟩ := hx1
-  obtain ⟨w1_110, hx1⟩ := hx1
-  obtain ⟨w1_114, hx1⟩ := hx1
-  obtain ⟨w1_118, hx1⟩ := hx1
-  obtain ⟨w1_11c, hx1⟩ := hx1
-  obtain ⟨w1_120, hx1⟩ := hx1
-  obtain ⟨w1_124, hx1⟩ := hx1
-  obtain ⟨w1_128, hx1⟩ := hx1
-  obtain ⟨w1_12c, hx1⟩ := hx1
-  obtain ⟨w1_130, hx1⟩ := hx1
-  obtain ⟨w1_428, hx1⟩ := hx1
-  obtain ⟨w1_aa0, hx1⟩ := hx1
-  obtain ⟨w1_aa4, hx1⟩ := hx1
-  obtain ⟨w1_a20, hx1⟩ := hx1
-  obtain ⟨w1_a24, hx1⟩ := hx1
-  obtain ⟨w1_a28, hx1⟩ := hx1
-  obtain ⟨w1_a2c, hx1⟩ := hx1
-  obtain ⟨w1_a30, hx1⟩ := hx1
-  obtain ⟨w1_a34, hx1⟩ := hx1
-  obtain ⟨w1_a38, hx1⟩ := hx1
-  obtain ⟨w1_a3c, hx1⟩ := hx1
   obtain ⟨w1_42c, hx1⟩ := hx1
   have K1_L := hx1
-  rcases sv_ckdloop_run F hret hO M0 E1 V1 s1 fR1 r1_2 r1_8 r1_9 r1_a0 r1_18 r1_19 r1_21 r1_22 r1_23 r1_24 r1_25 r1_26 r1_27 ((K1_L.w32 (by decide) (by decide)).trans w0_8) ((K1_L.w32 (by decide) (by decide)).trans w0_c) ((K1_L.w32 (by decide) (by decide)).trans w0_10) ((K1_L.w32 (by decide) (by decide)).trans w0_14) ((K1_L.w32 (by decide) (by decide)).trans w0_18) ((K1_L.w32 (by decide) (by decide)).trans w0_1c) w1_20 w1_24 w1_28 w1_2c w1_30 w1_34 w1_38 w1_3c w1_40 w1_44 w1_48 w1_4c w1_50 w1_54 w1_58 w1_5c w1_60 w1_64 w1_68 w1_6c w1_70 w1_74 w1_78 w1_7c w1_80 w1_84 w1_88 w1_8c w1_90 w1_94 w1_98 w1_9c w1_a0 w1_a4 w1_a8 w1_ac w1_b0 w1_b4 w1_b8 w1_bc w1_c0 w1_c4 w1_c8 w1_cc w1_d0 w1_d4 w1_d8 w1_dc w1_e0 w1_e4 w1_e8 w1_ec w1_f0 w1_f4 w1_f8 w1_fc w1_100 w1_104 w1_108 w1_10c w1_110 w1_114 w1_118 w1_11c w1_120 w1_124 w1_128 w1_12c w1_130 w1_428 w1_aa0 w1_aa4 ((((ck_in).nlRest x1_1).nlLine x1_2).ofNatLen) (((((ck_in).nlRest x1_1).nlRest x1_2).nlLine x1_3).ofNatLen) CK0 with e | hx2
+  rcases sv_ckdloop_run FW hret hO M0 E1 V1 s1 fR1 r1_2 r1_8 r1_a0 r1_18 r1_19 r1_20 r1_21 r1_22 r1_23 r1_24 r1_25 r1_26 r1_27 w1_64 w1_74 ((((ck_in).nlRest x1_1).nlLine x1_2).ofNatLen) (((((ck_in).nlRest x1_1).nlRest x1_2).nlLine x1_3).ofNatLen) CK0 with e | hx2
   · exact .inl (SvErrRet.pre (c1) (by rw [r1_3]) (by rw [r1_4])
       (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)
   obtain ⟨c'_2, hx2⟩ := hx2
   obtain ⟨p'_2, hx2⟩ := hx2
-  obtain ⟨x21'_2, hx2⟩ := hx2
-  obtain ⟨w60'_2, hx2⟩ := hx2
-  obtain ⟨w70'_2, hx2⟩ := hx2
+  obtain ⟨w64'_2, hx2⟩ := hx2
+  obtain ⟨w74'_2, hx2⟩ := hx2
   obtain ⟨x2_0, hx2⟩ := hx2
   obtain ⟨x2_1, hx2⟩ := hx2
   obtain ⟨x2_2, hx2⟩ := hx2
@@ -463,9 +256,10 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨r2_2, hx2⟩ := hx2
   obtain ⟨r2_3, hx2⟩ := hx2
   obtain ⟨r2_4, hx2⟩ := hx2
-  obtain ⟨r2_9, hx2⟩ := hx2
+  obtain ⟨r2_8, hx2⟩ := hx2
   obtain ⟨r2_18, hx2⟩ := hx2
   obtain ⟨r2_19, hx2⟩ := hx2
+  obtain ⟨r2_20, hx2⟩ := hx2
   obtain ⟨r2_21, hx2⟩ := hx2
   obtain ⟨r2_22, hx2⟩ := hx2
   obtain ⟨r2_23, hx2⟩ := hx2
@@ -473,90 +267,17 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨r2_25, hx2⟩ := hx2
   obtain ⟨r2_26, hx2⟩ := hx2
   obtain ⟨r2_27, hx2⟩ := hx2
-  obtain ⟨w2_8, hx2⟩ := hx2
-  obtain ⟨w2_c, hx2⟩ := hx2
-  obtain ⟨w2_10, hx2⟩ := hx2
-  obtain ⟨w2_14, hx2⟩ := hx2
-  obtain ⟨w2_18, hx2⟩ := hx2
-  obtain ⟨w2_1c, hx2⟩ := hx2
   obtain ⟨w2_20, hx2⟩ := hx2
-  obtain ⟨w2_24, hx2⟩ := hx2
-  obtain ⟨w2_28, hx2⟩ := hx2
-  obtain ⟨w2_2c, hx2⟩ := hx2
-  obtain ⟨w2_30, hx2⟩ := hx2
-  obtain ⟨w2_34, hx2⟩ := hx2
-  obtain ⟨w2_38, hx2⟩ := hx2
-  obtain ⟨w2_3c, hx2⟩ := hx2
-  obtain ⟨w2_40, hx2⟩ := hx2
-  obtain ⟨w2_44, hx2⟩ := hx2
-  obtain ⟨w2_48, hx2⟩ := hx2
   obtain ⟨w2_4c, hx2⟩ := hx2
-  obtain ⟨w2_50, hx2⟩ := hx2
-  obtain ⟨w2_54, hx2⟩ := hx2
-  obtain ⟨w2_58, hx2⟩ := hx2
-  obtain ⟨w2_5c, hx2⟩ := hx2
-  obtain ⟨w2_60, hx2⟩ := hx2
   obtain ⟨w2_64, hx2⟩ := hx2
-  obtain ⟨w2_68, hx2⟩ := hx2
-  obtain ⟨w2_6c, hx2⟩ := hx2
-  obtain ⟨w2_70, hx2⟩ := hx2
   obtain ⟨w2_74, hx2⟩ := hx2
-  obtain ⟨w2_78, hx2⟩ := hx2
-  obtain ⟨w2_7c, hx2⟩ := hx2
-  obtain ⟨w2_80, hx2⟩ := hx2
-  obtain ⟨w2_84, hx2⟩ := hx2
-  obtain ⟨w2_88, hx2⟩ := hx2
-  obtain ⟨w2_8c, hx2⟩ := hx2
-  obtain ⟨w2_90, hx2⟩ := hx2
-  obtain ⟨w2_94, hx2⟩ := hx2
-  obtain ⟨w2_98, hx2⟩ := hx2
-  obtain ⟨w2_9c, hx2⟩ := hx2
-  obtain ⟨w2_a0, hx2⟩ := hx2
-  obtain ⟨w2_a4, hx2⟩ := hx2
-  obtain ⟨w2_a8, hx2⟩ := hx2
-  obtain ⟨w2_ac, hx2⟩ := hx2
-  obtain ⟨w2_b0, hx2⟩ := hx2
-  obtain ⟨w2_b4, hx2⟩ := hx2
-  obtain ⟨w2_b8, hx2⟩ := hx2
-  obtain ⟨w2_bc, hx2⟩ := hx2
-  obtain ⟨w2_c0, hx2⟩ := hx2
-  obtain ⟨w2_c4, hx2⟩ := hx2
-  obtain ⟨w2_c8, hx2⟩ := hx2
-  obtain ⟨w2_cc, hx2⟩ := hx2
-  obtain ⟨w2_d0, hx2⟩ := hx2
-  obtain ⟨w2_d4, hx2⟩ := hx2
-  obtain ⟨w2_d8, hx2⟩ := hx2
-  obtain ⟨w2_dc, hx2⟩ := hx2
-  obtain ⟨w2_e0, hx2⟩ := hx2
-  obtain ⟨w2_e4, hx2⟩ := hx2
-  obtain ⟨w2_e8, hx2⟩ := hx2
-  obtain ⟨w2_ec, hx2⟩ := hx2
-  obtain ⟨w2_f0, hx2⟩ := hx2
-  obtain ⟨w2_f4, hx2⟩ := hx2
-  obtain ⟨w2_f8, hx2⟩ := hx2
-  obtain ⟨w2_fc, hx2⟩ := hx2
-  obtain ⟨w2_100, hx2⟩ := hx2
-  obtain ⟨w2_104, hx2⟩ := hx2
-  obtain ⟨w2_108, hx2⟩ := hx2
-  obtain ⟨w2_10c, hx2⟩ := hx2
-  obtain ⟨w2_110, hx2⟩ := hx2
-  obtain ⟨w2_114, hx2⟩ := hx2
-  obtain ⟨w2_118, hx2⟩ := hx2
-  obtain ⟨w2_11c, hx2⟩ := hx2
-  obtain ⟨w2_120, hx2⟩ := hx2
-  obtain ⟨w2_124, hx2⟩ := hx2
-  obtain ⟨w2_128, hx2⟩ := hx2
-  obtain ⟨w2_12c, hx2⟩ := hx2
-  obtain ⟨w2_130, hx2⟩ := hx2
-  obtain ⟨w2_aa0, hx2⟩ := hx2
-  obtain ⟨w2_aa4, hx2⟩ := hx2
-  obtain ⟨w2_1384, hx2⟩ := hx2
+  obtain ⟨w2_404, hx2⟩ := hx2
+  obtain ⟨b2_400, hx2⟩ := hx2
   obtain ⟨b2_420, hx2⟩ := hx2
-  obtain ⟨b2_1380, hx2⟩ := hx2
-  obtain ⟨q2_320, hx2⟩ := hx2
+  obtain ⟨q2_3e0, hx2⟩ := hx2
   obtain ⟨q2_420, hx2⟩ := hx2
   have K2_L := hx2
-  rcases sv_csearch_st F hret hO M0 (fun _ _ _ h => svCnt_zero Prod.fst (BitVec.ofNat 32 0x100) 0xFFFFFFE0 (by intro _; rfl) rfl (by decide) (congrArg Prod.fst h)) E2 V2 s2 fR2 r2_2 r2_9 r2_18 r2_19 r2_21 r2_22 r2_23 r2_24 r2_25 r2_26 r2_27 w2_8 w2_c w2_10 w2_14 w2_18 w2_1c w2_20 w2_24 w2_28 w2_2c w2_30 w2_34 w2_38 w2_3c w2_40 w2_44 w2_48 w2_4c w2_50 w2_54 w2_58 w2_5c w2_60 w2_64 w2_68 w2_6c w2_70 w2_78 w2_7c w2_80 w2_84 w2_88 w2_8c w2_90 w2_94 w2_98 w2_9c w2_a0 w2_a4 w2_a8 w2_ac w2_b0 w2_b4 w2_b8 w2_bc w2_c0 w2_c4 w2_c8 w2_cc w2_d0 w2_d4 w2_d8 w2_dc w2_e0 w2_e4 w2_e8 w2_ec w2_f0 w2_f4 w2_f8 w2_fc w2_100 w2_104 w2_108 w2_10c w2_110 w2_114 w2_118 w2_11c w2_120 w2_124 w2_128 w2_12c w2_130 rfl ((K2_L.w32 (by decide) (by decide)).trans w1_a20) ((K2_L.w32 (by decide) (by decide)).trans w1_a24) ((K2_L.w32 (by decide) (by decide)).trans w1_a28) ((K2_L.w32 (by decide) (by decide)).trans w1_a2c) ((K2_L.w32 (by decide) (by decide)).trans w1_a30) ((K2_L.w32 (by decide) (by decide)).trans w1_a34) ((K2_L.w32 (by decide) (by decide)).trans w1_a38) ((K2_L.w32 (by decide) (by decide)).trans w1_a3c) w2_aa0 w2_aa4 q2_320 (fun i hi c'_3 q'_3 w80'_3 h => ⟨(svCnt_ne Prod.fst (BitVec.ofNat 32 0x100) 0xFFFFFFE0 (by intro _; rfl) rfl (by decide) hi (congrArg Prod.fst h)), (H' i hi c'_3 q'_3 w80'_3 h).1, (H' i hi c'_3 q'_3 w80'_3 h).2.1, (H' i hi c'_3 q'_3 w80'_3 h).2.2.1, (H' i hi c'_3 q'_3 w80'_3 h).2.2.2.1, (H' i hi c'_3 q'_3 w80'_3 h).2.2.2.2, (((ck_in).nlLine x1_1).ofNatLen)⟩) with e | hx3
+  rcases sv_csearch_st FW hret hO M0 (fun _ _ h => svCnt_zero Prod.fst (BitVec.ofNat 32 0x200) 0xFFFFFFE0 (by intro _; rfl) rfl (by decide) (congrArg Prod.fst h)) E2 V2 s2 fR2 r2_2 r2_8 r2_18 r2_19 r2_20 r2_21 r2_22 r2_23 r2_24 r2_26 r2_27 ((K2_L.w32 (by decide) (by decide)).trans w1_44) ((K2_L.w32 (by decide) (by decide)).trans w1_48) w2_4c (fun i hi c'_3 q'_3 h => ⟨(svCnt_ne Prod.fst (BitVec.ofNat 32 0x200) 0xFFFFFFE0 (by intro _; rfl) rfl (by decide) hi (congrArg Prod.fst h)), (H' i hi c'_3 q'_3 h).1, (H' i hi c'_3 q'_3 h).2.1, (H' i hi c'_3 q'_3 h).2.2.1, (H' i hi c'_3 q'_3 h).2.2.2.1, (H' i hi c'_3 q'_3 h).2.2.2.2, (((ck_in).nlLine x1_1).ofNatLen)⟩) with e | hx3
   · exact .inl (SvErrRet.pre (c1.trans (c2)) (by rw [r2_3, r1_3]) (by rw [r2_4, r1_4])
       (fun x hx => (fR2 x hx).trans (fM x hx).symm) e)
   obtain ⟨k_3, hx3⟩ := hx3
@@ -564,7 +285,6 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨x3_1, hx3⟩ := hx3
   obtain ⟨c'_3, hx3⟩ := hx3
   obtain ⟨q'_3, hx3⟩ := hx3
-  obtain ⟨w80'_3, hx3⟩ := hx3
   obtain ⟨x3_2, hx3⟩ := hx3
   obtain ⟨x3_3, hx3⟩ := hx3
   obtain ⟨x3_4, hx3⟩ := hx3
@@ -577,9 +297,11 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨r3_2, hx3⟩ := hx3
   obtain ⟨r3_3, hx3⟩ := hx3
   obtain ⟨r3_4, hx3⟩ := hx3
+  obtain ⟨r3_8, hx3⟩ := hx3
   obtain ⟨r3_9, hx3⟩ := hx3
   obtain ⟨r3_18, hx3⟩ := hx3
   obtain ⟨r3_19, hx3⟩ := hx3
+  obtain ⟨r3_20, hx3⟩ := hx3
   obtain ⟨r3_21, hx3⟩ := hx3
   obtain ⟨r3_22, hx3⟩ := hx3
   obtain ⟨r3_23, hx3⟩ := hx3
@@ -587,94 +309,12 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨r3_25, hx3⟩ := hx3
   obtain ⟨r3_26, hx3⟩ := hx3
   obtain ⟨r3_27, hx3⟩ := hx3
-  obtain ⟨w3_8, hx3⟩ := hx3
-  obtain ⟨w3_c, hx3⟩ := hx3
-  obtain ⟨w3_10, hx3⟩ := hx3
-  obtain ⟨w3_14, hx3⟩ := hx3
-  obtain ⟨w3_18, hx3⟩ := hx3
-  obtain ⟨w3_1c, hx3⟩ := hx3
-  obtain ⟨w3_20, hx3⟩ := hx3
-  obtain ⟨w3_24, hx3⟩ := hx3
-  obtain ⟨w3_28, hx3⟩ := hx3
-  obtain ⟨w3_2c, hx3⟩ := hx3
-  obtain ⟨w3_30, hx3⟩ := hx3
-  obtain ⟨w3_34, hx3⟩ := hx3
-  obtain ⟨w3_38, hx3⟩ := hx3
-  obtain ⟨w3_3c, hx3⟩ := hx3
   obtain ⟨w3_40, hx3⟩ := hx3
   obtain ⟨w3_44, hx3⟩ := hx3
   obtain ⟨w3_48, hx3⟩ := hx3
   obtain ⟨w3_4c, hx3⟩ := hx3
-  obtain ⟨w3_50, hx3⟩ := hx3
-  obtain ⟨w3_54, hx3⟩ := hx3
-  obtain ⟨w3_58, hx3⟩ := hx3
-  obtain ⟨w3_5c, hx3⟩ := hx3
-  obtain ⟨w3_60, hx3⟩ := hx3
-  obtain ⟨w3_64, hx3⟩ := hx3
-  obtain ⟨w3_68, hx3⟩ := hx3
-  obtain ⟨w3_6c, hx3⟩ := hx3
-  obtain ⟨w3_70, hx3⟩ := hx3
-  obtain ⟨w3_78, hx3⟩ := hx3
-  obtain ⟨w3_7c, hx3⟩ := hx3
-  obtain ⟨w3_80, hx3⟩ := hx3
-  obtain ⟨w3_84, hx3⟩ := hx3
-  obtain ⟨w3_88, hx3⟩ := hx3
-  obtain ⟨w3_8c, hx3⟩ := hx3
-  obtain ⟨w3_90, hx3⟩ := hx3
-  obtain ⟨w3_94, hx3⟩ := hx3
-  obtain ⟨w3_98, hx3⟩ := hx3
-  obtain ⟨w3_9c, hx3⟩ := hx3
-  obtain ⟨w3_a0, hx3⟩ := hx3
-  obtain ⟨w3_a4, hx3⟩ := hx3
-  obtain ⟨w3_a8, hx3⟩ := hx3
-  obtain ⟨w3_ac, hx3⟩ := hx3
-  obtain ⟨w3_b0, hx3⟩ := hx3
-  obtain ⟨w3_b4, hx3⟩ := hx3
-  obtain ⟨w3_b8, hx3⟩ := hx3
-  obtain ⟨w3_bc, hx3⟩ := hx3
-  obtain ⟨w3_c0, hx3⟩ := hx3
-  obtain ⟨w3_c4, hx3⟩ := hx3
-  obtain ⟨w3_c8, hx3⟩ := hx3
-  obtain ⟨w3_cc, hx3⟩ := hx3
-  obtain ⟨w3_d0, hx3⟩ := hx3
-  obtain ⟨w3_d4, hx3⟩ := hx3
-  obtain ⟨w3_d8, hx3⟩ := hx3
-  obtain ⟨w3_dc, hx3⟩ := hx3
-  obtain ⟨w3_e0, hx3⟩ := hx3
-  obtain ⟨w3_e4, hx3⟩ := hx3
-  obtain ⟨w3_e8, hx3⟩ := hx3
-  obtain ⟨w3_ec, hx3⟩ := hx3
-  obtain ⟨w3_f0, hx3⟩ := hx3
-  obtain ⟨w3_f4, hx3⟩ := hx3
-  obtain ⟨w3_f8, hx3⟩ := hx3
-  obtain ⟨w3_fc, hx3⟩ := hx3
-  obtain ⟨w3_100, hx3⟩ := hx3
-  obtain ⟨w3_104, hx3⟩ := hx3
-  obtain ⟨w3_108, hx3⟩ := hx3
-  obtain ⟨w3_10c, hx3⟩ := hx3
-  obtain ⟨w3_110, hx3⟩ := hx3
-  obtain ⟨w3_114, hx3⟩ := hx3
-  obtain ⟨w3_118, hx3⟩ := hx3
-  obtain ⟨w3_11c, hx3⟩ := hx3
-  obtain ⟨w3_120, hx3⟩ := hx3
-  obtain ⟨w3_124, hx3⟩ := hx3
-  obtain ⟨w3_128, hx3⟩ := hx3
-  obtain ⟨w3_12c, hx3⟩ := hx3
-  obtain ⟨w3_130, hx3⟩ := hx3
-  obtain ⟨w3_428, hx3⟩ := hx3
-  obtain ⟨w3_a20, hx3⟩ := hx3
-  obtain ⟨w3_a24, hx3⟩ := hx3
-  obtain ⟨w3_a28, hx3⟩ := hx3
-  obtain ⟨w3_a2c, hx3⟩ := hx3
-  obtain ⟨w3_a30, hx3⟩ := hx3
-  obtain ⟨w3_a34, hx3⟩ := hx3
-  obtain ⟨w3_a38, hx3⟩ := hx3
-  obtain ⟨w3_a3c, hx3⟩ := hx3
-  obtain ⟨w3_aa0, hx3⟩ := hx3
-  obtain ⟨w3_aa4, hx3⟩ := hx3
-  obtain ⟨q3_320, hx3⟩ := hx3
   have K3_L := hx3
-  rcases sv_cs1 (op := 0) (ol := 0) F E3 V3 hret hO s3 M0 fR3 r3_2 r3_9 r3_18 r3_19 r3_21 r3_22 r3_23 r3_24 r3_25 r3_26 r3_27 w3_8 w3_c w3_10 w3_14 w3_18 w3_1c w3_20 w3_24 w3_28 w3_2c w3_30 w3_34 w3_38 w3_3c w3_40 w3_44 w3_48 w3_4c w3_50 w3_54 w3_58 w3_5c w3_60 w3_64 w3_68 w3_6c w3_70 w3_78 w3_7c w3_80 w3_84 w3_88 w3_8c w3_90 w3_94 w3_98 w3_9c w3_a0 w3_a4 w3_a8 w3_ac w3_b0 w3_b4 w3_b8 w3_bc w3_c0 w3_c4 w3_c8 w3_cc w3_d0 w3_d4 w3_d8 w3_dc w3_e0 w3_e4 w3_e8 w3_ec w3_f0 w3_f4 w3_f8 w3_fc w3_100 w3_104 w3_108 w3_10c w3_110 w3_114 w3_118 w3_11c w3_120 w3_124 w3_128 w3_12c w3_130 w3_428 w3_a20 w3_a24 w3_a28 w3_a2c w3_a30 w3_a34 w3_a38 w3_a3c w3_aa0 w3_aa4 q3_320 S2 KS rfl rfl (kp_in4 k_3 x3_0 c'_3 q'_3 w80'_3 x3_2 x3_4) (kw_in4 k_3 x3_0 c'_3 q'_3 w80'_3 x3_2 x3_4) (a_kp k_3 x3_0 c'_3 q'_3 w80'_3 x3_2 x3_4) (a_kw k_3 x3_0 c'_3 q'_3 w80'_3 x3_2 x3_4) (kp_in k_3 x3_0 c'_3 q'_3 w80'_3 x3_2 x3_4) (((ck_in).nlLine x1_1).ofNatLen) with ⟨-, e⟩ | hx4
+  rcases sv_cs1 FW E3 V3 hret hO s3 M0 fR3 r3_2 r3_8 r3_18 r3_19 r3_20 r3_21 r3_22 r3_23 r3_24 r3_25 r3_26 r3_27 w3_44 w3_48 w3_4c S2 RS rfl rfl (kp_in4 k_3 x3_0 c'_3 q'_3 x3_2 x3_4) (kw_in4 k_3 x3_0 c'_3 q'_3 x3_2 x3_4) (a_kp k_3 x3_0 c'_3 q'_3 x3_2 x3_4) (a_kw k_3 x3_0 c'_3 q'_3 x3_2 x3_4) (kp_in k_3 x3_0 c'_3 q'_3 x3_2 x3_4) (((ck_in).nlLine x1_1).ofNatLen) with ⟨-, e⟩ | hx4
   · exact .inl (SvErrRet.pre (c1.trans (c2.trans (c3))) (by rw [r3_3, r2_3, r1_3]) (by rw [r3_4, r2_4, r1_4])
       (fun x hx => (fR3 x hx).trans (fM x hx).symm) e)
   obtain ⟨n4, hx4⟩ := hx4
@@ -686,9 +326,10 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨r4_2, hx4⟩ := hx4
   obtain ⟨r4_3, hx4⟩ := hx4
   obtain ⟨r4_4, hx4⟩ := hx4
-  obtain ⟨r4_9, hx4⟩ := hx4
+  obtain ⟨r4_8, hx4⟩ := hx4
   obtain ⟨r4_18, hx4⟩ := hx4
   obtain ⟨r4_19, hx4⟩ := hx4
+  obtain ⟨r4_20, hx4⟩ := hx4
   obtain ⟨r4_21, hx4⟩ := hx4
   obtain ⟨r4_22, hx4⟩ := hx4
   obtain ⟨r4_23, hx4⟩ := hx4
@@ -696,80 +337,14 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨r4_25, hx4⟩ := hx4
   obtain ⟨r4_26, hx4⟩ := hx4
   obtain ⟨r4_27, hx4⟩ := hx4
-  obtain ⟨w4_8, hx4⟩ := hx4
-  obtain ⟨w4_c, hx4⟩ := hx4
-  obtain ⟨w4_10, hx4⟩ := hx4
-  obtain ⟨w4_14, hx4⟩ := hx4
   obtain ⟨w4_18, hx4⟩ := hx4
   obtain ⟨w4_1c, hx4⟩ := hx4
-  obtain ⟨w4_20, hx4⟩ := hx4
-  obtain ⟨w4_24, hx4⟩ := hx4
-  obtain ⟨w4_28, hx4⟩ := hx4
-  obtain ⟨w4_2c, hx4⟩ := hx4
   obtain ⟨w4_30, hx4⟩ := hx4
   obtain ⟨w4_34, hx4⟩ := hx4
-  obtain ⟨w4_38, hx4⟩ := hx4
-  obtain ⟨w4_3c, hx4⟩ := hx4
-  obtain ⟨w4_40, hx4⟩ := hx4
   obtain ⟨w4_44, hx4⟩ := hx4
   obtain ⟨w4_48, hx4⟩ := hx4
   obtain ⟨w4_4c, hx4⟩ := hx4
-  obtain ⟨w4_50, hx4⟩ := hx4
-  obtain ⟨w4_54, hx4⟩ := hx4
-  obtain ⟨w4_58, hx4⟩ := hx4
-  obtain ⟨w4_5c, hx4⟩ := hx4
-  obtain ⟨w4_60, hx4⟩ := hx4
-  obtain ⟨w4_64, hx4⟩ := hx4
-  obtain ⟨w4_68, hx4⟩ := hx4
-  obtain ⟨w4_6c, hx4⟩ := hx4
-  obtain ⟨w4_70, hx4⟩ := hx4
-  obtain ⟨w4_78, hx4⟩ := hx4
-  obtain ⟨w4_7c, hx4⟩ := hx4
-  obtain ⟨w4_80, hx4⟩ := hx4
-  obtain ⟨w4_84, hx4⟩ := hx4
-  obtain ⟨w4_88, hx4⟩ := hx4
-  obtain ⟨w4_8c, hx4⟩ := hx4
-  obtain ⟨w4_90, hx4⟩ := hx4
-  obtain ⟨w4_94, hx4⟩ := hx4
-  obtain ⟨w4_98, hx4⟩ := hx4
-  obtain ⟨w4_9c, hx4⟩ := hx4
-  obtain ⟨w4_a0, hx4⟩ := hx4
-  obtain ⟨w4_a4, hx4⟩ := hx4
-  obtain ⟨w4_a8, hx4⟩ := hx4
-  obtain ⟨w4_ac, hx4⟩ := hx4
-  obtain ⟨w4_b0, hx4⟩ := hx4
-  obtain ⟨w4_b4, hx4⟩ := hx4
-  obtain ⟨w4_b8, hx4⟩ := hx4
-  obtain ⟨w4_bc, hx4⟩ := hx4
-  obtain ⟨w4_c0, hx4⟩ := hx4
-  obtain ⟨w4_c4, hx4⟩ := hx4
-  obtain ⟨w4_c8, hx4⟩ := hx4
-  obtain ⟨w4_cc, hx4⟩ := hx4
-  obtain ⟨w4_d0, hx4⟩ := hx4
-  obtain ⟨w4_d4, hx4⟩ := hx4
-  obtain ⟨w4_d8, hx4⟩ := hx4
-  obtain ⟨w4_dc, hx4⟩ := hx4
-  obtain ⟨w4_e0, hx4⟩ := hx4
-  obtain ⟨w4_e4, hx4⟩ := hx4
-  obtain ⟨w4_e8, hx4⟩ := hx4
-  obtain ⟨w4_ec, hx4⟩ := hx4
-  obtain ⟨w4_f0, hx4⟩ := hx4
-  obtain ⟨w4_f4, hx4⟩ := hx4
-  obtain ⟨w4_f8, hx4⟩ := hx4
-  obtain ⟨w4_fc, hx4⟩ := hx4
-  obtain ⟨w4_100, hx4⟩ := hx4
-  obtain ⟨w4_104, hx4⟩ := hx4
-  obtain ⟨w4_108, hx4⟩ := hx4
-  obtain ⟨w4_10c, hx4⟩ := hx4
-  obtain ⟨w4_110, hx4⟩ := hx4
-  obtain ⟨w4_114, hx4⟩ := hx4
-  obtain ⟨w4_118, hx4⟩ := hx4
-  obtain ⟨w4_11c, hx4⟩ := hx4
-  obtain ⟨w4_120, hx4⟩ := hx4
-  obtain ⟨w4_124, hx4⟩ := hx4
-  obtain ⟨w4_128, hx4⟩ := hx4
-  obtain ⟨w4_12c, hx4⟩ := hx4
-  obtain ⟨w4_130, hx4⟩ := hx4
+  obtain ⟨w4_400, hx4⟩ := hx4
   obtain ⟨w4_420, hx4⟩ := hx4
   obtain ⟨w4_424, hx4⟩ := hx4
   obtain ⟨w4_428, hx4⟩ := hx4
@@ -778,37 +353,15 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨w4_434, hx4⟩ := hx4
   obtain ⟨w4_438, hx4⟩ := hx4
   obtain ⟨w4_43c, hx4⟩ := hx4
-  obtain ⟨w4_a20, hx4⟩ := hx4
-  obtain ⟨w4_a24, hx4⟩ := hx4
-  obtain ⟨w4_a28, hx4⟩ := hx4
-  obtain ⟨w4_a2c, hx4⟩ := hx4
-  obtain ⟨w4_a30, hx4⟩ := hx4
-  obtain ⟨w4_a34, hx4⟩ := hx4
-  obtain ⟨w4_a38, hx4⟩ := hx4
-  obtain ⟨w4_a3c, hx4⟩ := hx4
-  obtain ⟨w4_aa0, hx4⟩ := hx4
-  obtain ⟨w4_aa4, hx4⟩ := hx4
-  obtain ⟨w4_1380, hx4⟩ := hx4
-  obtain ⟨q4_320, hx4⟩ := hx4
   have K4_L := hx4
-  rcases sv_cosigloop_st0 (sgp := 0) (op := 0) (ol := 0) F hret hO M0 (Nat.le_refl _) E4 V4 s4 fR4 r4_2 r4_9 r4_18 r4_19 r4_21 r4_22 r4_23 r4_24 r4_25 r4_26 r4_27 w4_8 w4_c w4_14 w4_18 w4_1c w4_20 w4_24 w4_28 w4_2c w4_30 w4_34 w4_38 w4_3c w4_40 w4_44 w4_48 w4_4c w4_50 w4_54 w4_58 w4_5c w4_60 w4_64 w4_68 w4_6c w4_70 w4_78 w4_7c w4_80 w4_84 w4_88 w4_8c w4_90 w4_94 w4_98 w4_9c w4_a0 w4_a4 w4_a8 w4_ac w4_b0 w4_b4 w4_b8 w4_bc w4_c0 w4_c4 w4_c8 w4_cc w4_d0 w4_d4 w4_d8 w4_dc w4_e0 w4_e4 w4_e8 w4_ec w4_f0 w4_f4 w4_f8 w4_fc w4_100 w4_104 w4_108 w4_10c w4_110 w4_114 w4_118 w4_11c w4_120 w4_124 w4_128 w4_12c w4_130 w4_a20 w4_a24 w4_a28 w4_a2c w4_a30 w4_a34 w4_a38 w4_a3c w4_aa0 w4_aa4 q4_320 (by rw [svSubNat_toNat (by have := ((((ck_in).nlRest x1_1).nlRest x1_2).nlRest x1_3).lo; omega) (by have := (nlScan_lt _ _ _ x1_4).2; omega)]; exact ((((ck_in).nlRest x1_1).nlRest x1_2).nlRest x1_3).nlRest x1_4) CK0 (((ck_in).nlLine x1_1).ofNatLen) EE0 RS hiv (pk_in k_3 x3_0 c'_3 q'_3 w80'_3 x3_2 x3_4) ((ck_in).shrink (svNotAdd_le (by have := (ck_in).lo; have := (nlScan_lt _ _ _ x1_1).2; have := (nlScan_lt _ _ _ x1_2).2; have := (nlScan_lt _ _ _ x1_3).2; have := (nlScan_lt _ _ _ x1_4).2; simp only [BitVec.toNat_sub, BitVec.toNat_ofNat, Nat.reducePow] at *; omega))) ((((ck_in).shrink (svNotAdd_le (by have := (ck_in).lo; have := (nlScan_lt _ _ _ x1_1).2; have := (nlScan_lt _ _ _ x1_2).2; have := (nlScan_lt _ _ _ x1_3).2; have := (nlScan_lt _ _ _ x1_4).2; simp only [BitVec.toNat_sub, BitVec.toNat_ofNat, Nat.reducePow] at *; omega)))).len_lt) with e | hx5
+  rcases sv_cosigloop_st0 FW hret hO M0 (Nat.le_refl _) E4 V4 s4 fR4 r4_2 r4_18 r4_19 r4_20 r4_22 r4_23 r4_25 w4_18 ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans w1_24))) ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans w1_28))) w4_30 w4_34 ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans w1_38))) w4_44 w4_48 ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans w1_50))) (by rw [svSubNat_toNat (by have := ((((ck_in).nlRest x1_1).nlRest x1_2).nlRest x1_3).lo; omega) (by have := (nlScan_lt _ _ _ x1_4).2; omega)]; exact ((((ck_in).nlRest x1_1).nlRest x1_2).nlRest x1_3).nlRest x1_4) CK0 (((ck_in).nlLine x1_1).ofNatLen) EE0 RS hiv (pk_in k_3 x3_0 c'_3 q'_3 x3_2 x3_4) ((ck_in).shrink (svNotAdd_le (by have := (ck_in).lo; have := (nlScan_lt _ _ _ x1_1).2; have := (nlScan_lt _ _ _ x1_2).2; have := (nlScan_lt _ _ _ x1_3).2; have := (nlScan_lt _ _ _ x1_4).2; simp only [BitVec.toNat_sub, BitVec.toNat_ofNat, Nat.reducePow] at *; omega))) ((((ck_in).shrink (svNotAdd_le (by have := (ck_in).lo; have := (nlScan_lt _ _ _ x1_1).2; have := (nlScan_lt _ _ _ x1_2).2; have := (nlScan_lt _ _ _ x1_3).2; have := (nlScan_lt _ _ _ x1_4).2; simp only [BitVec.toNat_sub, BitVec.toNat_ofNat, Nat.reducePow] at *; omega)))).len_lt) with e | hx5
   · exact .inl (SvErrRet.pre (c1.trans (c2.trans (c3.trans (c4)))) (by rw [r4_3, r3_3, r2_3, r1_3]) (by rw [r4_4, r3_4, r2_4, r1_4])
       (fun x hx => (fR4 x hx).trans (fM x hx).symm) e)
   obtain ⟨sg_5, hx5⟩ := hx5
   obtain ⟨k_5, hx5⟩ := hx5
-  obtain ⟨c'_5, hx5⟩ := hx5
-  obtain ⟨x21'_5, hx5⟩ := hx5
-  obtain ⟨rl'_5, hx5⟩ := hx5
-  obtain ⟨rp'_5, hx5⟩ := hx5
-  obtain ⟨dg'_5, hx5⟩ := hx5
-  obtain ⟨w8'_5, hx5⟩ := hx5
-  obtain ⟨wc'_5, hx5⟩ := hx5
-  obtain ⟨w28'_5, hx5⟩ := hx5
-  obtain ⟨w2c'_5, hx5⟩ := hx5
-  obtain ⟨w30'_5, hx5⟩ := hx5
+  obtain ⟨f'_5, hx5⟩ := hx5
   obtain ⟨w38'_5, hx5⟩ := hx5
-  obtain ⟨w40'_5, hx5⟩ := hx5
-  obtain ⟨w5c'_5, hx5⟩ := hx5
+  obtain ⟨w50'_5, hx5⟩ := hx5
   obtain ⟨sg'_5, hx5⟩ := hx5
   obtain ⟨x5_0, hx5⟩ := hx5
   obtain ⟨x5_1, hx5⟩ := hx5
@@ -823,105 +376,26 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨r5_2, hx5⟩ := hx5
   obtain ⟨r5_3, hx5⟩ := hx5
   obtain ⟨r5_4, hx5⟩ := hx5
-  obtain ⟨r5_9, hx5⟩ := hx5
   obtain ⟨r5_18, hx5⟩ := hx5
   obtain ⟨r5_19, hx5⟩ := hx5
-  obtain ⟨r5_21, hx5⟩ := hx5
+  obtain ⟨r5_20, hx5⟩ := hx5
   obtain ⟨r5_22, hx5⟩ := hx5
   obtain ⟨r5_23, hx5⟩ := hx5
-  obtain ⟨r5_24, hx5⟩ := hx5
   obtain ⟨r5_25, hx5⟩ := hx5
-  obtain ⟨r5_26, hx5⟩ := hx5
-  obtain ⟨r5_27, hx5⟩ := hx5
-  obtain ⟨w5_8, hx5⟩ := hx5
-  obtain ⟨w5_c, hx5⟩ := hx5
-  obtain ⟨w5_14, hx5⟩ := hx5
   obtain ⟨w5_18, hx5⟩ := hx5
-  obtain ⟨w5_1c, hx5⟩ := hx5
-  obtain ⟨w5_20, hx5⟩ := hx5
   obtain ⟨w5_24, hx5⟩ := hx5
   obtain ⟨w5_28, hx5⟩ := hx5
   obtain ⟨w5_2c, hx5⟩ := hx5
   obtain ⟨w5_30, hx5⟩ := hx5
   obtain ⟨w5_34, hx5⟩ := hx5
   obtain ⟨w5_38, hx5⟩ := hx5
-  obtain ⟨w5_3c, hx5⟩ := hx5
-  obtain ⟨w5_40, hx5⟩ := hx5
   obtain ⟨w5_44, hx5⟩ := hx5
   obtain ⟨w5_48, hx5⟩ := hx5
-  obtain ⟨w5_4c, hx5⟩ := hx5
   obtain ⟨w5_50, hx5⟩ := hx5
-  obtain ⟨w5_54, hx5⟩ := hx5
-  obtain ⟨w5_58, hx5⟩ := hx5
-  obtain ⟨w5_5c, hx5⟩ := hx5
-  obtain ⟨w5_60, hx5⟩ := hx5
-  obtain ⟨w5_64, hx5⟩ := hx5
-  obtain ⟨w5_68, hx5⟩ := hx5
-  obtain ⟨w5_6c, hx5⟩ := hx5
-  obtain ⟨w5_70, hx5⟩ := hx5
-  obtain ⟨w5_78, hx5⟩ := hx5
-  obtain ⟨w5_7c, hx5⟩ := hx5
-  obtain ⟨w5_80, hx5⟩ := hx5
-  obtain ⟨w5_84, hx5⟩ := hx5
-  obtain ⟨w5_88, hx5⟩ := hx5
-  obtain ⟨w5_8c, hx5⟩ := hx5
-  obtain ⟨w5_90, hx5⟩ := hx5
-  obtain ⟨w5_94, hx5⟩ := hx5
-  obtain ⟨w5_98, hx5⟩ := hx5
-  obtain ⟨w5_9c, hx5⟩ := hx5
-  obtain ⟨w5_a0, hx5⟩ := hx5
-  obtain ⟨w5_a4, hx5⟩ := hx5
-  obtain ⟨w5_a8, hx5⟩ := hx5
-  obtain ⟨w5_ac, hx5⟩ := hx5
-  obtain ⟨w5_b0, hx5⟩ := hx5
-  obtain ⟨w5_b4, hx5⟩ := hx5
-  obtain ⟨w5_b8, hx5⟩ := hx5
-  obtain ⟨w5_bc, hx5⟩ := hx5
-  obtain ⟨w5_c0, hx5⟩ := hx5
-  obtain ⟨w5_c4, hx5⟩ := hx5
-  obtain ⟨w5_c8, hx5⟩ := hx5
-  obtain ⟨w5_cc, hx5⟩ := hx5
-  obtain ⟨w5_d0, hx5⟩ := hx5
-  obtain ⟨w5_d4, hx5⟩ := hx5
-  obtain ⟨w5_d8, hx5⟩ := hx5
-  obtain ⟨w5_dc, hx5⟩ := hx5
-  obtain ⟨w5_e0, hx5⟩ := hx5
-  obtain ⟨w5_e4, hx5⟩ := hx5
-  obtain ⟨w5_e8, hx5⟩ := hx5
-  obtain ⟨w5_ec, hx5⟩ := hx5
-  obtain ⟨w5_f0, hx5⟩ := hx5
-  obtain ⟨w5_f4, hx5⟩ := hx5
-  obtain ⟨w5_f8, hx5⟩ := hx5
-  obtain ⟨w5_fc, hx5⟩ := hx5
-  obtain ⟨w5_100, hx5⟩ := hx5
-  obtain ⟨w5_104, hx5⟩ := hx5
-  obtain ⟨w5_108, hx5⟩ := hx5
-  obtain ⟨w5_10c, hx5⟩ := hx5
-  obtain ⟨w5_110, hx5⟩ := hx5
-  obtain ⟨w5_114, hx5⟩ := hx5
-  obtain ⟨w5_118, hx5⟩ := hx5
-  obtain ⟨w5_11c, hx5⟩ := hx5
-  obtain ⟨w5_120, hx5⟩ := hx5
-  obtain ⟨w5_124, hx5⟩ := hx5
-  obtain ⟨w5_128, hx5⟩ := hx5
-  obtain ⟨w5_12c, hx5⟩ := hx5
-  obtain ⟨w5_130, hx5⟩ := hx5
-  obtain ⟨w5_a20, hx5⟩ := hx5
-  obtain ⟨w5_a24, hx5⟩ := hx5
-  obtain ⟨w5_a28, hx5⟩ := hx5
-  obtain ⟨w5_a2c, hx5⟩ := hx5
-  obtain ⟨w5_a30, hx5⟩ := hx5
-  obtain ⟨w5_a34, hx5⟩ := hx5
-  obtain ⟨w5_a38, hx5⟩ := hx5
-  obtain ⟨w5_a3c, hx5⟩ := hx5
-  obtain ⟨w5_aa0, hx5⟩ := hx5
-  obtain ⟨w5_aa4, hx5⟩ := hx5
-  obtain ⟨b5_10, hx5⟩ := hx5
-  obtain ⟨q5_320, hx5⟩ := hx5
+  obtain ⟨q5_1fc, hx5⟩ := hx5
   obtain ⟨q5_421, hx5⟩ := hx5
-  obtain ⟨q5_1480, hx5⟩ := hx5
   have K5_L := hx5
-  rcases sv_seg_win F E5 V5 hret hO s5 M0 fR5 r5_2 r5_9 r5_18 r5_19 r5_21 r5_22 r5_23 r5_24 r5_25 r5_26 r5_27 w5_8 w5_c w5_14 w5_18 w5_1c w5_20 w5_24 w5_28 w5_2c w5_30 w5_34 w5_38 w5_3c w5_40 w5_44 w5_48 w5_4c w5_50 w5_54 w5_58 w5_5c w5_60 w5_64 w5_68 w5_6c w5_70 w5_78 w5_7c w5_80 w5_84 w5_88 w5_8c w5_90 w5_94 w5_98 w5_9c w5_a0 w5_a4 w5_a8 w5_ac w5_b0 w5_b4 w5_b8 w5_bc w5_c0 w5_c4 w5_c8 w5_cc w5_d0 w5_d4 w5_d8 w5_dc w5_e0 w5_e4 w5_e8 w5_ec w5_f0 w5_f4 w5_f8 w5_fc w5_100 w5_104 w5_108 w5_10c w5_110 w5_114 w5_118 w5_11c w5_120 w5_124 w5_128 w5_12c w5_130 w5_a20 w5_a24 w5_a28 w5_a2c w5_a30 w5_a34 w5_a38 w5_a3c w5_aa0 w5_aa4 q5_320 b5_10 q5_1480 (lid_in k_3 x3_0 c'_3 q'_3 w80'_3 x3_2 x3_4) x3_4 rfl rfl lih_in lil_in a_lih a_lil ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans w2_74))) S2 KS RS RK0 dgi_in sig_in crt_in pp_in4 pl_in4 a_pp a_pl pp_in ii2h ai2h ii2l ai2l ii3h ai3h ii3l ai3l it4h at4h it4l at4l it5h at5h it5l at5l with e | hx6
+  rcases sv_seg_win FW E5 V5 hret hO s5 M0 fR5 r5_2 r5_18 r5_19 r5_20 rfl r5_22 r5_23 rfl r5_25 rfl rfl ((K5_L.w32 (by decide) (by decide)).trans w4_1c) ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans w2_20))) w5_34 ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans w3_40)) ((K5_L.w32 (by decide) (by decide)).trans w4_4c) ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans w2_64))) ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans w2_74))) (fun j hj => (K5_L.range (by decide) (by decide) j hj).trans ((fun j hj => (K4_L.range (by decide) (by decide) j hj).trans ((fun j hj => (K3_L.range (by decide) (by decide) j hj).trans (q2_3e0 j hj)) j hj)) j hj)) RS (lid_in k_3 x3_0 c'_3 q'_3 x3_2 x3_4) x3_4 rfl rfl lih_in lil_in a_lih a_lil ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_68))))) ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_6c))))) ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_70))))) S2 RK0 dgi_in sig_in crt_in pp_in4 pl_in4 a_pp a_pl pp_in ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_3c))))) ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_54))))) ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_58))))) ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_5c))))) ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_60))))) ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_78))))) ((K5_L.w32 (by decide) (by decide)).trans ((K4_L.w32 (by decide) (by decide)).trans ((K3_L.w32 (by decide) (by decide)).trans ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_7c))))) ii2h ai2h ii2l ai2l ii3h ai3h ii3l ai3l it4h at4h it4l at4l it5h at5h it5l at5l with e | hx6
   · exact .inl (SvErrRet.pre (c1.trans (c2.trans (c3.trans (c4.trans (c5))))) (by rw [r5_3, r4_3, r3_3, r2_3, r1_3]) (by rw [r5_4, r4_4, r3_4, r2_4, r1_4])
       (fun x hx => (fR5 x hx).trans (fM x hx).symm) e)
   obtain ⟨x6_0, hx6⟩ := hx6
@@ -945,10 +419,9 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨r6_3, hx6⟩ := hx6
   obtain ⟨r6_4, hx6⟩ := hx6
   obtain ⟨r6_2, hx6⟩ := hx6
-  obtain ⟨r6_8, hx6⟩ := hx6
-  obtain ⟨r6_9, hx6⟩ := hx6
   obtain ⟨r6_18, hx6⟩ := hx6
   obtain ⟨r6_19, hx6⟩ := hx6
+  obtain ⟨r6_20, hx6⟩ := hx6
   obtain ⟨r6_21, hx6⟩ := hx6
   obtain ⟨r6_22, hx6⟩ := hx6
   obtain ⟨r6_23, hx6⟩ := hx6
@@ -956,108 +429,40 @@ theorem sv_seg_log {B out bp x21 x26 dg dp pv q ckp ckl : Word} {w24 w28 w2c w30
   obtain ⟨r6_25, hx6⟩ := hx6
   obtain ⟨r6_26, hx6⟩ := hx6
   obtain ⟨r6_27, hx6⟩ := hx6
-  obtain ⟨w6_8, hx6⟩ := hx6
-  obtain ⟨w6_c, hx6⟩ := hx6
-  obtain ⟨w6_14, hx6⟩ := hx6
-  obtain ⟨w6_18, hx6⟩ := hx6
-  obtain ⟨w6_1c, hx6⟩ := hx6
-  obtain ⟨w6_20, hx6⟩ := hx6
-  obtain ⟨w6_24, hx6⟩ := hx6
-  obtain ⟨w6_28, hx6⟩ := hx6
-  obtain ⟨w6_2c, hx6⟩ := hx6
-  obtain ⟨w6_30, hx6⟩ := hx6
-  obtain ⟨w6_34, hx6⟩ := hx6
-  obtain ⟨w6_38, hx6⟩ := hx6
   obtain ⟨w6_3c, hx6⟩ := hx6
-  obtain ⟨w6_40, hx6⟩ := hx6
-  obtain ⟨w6_44, hx6⟩ := hx6
-  obtain ⟨w6_48, hx6⟩ := hx6
-  obtain ⟨w6_4c, hx6⟩ := hx6
-  obtain ⟨w6_50, hx6⟩ := hx6
   obtain ⟨w6_54, hx6⟩ := hx6
   obtain ⟨w6_58, hx6⟩ := hx6
   obtain ⟨w6_5c, hx6⟩ := hx6
   obtain ⟨w6_60, hx6⟩ := hx6
+  obtain ⟨w6_78, hx6⟩ := hx6
+  obtain ⟨w6_7c, hx6⟩ := hx6
+  obtain ⟨w6_388, hx6⟩ := hx6
+  obtain ⟨w6_38c, hx6⟩ := hx6
+  obtain ⟨w6_390, hx6⟩ := hx6
+  obtain ⟨w6_394, hx6⟩ := hx6
+  obtain ⟨w6_1c, hx6⟩ := hx6
+  obtain ⟨w6_20, hx6⟩ := hx6
+  obtain ⟨w6_34, hx6⟩ := hx6
+  obtain ⟨w6_40, hx6⟩ := hx6
+  obtain ⟨w6_4c, hx6⟩ := hx6
   obtain ⟨w6_64, hx6⟩ := hx6
+  obtain ⟨w6_74, hx6⟩ := hx6
+  obtain ⟨q6_3e0, hx6⟩ := hx6
+  obtain ⟨w6_380, hx6⟩ := hx6
+  obtain ⟨w6_398, hx6⟩ := hx6
+  obtain ⟨w6_39c, hx6⟩ := hx6
+  obtain ⟨w6_3a0, hx6⟩ := hx6
+  obtain ⟨w6_3a4, hx6⟩ := hx6
+  obtain ⟨b6_384, hx6⟩ := hx6
+  obtain ⟨b6_3a8, hx6⟩ := hx6
   obtain ⟨w6_68, hx6⟩ := hx6
   obtain ⟨w6_6c, hx6⟩ := hx6
   obtain ⟨w6_70, hx6⟩ := hx6
-  obtain ⟨w6_74, hx6⟩ := hx6
-  obtain ⟨w6_78, hx6⟩ := hx6
-  obtain ⟨w6_7c, hx6⟩ := hx6
-  obtain ⟨w6_80, hx6⟩ := hx6
-  obtain ⟨w6_84, hx6⟩ := hx6
-  obtain ⟨w6_88, hx6⟩ := hx6
-  obtain ⟨w6_8c, hx6⟩ := hx6
-  obtain ⟨w6_90, hx6⟩ := hx6
-  obtain ⟨w6_94, hx6⟩ := hx6
-  obtain ⟨w6_98, hx6⟩ := hx6
-  obtain ⟨w6_9c, hx6⟩ := hx6
-  obtain ⟨w6_a0, hx6⟩ := hx6
-  obtain ⟨w6_a4, hx6⟩ := hx6
-  obtain ⟨w6_a8, hx6⟩ := hx6
-  obtain ⟨w6_ac, hx6⟩ := hx6
-  obtain ⟨w6_b0, hx6⟩ := hx6
-  obtain ⟨w6_b4, hx6⟩ := hx6
-  obtain ⟨w6_b8, hx6⟩ := hx6
-  obtain ⟨w6_bc, hx6⟩ := hx6
-  obtain ⟨w6_c0, hx6⟩ := hx6
-  obtain ⟨w6_c4, hx6⟩ := hx6
-  obtain ⟨w6_c8, hx6⟩ := hx6
-  obtain ⟨w6_cc, hx6⟩ := hx6
-  obtain ⟨w6_d0, hx6⟩ := hx6
-  obtain ⟨w6_d4, hx6⟩ := hx6
-  obtain ⟨w6_d8, hx6⟩ := hx6
-  obtain ⟨w6_dc, hx6⟩ := hx6
-  obtain ⟨w6_e0, hx6⟩ := hx6
-  obtain ⟨w6_e4, hx6⟩ := hx6
-  obtain ⟨w6_e8, hx6⟩ := hx6
-  obtain ⟨w6_ec, hx6⟩ := hx6
-  obtain ⟨w6_f0, hx6⟩ := hx6
-  obtain ⟨w6_f4, hx6⟩ := hx6
-  obtain ⟨w6_f8, hx6⟩ := hx6
-  obtain ⟨w6_fc, hx6⟩ := hx6
-  obtain ⟨w6_100, hx6⟩ := hx6
-  obtain ⟨w6_104, hx6⟩ := hx6
-  obtain ⟨w6_108, hx6⟩ := hx6
-  obtain ⟨w6_10c, hx6⟩ := hx6
-  obtain ⟨w6_110, hx6⟩ := hx6
-  obtain ⟨w6_114, hx6⟩ := hx6
-  obtain ⟨w6_118, hx6⟩ := hx6
-  obtain ⟨w6_11c, hx6⟩ := hx6
-  obtain ⟨w6_120, hx6⟩ := hx6
-  obtain ⟨w6_124, hx6⟩ := hx6
-  obtain ⟨w6_128, hx6⟩ := hx6
-  obtain ⟨w6_12c, hx6⟩ := hx6
-  obtain ⟨w6_130, hx6⟩ := hx6
-  obtain ⟨w6_a20, hx6⟩ := hx6
-  obtain ⟨w6_a24, hx6⟩ := hx6
-  obtain ⟨w6_a28, hx6⟩ := hx6
-  obtain ⟨w6_a2c, hx6⟩ := hx6
-  obtain ⟨w6_a30, hx6⟩ := hx6
-  obtain ⟨w6_a34, hx6⟩ := hx6
-  obtain ⟨w6_a38, hx6⟩ := hx6
-  obtain ⟨w6_a3c, hx6⟩ := hx6
-  obtain ⟨w6_aa0, hx6⟩ := hx6
-  obtain ⟨w6_aa4, hx6⟩ := hx6
-  obtain ⟨w6_1028, hx6⟩ := hx6
-  obtain ⟨w6_102c, hx6⟩ := hx6
-  obtain ⟨w6_1030, hx6⟩ := hx6
-  obtain ⟨w6_1034, hx6⟩ := hx6
-  obtain ⟨b6_10, hx6⟩ := hx6
-  obtain ⟨b6_1048, hx6⟩ := hx6
-  obtain ⟨q6_320, hx6⟩ := hx6
-  obtain ⟨q6_1049, hx6⟩ := hx6
-  obtain ⟨w6_1020, hx6⟩ := hx6
-  obtain ⟨w6_1038, hx6⟩ := hx6
-  obtain ⟨w6_103c, hx6⟩ := hx6
-  obtain ⟨w6_1040, hx6⟩ := hx6
-  obtain ⟨w6_1044, hx6⟩ := hx6
+  obtain ⟨b6_1fc, hx6⟩ := hx6
   obtain ⟨b6_420, hx6⟩ := hx6
   obtain ⟨b6_421, hx6⟩ := hx6
-  obtain ⟨b6_1480, hx6⟩ := hx6
   have K6_L := hx6
-  exact .inr ⟨x1_0, ix7_1_1, x1_1, ix17_1_1, x1_2, ix25_1_1, x1_3, ix33_1_1, x1_4, x1_5, x1_6, x1_7, c'_2, p'_2, x21'_2, w60'_2, w70'_2, x2_0, x2_1, x2_2, bs7_2, x2_3, x2_4, k_3, x3_0, x3_1, c'_3, q'_3, w80'_3, x3_2, x3_3, x3_4, sg_5, k_5, c'_5, x21'_5, rl'_5, rp'_5, dg'_5, w8'_5, wc'_5, w28'_5, w2c'_5, w30'_5, w38'_5, w40'_5, w5c'_5, sg'_5, x5_0, x5_1, x5_2, x5_3, x6_0, root6_3_6, x6_1, x6_2, x6_3, x6_4, x6_5, x6_6, x6_7, x6_8, x6_9, x6_10, n6, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6))))), fR6, s6, E6, V6,
-    by rw [r6_3, r5_3, r4_3, r3_3, r2_3, r1_3], by rw [r6_4, r5_4, r4_4, r3_4, r2_4, r1_4], r6_2, r6_8, r6_9, r6_18, r6_19, r6_21, r6_22, r6_23, r6_24, r6_25, r6_26, r6_27, w6_8, w6_c, w6_14, w6_18, w6_1c, w6_20, w6_24, w6_28, w6_2c, w6_30, w6_34, w6_38, w6_3c, w6_40, w6_44, w6_48, w6_4c, w6_50, w6_54, w6_58, w6_5c, w6_60, w6_64, w6_68, w6_6c, w6_70, w6_74, w6_78, w6_7c, w6_80, w6_84, w6_88, w6_8c, w6_90, w6_94, w6_98, w6_9c, w6_a0, w6_a4, w6_a8, w6_ac, w6_b0, w6_b4, w6_b8, w6_bc, w6_c0, w6_c4, w6_c8, w6_cc, w6_d0, w6_d4, w6_d8, w6_dc, w6_e0, w6_e4, w6_e8, w6_ec, w6_f0, w6_f4, w6_f8, w6_fc, w6_100, w6_104, w6_108, w6_10c, w6_110, w6_114, w6_118, w6_11c, w6_120, w6_124, w6_128, w6_12c, w6_130, w6_a20, w6_a24, w6_a28, w6_a2c, w6_a30, w6_a34, w6_a38, w6_a3c, w6_aa0, w6_aa4, w6_1028, w6_102c, w6_1030, w6_1034, b6_10, b6_1048, q6_320, q6_1049, w6_1020, w6_1038, w6_103c, w6_1040, w6_1044, b6_420, b6_421, b6_1480, ((((((K1_L).trans K2_L).trans K3_L).trans K4_L).trans K5_L).trans K6_L).mono (by decide)⟩
+  exact .inr ⟨x1_0, ix8_1_1, x1_1, ix18_1_1, x1_2, ix26_1_1, x1_3, ix34_1_1, x1_4, x1_5, x1_6, x1_7, c'_2, p'_2, w64'_2, w74'_2, x2_0, x2_1, x2_2, bs7_2, x2_3, x2_4, k_3, x3_0, x3_1, c'_3, q'_3, x3_2, x3_3, x3_4, sg_5, k_5, f'_5, w38'_5, w50'_5, sg'_5, x5_0, x5_1, x5_2, x5_3, x6_0, root6_3_6, x6_1, x6_2, x6_3, x6_4, x6_5, x6_6, x6_7, x6_8, x6_9, x6_10, n6, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6))))), fR6, s6, E6, V6,
+    by rw [r6_3, r5_3, r4_3, r3_3, r2_3, r1_3], by rw [r6_4, r5_4, r4_4, r3_4, r2_4, r1_4], r6_2, r6_18, r6_19, r6_20, r6_21, r6_22, r6_23, r6_24, r6_25, w6_3c, w6_54, w6_58, w6_5c, w6_60, w6_78, w6_7c, w6_388, w6_38c, w6_390, w6_394, w6_1c, w6_20, w6_34, w6_40, w6_4c, w6_64, w6_74, q6_3e0, w6_380, w6_398, w6_39c, w6_3a0, w6_3a4, b6_384, b6_3a8, w6_68, w6_6c, w6_70, b6_1fc, b6_420, b6_421, ((K6_L.w32 (by decide) (by decide)).trans w5_24), ((K6_L.w32 (by decide) (by decide)).trans w5_38), ((K6_L.w32 (by decide) (by decide)).trans w5_50), ((K6_L.w32 (by decide) (by decide)).trans w5_28), ((K6_L.w32 (by decide) (by decide)).trans w5_44), ((K6_L.w32 (by decide) (by decide)).trans w5_48), ((K6_L.w32 (by decide) (by decide)).trans w5_18), ((K6_L.w32 (by decide) (by decide)).trans w5_30), ((K6_L.w32 (by decide) (by decide)).trans w5_2c), ((((((K1_L).trans K2_L).trans K3_L).trans K4_L).trans K5_L).trans K6_L).mono (by decide)⟩
 
 end C3.RV32.Sv
