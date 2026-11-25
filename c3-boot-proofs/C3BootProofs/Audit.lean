@@ -257,6 +257,7 @@ import C3BootProofs.Proofs.BootMainDecide
 import C3BootProofs.Proofs.BootMainPlan
 import C3BootProofs.Proofs.BootMainEntry
 import C3BootProofs.Proofs.BootMainStart
+import C3BootProofs.Proofs.AcceptPinned
 
 /-!
 # Audit
@@ -9619,3 +9620,5 @@ end C3
 
 /-- info: 'C3.RV32.Cur.bootMain_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bootMain_correct
+/-- info: 'C3.RV32.Ac.acp_stage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acp_stage
