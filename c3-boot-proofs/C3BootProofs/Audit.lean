@@ -225,6 +225,8 @@ import C3BootProofs.Proofs.TrustedRootReadChainFin
 import C3BootProofs.Proofs.TrustedRootReadChainHead
 import C3BootProofs.Proofs.TrustedRootReadChain
 import C3BootProofs.Proofs.TrustedRootLift
+import C3BootProofs.Proofs.TrustedRootLiftDer
+import C3BootProofs.Proofs.TrustedRootLiftKey
 import C3BootProofs.Proofs.TrustedRootLiftCert
 import C3BootProofs.Proofs.TrustedRootLiftChain
 import C3BootProofs.Models.JsonLinkWalk
@@ -9079,6 +9081,12 @@ end C3
 #guard_msgs in #print axioms C3.RV32.validForPos_spec
 /-- info: 'C3.RV32.trustedRootValidFor_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.trustedRootValidFor_spec
+/-- info: 'C3.RV32.trk_decode' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.trk_decode
+/-- info: 'C3.RV32.trk_decodeNone' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.trk_decodeNone
+/-- info: 'C3.RV32.rcKey_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.rcKey_spec
 /-- info: 'C3.RV32.rcParse_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.rcParse_spec
 /-- info: 'C3.RV32.readChainPos_spec' depends on axioms: [propext, Quot.sound] -/
