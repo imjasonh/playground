@@ -393,3 +393,4 @@ import C3BootProofs.Proofs.JsonParse
 import C3BootProofs.Models.JsonLink
 import C3BootProofs.Models.JsonLinkSpec
 import C3BootProofs.Models.JsonLinkPos
+import C3BootProofs.Models.JsonLinkScan
