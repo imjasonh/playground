@@ -468,6 +468,104 @@ theorem rm_p256 (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m �
   have hv' := hv (by (try rsimp at ha); exact ha)
   rwa [E.bytes hM5.1 hpk, hh, hr5, hs5] at hv'
 
+theorem rm_okEd {k msg sig bs : Bytes} (hp : parseHex sig = some bs) (hl : bs.length = 64)
+    (hv : ed25519Verify k msg bs = true) : sigOkT (2, k) msg sig = true := by
+  show sigValid (.ed25519 k) msg sig = true
+  unfold sigValid; rw [hp]
+  show (bs.length == 64 && ed25519Verify k msg bs) = true
+  rw [hl, hv]; rfl
+
+theorem rm_ok384 {k msg sig bs r s : Bytes} (hp : parseHex sig = some bs) (he : ecdsaSignature 48 bs = some (r, s))
+    (hv : p384Verify k (sha384 msg) r s = true) : sigOkT (1, k) msg sig = true := by
+  show sigValid (.p384 k) msg sig = true
+  unfold sigValid; rw [hp]
+  show (match ecdsaSignature 48 bs with | some (r, s) => p384Verify k (sha384 msg) r s | none => false) = true
+  rw [he]; exact hv
+
+theorem rm_ok256 {k msg sig bs r s : Bytes} (hp : parseHex sig = some bs) (he : ecdsaSignature 32 bs = some (r, s))
+    (hv : p256Verify k (sha256 msg) r s = true) : sigOkT (0, k) msg sig = true := by
+  show sigValid (.p256 k) msg sig = true
+  unfold sigValid; rw [hp]
+  show (match ecdsaSignature 32 bs with | some (r, s) => p256Verify k (sha256 msg) r s | none => false) = true
+  rw [he]; exact hv
+
+/-- From 0x22A: the check for the slot's tag. The decoded signature `bs`
+of the hex signature `sig` is at `F + 0x48`; `a0` is nonzero at 0x314 only
+when `sig` checks against slot `i`'s key. -/
+theorem rm_ver (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
+    {t : Nat} {es : List RkEntry} (hR : RkAt M0 R t es) (hw : RkWf es) {i ti : Nat} {ki : Bytes} (hi8 : i < 8)
+    (hki : rmKeyAt es i = some (ti, ki)) {G g : Fin 32 → Word} (hK : ∀ x, x ∈ rmSL → g x = G x)
+    (hsp : g sp = F) (hz : g 0 = 0) (hfr : ∀ x, x ∉ rkE → g x = g0 x) (h27 : g 27 = R + BitVec.ofNat 32 (98 * i))
+    (h24 : g 24 = (BitVec.ofNat 8 ti).zeroExtend 32) {l : Nat} {sig bs : Bytes}
+    (h10 : g 10 = F + BitVec.ofNat 32 0x48) (h11 : g 11 = BitVec.ofNat 32 (l / 2)) (hl : l ≤ 256)
+    (hp : parseHex sig = some bs) (hbl : bs.length = l / 2)
+    {Mk : Word → BitVec 8} (hM : RmVM M1 Mz Mk s F) (hbm : memBytes Mk (F + BitVec.ofNat 32 0x48) (l / 2) = bs)
+    (hmp : memLoad32 Mz (F + BitVec.ofNat 32 0x14) = MP)
+    (hml : memLoad32 Mz (F + BitVec.ofNat 32 0x10) = BitVec.ofNat 32 ML)
+    (hskip : ∀ Mk' g', RmVM M1 Mz Mk' s F → (∀ x, x ∈ rmSL → g' x = G x) → g' 0 = 0 →
+      (∀ x, x ∉ rkE → g' x = g0 x) → WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk' 0x2C0 g')
+    (hdone : ∀ Mk' g', RmVM M1 Mz Mk' s F → (∀ x, x ∈ rmSL → g' x = G x) → g' 0 = 0 →
+      (∀ x, x ∉ rkE → g' x = g0 x) → (g' 10 ≠ 0 → sigOkT (ti, nb ki) (memBytes M0 MP ML) sig = true) →
+      WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk' 0x314 g') :
+    WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x22A g := by
+  rcases rm_slotKey hR hi8 with ⟨hn, -⟩ | ⟨tj, kj, hk', -, hb⟩
+  · rw [hki] at hn; cases hn
+  rw [hki] at hk'; cases hk'
+  have hRw := E.hRw
+  have hRN : (R + BitVec.ofNat 32 (98 * i + 1)).toNat = R.toNat + (98 * i + 1) := E.RN (by omega)
+  have hSk : ∀ {w : Nat}, w ≤ 97 → Sep s 0x3920 (R + BitVec.ofNat 32 (98 * i + 1)) w := fun hw' =>
+    E.hSR.subR (by omega)
+  have hn : l / 2 ≤ 128 := by omega
+  refine WP.alu rkm_at_22a ?_; wn
+  refine WP.alu rkm_at_22c ?_; wn
+  refine WP.aluImm rkm_at_22e ?_; wn
+  refine WP.aluImm rkm_at_232 ?_; wn
+  have h8 : aluEval .add (g 27) 1 = R + BitVec.ofNat 32 (98 * i + 1) := by
+    rw [ev_add, h27]; exact add_ofNat_assoc R (98 * i) 1
+  rcases rm_wfAt hw hki with ⟨ht, hkl⟩ | ⟨ht, hkl⟩ | ⟨ht, hkl⟩ <;> simp only at ht hkl <;> subst ht
+  · -- P-256
+    refine WP.branch rkm_at_234 (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [h24] at eb; exact absurd eb (by decide)
+    refine WP.aluImm rkm_at_238 ?_; wn
+    refine WP.branch rkm_at_23a (fun _ => ?_) (fun eb => ?_) <;> wn
+    rotate_left
+    · exfalso; (try rsimp at eb); rw [h24] at eb; exact absurd eb (by decide)
+    refine rm_p256 E hH (G := G) (by rmkeep hK) (by rsimp; exact hsp) (by rsimp; (try exact hz)) (by keepz E.hz0)
+      (pk := R + BitVec.ofNat 32 (98 * i + 1)) (by (try rsimp); exact h8) (hSk (by decide)) (by omega) (by omega) hn
+      (by (try rsimp); (try rw [show g x0 = 0 from hz]); rw [ev0, h11]) (by (try rsimp); (try rw [show g x0 = 0 from hz]); rw [ev0, h10]) hM hmp hml
+      (fun Mk' g' a b c d => hskip Mk' g' a b c d) fun Mk' g' a b c d hv => hdone Mk' g' a b c d fun ha => ?_
+    obtain ⟨r, s', hes, hv'⟩ := hv ha
+    rw [hkl] at hb; rw [hb] at hv'
+    have he := ecdsaSignature_mem hes
+    rw [hbm] at he
+    exact rm_ok256 hp he hv'
+  · -- P-384
+    refine WP.branch rkm_at_234 (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [h24] at eb; exact absurd eb (by decide)
+    refine WP.aluImm rkm_at_238 ?_; wn
+    refine WP.branch rkm_at_23a (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [h24] at eb; exact absurd eb (by decide)
+    refine rm_p384 E hH (G := G) (by rmkeep hK) (by rsimp; exact hsp) (by rsimp; (try exact hz)) (by keepz E.hz0)
+      (pk := R + BitVec.ofNat 32 (98 * i + 1)) (by (try rsimp); exact h8) (hSk (by decide)) (by omega) hn
+      (by (try rsimp); (try rw [show g x0 = 0 from hz]); rw [ev0, h11]) (by (try rsimp); (try rw [show g x0 = 0 from hz]); rw [ev0, h10]) hM hmp hml
+      (fun Mk' g' a b c d => hskip Mk' g' a b c d) fun Mk' g' a b c d hv => hdone Mk' g' a b c d fun ha => ?_
+    obtain ⟨r, s', hes, hv'⟩ := hv ha
+    rw [hkl] at hb; rw [hb] at hv'
+    have he := ecdsaSignature_mem hes
+    rw [hbm] at he
+    exact rm_ok384 hp he hv'
+  · -- Ed25519
+    refine WP.branch rkm_at_234 (fun _ => ?_) (fun eb => ?_) <;> wn
+    rotate_left
+    · exfalso; (try rsimp at eb); rw [h24] at eb; exact absurd eb (by decide)
+    refine rm_ed E (G := G) (by rmkeep hK) (by rsimp; exact hsp) (by rsimp; (try exact hz)) (by keepz E.hz0)
+      (pk := R + BitVec.ofNat 32 (98 * i + 1)) (by (try rsimp); exact h8) (hSk (by decide)) (by omega) hn
+      (by (try rsimp); (try rw [show g x0 = 0 from hz]); rw [ev0, h11]) (by (try rsimp); (try rw [show g x0 = 0 from hz]); rw [ev0, h10]) hM hmp hml
+      (fun Mk' g' a b c d => hskip Mk' g' a b c d) fun Mk' g' a b c d hv => hdone Mk' g' a b c d fun ha => ?_
+    obtain ⟨h64, hv'⟩ := hv ha
+    rw [hkl] at hb; rw [hb, ← h64, hbm] at hv'
+    exact rm_okEd hp (by rw [hbl, h64]) hv'
+
 end
 
 end C3.RV32
