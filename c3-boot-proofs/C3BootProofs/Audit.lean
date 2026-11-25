@@ -250,6 +250,7 @@ import C3BootProofs.Proofs.BootMainTail
 import C3BootProofs.Proofs.BootMainPick
 import C3BootProofs.Proofs.BootMainWrite
 import C3BootProofs.Proofs.BootMainDecide
+import C3BootProofs.Proofs.BootMainPlan
 
 /-!
 # Audit
@@ -9389,3 +9390,36 @@ end C3
 
 /-- info: 'C3.RV32.Cur.bmd_main' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bmd_main
+
+/-- info: 'C3.RV32.Cur.BmqPre.keep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.BmqPre.keep
+
+/-- info: 'C3.RV32.Cur.bmq_word_lo' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmq_word_lo
+
+/-- info: 'C3.RV32.Cur.bmq_s6_lo' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmq_s6_lo
+
+/-- info: 'C3.RV32.Cur.bmq_kin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmq_kin
+
+/-- info: 'C3.RV32.Cur.bmq_keep3' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmq_keep3
+
+/-- info: 'C3.RV32.Cur.bmq_rec_ex' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmq_rec_ex
+
+/-- info: 'C3.RV32.Cur.bmq_exw' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmq_exw
+
+/-- info: 'C3.RV32.Cur.bmq_none' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmq_none
+
+/-- info: 'C3.RV32.Cur.bmq_live' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmq_live
+
+/-- info: 'C3.RV32.Cur.bmq_exp' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmq_exp
+
+/-- info: 'C3.RV32.Cur.bmq_plan' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmq_plan
