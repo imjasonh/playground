@@ -204,6 +204,21 @@ import C3BootProofs.Proofs.JsonParseEnd
 import C3BootProofs.Proofs.JsonParse
 import C3BootProofs.Proofs.TrustedRootDecode
 import C3BootProofs.Proofs.TrustedRootValidFor
+import C3BootProofs.Proofs.TrustedRootReadChainAt
+import C3BootProofs.Proofs.TrustedRootReadChainCalls
+import C3BootProofs.Proofs.TrustedRootReadChainCtx
+import C3BootProofs.Proofs.TrustedRootReadChainDer
+import C3BootProofs.Proofs.TrustedRootReadChainFrame
+import C3BootProofs.Proofs.TrustedRootReadChainKey
+import C3BootProofs.Proofs.TrustedRootReadChainKeySeg
+import C3BootProofs.Proofs.TrustedRootReadChainModel
+import C3BootProofs.Proofs.TrustedRootReadChainParse
+import C3BootProofs.Proofs.TrustedRootReadChainParseTop
+import C3BootProofs.Proofs.TrustedRootReadChainRec
+import C3BootProofs.Proofs.TrustedRootReadChainLoop
+import C3BootProofs.Proofs.TrustedRootReadChainFin
+import C3BootProofs.Proofs.TrustedRootReadChainHead
+import C3BootProofs.Proofs.TrustedRootReadChain
 
 /-!
 # Audit
@@ -9014,3 +9029,6 @@ end C3
 
 /-- info: 'C3.RV32.trustedRootValidFor_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.trustedRootValidFor_correct
+
+/-- info: 'C3.RV32.trustedRootReadChain_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.trustedRootReadChain_correct
