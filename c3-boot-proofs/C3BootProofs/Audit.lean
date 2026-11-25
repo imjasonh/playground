@@ -202,6 +202,11 @@ import C3BootProofs.Proofs.JsonParseItem
 import C3BootProofs.Proofs.JsonParseOuter
 import C3BootProofs.Proofs.JsonParseEnd
 import C3BootProofs.Proofs.JsonParse
+import C3BootProofs.Models.JsonLinkWalk
+import C3BootProofs.Models.JsonLinkValue
+import C3BootProofs.Models.JsonLinkParse
+import C3BootProofs.Models.JsonLinkUnique
+import C3BootProofs.Models.JsonLinkCanon
 
 /-!
 # Audit
@@ -9006,3 +9011,48 @@ end C3
 
 /-- info: 'C3.Json.objGet_val' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.objGet_val
+
+/-- info: 'C3.Json.Members' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.Members
+
+/-- info: 'C3.Json.Elements' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.Elements
+
+/-- info: 'C3.Json.ObjKeys' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.ObjKeys
+
+/-- info: 'C3.Json.ObjGet' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.ObjGet
+
+/-- info: 'C3.Json.ObjField' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.ObjField
+
+/-- info: 'C3.Json.StrRes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.StrRes
+
+/-- info: 'C3.Json.U64Val' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.U64Val
+
+/-- info: 'C3.Json.CurOpen' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.CurOpen
+
+/-- info: 'C3.Json.StrictNoCtl' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.StrictNoCtl
+
+/-- info: 'C3.Json.KeysIncreasingDistinct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.KeysIncreasingDistinct
+
+/-- info: 'C3.Json.ParseJsonSome' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.ParseJsonSome
+
+/-- info: 'C3.Json.ParseModelOk' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.ParseModelOk
+
+/-- info: 'C3.Json.ParseModelError' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.ParseModelError
+
+/-- info: 'C3.Json.JValUnique' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.JValUnique
+
+/-- info: 'C3.Json.CanonEncode' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.CanonEncode
