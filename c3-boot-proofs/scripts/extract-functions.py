@@ -470,15 +470,20 @@ DATA_EXTRA8 = [
 
 
 # The jump table that `boot_main`'s first closure indexes with a rejection
-# code from 0x20 to 0x26, written to the tenth output. Same fields as `DATA`.
+# code from 0x20 to 0x26, the keys it looks up in `targets.json`, and the hex
+# digits it writes `trusted_root.json`'s digest in, written to the tenth
+# output. Same fields as `DATA`.
 DATA_EXTRA9 = [
     ("acRejectTable", "bootMainClosure0", 0x7EA, 28),
+    ("acTargetsKeys", "bootMainClosure0", 0x868, 42),
+    ("acHexDigits", "bootMainClosure0", 0xB74, 16),
 ]
 
 # The data that the P-256 and P-384 proofs don't read. The data window spans
 # the rest, rounded out to 0x20 bytes, and those proofs show that the stack
 # stays clear of it.
-OUTSIDE_DATA_WINDOW = {"svRekorLeaf", "shaK", "sha512K", "regionEnds", "regionStarts", "acRejectTable"}
+OUTSIDE_DATA_WINDOW = {"svRekorLeaf", "shaK", "sha512K", "regionEnds", "regionStarts", "acRejectTable",
+                       "acTargetsKeys", "acHexDigits"}
 
 
 def call_target(code, addr, off):

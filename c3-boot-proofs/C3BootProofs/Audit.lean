@@ -260,6 +260,7 @@ import C3BootProofs.Proofs.BootMainStart
 import C3BootProofs.Proofs.AcceptPinned
 import C3BootProofs.Proofs.AcceptIndex
 import C3BootProofs.Proofs.AcceptRead
+import C3BootProofs.Proofs.AcceptTargetsTop
 
 /-!
 # Audit
@@ -9646,3 +9647,14 @@ end C3
 #guard_msgs in #print axioms C3.RV32.Ac.acx_loop
 /-- info: 'C3.RV32.Ac.acceptRead' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acceptRead
+/-- info: 'C3.Json.act_finish' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.act_finish
+
+/-- info: 'C3.RV32.Ac.act_89a' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.act_89a
+
+/-- info: 'C3.RV32.Ac.act_836' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.act_836
+
+/-- info: 'C3.RV32.Ac.act_stage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.act_stage
