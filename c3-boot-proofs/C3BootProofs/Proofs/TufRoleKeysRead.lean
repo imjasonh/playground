@@ -976,6 +976,88 @@ theorem rkh_head (E : RkEnv M0 M1 s out F P N g0) {M : Word → BitVec 8} {g : F
     h19 h20 (fun x hx => (hfr' x (rkh_sub2 x hx)).trans (hS x hx)) (by rw [hqpN]; omega) (by rw [hqpN]; omega)
     ((E.hSP.subR (by omega)).subR (by omega)) (by rw [hkpN]; omega) (by rw [hkpN]; omega) (E.hSP.subR (by omega))
 
+theorem rk_wp {M0 : Word → BitVec 8} {s out P RP : Word} {N RN : Nat} {g0 : Fin 32 → Word}
+    (hg0 : g0 a0 = out) (hg1 : g0 a1 = P) (hg2 : g0 a2 = BitVec.ofNat 32 N) (hg3 : g0 a3 = RP)
+    (hg4 : g0 a4 = BitVec.ofNat 32 RN) (hsp : g0 sp = s + BitVec.ofNat 32 3056) (hret : g0 ra &&& ~~~1 = g0 ra)
+    (hal : s.toNat % 4 = 0) (hsw : s.toNat + 3056 ≤ 0x40000000)
+    (hro : Sep s 3056 (BitVec.ofNat 32 roWindowAddress) roWindowSize) (halo : out.toNat % 4 = 0)
+    (how : out.toNat + 0x540 ≤ 0x40000000) (hso : Sep out 0x540 s 3056) (hc : RkCode M0) (hN : N < 2 ^ 31)
+    (hP0 : P.toNat ≠ 0) (hPN : P.toNat + N ≤ 0x40000000) (hSP : Sep s 3056 P N) (hRN : RN < 2 ^ 32)
+    (hRS : Sep s 3056 RP RN) :
+    WP tufRoleKeysReadCode TRK (rkQ M0 s out g0 (rkModel (memBytes M0 P N) (memBytes M0 RP RN))) M0 0 g0 := by
+  refine WP.zero fun hz => ?_
+  refine WP.aluImm rkr_at_0 ?_; wn
+  have esp : aluEval .add (g0 sp) 0xFFFFF810 = s + BitVec.ofNat 32 1024 := by
+    rw [hsp, ev_add, BitVec.add_assoc]; rfl
+  rw [esp]
+  refine WP.aluImm rkr_at_4 ?_; wn
+  have ea5 : aluEval .add (s + BitVec.ofNat 32 1024) 0x780 = s + BitVec.ofNat 32 304 + 0xA50 := by
+    rw [ev_add, BitVec.add_assoc, BitVec.add_assoc]; rfl
+  have e38 : aluEval .add (s + BitVec.ofNat 32 1024) 0xFFFFFD30 = s + BitVec.ofNat 32 304 := by
+    rw [ev_add, BitVec.add_assoc]; rfl
+  (try rsimp); rw [ea5]
+  generalize hF : s + BitVec.ofNat 32 304 = F at e38
+  obtain ⟨hO1, hv⟩ := rk_pro M0 (F + 0xA50) g0
+  have E : RkEnv M0 (rkM1 M0 (F + 0xA50) g0) s out F P N g0 :=
+    ⟨hF, hal, hsw, halo, how, hso, hro, hc,
+      Out.upK (c := 2944) (by rw [← hF, BitVec.add_assoc]; rfl) hO1 (by decide), hv,
+      by rw [hsp, ← hF, add_ofNat_assoc], hret, hz, hP0, hPN, hN, hSP⟩
+  refine WP.sw rkr_at_8 (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x6C) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x6C) (by decide)) ?_; wn
+  refine WP.sw rkr_at_c (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x68) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x68) (by decide)) ?_; wn
+  refine WP.sw rkr_at_e (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x64) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x64) (by decide)) ?_; wn
+  refine WP.sw rkr_at_10 (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x60) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x60) (by decide)) ?_; wn
+  refine WP.sw rkr_at_14 (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x5C) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x5C) (by decide)) ?_; wn
+  refine WP.sw rkr_at_18 (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x58) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x58) (by decide)) ?_; wn
+  refine WP.sw rkr_at_1c (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x54) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x54) (by decide)) ?_; wn
+  refine WP.sw rkr_at_20 (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x50) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x50) (by decide)) ?_; wn
+  refine WP.sw rkr_at_24 (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x4C) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x4C) (by decide)) ?_; wn
+  refine WP.sw rkr_at_28 (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x48) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x48) (by decide)) ?_; wn
+  refine WP.sw rkr_at_2c (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x44) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x44) (by decide)) ?_; wn
+  refine WP.sw rkr_at_30 (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x40) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x40) (by decide)) ?_; wn
+  refine WP.sw rkr_at_34 (by (try rsimp); rw [BitVec.add_assoc]; exact E.alF (c := 0xA50 + 0x3C) (by decide))
+    (by (try rsimp); rw [BitVec.add_assoc]; exact E.cF (c := 0xA50 + 0x3C) (by decide)) ?_; wn
+  change WP tufRoleKeysReadCode TRK _ (rkM1 M0 (F + 0xA50) g0) 0x38 _
+  refine WP.aluImm rkr_at_38 ?_; wn
+  exact rkh_head E (fun _ _ => rfl) (by rsimp; exact e38) (by rsimp) (by rsimp; exact hg0) (by rsimp; exact hg1)
+    (by rsimp; exact hg2) (by rsimp; exact hg3) (by rsimp; exact hg4) (by keepz hz) hRN hRS
+
+/-- `RoleKeys::read` from its entry, with `out` in `a0`, the root's
+`N`-byte `signed` value at `P` in `a1` and `a2`, the `RN`-byte role name
+at `RP` in `a3` and `a4`, and the stack the 3,056 bytes below `sp` (its
+own 2,752-byte frame and the 304 bytes that its callees use). It returns
+to `ra` with `rkModel` of the value and the role at `out`: on success the
+threshold and the role's keys as `RkAt` lays them out; otherwise `0xFE`
+and the error byte. Memory outside the stack and the 1,344 bytes at `out`
+is as before, and so is every register outside `jClob`. The stack and
+`out` lie below the code, and the stack is apart from the read-only data
+window, `out`, the value, and the role name. -/
+theorem tufRoleKeysRead_correct (m : Machine) {retAddr out s P RP : Word} {N RN : Nat}
+    (hc : RkCode m.mem) (hpc : m.pc = TRK) (ha0 : reg m a0 = out) (ha1 : reg m a1 = P)
+    (ha2 : reg m a2 = BitVec.ofNat 32 N) (ha3 : reg m a3 = RP) (ha4 : reg m a4 = BitVec.ofNat 32 RN)
+    (hsp : reg m sp = s + BitVec.ofNat 32 3056) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
+    (hal : s.toNat % 4 = 0) (hsw : s.toNat + 3056 ≤ 0x40000000)
+    (hro : Sep s 3056 (BitVec.ofNat 32 roWindowAddress) roWindowSize) (halo : out.toNat % 4 = 0)
+    (how : out.toNat + 0x540 ≤ 0x40000000) (hso : Sep out 0x540 s 3056) (hN : N < 2 ^ 31) (hP0 : P.toNat ≠ 0)
+    (hPN : P.toNat + N ≤ 0x40000000) (hSP : Sep s 3056 P N) (hRN : RN < 2 ^ 32) (hRS : Sep s 3056 RP RN) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
+      RkRes m.mem m'.mem s out (rkModel (memBytes m.mem P N) (memBytes m.mem RP RN)) ∧
+      ∀ r, r ∉ jClob → reg m' r = reg m r := by
+  obtain ⟨m', st, hpc', hR, hfr⟩ := WP.run (rk_wp ha0 ha1 ha2 ha3 ha4 hsp (by rw [hra]; exact hret) hal hsw hro
+    halo how hso hc hN hP0 hPN hSP hRN hRS) (by decide) hc.self hpc
+  exact ⟨m', st, hpc'.trans hra, hR, hfr⟩
+
 end
 
 end C3.RV32

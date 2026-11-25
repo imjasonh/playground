@@ -206,6 +206,7 @@ import C3BootProofs.Proofs.TufExpires
 import C3BootProofs.Proofs.TufPemSpki
 import C3BootProofs.Proofs.TufParseMetadataHead
 import C3BootProofs.Proofs.TufParseRoot
+import C3BootProofs.Proofs.TufRoleKeysRead
 import C3BootProofs.Models.JsonLinkWalk
 import C3BootProofs.Models.JsonLinkValue
 import C3BootProofs.Models.JsonLinkParse
@@ -9039,6 +9040,9 @@ end C3
 
 /-- info: 'C3.RV32.tufParseRoot_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufParseRoot_correct
+
+/-- info: 'C3.RV32.tufRoleKeysRead_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysRead_correct
 
 /-- info: 'C3.Json.Members' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.Members
