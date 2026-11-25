@@ -6,7 +6,6 @@ import C3BootProofs.Proofs.SvCkptLink
 import C3BootProofs.Proofs.SvConstsLink
 import C3BootProofs.Proofs.SvCosigLink
 import C3BootProofs.Proofs.SvEdImage
-import C3BootProofs.Proofs.SvEntry
 import C3BootProofs.Proofs.SvExtLink
 import C3BootProofs.Proofs.SvExtListLink
 import C3BootProofs.Proofs.SvFail2
@@ -28,7 +27,6 @@ import C3BootProofs.Proofs.SvSha
 import C3BootProofs.Proofs.SvSpec
 import C3BootProofs.Proofs.SvSpecAux
 import C3BootProofs.Proofs.SvTLoop
-import C3BootProofs.Proofs.SvTop
 import C3BootProofs.Proofs.SvTs
 import C3BootProofs.Proofs.SvTs1
 import C3BootProofs.Proofs.SvTsa1
@@ -67,8 +65,6 @@ import C3BootProofs.Proofs.SvTst5s
 import C3BootProofs.Proofs.SvTst6
 import C3BootProofs.Proofs.SvTst6n
 import C3BootProofs.Proofs.SvTst6s
-import C3BootProofs.Proofs.SvVerify
-import C3BootProofs.Proofs.SvVerifyAt
 import C3BootProofs.Proofs.SvWinLink
 
 /-!

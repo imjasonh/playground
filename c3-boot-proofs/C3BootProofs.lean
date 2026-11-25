@@ -552,6 +552,10 @@ import C3BootProofs.Proofs.SvCosigLoop
 import C3BootProofs.Proofs.SvSegTs
 import C3BootProofs.Proofs.SvSegLog
 import C3BootProofs.Proofs.SvSegSv
+import C3BootProofs.Proofs.SvTop
+import C3BootProofs.Proofs.SvEntry
+import C3BootProofs.Proofs.SvVerify
+import C3BootProofs.Proofs.SvVerifyAt
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
