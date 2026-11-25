@@ -100,7 +100,6 @@ import C3BootProofs.Proofs.SvTlhit
 import C3BootProofs.Proofs.SvTlmiss
 import C3BootProofs.Proofs.SvTop
 import C3BootProofs.Proofs.SvTp
-import C3BootProofs.Proofs.SvTpv
 import C3BootProofs.Proofs.SvTs
 import C3BootProofs.Proofs.SvTs1
 import C3BootProofs.Proofs.SvTsa1
