@@ -201,12 +201,12 @@ theorem ckd_step {b : BitVec 8} {lo hi : Word}
   exact ckd_nat lo.toNat hi.toNat (b.toNat - 48) _ _ _ _ hlo hhi (by omega) eA nH (by rw [eA]; exact nA) eL (by rw [svSltu_tn, eml])
     (BitVec.toNat_add _ _) nC'
 
-/-- One step of the code's digit loop over `(count, pointer, x21, low, high)`. -/
-abbrev ckF (M : Word → BitVec 8) : Word × Word × Word × Word × Word → Word × Word × Word × Word × Word :=
-  fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFFF, s.2.1 + BitVec.ofNat 32 0x1, s.2.2.2.2,
-    ckDigit (M s.2.1) + aluEval .mul s.2.2.2.1 (BitVec.ofNat 32 0xA),
-    ((aluEval .mul s.2.2.2.2 (BitVec.ofNat 32 0xA)) + (aluEval .mulhu s.2.2.2.1 (BitVec.ofNat 32 0xA))) +
-      aluEval .sltu (ckDigit (M s.2.1) + aluEval .mul s.2.2.2.1 (BitVec.ofNat 32 0xA)) (aluEval .mul s.2.2.2.1 (BitVec.ofNat 32 0xA)))
+/-- One step of the code's digit loop over `(count, pointer, low, high)`. -/
+abbrev ckF (M : Word → BitVec 8) : Word × Word × Word × Word → Word × Word × Word × Word :=
+  fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFFF, s.2.1 + BitVec.ofNat 32 0x1,
+    ckDigit (M s.2.1) + aluEval .mul s.2.2.1 (BitVec.ofNat 32 0xA),
+    ((aluEval .mul s.2.2.2 (BitVec.ofNat 32 0xA)) + (aluEval .mulhu s.2.2.1 (BitVec.ofNat 32 0xA))) +
+      aluEval .sltu (ckDigit (M s.2.1) + aluEval .mul s.2.2.1 (BitVec.ofNat 32 0xA)) (aluEval .mul s.2.2.1 (BitVec.ofNat 32 0xA)))
 
 /-- What the code checks of one digit at `p` with the value `(lo, hi)` so far. -/
 abbrev ckOk (M : Word → BitVec 8) (p lo hi : Word) : Prop :=
@@ -220,11 +220,11 @@ abbrev ckOk (M : Word → BitVec 8) (p lo hi : Word) : Prop :=
 
 /-- The digit loop over `N` bytes: they are digits, and the value is their
 decimal number after the value it started from. -/
-theorem ckd_fold {M : Word → BitVec 8} : ∀ (N : Nat) {s s' : Word × Word × Word × Word × Word},
-    (∀ i, i < N → ∀ s1, s1 = svIter (ckF M) i s → ckOk M s1.2.1 s1.2.2.2.1 s1.2.2.2.2) →
+theorem ckd_fold {M : Word → BitVec 8} : ∀ (N : Nat) {s s' : Word × Word × Word × Word},
+    (∀ i, i < N → ∀ s1, s1 = svIter (ckF M) i s → ckOk M s1.2.1 s1.2.2.1 s1.2.2.2) →
     s' = svIter (ckF M) N s →
     (memBytes M s.2.1 N).all (fun d => 48 ≤ d && d ≤ 57) = true ∧
-      pair64 s'.2.2.2.1 s'.2.2.2.2 = (memBytes M s.2.1 N).foldl (fun acc d => acc * 10 + (d - 48)) (pair64 s.2.2.2.1 s.2.2.2.2) := by
+      pair64 s'.2.2.1 s'.2.2.2 = (memBytes M s.2.1 N).foldl (fun acc d => acc * 10 + (d - 48)) (pair64 s.2.2.1 s.2.2.2) := by
   intro N
   induction N with
   | zero =>
