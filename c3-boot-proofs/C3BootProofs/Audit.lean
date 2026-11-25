@@ -214,6 +214,7 @@ import C3BootProofs.Models.JsonLinkUnique
 import C3BootProofs.Models.JsonLinkCanon
 import C3BootProofs.Models.TufLink
 import C3BootProofs.Models.TufLinkMeta
+import C3BootProofs.Models.TufLinkKeys
 
 /-!
 # Audit
@@ -9100,3 +9101,6 @@ end C3
 
 /-- info: 'C3.Json.prModel_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.prModel_spec
+
+/-- info: 'C3.Json.rkModel_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.rkModel_spec

@@ -424,3 +424,4 @@ import C3BootProofs.Models.JsonLinkUnique
 import C3BootProofs.Models.JsonLinkCanon
 import C3BootProofs.Models.TufLink
 import C3BootProofs.Models.TufLinkMeta
+import C3BootProofs.Models.TufLinkKeys
