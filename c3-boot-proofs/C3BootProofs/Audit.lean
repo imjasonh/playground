@@ -9104,3 +9104,6 @@ end C3
 
 /-- info: 'C3.Json.rkModel_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.rkModel_spec
+
+/-- info: 'C3.Json.thresholdMet_roleKeys' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.thresholdMet_roleKeys

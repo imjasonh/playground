@@ -7,7 +7,8 @@ import C3BootProofs.Proofs.TufRoleKeys
 `RoleKeys::read` is the part of `tuf::threshold_met` that reads a role's
 threshold, its key IDs, and the keys that `keys` names for them.
 `roleKeys` is that part of `thresholdMet`, and `rkModel_spec` relates the
-position model to it. A model key is a tag and bytes, which `keyTag` gives
+position model to it. `thresholdMet_roleKeys` shows that `thresholdMet` is
+`roleKeys` followed by `metOf`. A model key is a tag and bytes, which `keyTag` gives
 for a `TufKey`.
 -/
 
@@ -498,5 +499,55 @@ theorem rkModel_spec {d role : Bytes} {dj : Json} (h : JVal true d dj) :
     show some (t, ids.map (keyEntry ms)) = some (t, _)
     rw [tlk_map]
     rfl
+
+/-- The rest of `thresholdMet` after `roleKeys`: the distinct keys among
+`es` with a valid signature in `md`, against the threshold `t`. -/
+def metOf (md : Meta) (t : Nat) (es : List (Bytes × Option TufKey)) : Bool :=
+  let msg := encode md.signed
+  let good := es.filterMap fun e => do
+    let key ← e.2
+    let sig ← md.sigs.lookup e.1
+    if sigValid key msg sig then some key else none
+  good.eraseDups.length ≥ t
+
+theorem tlk_fm {α β γ : Type} (f : α → β) (g : β → Option γ) :
+    ∀ l : List α, (l.map f).filterMap g = l.filterMap (fun a => g (f a))
+  | [] => rfl
+  | a :: l => by
+    simp only [List.map_cons, List.filterMap_cons, tlk_fm f g l]
+
+theorem thresholdMet_roleKeys (md : Meta) (dj : Json) (role : Bytes) :
+    thresholdMet md dj role = (roleKeys dj role).map fun r => metOf md r.1 r.2 := by
+  unfold thresholdMet roleKeys metOf
+  simp only [Option.bind_eq_bind]
+  rcases dj.field (ascii!"roles") with _ | jr
+  · rfl
+  simp only [Option.bind_some]
+  rcases jr.field role with _ | jq
+  · rfl
+  simp only [Option.bind_some]
+  rcases (jq.field (ascii!"threshold")).bind Json.asNum with _ | t
+  · rfl
+  simp only [Option.bind_some]
+  rcases require (decide (t ≥ 1)) with _ | _
+  · rfl
+  simp only [Option.bind_some]
+  rcases (dj.field (ascii!"keys")).bind Json.asObj with _ | ms
+  · rfl
+  simp only [Option.bind_some]
+  rcases (jq.field (ascii!"keyids")).bind Json.asArr with _ | js
+  · rfl
+  simp only [Option.bind_some]
+  rcases js.mapM Json.asStr with _ | ids
+  · rfl
+  simp only [Option.bind_some]
+  rcases require (decide (ids.length ≤ 8) && ids.all (fun x => decide (x.length ≤ 64))) with _ | _
+  · rfl
+  simp only [Option.bind_some]
+  have key : ∀ A B : List TufKey, A = B →
+      some (decide (A.eraseDups.length ≥ t)) = some (decide (B.eraseDups.length ≥ t)) := fun _ _ h => h ▸ rfl
+  refine key _ _ ?_
+  show _ = List.filterMap _ (List.map _ ids)
+  rw [tlk_fm]
 
 end C3.Json
