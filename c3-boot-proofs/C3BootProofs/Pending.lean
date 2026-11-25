@@ -33,7 +33,6 @@ import C3BootProofs.Proofs.SvPvWitness
 import C3BootProofs.Proofs.SvSegAttr
 import C3BootProofs.Proofs.SvSegAttrPre
 import C3BootProofs.Proofs.SvSegCert
-import C3BootProofs.Proofs.SvSegCk
 import C3BootProofs.Proofs.SvSegCkpt
 import C3BootProofs.Proofs.SvSegCosig
 import C3BootProofs.Proofs.SvSegDbc
@@ -56,7 +55,6 @@ import C3BootProofs.Proofs.SvSpec
 import C3BootProofs.Proofs.SvSpecAux
 import C3BootProofs.Proofs.SvTLoop
 import C3BootProofs.Proofs.SvTop
-import C3BootProofs.Proofs.SvTp
 import C3BootProofs.Proofs.SvTs
 import C3BootProofs.Proofs.SvTs1
 import C3BootProofs.Proofs.SvTsa1

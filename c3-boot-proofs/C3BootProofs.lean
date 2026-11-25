@@ -501,6 +501,8 @@ import C3BootProofs.Proofs.SvTSearch
 import C3BootProofs.Proofs.SvCSearch
 import C3BootProofs.Proofs.SvNSearch
 import C3BootProofs.Proofs.SvP2St
+import C3BootProofs.Proofs.SvTp
+import C3BootProofs.Proofs.SvSegCk
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
