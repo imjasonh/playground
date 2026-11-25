@@ -177,10 +177,11 @@ def validForPos (d : Bytes) : Except Nat (Nat × Nat) :=
     | .ok t => tvfRest d t
 
 /-- `Result<Window, TufError>` at `out`: the tag byte 0 and the two `u64`s
-at `out + 8` and `out + 0x10`, or the tag byte 1 and the error byte. -/
+at `out + 8` and `out + 0x10`, or the tag byte 1 and the error byte. Both
+times of an `Ok` are below `2 ^ 64`. -/
 def TvfOut (M : Word → BitVec 8) (out : Word) : Except Nat (Nat × Nat) → Prop
   | .error e => M out = 1 ∧ M (out + 1) = BitVec.ofNat 8 e
-  | .ok (t, u) => M out = 0 ∧ memLoad32 M (out + 8) = BitVec.ofNat 32 (t % 2 ^ 32) ∧
+  | .ok (t, u) => t < 2 ^ 64 ∧ u < 2 ^ 64 ∧ M out = 0 ∧ memLoad32 M (out + 8) = BitVec.ofNat 32 (t % 2 ^ 32) ∧
       memLoad32 M (out + 0xC) = BitVec.ofNat 32 (t / 2 ^ 32) ∧
       memLoad32 M (out + 0x10) = BitVec.ofNat 32 (u % 2 ^ 32) ∧
       memLoad32 M (out + 0x14) = BitVec.ofNat 32 (u / 2 ^ 32)
@@ -501,7 +502,8 @@ theorem TvfCtx.err76 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f :
 /-- The `Ok` writer at 0xCA, with `not_before` in `s3`/`s4` and `not_after`
 in `a0`/`a1`. -/
 theorem TvfCtx.okCA (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {t u : Nat}
-    {r : Except Nat (Nat × Nat)} (hr : r = .ok (t, u)) (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
+    {r : Except Nat (Nat × Nat)} (hr : r = .ok (t, u)) (ht : t < 2 ^ 64) (hu : u < 2 ^ 64)
+    (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
     (h19 : f 19 = BitVec.ofNat 32 (t % 2 ^ 32)) (h20 : f 20 = BitVec.ofNat 32 (t / 2 ^ 32))
     (ha0 : f a0 = BitVec.ofNat 32 (u % 2 ^ 32)) (ha1 : f a1 = BitVec.ofNat 32 (u / 2 ^ 32)) :
     WP trustedRootValidForCode TVF (trPost (tvfMem M0 G out r) g0) M 0xCA f := by
@@ -523,18 +525,18 @@ theorem TvfCtx.okCA (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : 
   obtain ⟨hO, e0, e1, e2, e3, e4⟩ := tvf_okMem M out (BitVec.ofNat 32 (t % 2 ^ 32)) (BitVec.ofNat 32 (t / 2 ^ 32))
     (BitVec.ofNat 32 (u % 2 ^ 32)) (BitVec.ofNat 32 (u / 2 ^ 32))
   refine X.exit (by tvf_regs hR) hI hO ?_
-  rw [hr]; exact ⟨e0, e1, e2, e3, e4⟩
+  rw [hr]; exact ⟨ht, hu, e0, e1, e2, e3, e4⟩
 
 /-- The path at 0xC6 for an object without `end`: `not_after` is
 `u64::MAX`. -/
 theorem TvfCtx.noneC6 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {t : Nat}
-    {r : Except Nat (Nat × Nat)} (hr : r = .ok (t, 2 ^ 64 - 1)) (hR : TvfRegs F out p n g0 f)
+    {r : Except Nat (Nat × Nat)} (hr : r = .ok (t, 2 ^ 64 - 1)) (ht : t < 2 ^ 64) (hR : TvfRegs F out p n g0 f)
     (hI : TvfMemInv M0 G F g0 M) (h19 : f 19 = BitVec.ofNat 32 (t % 2 ^ 32))
     (h20 : f 20 = BitVec.ofNat 32 (t / 2 ^ 32)) :
     WP trustedRootValidForCode TVF (trPost (tvfMem M0 G out r) g0) M 0xC6 f := by
   refine WP.aluImm tvf_at_c6 ?_; wn
   refine WP.aluImm tvf_at_c8 ?_; wn
-  exact X.okCA hr (by tvf_regs hR) hI (by trsimp; exact h19) (by trsimp; exact h20)
+  exact X.okCA hr ht (by decide) (by tvf_regs hR) hI (by trsimp; exact h19) (by trsimp; exact h20)
     (by trsimp <;> rw [show f x0 = 0 from hR.1] <;> decide) (by trsimp <;> rw [show f x0 = 0 from hR.1] <;> decide)
 
 end
@@ -787,7 +789,7 @@ theorem TvfCtx.slice (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} (hO 
 /-- From 0x7C: `end`'s value is at `F + 0x14`, and `not_before = t` is in
 `s3`/`s4`. Reads the value's time and writes the window or the error. -/
 theorem TvfCtx.part3 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {t a l : Nat}
-    {r : Except Nat (Nat × Nat)} (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
+    {r : Except Nat (Nat × Nat)} (ht : t < 2 ^ 64) (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
     (h19 : f 19 = BitVec.ofNat 32 (t % 2 ^ 32)) (h20 : f 20 = BitVec.ofNat 32 (t / 2 ^ 32))
     (hq : memLoad32 M (F + 0x14) = p + BitVec.ofNat 32 a) (hl : memLoad32 M (F + 0x18) = BitVec.ofNat 32 l)
     (hal : a + l ≤ n)
@@ -846,21 +848,21 @@ theorem TvfCtx.part3 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f :
       refine WP.lbu tvf_at_9c ?_; wn
       refine WP.branch tvf_at_a0 (fun _ => ?_) (fun hf => absurd hf (by trsimp; rw [hR6.2.1, e0]; decide)); wn
       exact X.err70 hr' (by tvf_regs hR6) hI6 e1
-    · obtain ⟨-, e0, e1, e2⟩ := ok6 u hrf
+    · obtain ⟨hu, e0, e1, e2⟩ := ok6 u hrf
       have hr' : r = .ok (t, u) := by rw [hr, hv]; simp only [tvfTime, hs, hrf]
       refine WP.lbu tvf_at_9c ?_; wn
       refine WP.branch tvf_at_a0 (fun ht => absurd ht (by trsimp; rw [hR6.2.1, e0]; decide)) (fun _ => ?_); wn
       refine WP.lw tvf_at_a2 (by trsimp; rw [hR6.2.1]; exact aligned_add X.fa (k := 0x18) (by decide)) ?_; wn
       refine WP.lw tvf_at_a4 (by trsimp; rw [hR6.2.1]; exact aligned_add X.fa (k := 0x1C) (by decide)) ?_; wn
       refine WP.jal tvf_at_a6 (by decide) ?_; wn
-      exact X.okCA hr' (by tvf_regs hR6) hI6 (by trsimp; rw [k19]; trsimp; rw [g19]; trsimp; exact h19)
+      exact X.okCA hr' ht hu (by tvf_regs hR6) hI6 (by trsimp; rw [k19]; trsimp; rw [g19]; trsimp; exact h19)
         (by trsimp; rw [k20]; trsimp; rw [g20]; trsimp; exact h20) (by trsimp; rw [hR6.2.1, e1]) (by trsimp; rw [hR6.2.1, e2])
 
 
 /-- From 0x4E: `start`'s time `t` is at `F + 0x18`. Moves it into `s3`/`s4`,
 looks up `end`, and finishes. -/
 theorem TvfCtx.part2 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {t : Nat}
-    {r : Except Nat (Nat × Nat)} (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
+    {r : Except Nat (Nat × Nat)} (ht : t < 2 ^ 64) (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
     (h18 : memLoad32 M (F + 0x18) = BitVec.ofNat 32 (t % 2 ^ 32))
     (h1c : memLoad32 M (F + 0x1C) = BitVec.ofNat 32 (t / 2 ^ 32))
     (hr : r = tvfRest (memBytes M0 p n) t) :
@@ -892,7 +894,7 @@ theorem TvfCtx.part2 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f :
     refine WP.branch tvf_at_6e (fun _ => ?_) (fun hf => absurd hf (by trsimp; rw [hR5.2.1, e0]; decide)); wn
     refine WP.lw tvf_at_7c (by trsimp; rw [hR5.2.1]; exact aligned_add X.fa (k := 0x14) (by decide)) ?_; wn
     refine WP.branch tvf_at_7e (fun _ => ?_) (fun hf => absurd hf (by trsimp; rw [hR5.2.1, e1']; decide)); wn
-    exact X.noneC6 hr' (by tvf_regs hR5) hI5 (by trsimp; exact k19) (by trsimp; exact k20)
+    exact X.noneC6 hr' ht (by tvf_regs hR5) hI5 (by trsimp; exact k19) (by trsimp; exact k20)
   · obtain ⟨-, e0, e1, e2⟩ := g
     have e1' : memLoad32 M5 (F + 0x14) = p + BitVec.ofNat 32 a := by rw [BitVec.add_assoc] at e1; exact e1
     have e2' : memLoad32 M5 (F + 0x18) = BitVec.ofNat 32 l := by rw [BitVec.add_assoc] at e2; exact e2
@@ -900,7 +902,7 @@ theorem TvfCtx.part2 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f :
     rw [X.dlen] at hv
     refine WP.lbu tvf_at_6a ?_; wn
     refine WP.branch tvf_at_6e (fun _ => ?_) (fun hf => absurd hf (by trsimp; rw [hR5.2.1, e0]; decide)); wn
-    exact X.part3 (by tvf_regs hR5) hI5 (by trsimp; exact k19) (by trsimp; exact k20) e1' e2' hv.2
+    exact X.part3 ht (by tvf_regs hR5) hI5 (by trsimp; exact k19) (by trsimp; exact k20) e1' e2' hv.2
       (by rw [hr]; unfold tvfRest; rw [hg])
 
 
@@ -973,12 +975,12 @@ theorem TvfCtx.part1 (X : TvfCtx M0 G F out p n g0) {M1 M : Word → BitVec 8} {
     refine WP.lbu tvf_at_48 ?_; wn
     refine WP.branch tvf_at_4c (fun _ => ?_) (fun hb => absurd hb (by trsimp; rw [hR6.2.1, e0]; decide)); wn
     exact X.err70 hr (by tvf_regs hR6) hI6 e1
-  obtain ⟨-, e0, e1, e2⟩ := ok6 t hrf
+  obtain ⟨ht, e0, e1, e2⟩ := ok6 t hrf
   have hr : validForPos (memBytes M0 p n) = tvfRest (memBytes M0 p n) t := by
     unfold validForPos; rw [hf]; simp only [hv', tvfTime, hs, hrf]
   refine WP.lbu tvf_at_48 ?_; wn
   refine WP.branch tvf_at_4c (fun ht => absurd ht (by trsimp; rw [hR6.2.1, e0]; decide)) (fun _ => ?_); wn
-  exact X.part2 (by tvf_regs hR6) hI6 e1 e2 hr
+  exact X.part2 ht (by tvf_regs hR6) hI6 e1 e2 hr
 
 
 /-- The six saves of the prologue, into the frame at `F`. -/
