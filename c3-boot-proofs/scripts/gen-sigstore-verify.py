@@ -146,11 +146,11 @@ def seq_fail(sub, k, oc, dc, lw_off, lbu_off, br_off):
     sub.fail(sub.fail_proof(("eq", f"hr{k}")))
 
 
-def es_fail(sub, k, off, oc):
+def es_fail(sub, k, off, oc, size=97):
     """`der::ecdsa_signature`'s failing case: 1 at `oc`, then `lbu`, `lbu`, `bnez`."""
     sub.emit(f"  rw [hr{k}] at R{k}")
     sub.emit(f"  obtain ⟨y0_{k}, -⟩ := R{k}")
-    sub.frame_after(k, [(oc, 97)], {}, {oc: ("(1 : BitVec 8)", f"y0_{k}")})
+    sub.frame_after(k, [(oc, size)], {}, {oc: ("(1 : BitVec 8)", f"y0_{k}")})
     sub.load(off + 8, "lbu")
     sub.load_any(off + 0xC)
     sub.branch(off + 0x10, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
@@ -1162,35 +1162,36 @@ class Gen:
         return k, f"derIntOf {L} ({rp}) (derElement 2 {L})", (rp, rl, inp)
 
 
-    def es(self, off, oc, p, nl, inp):
-        """`der::ecdsa_signature::<48>` on `nl` bytes at `p`, split on its result;
+    def es(self, off, oc, p, nl, inp, N=48, ha2=None):
+        """`der::ecdsa_signature::<N>` on `nl` bytes at `p`, split on its result;
         returns k. The success case's `r` and `s` are `sr{k}` and `ss{k}`."""
         k = self.k = self.k + 1
-        self.call_head(k, off, "sv_esF", f"(oc := 0x{oc:X}) (nl := {nl})",
+        size = 2 * N + 1
+        self.call_head(k, off, "sv_esF" if N == 48 else "sv_es32F", f"(oc := 0x{oc:X}) (nl := {nl})",
                        [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"R{k}", f"fr{k}"])
         self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
-        self.emit(f"    {self.reg_is(k - 1, 10, oc)} g{k-1}_11 g{k-1}_12 (by decide) {inp}")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} g{k-1}_11 {ha2 or f'g{k-1}_12'} (by decide) {inp}")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [ecdsaSigOf_congr (sv_pt fR{k-1} {inp})] at R{k}")
         self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
                        lambda r: f"rk{k} {rname(r)} (by decide)")
         self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
         self.regs[2] = ("S", 0)
-        ex = f"ecdsaSigOf 48 M0 ({p}) ({nl})"
+        ex = f"ecdsaSigOf {N} M0 ({p}) ({nl})"
         self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
         self.emit(f"  rcases r{k} with eb{k} | ⟨sr{k}, ss{k}⟩")
         self.sc.append(("eq", ex, f".ok (sr{k}, ss{k})", [f"sr{k}", f"ss{k}"], f"hr{k}"))
 
-        self.fork(lambda sub: es_fail(sub, k, off, oc))
+        self.fork(lambda sub: es_fail(sub, k, off, oc, size))
         self.emit(f"  rw [hr{k}] at R{k}")
         self.emit(f"  obtain ⟨y0_{k}, yr_{k}, ys_{k}⟩ := R{k}")
-        self.emit(f"  have q{k}_{oc + 1:x} : ∀ j, j < 48 → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{oc + 1:X} + j)) = "
+        self.emit(f"  have q{k}_{oc + 1:x} : ∀ j, j < {N} → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{oc + 1:X} + j)) = "
                   f"BitVec.ofNat 8 ((sr{k}).getD j 0) := fun j hj => by rw [show 0x{oc + 1:X} + j = 0x{oc:X} + 1 + j by omega]; exact yr_{k} j hj")
-        self.emit(f"  have q{k}_{oc + 49:x} : ∀ j, j < 48 → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{oc + 49:X} + j)) = "
-                  f"BitVec.ofNat 8 ((ss{k}).getD j 0) := fun j hj => by rw [show 0x{oc + 49:X} + j = 0x{oc:X} + 49 + j by omega]; exact ys_{k} j hj")
-        self.frame_after(k, [(oc, 97)], {}, {oc: ("(0 : BitVec 8)", f"y0_{k}")})
-        self.ranges[oc + 1] = (48, f"BitVec.ofNat 8 ((sr{k}).getD j 0)")
-        self.ranges[oc + 49] = (48, f"BitVec.ofNat 8 ((ss{k}).getD j 0)")
+        self.emit(f"  have q{k}_{oc + N + 1:x} : ∀ j, j < {N} → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{oc + N + 1:X} + j)) = "
+                  f"BitVec.ofNat 8 ((ss{k}).getD j 0) := fun j hj => by rw [show 0x{oc + N + 1:X} + j = 0x{oc:X} + {N + 1} + j by omega]; exact ys_{k} j hj")
+        self.frame_after(k, [(oc, size)], {}, {oc: ("(0 : BitVec 8)", f"y0_{k}")})
+        self.ranges[oc + 1] = (N, f"BitVec.ofNat 8 ((sr{k}).getD j 0)")
+        self.ranges[oc + N + 1] = (N, f"BitVec.ofNat 8 ((ss{k}).getD j 0)")
         self.load(off + 8, "lbu")
         self.load(off + 0xC, "lbu")
         self.branch(off + 0x10, False, f"by rw [g{self.k}_10, s{self.k}.zero]; decide")
@@ -4989,75 +4990,86 @@ def seq_fail_2c60(sub, k, oc, dc):
     sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
 
 
+# The policy values that sigstoreVerify compares with the trust root's: the
+# leaf's pointer (a register or a frame word) and the frame word of its length.
+DPV_POL = [("x26", 0x40), (0x50, 0x3C), (0x4C, 0x38), (0x48, 0x34), (0x44, 0x30)]
+DPV_KEEP = set(range(0x30, 0x54, 4))
+DPV_REGS = [2, 3, 4, 18, 19, 20, 21, 22, 23, 24, 26]
+DPV_NEW_BINDERS = ("{B out bp x20 x21 x22 x24 x26 q pv sgp sgl " + " ".join(f"e{i}p e{i}l" for i in range(5))
+                   + " : Word} {" + " ".join(f"w{e:x}" for e in sorted(DPV_KEEP))
+                   + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
 def stage_dpv():
-    """From 0xDE6, after `p384_verify_prehash`: its result, the five policy
-    values against the trust root's, and `Der::sequence` on the timestamp."""
+    """From 0x980, after `p384_verify_prehash`: its result, the five policy
+    values against the trust root's, and the image's signature, to the call to
+    `p256_verify_prehash` at 0xA4C."""
     g = Gen("Dpv")
     regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
-            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 10: ("U", "pv")}
-    words = {e: f"w{e:x}" for e in DPV_WORDS}
-    params = start(g, regs, words, {("tsp", "tsl"): "ts_in"})
-    for i, (pe, le) in enumerate(DPV_PAIRS):
-        params += [f"(he{i}p : memLoad32 M0 (w80 + 0x{8 * i:X}) = e{i}p)",
-                   f"(he{i}l : memLoad32 M0 (w80 + 0x{8 * i + 4:X}) = e{i}l)",
-                   f"(he{i}p_in : SvIn B (w80 + 0x{8 * i:X}) 4)", f"(he{i}l_in : SvIn B (w80 + 0x{8 * i + 4:X}) 4)",
-                   f"(ae{i}p : (w80 + 0x{8 * i:X}).toNat % 4 = 0)", f"(ae{i}l : (w80 + 0x{8 * i + 4:X}).toNat % 4 = 0)",
-                   f"(p{i}_in : SvRo B w{pe:x} w{le:x}.toNat)", f"(e{i}_in : SvRo B e{i}p e{i}l.toNat)"]
-    params += ["(htsp : memLoad32 M0 (bp + 0x8) = tsp)", "(htsl : memLoad32 M0 (bp + 0xC) = tsl)",
-               "(htsp_in : SvIn B (bp + 0x8) 4)", "(htsl_in : SvIn B (bp + 0xC) 4)",
-               "(atsp : (bp + 0x8).toNat % 4 = 0)", "(atsl : (bp + 0xC).toNat % 4 = 0)"]
+            19: ("U", "bp"), 20: ("U", "x20"), 21: ("U", "x21"), 22: ("U", "x22"), 23: ("U", "q"),
+            24: ("U", "x24"), 26: ("U", "x26"), 10: ("U", "pv")}
+    words = {e: f"w{e:x}" for e in DPV_KEEP}
+    params = start(g, regs, words, {})
+    for i, (pp, le) in enumerate(DPV_POL):
+        pn = pp if isinstance(pp, str) else f"w{pp:x}"
+        params += [f"(he{i}p : memLoad32 M0 (x21 + 0x{8 * i:X}) = e{i}p)",
+                   f"(he{i}l : memLoad32 M0 (x21 + 0x{8 * i + 4:X}) = e{i}l)",
+                   f"(he{i}p_in : SvIn B (x21 + 0x{8 * i:X}) 4)", f"(he{i}l_in : SvIn B (x21 + 0x{8 * i + 4:X}) 4)",
+                   f"(ae{i}p : (x21 + 0x{8 * i:X}).toNat % 4 = 0)", f"(ae{i}l : (x21 + 0x{8 * i + 4:X}).toNat % 4 = 0)",
+                   f"(p{i}_in : SvRo B {pn} w{le:x}.toNat)", f"(e{i}_in : SvRo B e{i}p e{i}l.toNat)"]
+    params += ["(hsgp : memLoad32 M0 (bp + 0x8) = sgp)", "(hsgl : memLoad32 M0 (bp + 0xC) = sgl)",
+               "(hsgp_in : SvIn B (bp + 0x8) 4)", "(hsgl_in : SvIn B (bp + 0xC) 4)",
+               "(asgp : (bp + 0x8).toNat % 4 = 0)", "(asgl : (bp + 0xC).toNat % 4 = 0)",
+               "(sg_in : SvIn B sgp sgl.toNat)"]
 
     def zero(sub):
-        sub.branch(0xDE6, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hpv)")
-        sub.fail(sub.fail_proof(("prop", "hpv")), "sv_fail_ee2")
+        sub.branch(0x980, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hpv)")
+        sub.fail(sub.fail_proof(("prop", "hpv")), "sv_fail_e38")
     g.prop_check("pv ≠ 0", "hpv", zero)
-    g.branch(0xDE6, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hpv")
-    for i, (pe, le) in enumerate(DPV_PAIRS):
-        at = 0xDE8 + 0x14 * i
-        g.load(at, "lw")
+    g.branch(0x980, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hpv")
+    for i, (pp, le) in enumerate(DPV_POL):
+        pn = pp if isinstance(pp, str) else f"w{pp:x}"
+        at = 0x984 + 0x16 * i
+        g.block(at, at + 2)
         g.load_mem(at + 2, f"e{i}p", f"he{i}p", f"he{i}p_in", f"ae{i}p")
         g.load_mem(at + 4, f"e{i}l", f"he{i}l", f"he{i}l_in", f"ae{i}l")
-        g.load(at + 6, "lw")
+        if isinstance(pp, str):
+            g.block(at + 6, at + 8)
+        else:
+            g.load(at + 6, "lw")
         g.load(at + 8, "lw")
-        ke = g.seqeq(at + 0xA, f"w{pe:x}", f"w{le:x}.toNat", f"e{i}p", f"e{i}l.toNat", f"p{i}_in", f"e{i}_in",
+        ke = g.seqeq(at + 0xA, pn, f"w{le:x}.toNat", f"e{i}p", f"e{i}l.toNat", f"p{i}_in", f"e{i}_in",
                      ha3=f"(by rw [g{g.k}_13, ofNat_toNat_self])", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
         hq = f"hq{i}"
 
         def ne(sub, ke=ke, at=at, hq=hq):
             sub.set_a0(ke, 0, f"ite_eq_right {hq}")
             sub.branch(at + 0x12, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
-            sub.fail(sub.fail_proof(("prop", hq)), "sv_fail_ef0")
-        g.prop_check(f"memBytes M0 w{pe:x} w{le:x}.toNat = memBytes M0 e{i}p e{i}l.toNat", hq, ne)
+            sub.fail(sub.fail_proof(("prop", hq)), "sv_fail_e46")
+        g.prop_check(f"memBytes M0 {pn} w{le:x}.toNat = memBytes M0 e{i}p e{i}l.toNat", hq, ne)
         g.set_a0(ke, 1, f"ite_eq_left {hq}")
         g.branch(at + 0x12, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    g.block(0xE4C, 0xE4E)
-    g.load_mem(0xE4E, "tsp", "htsp", "htsp_in", "atsp")
-    g.load_mem(0xE50, "tsl", "htsl", "htsl_in", "atsl")
-    g.block(0xE52, 0xE5A)
-    g.store(0xE5A, "sw")
-    g.store(0xE5C, "sw")
-    g.store(0xE5E, "sw")
-    g.store(0xE60, "sw")
-    g.block(0xE62, 0xE6C)
-    g.store(0xE6C, "sw")
-    g.store(0xE6E, "sw")
-    g.block(0xE70, 0xE80)
-    k, ex, rd = g.seqr(0xE80, 0xA20, 0x1320)
-    t = f"tl{k}"
-    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
-    g.emit(f"  rcases r{k} with er{k} | {t}")
-    g.sc.append(("eq", ex, f".ok {t}", [t], f"hr{k}"))
-    g.fork(lambda sub: seq_fail_2c60(sub, k, 0xA20, 0x1320))
-    g.seq_ok(k, 0xA20, 0x1320, t, rd)
-    g.load(0xE88, "lw")
-    g.load(0xE8C, "lbu")
-    g.branch(0xE90, True, f"by rw [g{g.k}_9, s{g.k}.zero]; exact br_bne_t ({rd[2]}.ok_ne hr{k})")
-    stmt, proof = finish(g, 0xE96, [2, 3, 4, 8, 9, 18, 19, 20, 21, 26, 27], set(g.words), set(g.bytes))
-    info = {"name": "sv_dpv", "title": "the leaf's signature result and the trust root's policy values",
-            "doc": "From 0xDE6 to 0xE96: `p384_verify_prehash`'s result must be nonzero, the leaf's five policy "
-            "values must equal the trust root's, and the timestamp must start with a DER sequence.",
-            "params": params, "stmt": stmt, "proof": proof, "binders": DPV_BINDERS, "start": 0xDE6,
-            "import": "C3BootProofs.Proofs.SvFail2"}
+    g.block(0x9F2, 0x9F4)
+    g.load_mem(0x9F4, "sgp", "hsgp", "hsgp_in", "asgp")
+    g.load_mem(0x9F6, "sgl", "hsgl", "hsgl_in", "asgl")
+    g.block(0x9F8, 0x9FA)
+    g.store(0x9FA, "sw")
+    g.store(0x9FC, "sw")
+    g.es(0x9FE, 0x170, "sgp", "sgl.toNat", "sg_in", N=32, ha2=f"(by rw [g{g.k}_12, ofNat_toNat_self])")
+    g.block(0xA12, 0xA1E)
+    g.mc(0xA1E, 0x291, 0x172, 0x3F)
+    g.store(0xA26, "sb")
+    g.block(0xA2A, 0xA34)
+    g.mc(0xA34, 0x131, 0x291, 0x1F)
+    g.block(0xA3C, 0xA44)
+    g.mc(0xA44, 0x150, 0x2B0, 0x20)
+    stmt, proof = finish(g, 0xA4C, DPV_REGS, DPV_KEEP | {0x68, 0x70}, {0x130})
+    info = {"name": "sv_dpv", "title": "the leaf's signature result, the policy values, and the image's signature",
+            "doc": "From 0x980 to 0xA4C: `p384_verify_prehash`'s result must be nonzero, the leaf's five policy "
+            "values must equal the trust root's, and the image's signature must parse as an ECDSA P-256 signature, "
+            "whose `r` and `s` the stage copies to offsets 0x130 and 0x150.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": DPV_NEW_BINDERS, "start": 0x980,
+            "import": "C3BootProofs.Proofs.SvFail"}
     return g, info
 
 

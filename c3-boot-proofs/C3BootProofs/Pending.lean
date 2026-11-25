@@ -47,7 +47,6 @@ import C3BootProofs.Proofs.SvCsa
 import C3BootProofs.Proofs.SvCsx
 import C3BootProofs.Proofs.SvD
 import C3BootProofs.Proofs.SvDbc2m
-import C3BootProofs.Proofs.SvDpv
 import C3BootProofs.Proofs.SvEd
 import C3BootProofs.Proofs.SvEdImage
 import C3BootProofs.Proofs.SvEkuLoop
