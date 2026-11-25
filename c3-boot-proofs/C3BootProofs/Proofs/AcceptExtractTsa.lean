@@ -1468,6 +1468,189 @@ theorem acets_p3a {M : Word → BitVec 8} {f : Fin 32 → Word} {iss ser key : B
         (by rsimp; exact R.rgp) (by rsimp; exact R.rtp) (by rsimp <;> decide)
     · rsimp at eb <;> exact absurd eb (by decide)
 
+set_option maxHeartbeats 8000000 in
+/-- From 0x1262, with `next_element`'s item, the `l` bytes at `q`:
+`read_chain`, then its error, the exit back to 0x123A for a certificate
+with no P-384 key, or 0x12A0. -/
+theorem acets_p2 (H : AcetsRcErr) {M : Word → BitVec 8} {f : Fin 32 → Word}
+    (hm : ∀ x : Word, AcetsO X.B.toNat X.Bf.toNat fp.toNat 0 0 x.toNat → M x = n0.mem x)
+    (hl : memLoad32 M (X.B + BitVec.ofNat 32 0x4D78) = BitVec.ofNat 32 l)
+    (hpos : memLoad32 M (X.B + BitVec.ofNat 32 0x5820) = BitVec.ofNat 32 a)
+    (hptr : memLoad32 M (X.B + BitVec.ofNat 32 0x5A2C) = fp)
+    (hlen : memLoad32 M (X.B + BitVec.ofNat 32 0x5A30) = BitVec.ofNat 32 (X.Bf.toNat + 0xB840 - fp.toNat))
+    (R : AcetsR X ts.length f) (h11 : f 11 = q) :
+    WP bootMainClosure0Code AC (acetsQ X (AcetsNext X jr fs ls (j :: rest))) M 0x1262 f := by
+  have A := C.at0
+  have I := C.inv
+  have F := O.lay.fr
+  have ⟨_, _, _, _, _, _, _, _⟩ := acets_n O
+  have := A.fr.lo
+  have := A.fr.hi
+  have := C.qlo
+  have := C.qhi
+  have := F.hi
+  have E := acets_env O A hm (.inl (Nat.le_refl _)) (.inl (Nat.le_refl _))
+  have hj : JVal false (memBytes M q l) j := by
+    rw [acets_bytes (M' := n0.mem) (by omega) fun y g1 g2 => hm y (by acets_o)]; exact C.jv
+  refine WP.lui ac_at_1262 ?_; wn
+  refine WP.aluImm ac_at_1264 ?_; wn
+  refine WP.alu ac_at_1268 ?_; wn
+  refine acets_lw F ac_at_126c (c := 0x4D78) (by rsimp; simp only [ev_add, R.rsp]; bv_omega) (by decide)
+    (by decide) ?_; wn
+  rw [hl]
+  refine WP.lui ac_at_126e ?_; wn
+  refine WP.aluImm ac_at_1270 ?_; wn
+  refine WP.alu ac_at_1274 ?_; wn
+  refine WP.lui ac_at_1276 ?_; wn
+  refine WP.aluImm ac_at_1278 ?_; wn
+  refine WP.alu ac_at_127c ?_; wn
+  refine acets_rc H O E (fp := fp) (q := q) (l := l)
+    (acets_code O A hm (.inl (Nat.le_refl _)) (.inl (Nat.le_refl _))) (by rsimp; exact R.rsp)
+    (by rsimp; simp only [ev_add, R.rsp]; bv_omega) (by rsimp; exact h11) (by rsimp)
+    (by rsimp; simp only [ev_add, R.rsp]; bv_omega) (by omega) (by omega) (by omega) (by omega) hptr hlen
+    fun m2 hR he => ?_
+  obtain ⟨hO, hfr⟩ := hR
+  have fr2 : ∀ y : Word, (y.toNat < X.B.toNat + 0x3310 ∨ X.B.toNat + 0x3A50 ≤ y.toNat) →
+      (y.toNat < X.B.toNat + 0x4D70 ∨ X.B.toNat + 0x4DB0 ≤ y.toNat) →
+      (y.toNat < X.B.toNat + 0x5A2C ∨ X.B.toNat + 0x5A34 ≤ y.toNat) →
+      (y.toNat < fp.toNat ∨ X.Bf.toNat + 0xB840 ≤ y.toNat) → m2.mem y = M y := fun y g1 g2 g3 g4 => by
+    have := y.isLt
+    exact hfr y (acets_sepO F (by decide) (by omega) (by omega)) (acets_sepO F (by decide) (by omega) (by omega))
+      (acets_sepO F (by decide) (by omega) (by omega)) (acets_sep (by omega) (by omega) (by omega))
+  have hm2 : ∀ x : Word, AcetsO X.B.toNat X.Bf.toNat fp.toNat 0 0 x.toNat → m2.mem x = n0.mem x := fun x hx => by
+    have hx' := hx
+    unfold AcetsO at hx'
+    obtain ⟨c1, -, c3, -, c5, c6, -⟩ := hx'
+    exact (fr2 x (by omega) (by omega) (by omega) (by omega)).trans (hm x hx)
+  refine WP.lui ac_at_1286 ?_; wn
+  refine WP.aluImm ac_at_1288 ?_; wn
+  refine WP.alu ac_at_128c ?_; wn
+  refine acets_lw F ac_at_1290 (c := 0x4D70) (by rsimp; simp only [ev_add, R.rsp]; bv_omega) (by decide)
+    (by decide) ?_; wn
+  generalize hr : readChainPos M q l fp (X.Bf.toNat + 0xB840 - fp.toNat) = r at hO he
+  rcases r with e | ⟨cert, s⟩
+  · rw [hO.1]
+    refine WP.branch ac_at_1292 (fun _ => ?_) (fun eb => ?_) <;> wn
+    · refine acets_lbu F ac_at_14ca (c := 0x4D74) (by rsimp; simp only [ev_add, R.rsp]; bv_omega) ?_; wn
+      refine WP.jal ac_at_14ce (by decide) ?_; wn
+      exact acets_f1A6A O A hm2 (.inl (Nat.le_refl _)) (.inl (Nat.le_refl _)) (by rsimp <;> exact R.rz)
+        (by rsimp; exact R.rsp) (by rsimp; exact R.rgp) (by rsimp; exact R.rtp)
+        (by rsimp; rw [ace_zeAnd]; exact he e rfl)
+    · rsimp at eb <;> exact absurd eb (by decide)
+  obtain ⟨info, hrc, ⟨a1, e1, b1, i1⟩, ⟨a2, e2, b2, i2⟩, -, -, hkey⟩ := readChainPos_spec hj hr
+  obtain ⟨c0, c4, c8, cC, -, -, -, -, -, -, c28, c30, c34, c38, c3C, -, -, snb, sna, sdl, sfr, sfr4, sdec⟩ := hO
+  have hb0 : fp.toNat ≠ 0 := by omega
+  have tfp1 : (fp + BitVec.ofNat 32 s.dec.length).toNat = fp.toNat + s.dec.length := acets_tn (by omega)
+  have ta1 : cert.serial.toNat = fp.toNat + a1 := by rw [e1]; exact acets_tn (by omega)
+  have ta2 : cert.issuer.toNat = fp.toNat + a2 := by rw [e2]; exact acets_tn (by omega)
+  rw [c0]
+  refine WP.branch ac_at_1292 (fun eb => ?_) (fun _ => ?_) <;> wn
+  · exfalso
+    rsimp at eb
+    have h0 := acets_beqT eb
+    rw [e1] at h0
+    exact trch_addNe hb0 (by omega) h0
+  refine WP.alu ac_at_1296 ?_; wn
+  refine acets_lw F ac_at_1298 (c := 0x4D98) (by rsimp; simp only [ev_add, R.rsp]; bv_omega) (by decide)
+    (by decide) ?_; wn
+  have o4 : X.B + BitVec.ofNat 32 0x4D70 + 4 = X.B + BitVec.ofNat 32 0x4D74 := add_ofNat_assoc _ _ _
+  have o8 : X.B + BitVec.ofNat 32 0x4D70 + 8 = X.B + BitVec.ofNat 32 0x4D78 := add_ofNat_assoc _ _ _
+  have oC : X.B + BitVec.ofNat 32 0x4D70 + 0xC = X.B + BitVec.ofNat 32 0x4D7C := add_ofNat_assoc _ _ _
+  have o28 : X.B + BitVec.ofNat 32 0x4D70 + 0x28 = X.B + BitVec.ofNat 32 0x4D98 := add_ofNat_assoc _ _ _
+  have o30 : X.B + BitVec.ofNat 32 0x4D70 + 0x30 = X.B + BitVec.ofNat 32 0x4DA0 := add_ofNat_assoc _ _ _
+  have o34 : X.B + BitVec.ofNat 32 0x4D70 + 0x34 = X.B + BitVec.ofNat 32 0x4DA4 := add_ofNat_assoc _ _ _
+  have o38 : X.B + BitVec.ofNat 32 0x4D70 + 0x38 = X.B + BitVec.ofNat 32 0x4DA8 := add_ofNat_assoc _ _ _
+  have o3C : X.B + BitVec.ofNat 32 0x4D70 + 0x3C = X.B + BitVec.ofNat 32 0x4DAC := add_ofNat_assoc _ _ _
+  have r4 : X.B + BitVec.ofNat 32 0x5A2C + 4 = X.B + BitVec.ofNat 32 0x5A30 := add_ofNat_assoc _ _ _
+  rw [o4] at c4
+  rw [o8] at c8
+  rw [oC] at cC
+  rw [o28] at c28
+  rw [o30] at c30
+  rw [o34] at c34
+  rw [o38] at c38
+  rw [o3C] at c3C
+  rw [r4] at sfr4
+  rw [c28]
+  refine acets_sw F ac_at_129c (c := 0x3A80) (by rsimp; rw [R.rsp]; bv_omega) (by decide) (by decide) ?_; wn
+  have hm3 : ∀ x : Word, AcetsO X.B.toNat X.Bf.toNat fp.toNat 0 0 x.toNat →
+      memStore32 m2.mem (X.B + BitVec.ofNat 32 0x3A80) cert.key x = n0.mem x := fun x hx => by
+    have hx' := hx
+    unfold AcetsO at hx'
+    obtain ⟨-, c2, -⟩ := hx'
+    have := x.isLt
+    simp (disch := omega) only [acets_g32 F]
+    exact hm2 x hx
+  have hpos3 : memLoad32 (memStore32 m2.mem (X.B + BitVec.ofNat 32 0x3A80) cert.key)
+      (X.B + BitVec.ofNat 32 0x5820) = BitVec.ofNat 32 a := by
+    simp (disch := omega) only [acets_ls F]
+    exact (acets_ld F (c := 0x5820) (by decide) fun y g1 g2 => fr2 y (by omega) (by omega) (by omega)
+      (by omega)).trans hpos
+  have hptr3 : memLoad32 (memStore32 m2.mem (X.B + BitVec.ofNat 32 0x3A80) cert.key)
+      (X.B + BitVec.ofNat 32 0x5A2C) = fp + BitVec.ofNat 32 s.dec.length := by
+    simp (disch := omega) only [acets_ls F]
+    exact sfr
+  have hlen3 : memLoad32 (memStore32 m2.mem (X.B + BitVec.ofNat 32 0x3A80) cert.key)
+      (X.B + BitVec.ofNat 32 0x5A30) =
+        BitVec.ofNat 32 (X.Bf.toNat + 0xB840 - (fp + BitVec.ofNat 32 s.dec.length).toNat) := by
+    simp (disch := omega) only [acets_ls F]
+    rw [sfr4, tfp1]
+    exact congrArg _ (by omega)
+  refine WP.branch ac_at_129e (fun eb => ?_) (fun eb => ?_) <;> wn
+  · rsimp at eb
+    have hk0 := acets_beqT eb
+    have hpk : info.p384Key = none := by
+      rcases hkey with ⟨a4, e4, b4, -⟩ | ⟨-, e4⟩
+      · rw [hk0] at e4
+        exact absurd e4.symm (trch_addNe hb0 (by omega))
+      · exact e4
+    refine acets_back O C (M := memStore32 m2.mem (X.B + BitVec.ofNat 32 0x3A80) cert.key) (lo := 0) (hi := 0)
+      hm3 (.inl (Nat.le_refl _)) (.inl (Nat.le_refl _)) (k := none) (fp' := fp + BitVec.ofNat 32 s.dec.length)
+      (acets_tsaNone hrc hpk) (by rw [Option.toList_none, List.append_nil]; acets_hr)
+      (by rsimp; simp only [ev_add, R.rsp, acSlot]; bv_omega) hpos3 (by omega) (by omega) hptr3 hlen3 ?_
+    rw [Option.toList_none, List.append_nil]
+    exact acets_arrMv I.tsaKeys (fun c hc => hm3 _ (by
+      have e := F.at (0x3A50 + 0x890 + c) (by omega)
+      rw [ace_slot, e]; acets_o)) (fun y g1 g2 => hm3 y (by acets_o)) (by omega)
+  rsimp at eb
+  have hk0 := acets_beqF eb
+  obtain ⟨a4, e4, b4, hpk⟩ : ∃ a4, cert.key = fp + BitVec.ofNat 32 a4 ∧ a4 + 0x61 ≤ s.dec.length ∧
+      info.p384Key = some (rcView s.dec (a4, 0x61)) := by
+    rcases hkey with h | ⟨h, -⟩
+    · exact h
+    · exact absurd h hk0
+  have ta4 : cert.key.toNat = fp.toNat + a4 := by rw [e4]; exact acets_tn (by omega)
+  have vs : info.serial = memBytes m2.mem cert.serial cert.serialLen := by rw [i1, trch_viewMem sdec b1, e1]
+  have vi : info.issuer = memBytes m2.mem cert.issuer cert.issuerLen := by rw [i2, trch_viewMem sdec b2, e2]
+  have vk : rcView s.dec (a4, 0x61) = memBytes m2.mem cert.key 0x61 := by rw [trch_viewMem sdec b4, e4]
+  have ls' : info.serial.length = cert.serialLen := by rw [vs, memBytes_length]
+  have li : info.issuer.length = cert.issuerLen := by rw [vi, memBytes_length]
+  have bs : ∀ {p : Word} {n : Nat}, fp.toNat ≤ p.toNat → p.toNat + n ≤ fp.toNat + s.dec.length →
+      memBytes (memStore32 m2.mem (X.B + BitVec.ofNat 32 0x3A80) cert.key) p n = memBytes m2.mem p n :=
+    fun h1 h2 => acets_bytes (by omega) fun y g1 g2 => by
+      have := y.isLt
+      simp (disch := omega) only [acets_g32 F]
+  refine acets_p3a O C (fp1 := fp + BitVec.ofNat 32 s.dec.length) (ip := cert.issuer) (sq := cert.serial)
+    (kp := cert.key) (iss := info.issuer) (ser := info.serial) (key := rcView s.dec (a4, 0x61))
+    (w := ⟨s.nb, s.na⟩) ?_ (fun d hd => acets_tsaSome hrc hpk hd) (by acets_hr)
+    (by rsimp <;> simp only [ev_add, R.rz, acets_0add])
+  exact {
+    lo := by omega, f0 := by omega, f1 := by omega, i0 := by omega, i1 := by rw [li]; omega,
+    s0 := by omega, s1 := by rw [ls']; omega, k0 := by omega, k1 := by omega, nb := snb, na := sna,
+    hm := hm3, pos := hpos3
+    hiss := by rw [li, bs (by omega) (by omega), vi]
+    hser := by rw [ls', bs (by omega) (by omega), vs]
+    hkey := by rw [bs (by omega) (by omega), vk]
+    o4 := by simp (disch := omega) only [acets_ls F]; rw [ls']; exact c4
+    o8 := by simp (disch := omega) only [acets_ls F]; exact c8
+    oC := by simp (disch := omega) only [acets_ls F]; rw [li]; exact cC
+    o30 := by simp (disch := omega) only [acets_ls F]; exact c30
+    o34 := by simp (disch := omega) only [acets_ls F]; exact c34
+    o38 := by simp (disch := omega) only [acets_ls F]; exact c38
+    o3C := by simp (disch := omega) only [acets_ls F]; exact c3C
+    w30 := memLoad32_store32_same _ _ _
+    ptr := hptr3, len := hlen3 }
+
 end Pass
 
 end C3.RV32.Ac
