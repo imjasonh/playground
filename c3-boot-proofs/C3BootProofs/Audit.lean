@@ -274,6 +274,8 @@ import C3BootProofs.Proofs.AcceptSpec
 import C3BootProofs.Proofs.AcceptExtractDup
 import C3BootProofs.Proofs.AcceptExtractTsa
 import C3BootProofs.Proofs.AcceptExtractCa
+import C3BootProofs.Proofs.ResetLoaded
+import C3BootProofs.Proofs.SramAlias
 
 /-!
 # Audit
@@ -10587,3 +10589,68 @@ end C3
 
 /-- info: 'C3.RV32.Ac.aceca_e7a' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.aceca_e7a
+/-- info: 'C3.RV32.piecesIn_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.piecesIn_mem
+
+/-- info: 'C3.RV32.PiecesIn.congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.PiecesIn.congr
+
+/-- info: 'C3.RV32.CodeIn.sub' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.CodeIn.sub
+
+/-- info: 'C3.RV32.imagePieces_ok' does not depend on any axioms -/
+#guard_msgs in #print axioms C3.RV32.imagePieces_ok
+
+/-- info: 'C3.RV32.imagePieces_within' does not depend on any axioms -/
+#guard_msgs in #print axioms C3.RV32.imagePieces_within
+
+/-- info: 'C3.RV32.loaded_imageMem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.loaded_imageMem
+
+/-- info: 'C3.RV32.Loaded.congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Loaded.congr
+
+/-- info: 'C3.RV32.Loaded.bootMain' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Loaded.bootMain
+
+/-- info: 'C3.RV32.Loaded.p384R2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Loaded.p384R2
+
+/-- info: 'C3.RV32.Cur.loaded_rstCode' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_rstCode
+
+/-- info: 'C3.RV32.Cur.loaded_bsCode' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_bsCode
+
+/-- info: 'C3.RV32.Cur.loaded_bwCode' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_bwCode
+
+/-- info: 'C3.RV32.Cur.loaded_panicCode' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_panicCode
+
+/-- info: 'C3.RV32.Cur.loaded_eprAt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_eprAt
+
+/-- info: 'C3.RV32.Cur.loaded_resetMem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_resetMem
+
+/-- info: 'C3.RV32.Cur.loaded_bmHyp' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.loaded_bmHyp
+
+/-- info: 'C3.RV32.Cur.reset_correct_loaded' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_correct_loaded
+
+/-- info: 'C3.RV32.chip_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.chip_step
+
+/-- info: 'C3.RV32.chip_steps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.chip_steps
+
+/-- info: 'C3.RV32.chip_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.chip_run
+
+/-- info: 'C3.RV32.chipSim_init' does not depend on any axioms -/
+#guard_msgs in #print axioms C3.RV32.chipSim_init
+
+/-- info: 'C3.RV32.aliasOk_regions' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.aliasOk_regions
