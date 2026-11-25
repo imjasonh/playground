@@ -266,6 +266,7 @@ import C3BootProofs.Proofs.AcceptExtractTail
 import C3BootProofs.Proofs.AcceptExtractErr
 import C3BootProofs.Proofs.AcceptExtractHeadLib
 import C3BootProofs.Proofs.AcceptExtractHead
+import C3BootProofs.Proofs.AcceptExtractTlogStage
 
 /-!
 # Audit
@@ -9971,3 +9972,27 @@ end C3
 
 /-- info: 'C3.RV32.Ac.ac_extract_loops' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ac_extract_loops
+
+/-- info: 'C3.RV32.Ac.acetl_tlog_stage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_tlog_stage
+
+/-- info: 'C3.RV32.Ac.acetl_pass' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_pass
+
+/-- info: 'C3.RV32.Ac.acetl_tEF2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_tEF2
+
+/-- info: 'C3.RV32.Ac.acetl_tF9E' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_tF9E
+
+/-- info: 'C3.RV32.Ac.acetl_skip' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_skip
+
+/-- info: 'C3.RV32.Ac.acetl_close' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_close
+
+/-- info: 'C3.RV32.Ac.acetl_end' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_end
+
+/-- info: 'C3.RV32.Ac.acetl_pre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_pre
