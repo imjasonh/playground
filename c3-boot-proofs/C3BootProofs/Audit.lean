@@ -241,6 +241,7 @@ import C3BootProofs.Models.TufLink
 import C3BootProofs.Models.TufLinkMeta
 import C3BootProofs.Models.TufLinkKeys
 import C3BootProofs.Proofs.AcceptStages
+import C3BootProofs.Proofs.AcceptExtractSeq
 
 /-!
 # Audit
@@ -9197,3 +9198,12 @@ end C3
 
 /-- info: 'C3.RV32.Ac.ac_exit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ac_exit
+
+/-- info: 'C3.RV32.Ac.ac_extract' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_extract
+
+/-- info: 'C3.RV32.Ac.ace_extract_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_extract_spec
+
+/-- info: 'C3.RV32.Ac.AceKeysIn.sv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AceKeysIn.sv
