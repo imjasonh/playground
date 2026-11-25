@@ -9695,6 +9695,9 @@ end C3
 /-- info: 'C3.RV32.Ac.act_metSpec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.act_metSpec
 
+/-- info: 'C3.RV32.Ac.ActRk.congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ActRk.congr
+
 /-- info: 'C3.RV32.Ac.act_stage' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.act_stage
 /-- info: 'C3.RV32.Ac.aco_verifyTuf' depends on axioms: [propext, Quot.sound] -/

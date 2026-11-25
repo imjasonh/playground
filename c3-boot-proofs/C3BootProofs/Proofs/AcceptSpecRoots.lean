@@ -10,19 +10,6 @@ namespace C3.RV32.Ac
 
 open C3 C3.Image C3.RV32.P3 C3.RV32.BootMainContract C3.Json
 
-/-- **At 0x836 with no `targets` keys**: the last root's `targets` role gave
-an error code, at `sp + 0xDD0`. The targets stage then returns that error. -/
-def AcsTargetsNoKeys : Prop :=
-  ∀ (X : AcsCtx), X.Ok → ∀ (n : Machine) (parts : TufParts) (root : TufRoot) (re : Nat),
-    St n.mem AC n 0x836 (reg n) → AcInv X.B X.Bf X.g X.t X.v X.M0 n →
-    actRoot X.pinned parts = some root → expires root.md = some re →
-    n.mem (acSlot X.B 0xDD0) = 0xFE → (n.mem (acSlot X.B 0xDD0 + 1)).toNat < 0x27 →
-    ActDoc X.flash n.mem (acSlot X.B 0x244) (reg n (24 : Fin 32))
-      (memLoad32 n.mem (acSlot X.B 0x1C)).toNat parts.targets →
-    ActDoc X.flash n.mem (acSlot X.B 0x244) (reg n (24 : Fin 32))
-      ((memLoad32 n.mem (acSlot X.B 0x1C)).toNat + 1) parts.trustedRoot →
-    reg n (20 : Fin 32) = X.Bf + 0x4000 → memLoad32 n.mem (acSlot X.B 0x40) = X.r → X.End n
-
 /-- **At 0x584**: the roots stage's precondition for the TUF part's roots
 and the pinned root, the index's `targets.json` and `trusted_root.json`,
 `keys`'s address at `sp + 0x30`, the bundle in `Buffers`, and what the
@@ -177,7 +164,7 @@ end
 
 /-- **From 0x584**: the roots stage, then the targets stage and the rest,
 end the closure. -/
-theorem acs_roots (hNK : AcsTargetsNoKeys) (hT : AcTargetsStage) (hE : AcExtractStage)
+theorem acs_roots (hT : AcTargetsStage) (hE : AcExtractStage)
     (hB : AcsBundleStage) (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest}
     {header : ImageHeader} {parts : TufParts} {first : TufRoot} (S : AcsAt584 X mf header parts first n) :
     X.End n := by
@@ -202,24 +189,24 @@ theorem acs_roots (hNK : AcsTargetsNoKeys) (hT : AcTargetsStage) (hE : AcExtract
   have st : St n'.mem AC n' 0x836 (reg n') := ⟨hpc, rfl, fun _ => rfl⟩
   have hjb : JBytes root.md.signed := acs_fold_bytes (acs_docs_lt S.pre.2.2.2.2.2.1)
     (acs_parse_bytes (by rw [← (ok.envsAt S.inv).pin.pin]; exact memBytes_mem_lt) S.pin) hfold
-  rcases hrt with ⟨h0, h1⟩ | ⟨t, es, hrk, hRB⟩
-  · refine hNK X ok n' parts root e st I' hact hexp ?_ ?_ tgt tr r20 r40
-    · have := h0; simp only [add_ofNat_zero] at this; exact this
-    · exact h1
-  · have A : AcsImg X mf header n'.mem (reg n' (21 : Fin 32)) (reg n' (25 : Fin 32)) (reg n' (27 : Fin 32)) := by
-      rw [KR 21 (by decide), KR 25 (by decide), KR 27 (by decide)]
-      refine S.img.keep fun k hk => kx _ (acs_rootsSlot ok (.inr ?_))
-      rcases hk with ⟨a, b⟩ | ⟨a, b⟩ <;> exact ⟨by omega, by omega⟩
-    exact acs_tgt hT hE hB hFx ok (root := root) (re := e)
-      { st := st
-        inv := I'
-        img := A
-        tuf := S.tuf
-        pre := ⟨hact, hexp, w18.trans (acs_ofNat_mod e), w1C, ⟨t, es, hrk, hRB, aco_rkwf hrk, rkBytes_of_roleKeys hrk hjb⟩, tgt, tr, r20, r40⟩
-        keys := (acs_rootsLd ok kx (.inr ⟨by decide, by decide⟩)).trans S.keys
-        bf := (acs_rootsLd ok kx (.inr ⟨by decide, by decide⟩)).trans S.bf
-        len := (acs_rootsLd ok kx (.inr ⟨by decide, by decide⟩)).trans S.len
-        hL := S.hL
-        bundle := (memBytes_congr fun j hj => kx _ (acs_rootsBuf ok (by have := S.hL; omega))).trans S.bundle }
+  have hK : ActRk n'.mem (acSlot X.B 0xDD0) root := by
+    rcases hrt with ⟨h0, h1⟩ | ⟨t, es, hrk, hRB⟩
+    · exact .inr ⟨h0, h1⟩
+    · exact .inl ⟨t, es, hrk, hRB, aco_rkwf hrk, rkBytes_of_roleKeys hrk hjb⟩
+  have A : AcsImg X mf header n'.mem (reg n' (21 : Fin 32)) (reg n' (25 : Fin 32)) (reg n' (27 : Fin 32)) := by
+    rw [KR 21 (by decide), KR 25 (by decide), KR 27 (by decide)]
+    refine S.img.keep fun k hk => kx _ (acs_rootsSlot ok (.inr ?_))
+    rcases hk with ⟨a, b⟩ | ⟨a, b⟩ <;> exact ⟨by omega, by omega⟩
+  exact acs_tgt hT hE hB hFx ok (root := root) (re := e)
+    { st := st
+      inv := I'
+      img := A
+      tuf := S.tuf
+      pre := ⟨hact, hexp, w18.trans (acs_ofNat_mod e), w1C, hK, tgt, tr, r20, r40⟩
+      keys := (acs_rootsLd ok kx (.inr ⟨by decide, by decide⟩)).trans S.keys
+      bf := (acs_rootsLd ok kx (.inr ⟨by decide, by decide⟩)).trans S.bf
+      len := (acs_rootsLd ok kx (.inr ⟨by decide, by decide⟩)).trans S.len
+      hL := S.hL
+      bundle := (memBytes_congr fun j hj => kx _ (acs_rootsBuf ok (by have := S.hL; omega))).trans S.bundle }
 
 end C3.RV32.Ac
