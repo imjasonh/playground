@@ -150,7 +150,10 @@ theorem aesXor128_body_step (s : State)
       , (.sb 14 15 0#32, 4#32)
       , (.jal 0 (-42#32), 2#32)
       ] = some s9 ∧ s9.pc = 0x40002bec#32 := by
-  simp [State.runInstrs, State.stepInstr, hpc]
+  refine ⟨_, rfl, ?_⟩
+  dsimp [State.runInstrs, State.stepInstr, State.writeReg]
+  rw [hpc]
+  decide
 
 /-- `r_aes_shift_left_128` byte-shift step (`0x40002c20..0x40002c34`). -/
 theorem aesShiftLeft128_step (s : State) :
@@ -161,8 +164,8 @@ theorem aesShiftLeft128_step (s : State) :
       , (.srli 12 12 7, 2#32)
       , (.or 15 15 12, 2#32)
       , (.sb 14 15 1#32, 4#32)
-      ] = some s' := by
-  simp [State.runInstrs, State.stepInstr]
+      ] = some s' :=
+  ⟨_, rfl⟩
 
 /-- `r_aes_ccm_xor_128_lsb` byte-xor step (`0x40001f6c..0x40001f7c`). -/
 theorem aesCcmXor128Lsb_step (s : State) :
@@ -171,8 +174,8 @@ theorem aesCcmXor128Lsb_step (s : State) :
       , (.lbu 6 6 0#32, 4#32)
       , (.xor 16 16 6, 4#32)
       , (.sb 17 16 0#32, 4#32)
-      ] = some s' := by
-  simp [State.runInstrs, State.stepInstr]
+      ] = some s' :=
+  ⟨_, rfl⟩
 
 /-- `r_aes_ccm_xor_128_msb` byte-xor step (`0x40001f98..0x40001fac`). -/
 theorem aesCcmXor128Msb_step (s : State) :
@@ -181,8 +184,8 @@ theorem aesCcmXor128Msb_step (s : State) :
       , (.lbu 6 6 0#32, 4#32)
       , (.xor 14 14 6, 4#32)
       , (.sb 17 14 0#32, 4#32)
-      ] = some s' := by
-  simp [State.runInstrs, State.stepInstr]
+      ] = some s' :=
+  ⟨_, rfl⟩
 
 end MachineCodeEquiv
 
