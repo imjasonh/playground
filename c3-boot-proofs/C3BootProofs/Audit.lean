@@ -280,6 +280,7 @@ import C3BootProofs.Proofs.AcceptExtractCa
 import C3BootProofs.Proofs.ResetLoaded
 import C3BootProofs.Proofs.PanicFree
 import C3BootProofs.Proofs.PanicFreeTargets
+import C3BootProofs.Proofs.ResetPI
 import C3BootProofs.Proofs.SramAlias
 import C3BootProofs.Proofs.AcceptExtractTlogStage
 
@@ -10857,3 +10858,9 @@ end C3
 
 /-- info: 'C3.RV32.Cur.reset_correct_q' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.reset_correct_q
+
+/-- info: 'C3.RV32.Cur.bootMain_correct_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bootMain_correct_pi
+
+/-- info: 'C3.RV32.Cur.reset_correct_loaded_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_correct_loaded_pi

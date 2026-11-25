@@ -646,6 +646,7 @@ import C3BootProofs.Proofs.LoadedImage
 import C3BootProofs.Proofs.ResetLoaded
 import C3BootProofs.Proofs.PanicFree
 import C3BootProofs.Proofs.PanicFreeTargets
+import C3BootProofs.Proofs.ResetPI
 import C3BootProofs.Proofs.SramAlias
 import C3BootProofs.Proofs.AcceptExtractTlogStage
 import C3BootProofs.Proofs.JsonWp
