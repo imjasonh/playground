@@ -205,6 +205,7 @@ import C3BootProofs.Proofs.JsonParse
 import C3BootProofs.Proofs.TufExpires
 import C3BootProofs.Proofs.TufPemSpki
 import C3BootProofs.Proofs.TufParseMetadataHead
+import C3BootProofs.Proofs.TufParseRoot
 
 /-!
 # Audit
@@ -9030,3 +9031,6 @@ end C3
 
 /-- info: 'C3.RV32.tufParseMetadata_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufParseMetadata_correct
+
+/-- info: 'C3.RV32.tufParseRoot_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufParseRoot_correct

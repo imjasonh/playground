@@ -90,90 +90,90 @@ abbrev TPR_JU : Word := BitVec.ofNat 32 jsonU64Address
 abbrev TPR_KR : Word := BitVec.ofNat 32 tufRootKindAddress
 abbrev TPR_KV : Word := BitVec.ofNat 32 tufVersionKeyAddress
 
-theorem pr_at_0 : fetchRel tufParseRootCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFC0, 2) := by decide
-theorem pr_at_2 : fetchRel tufParseRootCode 0x2 = some (.store .sw sp ra 0x3C, 2) := by decide
-theorem pr_at_4 : fetchRel tufParseRootCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x38, 2) := by decide
-theorem pr_at_6 : fetchRel tufParseRootCode 0x6 = some (.store .sw sp (9 : Fin 32) 0x34, 2) := by decide
-theorem pr_at_8 : fetchRel tufParseRootCode 0x8 = some (.store .sw sp (18 : Fin 32) 0x30, 2) := by decide
-theorem pr_at_a : fetchRel tufParseRootCode 0xA = some (.store .sw sp (19 : Fin 32) 0x2C, 2) := by decide
-theorem pr_at_c : fetchRel tufParseRootCode 0xC = some (.store .sw sp (20 : Fin 32) 0x28, 2) := by decide
-theorem pr_at_e : fetchRel tufParseRootCode 0xE = some (.store .sw sp (21 : Fin 32) 0x24, 2) := by decide
-theorem pr_at_10 : fetchRel tufParseRootCode 0x10 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
-theorem pr_at_12 : fetchRel tufParseRootCode 0x12 = some (.lui a3 0x3FCC4000, 4) := by decide
-theorem pr_at_16 : fetchRel tufParseRootCode 0x16 = some (.aluImm .add a3 a3 0x76E, 4) := by decide
-theorem pr_at_1a : fetchRel tufParseRootCode 0x1A = some (.aluImm .add a0 sp 0x8, 2) := by decide
-theorem pr_at_1c : fetchRel tufParseRootCode 0x1C = some (.aluImm .add a4 x0 0x4, 2) := by decide
-theorem pr_at_1e : fetchRel tufParseRootCode 0x1E = some (.auipc ra 0x0, 4) := by decide
-theorem pr_at_22 : fetchRel tufParseRootCode 0x22 = some (.jalr ra ra 0xC4, 4) := by decide
-theorem pr_at_26 : fetchRel tufParseRootCode 0x26 = some (.load .lw (9 : Fin 32) sp 0x8, 2) := by decide
-theorem pr_at_28 : fetchRel tufParseRootCode 0x28 = some (.load .lbu (18 : Fin 32) sp 0xC, 4) := by decide
-theorem pr_at_2c : fetchRel tufParseRootCode 0x2C = some (.branch .beq (9 : Fin 32) x0 0x56, 2) := by decide
-theorem pr_at_2e : fetchRel tufParseRootCode 0x2E = some (.load .lbu a0 sp 0xE, 4) := by decide
-theorem pr_at_32 : fetchRel tufParseRootCode 0x32 = some (.load .lbu a1 sp 0xD, 4) := by decide
-theorem pr_at_36 : fetchRel tufParseRootCode 0x36 = some (.load .lbu a2 sp 0xF, 4) := by decide
-theorem pr_at_3a : fetchRel tufParseRootCode 0x3A = some (.load .lw (19 : Fin 32) sp 0x10, 2) := by decide
-theorem pr_at_3c : fetchRel tufParseRootCode 0x3C = some (.aluImm .sll a0 a0 0x8, 2) := by decide
-theorem pr_at_3e : fetchRel tufParseRootCode 0x3E = some (.alu .or a0 a0 a1, 2) := by decide
-theorem pr_at_40 : fetchRel tufParseRootCode 0x40 = some (.aluImm .sll a2 a2 0x10, 2) := by decide
-theorem pr_at_42 : fetchRel tufParseRootCode 0x42 = some (.load .lw (20 : Fin 32) sp 0x14, 2) := by decide
-theorem pr_at_44 : fetchRel tufParseRootCode 0x44 = some (.alu .or (21 : Fin 32) a0 a2, 4) := by decide
-theorem pr_at_48 : fetchRel tufParseRootCode 0x48 = some (.aluImm .sll a0 (21 : Fin 32) 0x8, 4) := by decide
-theorem pr_at_4c : fetchRel tufParseRootCode 0x4C = some (.alu .or a2 a0 (18 : Fin 32), 4) := by decide
-theorem pr_at_50 : fetchRel tufParseRootCode 0x50 = some (.lui a3 0x3FCC5000, 4) := by decide
-theorem pr_at_54 : fetchRel tufParseRootCode 0x54 = some (.aluImm .add a3 a3 0xFFFFF8A1, 4) := by decide
-theorem pr_at_58 : fetchRel tufParseRootCode 0x58 = some (.aluImm .add a0 sp 0x1C, 2) := by decide
-theorem pr_at_5a : fetchRel tufParseRootCode 0x5A = some (.aluImm .add a4 x0 0x7, 2) := by decide
-theorem pr_at_5c : fetchRel tufParseRootCode 0x5C = some (.alu .add a1 x0 (9 : Fin 32), 2) := by decide
-theorem pr_at_5e : fetchRel tufParseRootCode 0x5E = some (.auipc ra 0xFFFFE000, 4) := by decide
-theorem pr_at_62 : fetchRel tufParseRootCode 0x62 = some (.jalr ra ra 0xFFFFFDDA, 4) := by decide
-theorem pr_at_66 : fetchRel tufParseRootCode 0x66 = some (.load .lw a1 sp 0x1C, 2) := by decide
-theorem pr_at_68 : fetchRel tufParseRootCode 0x68 = some (.branch .beq a1 x0 0x24, 2) := by decide
-theorem pr_at_6a : fetchRel tufParseRootCode 0x6A = some (.load .lw a2 sp 0x20, 2) := by decide
-theorem pr_at_6c : fetchRel tufParseRootCode 0x6C = some (.aluImm .add a0 sp 0x8, 2) := by decide
-theorem pr_at_6e : fetchRel tufParseRootCode 0x6E = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem pr_at_72 : fetchRel tufParseRootCode 0x72 = some (.jalr ra ra 0xFFFFF98C, 4) := by decide
-theorem pr_at_76 : fetchRel tufParseRootCode 0x76 = some (.load .lbu a0 sp 0x8, 4) := by decide
-theorem pr_at_7a : fetchRel tufParseRootCode 0x7A = some (.branch .beq a0 x0 0x18, 2) := by decide
-theorem pr_at_7c : fetchRel tufParseRootCode 0x7C = some (.load .lbu a0 sp 0x9, 4) := by decide
-theorem pr_at_80 : fetchRel tufParseRootCode 0x80 = some (.jal x0 0x48, 2) := by decide
-theorem pr_at_82 : fetchRel tufParseRootCode 0x82 = some (.store .sw (8 : Fin 32) x0 0x0, 4) := by decide
-theorem pr_at_86 : fetchRel tufParseRootCode 0x86 = some (.store .sb (8 : Fin 32) (18 : Fin 32) 0x4, 4) := by decide
-theorem pr_at_8a : fetchRel tufParseRootCode 0x8A = some (.jal x0 0x46, 2) := by decide
-theorem pr_at_8c : fetchRel tufParseRootCode 0x8C = some (.load .lbu a0 sp 0x20, 4) := by decide
-theorem pr_at_90 : fetchRel tufParseRootCode 0x90 = some (.jal x0 0x38, 2) := by decide
-theorem pr_at_92 : fetchRel tufParseRootCode 0x92 = some (.load .lw a0 sp 0x10, 2) := by decide
-theorem pr_at_94 : fetchRel tufParseRootCode 0x94 = some (.load .lw a1 sp 0x14, 2) := by decide
-theorem pr_at_96 : fetchRel tufParseRootCode 0x96 = some (.alu .or a2 a0 a1, 4) := by decide
-theorem pr_at_9a : fetchRel tufParseRootCode 0x9A = some (.branch .beq a2 x0 0x2A, 2) := by decide
-theorem pr_at_9c : fetchRel tufParseRootCode 0x9C = some (.aluImm .srl a2 (21 : Fin 32) 0x8, 4) := by decide
-theorem pr_at_a0 : fetchRel tufParseRootCode 0xA0 = some (.aluImm .srl a3 (21 : Fin 32) 0x10, 4) := by decide
-theorem pr_at_a4 : fetchRel tufParseRootCode 0xA4 = some (.store .sw (8 : Fin 32) (9 : Fin 32) 0x0, 2) := by decide
-theorem pr_at_a6 : fetchRel tufParseRootCode 0xA6 = some (.store .sb (8 : Fin 32) (18 : Fin 32) 0x4, 4) := by decide
-theorem pr_at_aa : fetchRel tufParseRootCode 0xAA = some (.store .sb (8 : Fin 32) (21 : Fin 32) 0x5, 4) := by decide
-theorem pr_at_ae : fetchRel tufParseRootCode 0xAE = some (.store .sb (8 : Fin 32) a2 0x6, 4) := by decide
-theorem pr_at_b2 : fetchRel tufParseRootCode 0xB2 = some (.store .sb (8 : Fin 32) a3 0x7, 4) := by decide
-theorem pr_at_b6 : fetchRel tufParseRootCode 0xB6 = some (.store .sw (8 : Fin 32) (19 : Fin 32) 0x8, 4) := by decide
-theorem pr_at_ba : fetchRel tufParseRootCode 0xBA = some (.store .sw (8 : Fin 32) (20 : Fin 32) 0xC, 4) := by decide
-theorem pr_at_be : fetchRel tufParseRootCode 0xBE = some (.store .sw (8 : Fin 32) a0 0x10, 2) := by decide
-theorem pr_at_c0 : fetchRel tufParseRootCode 0xC0 = some (.store .sw (8 : Fin 32) a1 0x14, 2) := by decide
-theorem pr_at_c2 : fetchRel tufParseRootCode 0xC2 = some (.jal x0 0xE, 2) := by decide
-theorem pr_at_c4 : fetchRel tufParseRootCode 0xC4 = some (.aluImm .add a0 x0 0x21, 4) := by decide
-theorem pr_at_c8 : fetchRel tufParseRootCode 0xC8 = some (.store .sw (8 : Fin 32) x0 0x0, 4) := by decide
-theorem pr_at_cc : fetchRel tufParseRootCode 0xCC = some (.store .sb (8 : Fin 32) a0 0x4, 4) := by decide
-theorem pr_at_d0 : fetchRel tufParseRootCode 0xD0 = some (.load .lw ra sp 0x3C, 2) := by decide
-theorem pr_at_d2 : fetchRel tufParseRootCode 0xD2 = some (.load .lw (8 : Fin 32) sp 0x38, 2) := by decide
-theorem pr_at_d4 : fetchRel tufParseRootCode 0xD4 = some (.load .lw (9 : Fin 32) sp 0x34, 2) := by decide
-theorem pr_at_d6 : fetchRel tufParseRootCode 0xD6 = some (.load .lw (18 : Fin 32) sp 0x30, 2) := by decide
-theorem pr_at_d8 : fetchRel tufParseRootCode 0xD8 = some (.load .lw (19 : Fin 32) sp 0x2C, 2) := by decide
-theorem pr_at_da : fetchRel tufParseRootCode 0xDA = some (.load .lw (20 : Fin 32) sp 0x28, 2) := by decide
-theorem pr_at_dc : fetchRel tufParseRootCode 0xDC = some (.load .lw (21 : Fin 32) sp 0x24, 2) := by decide
-theorem pr_at_de : fetchRel tufParseRootCode 0xDE = some (.aluImm .add sp sp 0x40, 2) := by decide
-theorem pr_at_e0 : fetchRel tufParseRootCode 0xE0 = some (.jalr x0 ra 0x0, 2) := by decide
+theorem tpr_at_0 : fetchRel tufParseRootCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFC0, 2) := by decide
+theorem tpr_at_2 : fetchRel tufParseRootCode 0x2 = some (.store .sw sp ra 0x3C, 2) := by decide
+theorem tpr_at_4 : fetchRel tufParseRootCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x38, 2) := by decide
+theorem tpr_at_6 : fetchRel tufParseRootCode 0x6 = some (.store .sw sp (9 : Fin 32) 0x34, 2) := by decide
+theorem tpr_at_8 : fetchRel tufParseRootCode 0x8 = some (.store .sw sp (18 : Fin 32) 0x30, 2) := by decide
+theorem tpr_at_a : fetchRel tufParseRootCode 0xA = some (.store .sw sp (19 : Fin 32) 0x2C, 2) := by decide
+theorem tpr_at_c : fetchRel tufParseRootCode 0xC = some (.store .sw sp (20 : Fin 32) 0x28, 2) := by decide
+theorem tpr_at_e : fetchRel tufParseRootCode 0xE = some (.store .sw sp (21 : Fin 32) 0x24, 2) := by decide
+theorem tpr_at_10 : fetchRel tufParseRootCode 0x10 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
+theorem tpr_at_12 : fetchRel tufParseRootCode 0x12 = some (.lui a3 0x3FCC4000, 4) := by decide
+theorem tpr_at_16 : fetchRel tufParseRootCode 0x16 = some (.aluImm .add a3 a3 0x76E, 4) := by decide
+theorem tpr_at_1a : fetchRel tufParseRootCode 0x1A = some (.aluImm .add a0 sp 0x8, 2) := by decide
+theorem tpr_at_1c : fetchRel tufParseRootCode 0x1C = some (.aluImm .add a4 x0 0x4, 2) := by decide
+theorem tpr_at_1e : fetchRel tufParseRootCode 0x1E = some (.auipc ra 0x0, 4) := by decide
+theorem tpr_at_22 : fetchRel tufParseRootCode 0x22 = some (.jalr ra ra 0xC4, 4) := by decide
+theorem tpr_at_26 : fetchRel tufParseRootCode 0x26 = some (.load .lw (9 : Fin 32) sp 0x8, 2) := by decide
+theorem tpr_at_28 : fetchRel tufParseRootCode 0x28 = some (.load .lbu (18 : Fin 32) sp 0xC, 4) := by decide
+theorem tpr_at_2c : fetchRel tufParseRootCode 0x2C = some (.branch .beq (9 : Fin 32) x0 0x56, 2) := by decide
+theorem tpr_at_2e : fetchRel tufParseRootCode 0x2E = some (.load .lbu a0 sp 0xE, 4) := by decide
+theorem tpr_at_32 : fetchRel tufParseRootCode 0x32 = some (.load .lbu a1 sp 0xD, 4) := by decide
+theorem tpr_at_36 : fetchRel tufParseRootCode 0x36 = some (.load .lbu a2 sp 0xF, 4) := by decide
+theorem tpr_at_3a : fetchRel tufParseRootCode 0x3A = some (.load .lw (19 : Fin 32) sp 0x10, 2) := by decide
+theorem tpr_at_3c : fetchRel tufParseRootCode 0x3C = some (.aluImm .sll a0 a0 0x8, 2) := by decide
+theorem tpr_at_3e : fetchRel tufParseRootCode 0x3E = some (.alu .or a0 a0 a1, 2) := by decide
+theorem tpr_at_40 : fetchRel tufParseRootCode 0x40 = some (.aluImm .sll a2 a2 0x10, 2) := by decide
+theorem tpr_at_42 : fetchRel tufParseRootCode 0x42 = some (.load .lw (20 : Fin 32) sp 0x14, 2) := by decide
+theorem tpr_at_44 : fetchRel tufParseRootCode 0x44 = some (.alu .or (21 : Fin 32) a0 a2, 4) := by decide
+theorem tpr_at_48 : fetchRel tufParseRootCode 0x48 = some (.aluImm .sll a0 (21 : Fin 32) 0x8, 4) := by decide
+theorem tpr_at_4c : fetchRel tufParseRootCode 0x4C = some (.alu .or a2 a0 (18 : Fin 32), 4) := by decide
+theorem tpr_at_50 : fetchRel tufParseRootCode 0x50 = some (.lui a3 0x3FCC5000, 4) := by decide
+theorem tpr_at_54 : fetchRel tufParseRootCode 0x54 = some (.aluImm .add a3 a3 0xFFFFF8A1, 4) := by decide
+theorem tpr_at_58 : fetchRel tufParseRootCode 0x58 = some (.aluImm .add a0 sp 0x1C, 2) := by decide
+theorem tpr_at_5a : fetchRel tufParseRootCode 0x5A = some (.aluImm .add a4 x0 0x7, 2) := by decide
+theorem tpr_at_5c : fetchRel tufParseRootCode 0x5C = some (.alu .add a1 x0 (9 : Fin 32), 2) := by decide
+theorem tpr_at_5e : fetchRel tufParseRootCode 0x5E = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem tpr_at_62 : fetchRel tufParseRootCode 0x62 = some (.jalr ra ra 0xFFFFFDDA, 4) := by decide
+theorem tpr_at_66 : fetchRel tufParseRootCode 0x66 = some (.load .lw a1 sp 0x1C, 2) := by decide
+theorem tpr_at_68 : fetchRel tufParseRootCode 0x68 = some (.branch .beq a1 x0 0x24, 2) := by decide
+theorem tpr_at_6a : fetchRel tufParseRootCode 0x6A = some (.load .lw a2 sp 0x20, 2) := by decide
+theorem tpr_at_6c : fetchRel tufParseRootCode 0x6C = some (.aluImm .add a0 sp 0x8, 2) := by decide
+theorem tpr_at_6e : fetchRel tufParseRootCode 0x6E = some (.auipc ra 0xFFFFF000, 4) := by decide
+theorem tpr_at_72 : fetchRel tufParseRootCode 0x72 = some (.jalr ra ra 0xFFFFF98C, 4) := by decide
+theorem tpr_at_76 : fetchRel tufParseRootCode 0x76 = some (.load .lbu a0 sp 0x8, 4) := by decide
+theorem tpr_at_7a : fetchRel tufParseRootCode 0x7A = some (.branch .beq a0 x0 0x18, 2) := by decide
+theorem tpr_at_7c : fetchRel tufParseRootCode 0x7C = some (.load .lbu a0 sp 0x9, 4) := by decide
+theorem tpr_at_80 : fetchRel tufParseRootCode 0x80 = some (.jal x0 0x48, 2) := by decide
+theorem tpr_at_82 : fetchRel tufParseRootCode 0x82 = some (.store .sw (8 : Fin 32) x0 0x0, 4) := by decide
+theorem tpr_at_86 : fetchRel tufParseRootCode 0x86 = some (.store .sb (8 : Fin 32) (18 : Fin 32) 0x4, 4) := by decide
+theorem tpr_at_8a : fetchRel tufParseRootCode 0x8A = some (.jal x0 0x46, 2) := by decide
+theorem tpr_at_8c : fetchRel tufParseRootCode 0x8C = some (.load .lbu a0 sp 0x20, 4) := by decide
+theorem tpr_at_90 : fetchRel tufParseRootCode 0x90 = some (.jal x0 0x38, 2) := by decide
+theorem tpr_at_92 : fetchRel tufParseRootCode 0x92 = some (.load .lw a0 sp 0x10, 2) := by decide
+theorem tpr_at_94 : fetchRel tufParseRootCode 0x94 = some (.load .lw a1 sp 0x14, 2) := by decide
+theorem tpr_at_96 : fetchRel tufParseRootCode 0x96 = some (.alu .or a2 a0 a1, 4) := by decide
+theorem tpr_at_9a : fetchRel tufParseRootCode 0x9A = some (.branch .beq a2 x0 0x2A, 2) := by decide
+theorem tpr_at_9c : fetchRel tufParseRootCode 0x9C = some (.aluImm .srl a2 (21 : Fin 32) 0x8, 4) := by decide
+theorem tpr_at_a0 : fetchRel tufParseRootCode 0xA0 = some (.aluImm .srl a3 (21 : Fin 32) 0x10, 4) := by decide
+theorem tpr_at_a4 : fetchRel tufParseRootCode 0xA4 = some (.store .sw (8 : Fin 32) (9 : Fin 32) 0x0, 2) := by decide
+theorem tpr_at_a6 : fetchRel tufParseRootCode 0xA6 = some (.store .sb (8 : Fin 32) (18 : Fin 32) 0x4, 4) := by decide
+theorem tpr_at_aa : fetchRel tufParseRootCode 0xAA = some (.store .sb (8 : Fin 32) (21 : Fin 32) 0x5, 4) := by decide
+theorem tpr_at_ae : fetchRel tufParseRootCode 0xAE = some (.store .sb (8 : Fin 32) a2 0x6, 4) := by decide
+theorem tpr_at_b2 : fetchRel tufParseRootCode 0xB2 = some (.store .sb (8 : Fin 32) a3 0x7, 4) := by decide
+theorem tpr_at_b6 : fetchRel tufParseRootCode 0xB6 = some (.store .sw (8 : Fin 32) (19 : Fin 32) 0x8, 4) := by decide
+theorem tpr_at_ba : fetchRel tufParseRootCode 0xBA = some (.store .sw (8 : Fin 32) (20 : Fin 32) 0xC, 4) := by decide
+theorem tpr_at_be : fetchRel tufParseRootCode 0xBE = some (.store .sw (8 : Fin 32) a0 0x10, 2) := by decide
+theorem tpr_at_c0 : fetchRel tufParseRootCode 0xC0 = some (.store .sw (8 : Fin 32) a1 0x14, 2) := by decide
+theorem tpr_at_c2 : fetchRel tufParseRootCode 0xC2 = some (.jal x0 0xE, 2) := by decide
+theorem tpr_at_c4 : fetchRel tufParseRootCode 0xC4 = some (.aluImm .add a0 x0 0x21, 4) := by decide
+theorem tpr_at_c8 : fetchRel tufParseRootCode 0xC8 = some (.store .sw (8 : Fin 32) x0 0x0, 4) := by decide
+theorem tpr_at_cc : fetchRel tufParseRootCode 0xCC = some (.store .sb (8 : Fin 32) a0 0x4, 4) := by decide
+theorem tpr_at_d0 : fetchRel tufParseRootCode 0xD0 = some (.load .lw ra sp 0x3C, 2) := by decide
+theorem tpr_at_d2 : fetchRel tufParseRootCode 0xD2 = some (.load .lw (8 : Fin 32) sp 0x38, 2) := by decide
+theorem tpr_at_d4 : fetchRel tufParseRootCode 0xD4 = some (.load .lw (9 : Fin 32) sp 0x34, 2) := by decide
+theorem tpr_at_d6 : fetchRel tufParseRootCode 0xD6 = some (.load .lw (18 : Fin 32) sp 0x30, 2) := by decide
+theorem tpr_at_d8 : fetchRel tufParseRootCode 0xD8 = some (.load .lw (19 : Fin 32) sp 0x2C, 2) := by decide
+theorem tpr_at_da : fetchRel tufParseRootCode 0xDA = some (.load .lw (20 : Fin 32) sp 0x28, 2) := by decide
+theorem tpr_at_dc : fetchRel tufParseRootCode 0xDC = some (.load .lw (21 : Fin 32) sp 0x24, 2) := by decide
+theorem tpr_at_de : fetchRel tufParseRootCode 0xDE = some (.aluImm .add sp sp 0x40, 2) := by decide
+theorem tpr_at_e0 : fetchRel tufParseRootCode 0xE0 = some (.jalr x0 ra 0x0, 2) := by decide
 
 /-! The bytes of the `signed` slice's length, which the function loads one
 at a time and stores back one at a time. -/
 
-theorem pr_s5 (b13 b14 b15 : BitVec 8) :
+theorem tpr_s5 (b13 b14 b15 : BitVec 8) :
     ((b14.zeroExtend 32 <<< 8 ||| b13.zeroExtend 32) ||| b15.zeroExtend 32 <<< 16 : Word) =
       0#8 ++ b15 ++ b14 ++ b13 := by
   apply BitVec.eq_of_getLsbD_eq
@@ -183,7 +183,7 @@ theorem pr_s5 (b13 b14 b15 : BitVec 8) :
   iterate 32 (rcases i with _ | i; · simp)
   omega
 
-theorem pr_w (b12 b13 b14 b15 : BitVec 8) :
+theorem tpr_w (b12 b13 b14 b15 : BitVec 8) :
     ((0#8 ++ b15 ++ b14 ++ b13) <<< 8 ||| b12.zeroExtend 32 : Word) = b15 ++ b14 ++ b13 ++ b12 := by
   apply BitVec.eq_of_getLsbD_eq
   intro i hi
@@ -192,28 +192,28 @@ theorem pr_w (b12 b13 b14 b15 : BitVec 8) :
   iterate 32 (rcases i with _ | i; · simp)
   omega
 
-theorem pr_e0 (b13 b14 b15 : BitVec 8) : (0#8 ++ b15 ++ b14 ++ b13 : Word).extractLsb' 0 8 = b13 := by
+theorem tpr_e0 (b13 b14 b15 : BitVec 8) : (0#8 ++ b15 ++ b14 ++ b13 : Word).extractLsb' 0 8 = b13 := by
   apply BitVec.eq_of_getLsbD_eq
   intro i hi
   simp only [BitVec.getLsbD_append, BitVec.getLsbD_extractLsb', BitVec.getLsbD_zero]
   iterate 8 (rcases i with _ | i; · simp)
   omega
 
-theorem pr_e1 (b13 b14 b15 : BitVec 8) : ((0#8 ++ b15 ++ b14 ++ b13 : Word) >>> 8).extractLsb' 0 8 = b14 := by
+theorem tpr_e1 (b13 b14 b15 : BitVec 8) : ((0#8 ++ b15 ++ b14 ++ b13 : Word) >>> 8).extractLsb' 0 8 = b14 := by
   apply BitVec.eq_of_getLsbD_eq
   intro i hi
   simp only [BitVec.getLsbD_append, BitVec.getLsbD_extractLsb', BitVec.getLsbD_ushiftRight, BitVec.getLsbD_zero]
   iterate 8 (rcases i with _ | i; · simp)
   omega
 
-theorem pr_e2 (b13 b14 b15 : BitVec 8) : ((0#8 ++ b15 ++ b14 ++ b13 : Word) >>> 16).extractLsb' 0 8 = b15 := by
+theorem tpr_e2 (b13 b14 b15 : BitVec 8) : ((0#8 ++ b15 ++ b14 ++ b13 : Word) >>> 16).extractLsb' 0 8 = b15 := by
   apply BitVec.eq_of_getLsbD_eq
   intro i hi
   simp only [BitVec.getLsbD_append, BitVec.getLsbD_extractLsb', BitVec.getLsbD_ushiftRight, BitVec.getLsbD_zero]
   iterate 8 (rcases i with _ | i; · simp)
   omega
 
-theorem pr_x (b12 b13 b14 b15 : BitVec 8) :
+theorem tpr_x (b12 b13 b14 b15 : BitVec 8) :
     (b15 ++ b14 ++ b13 ++ b12 : Word).extractLsb' 0 8 = b12 ∧ (b15 ++ b14 ++ b13 ++ b12 : Word).extractLsb' 8 8 = b13 ∧
       (b15 ++ b14 ++ b13 ++ b12 : Word).extractLsb' 16 8 = b14 ∧
       (b15 ++ b14 ++ b13 ++ b12 : Word).extractLsb' 24 8 = b15 := by
@@ -449,20 +449,20 @@ end
 section
 variable {M0 M1 Mf : Word → BitVec 8} {s out F : Word} {g g0 : Fin 32 → Word}
 
-theorem pr_epi {R : (Word → BitVec 8) → Prop} (hsp : g sp = F) (hv : PrSaved F g0 Mf)
+theorem tpr_epi {R : (Word → BitVec 8) → Prop} (hsp : g sp = F) (hv : PrSaved F g0 Mf)
     (hsp0 : g0 sp = F + BitVec.ofNat 32 0x40) (hret : g0 ra &&& ~~~1 = g0 ra) (hal : F.toNat % 4 = 0)
     (hz0 : g0 0 = 0) (hfr : ∀ x, x ∉ prE → g x = g0 x) (hR : R Mf) :
     WP tufParseRootCode TPR (RPost (g0 ra) R g0) Mf 0xD0 g := by
   obtain ⟨e0, e1, e2, e3, e4, e5, e6⟩ := hv
-  refine WP.lw pr_at_d0 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x3C) (by decide)) ?_; wn
-  refine WP.lw pr_at_d2 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x38) (by decide)) ?_; wn
-  refine WP.lw pr_at_d4 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x34) (by decide)) ?_; wn
-  refine WP.lw pr_at_d6 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x30) (by decide)) ?_; wn
-  refine WP.lw pr_at_d8 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x2C) (by decide)) ?_; wn
-  refine WP.lw pr_at_da (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x28) (by decide)) ?_; wn
-  refine WP.lw pr_at_dc (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x24) (by decide)) ?_; wn
-  refine WP.aluImm pr_at_de ?_; wn
-  refine WP.ret pr_at_e0 ⟨?_, hR, ?_⟩
+  refine WP.lw tpr_at_d0 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x3C) (by decide)) ?_; wn
+  refine WP.lw tpr_at_d2 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x38) (by decide)) ?_; wn
+  refine WP.lw tpr_at_d4 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x34) (by decide)) ?_; wn
+  refine WP.lw tpr_at_d6 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x30) (by decide)) ?_; wn
+  refine WP.lw tpr_at_d8 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x2C) (by decide)) ?_; wn
+  refine WP.lw tpr_at_da (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x28) (by decide)) ?_; wn
+  refine WP.lw tpr_at_dc (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x24) (by decide)) ?_; wn
+  refine WP.aluImm tpr_at_de ?_; wn
+  refine WP.ret tpr_at_e0 ⟨?_, hR, ?_⟩
   · rsimp; rw [hsp]; erw [e0]; rw [add_lit_zero, hret]
   refine frame_of (L2 := [ra, sp, 8, 9, 18, 19, 20, 21]) (by keepz hz0) fun x hx => ?_
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
@@ -486,7 +486,7 @@ abbrev prQ (M0 : Word → BitVec 8) (s out : Word) (g0 : Fin 32 → Word)
 section
 variable {M0 M1 Mf : Word → BitVec 8} {s out F : Word} {g g0 : Fin 32 → Word} {e : Nat}
 
-theorem pr_errRes (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) :
+theorem tpr_errRes (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) :
     PrRes M0 (memStore8 (memStore32 Mf out 0) (out + 4) (BitVec.ofNat 8 e)) s out (.error e) ∧
       Out Mf (memStore8 (memStore32 Mf out 0) (out + 4) (BitVec.ofNat 8 e)) out 24 := by
   have hR := pa_err_res Mf out _ e rfl
@@ -495,33 +495,33 @@ theorem pr_errRes (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) :
 
 /-- The error tail at 0xC8: the zero word at `out`, the error byte from
 `a0` at `out + 4`, and the epilogue. -/
-theorem pr_c8 (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) (h8 : g 8 = out) (hsp : g sp = F)
+theorem tpr_c8 (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) (h8 : g 8 = out) (hsp : g sp = F)
     (ha0 : (g a0).extractLsb' 0 8 = BitVec.ofNat 8 e) (hz : g 0 = 0) (hfr : ∀ x, x ∉ prE → g x = g0 x) :
     WP tufParseRootCode TPR (prQ M0 s out g0 (.error e)) Mf 0xC8 g := by
-  refine WP.sw pr_at_c8 (by (try rsimp); rw [h8, add_lit_zero]; exact E.halo)
+  refine WP.sw tpr_at_c8 (by (try rsimp); rw [h8, add_lit_zero]; exact E.halo)
     (by (try rsimp); rw [h8, add_lit_zero]; exact tex_sepL E.outT (by decide)) ?_; wn
-  refine WP.sb pr_at_cc (by (try rsimp); rw [h8]; exact E.outT.sub (c := 4) (l := 1) (by decide)) ?_; wn
+  refine WP.sb tpr_at_cc (by (try rsimp); rw [h8]; exact E.outT.sub (c := 4) (l := 1) (by decide)) ?_; wn
   (try rsimp)
   rw [h8, add_lit_zero, hz, ha0]
-  obtain ⟨hR, hOo⟩ := pr_errRes (e := e) E hO
-  exact pr_epi hsp (E.savedOut (E.saved hO) hOo) E.hsp0 E.hret E.halF E.hz0 hfr hR
+  obtain ⟨hR, hOo⟩ := tpr_errRes (e := e) E hO
+  exact tpr_epi hsp (E.savedOut (E.saved hO) hOo) E.hsp0 E.hret E.halF E.hz0 hfr hR
 
 /-- The error tail at 0x82, with the error byte in `s2`. -/
-theorem pr_82 (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) (h8 : g 8 = out) (hsp : g sp = F)
+theorem tpr_82 (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) (h8 : g 8 = out) (hsp : g sp = F)
     (h18 : (g 18).extractLsb' 0 8 = BitVec.ofNat 8 e) (hz : g 0 = 0) (hfr : ∀ x, x ∉ prE → g x = g0 x) :
     WP tufParseRootCode TPR (prQ M0 s out g0 (.error e)) Mf 0x82 g := by
-  refine WP.sw pr_at_82 (by (try rsimp); rw [h8, add_lit_zero]; exact E.halo)
+  refine WP.sw tpr_at_82 (by (try rsimp); rw [h8, add_lit_zero]; exact E.halo)
     (by (try rsimp); rw [h8, add_lit_zero]; exact tex_sepL E.outT (by decide)) ?_; wn
-  refine WP.sb pr_at_86 (by (try rsimp); rw [h8]; exact E.outT.sub (c := 4) (l := 1) (by decide)) ?_; wn
-  refine WP.jal pr_at_8a (by decide) ?_; wn
+  refine WP.sb tpr_at_86 (by (try rsimp); rw [h8]; exact E.outT.sub (c := 4) (l := 1) (by decide)) ?_; wn
+  refine WP.jal tpr_at_8a (by decide) ?_; wn
   (try rsimp)
   rw [h8, add_lit_zero, hz, h18]
-  obtain ⟨hR, hOo⟩ := pr_errRes (e := e) E hO
-  exact pr_epi hsp (E.savedOut (E.saved hO) hOo) E.hsp0 E.hret E.halF E.hz0 hfr hR
+  obtain ⟨hR, hOo⟩ := tpr_errRes (e := e) E hO
+  exact tpr_epi hsp (E.savedOut (E.saved hO) hOo) E.hsp0 E.hret E.halF E.hz0 hfr hR
 
 end
 
-theorem pr_st6 {M Mf : Word → BitVec 8} {o a b c d e w : Word}
+theorem tpr_st6 {M Mf : Word → BitVec 8} {o a b c d e w : Word}
     (hM : memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 M o a) (o + 4) b) (o + 8) c)
       (o + 0xC) d) (o + 0x10) e) (o + 0x14) w = Mf) :
     Out M Mf o 24 ∧ memLoad32 Mf o = a ∧ memLoad32 Mf (o + 4) = b ∧ memLoad32 Mf (o + 8) = c ∧
@@ -550,13 +550,13 @@ theorem pr_st6 {M Mf : Word → BitVec 8} {o a b c d e w : Word}
       (ld_skip 0xC 0x10 (Or.inl (by decide)) (by decide) (by decide) (memLoad32_store32_same _ _ _))
   · exact ld_skip 0x10 0x14 (Or.inl (by decide)) (by decide) (by decide) (memLoad32_store32_same _ _ _)
 
-theorem pr_st8 (M : Word → BitVec 8) (a w : Word) :
+theorem tpr_st8 (M : Word → BitVec 8) (a w : Word) :
     memStore8 (memStore8 (memStore8 (memStore8 M a (w.extractLsb' 0 8)) (a + 1) (w.extractLsb' 8 8)) (a + 2)
       (w.extractLsb' 16 8)) (a + 3) (w.extractLsb' 24 8) = memStore32 M a w := rfl
 
-theorem pr_srl8 (x : Word) : aluEval .srl x 8 = x >>> 8 := rfl
+theorem tpr_srl8 (x : Word) : aluEval .srl x 8 = x >>> 8 := rfl
 
-theorem pr_srl16 (x : Word) : aluEval .srl x 16 = x >>> 16 := rfl
+theorem tpr_srl16 (x : Word) : aluEval .srl x 16 = x >>> 16 := rfl
 
 section
 variable {M0 M1 Mf : Word → BitVec 8} {s out F : Word} {g g0 : Fin 32 → Word}
@@ -564,7 +564,7 @@ variable {M0 M1 Mf : Word → BitVec 8} {s out F : Word} {g g0 : Fin 32 → Word
 /-- The success tail at 0x9C: `signed`, `signatures`, and the version at
 `out`, and the epilogue. The length of `signed` is in `s2` (its low byte)
 and `s5` (its other three bytes). -/
-theorem pr_9c {q1 q2 lo hi : Word} {l1 l2 v : Nat} {b12 b13 b14 b15 : BitVec 8}
+theorem tpr_9c {q1 q2 lo hi : Word} {l1 l2 v : Nat} {b12 b13 b14 b15 : BitVec 8}
     (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) (h8 : g 8 = out) (hsp : g sp = F) (h9 : g 9 = q1)
     (h18 : g 18 = b12.zeroExtend 32) (h21 : g 21 = 0#8 ++ b15 ++ b14 ++ b13) (h19 : g 19 = q2)
     (h20 : g 20 = BitVec.ofNat 32 l2) (h10 : g a0 = lo) (h11 : g a1 = hi)
@@ -572,33 +572,33 @@ theorem pr_9c {q1 q2 lo hi : Word} {l1 l2 v : Nat} {b12 b13 b14 b15 : BitVec 8}
     (hfr : ∀ x, x ∉ prE → g x = g0 x) :
     WP tufParseRootCode TPR (prQ M0 s out g0 (.ok (q1, l1, q2, l2, v))) Mf 0x9C g := by
   have hoT := E.outT
-  refine WP.aluImm pr_at_9c ?_; wn
-  refine WP.aluImm pr_at_a0 ?_; wn
-  refine WP.sw pr_at_a4 (by (try rsimp); rw [h8, add_lit_zero]; exact E.halo)
+  refine WP.aluImm tpr_at_9c ?_; wn
+  refine WP.aluImm tpr_at_a0 ?_; wn
+  refine WP.sw tpr_at_a4 (by (try rsimp); rw [h8, add_lit_zero]; exact E.halo)
     (by (try rsimp); rw [h8, add_lit_zero]; exact tex_sepL hoT (by decide)) ?_; wn
-  refine WP.sb pr_at_a6 (by (try rsimp); rw [h8]; exact hoT.sub (c := 4) (l := 1) (by decide)) ?_; wn
-  refine WP.sb pr_at_aa (by (try rsimp); rw [h8]; exact hoT.sub (c := 5) (l := 1) (by decide)) ?_; wn
-  refine WP.sb pr_at_ae (by (try rsimp); rw [h8]; exact hoT.sub (c := 6) (l := 1) (by decide)) ?_; wn
-  refine WP.sb pr_at_b2 (by (try rsimp); rw [h8]; exact hoT.sub (c := 7) (l := 1) (by decide)) ?_; wn
-  refine WP.sw pr_at_b6 (by (try rsimp); rw [h8]; exact aligned_add E.halo (k := 8) (by decide))
+  refine WP.sb tpr_at_a6 (by (try rsimp); rw [h8]; exact hoT.sub (c := 4) (l := 1) (by decide)) ?_; wn
+  refine WP.sb tpr_at_aa (by (try rsimp); rw [h8]; exact hoT.sub (c := 5) (l := 1) (by decide)) ?_; wn
+  refine WP.sb tpr_at_ae (by (try rsimp); rw [h8]; exact hoT.sub (c := 6) (l := 1) (by decide)) ?_; wn
+  refine WP.sb tpr_at_b2 (by (try rsimp); rw [h8]; exact hoT.sub (c := 7) (l := 1) (by decide)) ?_; wn
+  refine WP.sw tpr_at_b6 (by (try rsimp); rw [h8]; exact aligned_add E.halo (k := 8) (by decide))
     (by (try rsimp); rw [h8]; exact hoT.sub (c := 8) (l := 4) (by decide)) ?_; wn
-  refine WP.sw pr_at_ba (by (try rsimp); rw [h8]; exact aligned_add E.halo (k := 0xC) (by decide))
+  refine WP.sw tpr_at_ba (by (try rsimp); rw [h8]; exact aligned_add E.halo (k := 0xC) (by decide))
     (by (try rsimp); rw [h8]; exact hoT.sub (c := 0xC) (l := 4) (by decide)) ?_; wn
-  refine WP.sw pr_at_be (by (try rsimp); rw [h8]; exact aligned_add E.halo (k := 0x10) (by decide))
+  refine WP.sw tpr_at_be (by (try rsimp); rw [h8]; exact aligned_add E.halo (k := 0x10) (by decide))
     (by (try rsimp); rw [h8]; exact hoT.sub (c := 0x10) (l := 4) (by decide)) ?_; wn
-  refine WP.sw pr_at_c0 (by (try rsimp); rw [h8]; exact aligned_add E.halo (k := 0x14) (by decide))
+  refine WP.sw tpr_at_c0 (by (try rsimp); rw [h8]; exact aligned_add E.halo (k := 0x14) (by decide))
     (by (try rsimp); rw [h8]; exact hoT.sub (c := 0x14) (l := 4) (by decide)) ?_; wn
-  refine WP.jal pr_at_c2 (by decide) ?_; wn
+  refine WP.jal tpr_at_c2 (by decide) ?_; wn
   (try rsimp)
-  obtain ⟨x0, x1, x2, x3⟩ := pr_x b12 b13 b14 b15
+  obtain ⟨x0, x1, x2, x3⟩ := tpr_x b12 b13 b14 b15
   generalize hWd : b15 ++ b14 ++ b13 ++ b12 = W at x0 x1 x2 x3 hW
-  rw [h8, h9, h18, h21, h19, h20, h10, h11, add_lit_zero, pr_srl8, pr_srl16, ri_ze,
-    pr_e0, pr_e1, pr_e2, ← x0, ← x1, ← x2, ← x3, show out + 5 = out + 4 + 1 by rw [BitVec.add_assoc]; rfl,
+  rw [h8, h9, h18, h21, h19, h20, h10, h11, add_lit_zero, tpr_srl8, tpr_srl16, ri_ze,
+    tpr_e0, tpr_e1, tpr_e2, ← x0, ← x1, ← x2, ← x3, show out + 5 = out + 4 + 1 by rw [BitVec.add_assoc]; rfl,
     show out + 6 = out + 4 + 2 by rw [BitVec.add_assoc]; rfl, show out + 7 = out + 4 + 3 by rw [BitVec.add_assoc]; rfl,
-    pr_st8, hW]
-  obtain ⟨hOs, r0, r1, r2, r3, r4, r5⟩ := pr_st6 (M := Mf) (o := out) (a := q1) (b := BitVec.ofNat 32 l1)
+    tpr_st8, hW]
+  obtain ⟨hOs, r0, r1, r2, r3, r4, r5⟩ := tpr_st6 (M := Mf) (o := out) (a := q1) (b := BitVec.ofNat 32 l1)
     (c := q2) (d := BitVec.ofNat 32 l2) (e := lo) (w := hi) rfl
-  exact pr_epi (by (try rsimp); exact hsp) (E.savedOut (E.saved hO) hOs) E.hsp0 E.hret E.halF E.hz0 (by keepz E.hz0)
+  exact tpr_epi (by (try rsimp); exact hsp) (E.savedOut (E.saved hO) hOs) E.hsp0 E.hret E.halF E.hz0 (by keepz E.hz0)
     ⟨fun x hx ho => (hOs x ho).trans (E.agree hO x hx), r0, r1, r2, r3, by rw [r4, r5]; exact hv⟩
 
 end
@@ -638,28 +638,25 @@ theorem PrEnv.pmOut (E : PrEnv M0 M1 s out F g0) {Ma Mb : Word → BitVec 8}
 
 end
 
-theorem pr_or (a b : Word) : aluEval .or a b = a ||| b := rfl
-theorem pr_sll8 (x : Word) : aluEval .sll x 8 = x <<< 8 := rfl
-theorem pr_sll16 (x : Word) : aluEval .sll x 16 = x <<< 16 := rfl
-
-theorem pr_add (F : Word) (a b : Nat) : F + BitVec.ofNat 32 a + BitVec.ofNat 32 b = F + BitVec.ofNat 32 (a + b) :=
-  add_ofNat_assoc F a b
+theorem tpr_or (a b : Word) : aluEval .or a b = a ||| b := rfl
+theorem tpr_sll8 (x : Word) : aluEval .sll x 8 = x <<< 8 := rfl
+theorem tpr_sll16 (x : Word) : aluEval .sll x 16 = x <<< 16 := rfl
 
 /-- `parse_root` after its prologue. -/
-theorem pr_body {M0 : Word → BitVec 8} {s out p F : Word} {n : Nat} {g0 g : Fin 32 → Word}
+theorem tpr_body {M0 : Word → BitVec 8} {s out p F : Word} {n : Nat} {g0 g : Fin 32 → Word}
     (E : PrEnv M0 (prM1 M0 F g0) s out F g0) (hsp : g sp = F) (h10 : g a0 = out) (h11 : g a1 = p)
     (h12 : g a2 = BitVec.ofNat 32 n) (hz : g 0 = 0) (hfr : ∀ x, x ∉ prE → g x = g0 x) (hn : n < 2 ^ 31)
     (hp0 : p.toNat ≠ 0) (hpn : p.toNat + n < 2 ^ 32) (hSp : Sep s 596 p n) :
     WP tufParseRootCode TPR (prQ M0 s out g0 (prRes p (prModel (memBytes M0 p n)))) (prM1 M0 F g0) 0x10 g := by
   generalize hM1 : prM1 M0 F g0 = M1 at E
   have hc1 := E.code (Mk := M1) (fun _ _ => rfl)
-  refine WP.alu pr_at_10 ?_; wn
-  refine WP.lui pr_at_12 ?_; wn
-  refine WP.aluImm pr_at_16 ?_; wn
-  refine WP.aluImm pr_at_1a ?_; wn
-  refine WP.aluImm pr_at_1c ?_; wn
+  refine WP.alu tpr_at_10 ?_; wn
+  refine WP.lui tpr_at_12 ?_; wn
+  refine WP.aluImm tpr_at_16 ?_; wn
+  refine WP.aluImm tpr_at_1a ?_; wn
+  refine WP.aluImm tpr_at_1c ?_; wn
   refine WP.callPm (out := F + 8) (s := s) (p := p) (kq := TPR_KR) (n := n) (kl := 4)
-    pr_at_1e pr_at_22 (by decide) (by decide) hc1.pm
+    tpr_at_1e tpr_at_22 (by decide) (by decide) hc1.pm
     (by (try rsimp); rw [ev_add, hsp]) (by (try rsimp); exact h11) (by (try rsimp); exact h12)
     (by (try rsimp); (try rfl); (try decide)) (by (try rsimp); (try rw [hz]); (try rfl); (try decide))
     (by (try rsimp); rw [hsp]; exact E.hF.symm) E.hal (by have := E.hsw; omega) (tex_sepL E.hro (by decide))
@@ -674,16 +671,16 @@ theorem pr_body {M0 : Word → BitVec 8} {s out p F : Word} {n : Nat} {g0 g : Fi
   generalize m2.mem = M2 at hR
   have hO2 : Out M1 M2 s 568 := E.pmOut hR.frame
   refine WP.zero fun hz2 => ?_
-  refine WP.lw pr_at_26 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 8) (by decide)) ?_; wn
-  refine WP.lbu pr_at_28 ?_; wn
+  refine WP.lw tpr_at_26 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 8) (by decide)) ?_; wn
+  refine WP.lbu tpr_at_28 ?_; wn
   simp only [prModel]
   rcases hpm : pmModel (memBytes M0 p n) (ascii!"root") with e | ⟨gp, gl, sq, sl⟩ <;> rw [hpm] at hR <;>
     simp only [pmRes, Except.map] at hR <;> (try dsimp only)
   · obtain ⟨-, t1, t2⟩ := hR
-    refine WP.branch pr_at_2c (fun _ => ?_) (fun eb => ?_) <;> wn
+    refine WP.branch tpr_at_2c (fun _ => ?_) (fun eb => ?_) <;> wn
     rotate_left
     · exfalso; (try rsimp at eb); rw [hsp, t1] at eb; exact absurd eb (by decide)
-    exact pr_82 E hO2 (by (try rsimp); (try rw [ev_mv hz]); exact h10) (by (try rsimp); exact hsp)
+    exact tpr_82 E hO2 (by (try rsimp); (try rw [ev_mv hz]); exact h10) (by (try rsimp); exact hsp)
       (by (try rsimp); rw [hsp, ri_ze, show F + 0xC = F + BitVec.ofNat 32 8 + 4 by rw [BitVec.add_assoc]; rfl]; exact t2)
       (by (try rsimp); (try exact hz)) (by keepz E.hz0)
   · obtain ⟨-, t1, t2, t3, t4⟩ := hR
@@ -697,30 +694,30 @@ theorem pr_body {M0 : Word → BitVec 8} {s out p F : Word} {n : Nat} {g0 g : Fi
       rw [← t2]; unfold memLoad32
       rw [show F + 12 + 3 = F + 15 by rw [BitVec.add_assoc]; rfl, show F + 12 + 2 = F + 14 by rw [BitVec.add_assoc]; rfl,
         show F + 12 + 1 = F + 13 by rw [BitVec.add_assoc]; rfl]
-    refine WP.branch pr_at_2c (fun eb => ?_) (fun _ => ?_) <;> wn
+    refine WP.branch tpr_at_2c (fun eb => ?_) (fun _ => ?_) <;> wn
     · exfalso; (try rsimp at eb); rw [hsp, t1, hq0] at eb; exact absurd eb (by decide)
-    refine WP.lbu pr_at_2e ?_; wn
-    refine WP.lbu pr_at_32 ?_; wn
-    refine WP.lbu pr_at_36 ?_; wn
-    refine WP.lw pr_at_3a (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0x10) (by decide)) ?_; wn
-    refine WP.aluImm pr_at_3c ?_; wn
-    refine WP.alu pr_at_3e ?_; wn
-    refine WP.aluImm pr_at_40 ?_; wn
-    refine WP.lw pr_at_42 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0x14) (by decide)) ?_; wn
-    refine WP.alu pr_at_44 ?_; wn
-    refine WP.aluImm pr_at_48 ?_; wn
-    refine WP.alu pr_at_4c ?_; wn
-    refine WP.lui pr_at_50 ?_; wn
-    refine WP.aluImm pr_at_54 ?_; wn
-    refine WP.aluImm pr_at_58 ?_; wn
-    refine WP.aluImm pr_at_5a ?_; wn
-    refine WP.alu pr_at_5c ?_; wn
+    refine WP.lbu tpr_at_2e ?_; wn
+    refine WP.lbu tpr_at_32 ?_; wn
+    refine WP.lbu tpr_at_36 ?_; wn
+    refine WP.lw tpr_at_3a (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0x10) (by decide)) ?_; wn
+    refine WP.aluImm tpr_at_3c ?_; wn
+    refine WP.alu tpr_at_3e ?_; wn
+    refine WP.aluImm tpr_at_40 ?_; wn
+    refine WP.lw tpr_at_42 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0x14) (by decide)) ?_; wn
+    refine WP.alu tpr_at_44 ?_; wn
+    refine WP.aluImm tpr_at_48 ?_; wn
+    refine WP.alu tpr_at_4c ?_; wn
+    refine WP.lui tpr_at_50 ?_; wn
+    refine WP.aluImm tpr_at_54 ?_; wn
+    refine WP.aluImm tpr_at_58 ?_; wn
+    refine WP.aluImm tpr_at_5a ?_; wn
+    refine WP.alu tpr_at_5c ?_; wn
     have hSg : Sep s 596 (p + BitVec.ofNat 32 gp) gl := hSp.subR (by omega)
     refine WP.callField (tb := TPM_JF) (out := F + 0x1C) (s := s + BitVec.ofNat 32 272)
       (p := p + BitVec.ofNat 32 gp) (kq := TPR_KV) (n := gl) (kl := 7)
-      pr_at_5e pr_at_62 (by decide) (by decide) (by decide) (E.code hO2).pm.fieldC
+      tpr_at_5e tpr_at_62 (by decide) (by decide) (by decide) (E.code hO2).pm.fieldC
       (by (try rsimp); rw [ev_add, hsp]) (by (try rsimp); (try simp only [ev0]); rw [hsp]; exact t1)
-      (by (try rsimp); simp only [hsp, pr_or, pr_sll8, pr_sll16]; rw [pr_s5, pr_w]; exact hW)
+      (by (try rsimp); simp only [hsp, tpr_or, tpr_sll8, tpr_sll16]; rw [tpr_s5, tpr_w]; exact hW)
       (by (try rsimp); (try rfl); (try decide)) (by (try rsimp); (try simp only [ev0]); (try rfl))
       (by (try rsimp); rw [hsp]; exact (E.sp 272 (by decide)).symm)
       (aligned_add E.hal (k := 272) (by decide)) (aligned_add E.halF (k := 0x1C) (by decide))
@@ -739,16 +736,16 @@ theorem pr_body {M0 : Word → BitVec 8} {s out p F : Word} {n : Nat} {g0 g : Fi
     have hO3 : Out M1 M3 s 568 :=
       hO2.trans ((Out.upK rfl hOb (by decide)).trans (Out.upK (c := 560) (E.Fc 0x1C).symm hFR.out (by decide)))
     refine WP.zero fun hz3 => ?_
-    refine WP.lw pr_at_66 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0x1C) (by decide)) ?_; wn
+    refine WP.lw tpr_at_66 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0x1C) (by decide)) ?_; wn
     rcases hof : objField (memBytes M0 (p + BitVec.ofNat 32 gp) gl) (ascii!"version") with e | ⟨vp, vl⟩ <;>
       rw [hof] at hFR <;> simp only [fieldRes, Except.map] at hFR <;> (try dsimp only)
     · obtain ⟨-, t5, t6⟩ := hFR
-      refine WP.branch pr_at_68 (fun _ => ?_) (fun eb => ?_) <;> wn
+      refine WP.branch tpr_at_68 (fun _ => ?_) (fun eb => ?_) <;> wn
       rotate_left
       · exfalso; (try rsimp at eb); rw [hsp, t5] at eb; exact absurd eb (by decide)
-      refine WP.lbu pr_at_8c ?_; wn
-      refine WP.jal pr_at_90 (by decide) ?_; wn
-      exact pr_c8 E hO3 (by (try rsimp); (try rw [ev_mv hz]); exact h10) (by (try rsimp); exact hsp)
+      refine WP.lbu tpr_at_8c ?_; wn
+      refine WP.jal tpr_at_90 (by decide) ?_; wn
+      exact tpr_c8 E hO3 (by (try rsimp); (try rw [ev_mv hz]); exact h10) (by (try rsimp); exact hsp)
         (by (try rsimp); rw [hsp, ri_ze, show F + 0x20 = F + 0x1C + 4 by rw [BitVec.add_assoc]; rfl]; exact t6)
         (by (try rsimp); (try exact hz)) (by keepz E.hz0)
     · obtain ⟨-, t5, t6⟩ := hFR
@@ -758,14 +755,14 @@ theorem pr_body {M0 : Word → BitVec 8} {s out p F : Word} {n : Nat} {g0 g : Fi
         rw [show F + 0x20 = F + 0x1C + 4 by rw [BitVec.add_assoc]; rfl]; exact t6
       have hq1 := nx_q0 (p := p + BitVec.ofNat 32 gp) (by rw [htp]; omega) (n := gl) (pos := vp) (by rw [htp]; omega)
         hv.1
-      refine WP.branch pr_at_68 (fun eb => ?_) (fun _ => ?_) <;> wn
+      refine WP.branch tpr_at_68 (fun eb => ?_) (fun _ => ?_) <;> wn
       · exfalso; (try rsimp at eb); rw [hsp, t5, hq1] at eb; exact absurd eb (by decide)
-      refine WP.lw pr_at_6a (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0x20) (by decide)) ?_; wn
-      refine WP.aluImm pr_at_6c ?_; wn
+      refine WP.lw tpr_at_6a (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0x20) (by decide)) ?_; wn
+      refine WP.aluImm tpr_at_6c ?_; wn
       have hSv : Sep s 596 (p + BitVec.ofNat 32 gp + BitVec.ofNat 32 vp) vl := by
         rw [add_ofNat_assoc]; exact hSp.subR (by omega)
       refine WP.callU64 (out := F + 8) (s := s + BitVec.ofNat 32 500) (p := p + BitVec.ofNat 32 gp + BitVec.ofNat 32 vp)
-        (n := vl) pr_at_6e pr_at_72 (by decide) (by decide) (E.code hO3).u64 (E.code hO3).aad
+        (n := vl) tpr_at_6e tpr_at_72 (by decide) (by decide) (E.code hO3).u64 (E.code hO3).aad
         (by (try rsimp); rw [ev_add, hsp]) (by (try rsimp); rw [hsp]; exact t5) (by (try rsimp); rw [hsp]; exact t6')
         (by (try rsimp); rw [hsp]; exact (E.sp 500 (by decide)).symm) (by omega)
         (aligned_add E.hal (k := 500) (by decide)) (aligned_add E.halF (k := 8) (by decide)) (E.wS (by decide))
@@ -784,25 +781,25 @@ theorem pr_body {M0 : Word → BitVec 8} {s out p F : Word} {n : Nat} {g0 g : Fi
       have hO4 : Out M1 M4 s 568 :=
         hO3.trans ((Out.upK rfl hOc (by decide)).trans (Out.upK (c := 540) (E.Fc 8).symm hU.outside (by decide)))
       refine WP.zero fun hz4 => ?_
-      refine WP.lbu pr_at_76 ?_; wn
+      refine WP.lbu tpr_at_76 ?_; wn
       rcases hu : u64Val (memBytes M0 (p + BitVec.ofNat 32 gp + BitVec.ofNat 32 vp) vl) with _ | v <;>
         rw [hu] at hU <;> (try dsimp only)
       · obtain ⟨-, u1, u2⟩ := hU
-        refine WP.branch pr_at_7a (fun eb => ?_) (fun _ => ?_) <;> wn
+        refine WP.branch tpr_at_7a (fun eb => ?_) (fun _ => ?_) <;> wn
         · exfalso; (try rsimp at eb); rw [hsp, u1] at eb; exact absurd eb (by decide)
-        refine WP.lbu pr_at_7c ?_; wn
-        refine WP.jal pr_at_80 (by decide) ?_; wn
+        refine WP.lbu tpr_at_7c ?_; wn
+        refine WP.jal tpr_at_80 (by decide) ?_; wn
         simp only [prRes, Except.map]
-        exact pr_c8 E hO4 (by (try rsimp); (try rw [ev_mv hz]); exact h10) (by (try rsimp); exact hsp)
+        exact tpr_c8 E hO4 (by (try rsimp); (try rw [ev_mv hz]); exact h10) (by (try rsimp); exact hsp)
           (by (try rsimp); rw [hsp, ri_ze, show F + 9 = F + 8 + 1 by rw [BitVec.add_assoc]; rfl]; exact u2)
           (by (try rsimp); (try exact hz)) (by keepz E.hz0)
       · obtain ⟨-, u1, u2⟩ := hU
-        refine WP.branch pr_at_7a (fun _ => ?_) (fun eb => ?_) <;> wn
+        refine WP.branch tpr_at_7a (fun _ => ?_) (fun eb => ?_) <;> wn
         rotate_left
         · exfalso; (try rsimp at eb); rw [hsp, u1] at eb; exact absurd eb (by decide)
-        refine WP.lw pr_at_92 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0x10) (by decide)) ?_; wn
-        refine WP.lw pr_at_94 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0x14) (by decide)) ?_; wn
-        refine WP.alu pr_at_96 ?_; wn
+        refine WP.lw tpr_at_92 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0x10) (by decide)) ?_; wn
+        refine WP.lw tpr_at_94 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0x14) (by decide)) ?_; wn
+        refine WP.alu tpr_at_96 ?_; wn
         have u2' : (memLoad32 M4 (F + 20)).toNat * 2 ^ 32 + (memLoad32 M4 (F + 16)).toNat = v := by
           rw [show F + 20 = F + 8 + 12 by rw [BitVec.add_assoc]; rfl, show F + 16 = F + 8 + 8 by rw [BitVec.add_assoc]; rfl]
           exact u2
@@ -813,24 +810,81 @@ theorem pr_body {M0 : Word → BitVec 8} {s out p F : Word} {n : Nat} {g0 g : Fi
           have e2 : (memLoad32 M4 (F + 20)).toNat = 0 := by omega
           have l1 : memLoad32 M4 (F + 16) = 0 := BitVec.eq_of_toNat_eq (by rw [e1]; rfl)
           have l2 : memLoad32 M4 (F + 20) = 0 := BitVec.eq_of_toNat_eq (by rw [e2]; rfl)
-          refine WP.branch pr_at_9a (fun _ => ?_) (fun eb => ?_) <;> wn
+          refine WP.branch tpr_at_9a (fun _ => ?_) (fun eb => ?_) <;> wn
           rotate_left
-          · exfalso; (try rsimp at eb); (try simp only [pr_or] at eb); rw [hsp, l1, l2] at eb
+          · exfalso; (try rsimp at eb); (try simp only [tpr_or] at eb); rw [hsp, l1, l2] at eb
             exact absurd eb (by decide)
-          refine WP.aluImm pr_at_c4 ?_; wn
-          exact pr_c8 E hO4 (by (try rsimp); (try rw [ev_mv hz]); exact h10) (by (try rsimp); exact hsp)
+          refine WP.aluImm tpr_at_c4 ?_; wn
+          exact tpr_c8 E hO4 (by (try rsimp); (try rw [ev_mv hz]); exact h10) (by (try rsimp); exact hsp)
             (by (try rsimp); (try simp only [ev0]); (try rfl); (try decide))
             (by (try rsimp); (try exact hz)) (by keepz E.hz0)
         · simp only [hv0, ↓reduceIte, prRes, Except.map]
-          refine WP.branch pr_at_9a (fun eb => ?_) (fun _ => ?_) <;> wn
-          · exfalso; (try rsimp at eb); (try simp only [pr_or] at eb); rw [hsp] at eb
+          refine WP.branch tpr_at_9a (fun eb => ?_) (fun _ => ?_) <;> wn
+          · exfalso; (try rsimp at eb); (try simp only [tpr_or] at eb); rw [hsp] at eb
             have h0 := BitVec.or_eq_zero_iff.mp (beq_iff_eq.mp eb)
             exact hv0 (by rw [← u2', h0.1, h0.2]; rfl)
-          exact pr_9c E hO4 (by (try rsimp); (try rw [ev_mv hz]); exact h10) (by (try rsimp); exact hsp)
+          exact tpr_9c E hO4 (by (try rsimp); (try rw [ev_mv hz]); exact h10) (by (try rsimp); exact hsp)
             (by (try rsimp); rw [hsp]; exact t1) (by (try rsimp); rw [hsp])
-            (by (try rsimp); simp only [hsp, pr_or, pr_sll8, pr_sll16]; exact pr_s5 _ _ _)
+            (by (try rsimp); simp only [hsp, tpr_or, tpr_sll8, tpr_sll16]; exact tpr_s5 _ _ _)
             (by (try rsimp); rw [hsp, show F + 16 = F + 8 + 8 by rw [BitVec.add_assoc]; rfl]; exact t3)
             (by (try rsimp); rw [hsp, show F + 20 = F + 8 + 12 by rw [BitVec.add_assoc]; rfl]; exact t4)
             (by (try rsimp); rw [hsp]) (by (try rsimp); rw [hsp]) hW u2' (by keepz E.hz0)
+
+theorem tpr_wp {M0 : Word → BitVec 8} {s out p : Word} {n : Nat} {g0 : Fin 32 → Word}
+    (hg0 : g0 a0 = out) (hg1 : g0 a1 = p) (hg2 : g0 a2 = BitVec.ofNat 32 n)
+    (hsp : g0 sp = s + BitVec.ofNat 32 596) (hret : g0 ra &&& ~~~1 = g0 ra) (hal : s.toNat % 4 = 0)
+    (hsw : s.toNat + 596 ≤ 0x40000000) (hro : Sep s 596 (BitVec.ofNat 32 roWindowAddress) roWindowSize)
+    (halo : out.toNat % 4 = 0) (how : out.toNat + 24 ≤ 0x40000000) (hso : Sep out 24 s 596) (hc : PrCode M0)
+    (hn : n < 2 ^ 31) (hp0 : p.toNat ≠ 0) (hpn : p.toNat + n < 2 ^ 32) (hSp : Sep s 596 p n) :
+    WP tufParseRootCode TPR (prQ M0 s out g0 (prRes p (prModel (memBytes M0 p n)))) M0 0 g0 := by
+  refine WP.zero fun hz => ?_
+  refine WP.aluImm tpr_at_0 ?_; wn
+  have esp : aluEval .add (g0 sp) 0xFFFFFFC0 = s + BitVec.ofNat 32 532 := by
+    rw [hsp, ev_add, BitVec.add_assoc]; rfl
+  rw [esp]
+  generalize hF : s + BitVec.ofNat 32 532 = F
+  obtain ⟨hO1, hv⟩ := tpr_pro M0 F g0
+  have E : PrEnv M0 (prM1 M0 F g0) s out F g0 :=
+    ⟨hF, hal, hsw, halo, how, hso, hro, hc, Out.upK hF hO1 (by decide), hv,
+      by rw [hsp, ← hF, add_ofNat_assoc], hret, hz⟩
+  refine WP.sw tpr_at_2 (by (try rsimp); exact aligned_add E.halF (k := 0x3C) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw tpr_at_4 (by (try rsimp); exact aligned_add E.halF (k := 0x38) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw tpr_at_6 (by (try rsimp); exact aligned_add E.halF (k := 0x34) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw tpr_at_8 (by (try rsimp); exact aligned_add E.halF (k := 0x30) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw tpr_at_a (by (try rsimp); exact aligned_add E.halF (k := 0x2C) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw tpr_at_c (by (try rsimp); exact aligned_add E.halF (k := 0x28) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw tpr_at_e (by (try rsimp); exact aligned_add E.halF (k := 0x24) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  change WP tufParseRootCode TPR _ (prM1 M0 F g0) 0x10 _
+  exact tpr_body E (by rsimp) (by (try rsimp); exact hg0) (by (try rsimp); exact hg1) (by (try rsimp); exact hg2)
+    (by (try rsimp); (try exact hz)) (by keepz hz) hn hp0 hpn hSp
+
+/-- `tuf::parse_root` from its entry, with `out` in `a0`, the `n`-byte
+document at `p` in `a1` and `a2`, and the stack the 596 bytes below `sp`
+(its own 64-byte frame and the 532 bytes that its callees use). It returns
+to `ra` with `prModel` of the document at `out`: on success the address and
+length of `signed`, then of `signatures`, then the version as two words, low
+word first; otherwise the zero word and the error byte. Memory outside the
+stack and the 24 bytes at `out` is as before, and so is every register
+outside `jClob`. The stack and `out` lie below the code, and the stack is
+apart from the read-only data window, `out`, and the document. -/
+theorem tufParseRoot_correct (m : Machine) {retAddr out s p : Word} {n : Nat}
+    (hc : PrCode m.mem) (hpc : m.pc = TPR) (ha0 : reg m a0 = out) (ha1 : reg m a1 = p)
+    (ha2 : reg m a2 = BitVec.ofNat 32 n) (hsp : reg m sp = s + BitVec.ofNat 32 596) (hra : reg m ra = retAddr)
+    (hret : retAddr &&& ~~~1 = retAddr) (hal : s.toNat % 4 = 0) (hsw : s.toNat + 596 ≤ 0x40000000)
+    (hro : Sep s 596 (BitVec.ofNat 32 roWindowAddress) roWindowSize) (halo : out.toNat % 4 = 0)
+    (how : out.toNat + 24 ≤ 0x40000000) (hso : Sep out 24 s 596) (hn : n < 2 ^ 31) (hp0 : p.toNat ≠ 0)
+    (hpn : p.toNat + n < 2 ^ 32) (hSp : Sep s 596 p n) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ PrRes m.mem m'.mem s out (prRes p (prModel (memBytes m.mem p n))) ∧
+      ∀ r, r ∉ jClob → reg m' r = reg m r := by
+  obtain ⟨m', st, hpc', hR, hfr⟩ := WP.run (tpr_wp ha0 ha1 ha2 hsp (by rw [hra]; exact hret) hal hsw hro
+    halo how hso hc hn hp0 hpn hSp) (by decide) hc.self hpc
+  exact ⟨m', st, hpc'.trans hra, hR, hfr⟩
 
 end C3.RV32
