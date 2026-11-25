@@ -13,7 +13,7 @@ import re
 from svchain import IDENT, Stage, groups, param_key, strip_parens, subst, top_split
 from svseg import canon, strip_exists
 
-GLOBAL = ('F', 'hret', 'hO', 'M0')
+GLOBAL = ('FW', 'hret', 'hO', 'M0')
 HEAD_EXTRA = ('E0', 'V0', 's0', 'fM')
 
 
@@ -23,7 +23,7 @@ class Loop:
         st = self.st = Stage(sfile, sname)
         src = self.src = open(f'C3BootProofs/Proofs/{sfile}.lean').read()
         i = src.index(f'theorem {sname} ')
-        header = src[i + len(f'theorem {sname} '):src.index('(F : ', i)].strip()
+        header = src[i + len(f'theorem {sname} '):src.index('(FW : ', i)].strip()
         self.binders = []
         for g in groups(header, '{', '}'):
             names, ty = g.rsplit(' : ', 1)

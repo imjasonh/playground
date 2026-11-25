@@ -496,3 +496,7 @@ import C3BootProofs.Proofs.SvWin6n
 import C3BootProofs.Proofs.SvWin7e
 import C3BootProofs.Proofs.SvWin7n
 import C3BootProofs.Proofs.SvOk
+import C3BootProofs.Proofs.SvISearch
+import C3BootProofs.Proofs.SvTSearch
+import C3BootProofs.Proofs.SvCSearch
+import C3BootProofs.Proofs.SvNSearch

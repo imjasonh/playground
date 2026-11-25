@@ -164,7 +164,7 @@ def main(fname, c):
     ch = Chain(lambda x: None)
     _, names1, pats1, _ = ch.call(st, {p: a for (p, _), a in zip(st.params, args)})
     proofs = ch.proofs
-    ov = {'F': 'F', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
+    ov = {'FW': 'FW', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
     for p, _ in L.per:
         ov[p] = p
     ov.update({p: v[2] for p, v in fixed_in.items()})
@@ -284,7 +284,7 @@ def main(fname, c):
     O("    ∃ n', Steps n0 n' ∧")
     O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
     named = " ".join(f"({b} := {b})" for n, _ in groups_ for b in n)
-    O(f"  rcases {NAME} {named} F hret hO M0 N hN {' '.join(hn)} {' '.join(per_names)} {' '.join(p for p, _ in xextra)} with e | "
+    O(f"  rcases {NAME} {named} FW hret hO M0 N hN {' '.join(hn)} {' '.join(per_names)} {' '.join(p for p, _ in xextra)} with e | "
       f"⟨k, {', '.join(ps)}, chn, nk, cs, hr3, hr4, hkl, okh⟩")
     O("  · exact .inl e")
     iv = [f"iv{j}" for j in range(len(invs))]
@@ -313,7 +313,7 @@ def main(fname, c):
         out.extend(stmt)
         rest = [p for p, _ in head if p not in pick['hyps']] + per_names + [p for p, _ in xextra]
         hyps = " ".join(f"({h} := {v})" for h, v in pick['hyps'].items())
-        O(f"  rcases {NAME}_st ({b} := {pick['value']}) {hyps} {named} F hret hO M0 hN {' '.join(rest)} with e | h")
+        O(f"  rcases {NAME}_st ({b} := {pick['value']}) {hyps} {named} FW hret hO M0 hN {' '.join(rest)} with e | h")
         O("  · exact .inl e")
         O("  · exact .inr ⟨_, h⟩")
         O("")

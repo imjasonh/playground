@@ -3,7 +3,6 @@ import C3BootProofs.Proofs.Boot
 import C3BootProofs.Proofs.BootSpec
 import C3BootProofs.Proofs.SvAttrLoop
 import C3BootProofs.Proofs.SvCLoop
-import C3BootProofs.Proofs.SvCSearch
 import C3BootProofs.Proofs.SvCg
 import C3BootProofs.Proofs.SvCgLoop
 import C3BootProofs.Proofs.SvCk2
@@ -24,14 +23,12 @@ import C3BootProofs.Proofs.SvExtListLink
 import C3BootProofs.Proofs.SvExtLoop
 import C3BootProofs.Proofs.SvFail2
 import C3BootProofs.Proofs.SvILoop
-import C3BootProofs.Proofs.SvISearch
 import C3BootProofs.Proofs.SvLeafH
 import C3BootProofs.Proofs.SvLeafH1
 import C3BootProofs.Proofs.SvLeafH2
 import C3BootProofs.Proofs.SvLeafH3
 import C3BootProofs.Proofs.SvLeafHash
 import C3BootProofs.Proofs.SvLeafLink
-import C3BootProofs.Proofs.SvNSearch
 import C3BootProofs.Proofs.SvPvWitness
 import C3BootProofs.Proofs.SvSegAttr
 import C3BootProofs.Proofs.SvSegAttrPre
@@ -58,7 +55,6 @@ import C3BootProofs.Proofs.SvSha
 import C3BootProofs.Proofs.SvSpec
 import C3BootProofs.Proofs.SvSpecAux
 import C3BootProofs.Proofs.SvTLoop
-import C3BootProofs.Proofs.SvTSearch
 import C3BootProofs.Proofs.SvTop
 import C3BootProofs.Proofs.SvTp
 import C3BootProofs.Proofs.SvTs

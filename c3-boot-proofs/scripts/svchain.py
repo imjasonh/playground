@@ -136,7 +136,7 @@ class Stage:
         j = s.index(':= by\n', i)
         st = s[i:j]
         self.name = name
-        hdr_end = st.index('(F : ') if '(F : ' in st else st.index('\n')
+        hdr_end = st.index('(FW : ') if '(FW : ' in st else st.index('\n')
         self.binders = []
         for g in groups(st[:hdr_end], '{', '}'):
             names, ty = g.rsplit(' : ', 1)

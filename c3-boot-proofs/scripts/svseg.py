@@ -809,7 +809,7 @@ class Segment:
 
         for idx, (kind, st) in enumerate(self.items):
             k = ch.k
-            ov = {'F': 'F', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': f'E{k}', 'V0': f'V{k}', 's0': f's{k}',
+            ov = {'FW': 'FW', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': f'E{k}', 'V0': f'V{k}', 's0': f's{k}',
                   'fM': f'fR{k}'}
             if kind == 'merge':
                 self.merge(ch, st, ov, P)

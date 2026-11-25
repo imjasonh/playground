@@ -38,7 +38,7 @@ def main():
         else:
             pats.append({'ST': 's1', 'E': 'E1', 'V': 'V1', 'FR': 'fR1'}.get(f.key, fname(f.key, 1)))
     pat = {f.key: p for f, p in zip([f for f in st.facts if f.key != 'STEPS'], pats[2:])}
-    hyps = [g for g in groups(stmt[stmt.index('(F : '):stmt.index('\n    SvErrRet B out v n0 ∨')])]
+    hyps = [g for g in groups(stmt[stmt.index('(FW : '):stmt.index('\n    SvErrRet B out v n0 ∨')])]
     names = [g.split(' : ', 1)[0].strip() for g in hyps]
 
     out = []

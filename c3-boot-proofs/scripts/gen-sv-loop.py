@@ -108,7 +108,7 @@ def write(fname):
     _, names1, pats1, _ = ch.call(st, {p: a for (p, _), a in zip(st.params, args)})
     O(f"    rcases {sname} {L.named()} {' '.join(args)} with {st.errpat} | ⟨{', '.join(names1 + pats1)}⟩")
     O("    · exact .inl e")
-    ov = {'F': 'F', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
+    ov = {'FW': 'FW', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
     for p, _ in L.per:
         ov[p] = p
     a2, _, _, _ = ch.call(st, ov)
@@ -212,7 +212,7 @@ def exit_form(O, name, L, efile, ename, endp):
     open(f'/tmp/{name}_st.stmt', 'w').write(stmt)
     h1 = [f"{p}'" for p in hn]
     fixed_names = list(dict.fromkeys(b for g in L.fixed for b in g[1:g.rindex(' : ')].split()))
-    O(f"  rcases {name} {' '.join(f'({b} := {b})' for b in fixed_names)} F hret hO M0 N {' '.join(hn)} H with e | "
+    O(f"  rcases {name} {' '.join(f'({b} := {b})' for b in fixed_names)} FW hret hO M0 N {' '.join(hn)} H with e | "
       f"⟨n1, {', '.join(ps)}, cs, e0, {'hsc, ' if per else ''}hr3, hr4, hkl, "
       f"{', '.join(h1)}⟩")
     O("  · exact .inl e")
@@ -258,7 +258,7 @@ def run_form(O, name, L, efile, ename, endp, cnt, ptr, slice_hyp):
         O(line)
     F = f"({L.step})"
     T = " × ".join(["Word"] * n)
-    O(f"  refine {name}_st (N := {cnt}.toNat) F hret hO M0 ?_ {' '.join(hn)} ?_ {' '.join(x for x in extra if x != endp)}")
+    O(f"  refine {name}_st (N := {cnt}.toNat) FW hret hO M0 ?_ {' '.join(hn)} ?_ {' '.join(x for x in extra if x != endp)}")
     dec = f"svIter_dec1 (F := {F}) (fun s : {T} => {proj(j_cnt)}) (fun s => rfl)"
     inc = f"svIter_add (F := {F}) (fun s : {T} => {proj(j_ptr)}) (d := 1) (fun s => rfl)"
     O(f"  · intro {' '.join(ps)} e")
@@ -311,7 +311,7 @@ def run4_form(O, name, L, efile, ename, endp, ptr, size, end):
     for line in stmt[i_colon:]:
         O(line)
     O(f"  have fit := slice.fit")
-    O(f"  refine {name}_st {' '.join(f'({b} := {b})' for b in fixed_names)} (N := N) F hret hO M0 ?_ {' '.join(hn)} ?_ "
+    O(f"  refine {name}_st {' '.join(f'({b} := {b})' for b in fixed_names)} (N := N) FW hret hO M0 ?_ {' '.join(hn)} ?_ "
       f"{' '.join(x for x in extra if x != endp)}")
     O(f"  · intro {' '.join(ps)} e")
     O(f"    have h1 := congrArg (fun s => {proj(j_ptr)}) e")

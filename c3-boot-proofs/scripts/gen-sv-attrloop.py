@@ -76,7 +76,7 @@ def main():
     tl = re.search(r"\.ok (\w+)$", canon(strip_exists(dict(proofs)[tl_pf]))).group(1)
     tl_local = names1[names1.index(tl_pf) - 1]
     flag_pf = next(nm for nm, piece in proofs if "tsav_w78" in piece and " ∨ " in piece)
-    ov = {'F': 'F', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
+    ov = {'FW': 'FW', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
     for p, _ in L.per:
         ov[p] = p
     ov['cr_in'] = f"((cr_in).restW {tl_pf})"
@@ -200,7 +200,7 @@ def main():
       ("" if not X.sc_parts else "\n      " + " ∧ ".join(subst(x, pr) for x in X.sc_parts) + " ∧"))
     O("    ∃ n', Steps n0 n' ∧")
     O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
-    O(f"  rcases {NAME} F hret hO M0 N hN hflag {' '.join(hn)} {' '.join(per_names)} with e | "
+    O(f"  rcases {NAME} FW hret hO M0 N hN hflag {' '.join(hn)} {' '.join(per_names)} with e | "
       f"⟨k, {', '.join(ps)}, chn, nk, cs, hr3, hr4, hkl, okh⟩")
     O("  · exact .inl e")
     iv = [f"iv{j}" for j in range(len(invs))]

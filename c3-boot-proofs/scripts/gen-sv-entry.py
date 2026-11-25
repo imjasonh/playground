@@ -59,7 +59,7 @@ def main():
         names, ty = g.rsplit(' : ', 1)
         binders += [(b, ty) for b in names.split()]
     hyps = []
-    for g in groups(stmt[stmt.index('(F : '):stmt.index('\n    SvErrRet B out v n0 ∨')]):
+    for g in groups(stmt[stmt.index('(FW : '):stmt.index('\n    SvErrRet B out v n0 ∨')]):
         p, t = g.split(' : ', 1)
         hyps.append((p.strip(), t.strip()))
     # Frame binders: a word, byte, or range of the frame at 0x72 that names a binder.
