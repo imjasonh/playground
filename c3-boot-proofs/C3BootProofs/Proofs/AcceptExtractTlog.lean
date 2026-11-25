@@ -451,7 +451,7 @@ theorem acetl_push2 (O : X.Ok) (A : AceAt X n0 0xEBA fp0) (I : AceTlogInv X n0 f
   have hfh := A.fr.hi
   have hbw := O.lay.hi
   unfold acBufLen at hbw
-  have hE' : 0x350 ≤ E ∧ E + 0x20 ≤ 0x550 := by omega
+  have hE' : 0x350 ≤ E ∧ E + 0x20 ≤ 0x550 := ⟨by omega, by omega⟩
   have ad : ∀ i : Nat, f a4 + BitVec.ofNat 32 i = acSlot X.B (E + i) := fun i => by
     rw [h14, acetl_slot4 X.B rfl]
   have al : ∀ i, i % 4 = 0 → i ≤ 0x1C → (acSlot X.B (E + i)).toNat % 4 = 0 := fun i h1 h2 =>
