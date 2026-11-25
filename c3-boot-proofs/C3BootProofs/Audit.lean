@@ -202,11 +202,39 @@ import C3BootProofs.Proofs.JsonParseItem
 import C3BootProofs.Proofs.JsonParseOuter
 import C3BootProofs.Proofs.JsonParseEnd
 import C3BootProofs.Proofs.JsonParse
+import C3BootProofs.Proofs.TufExpires
+import C3BootProofs.Proofs.TufPemSpki
+import C3BootProofs.Proofs.TufParseMetadataHead
+import C3BootProofs.Proofs.TufParseRoot
+import C3BootProofs.Proofs.TufRoleKeysRead
+import C3BootProofs.Proofs.TrustedRootDecode
+import C3BootProofs.Proofs.TrustedRootValidFor
+import C3BootProofs.Proofs.TrustedRootReadChainAt
+import C3BootProofs.Proofs.TrustedRootReadChainCalls
+import C3BootProofs.Proofs.TrustedRootReadChainCtx
+import C3BootProofs.Proofs.TrustedRootReadChainDer
+import C3BootProofs.Proofs.TrustedRootReadChainFrame
+import C3BootProofs.Proofs.TrustedRootReadChainKey
+import C3BootProofs.Proofs.TrustedRootReadChainKeySeg
+import C3BootProofs.Proofs.TrustedRootReadChainModel
+import C3BootProofs.Proofs.TrustedRootReadChainParse
+import C3BootProofs.Proofs.TrustedRootReadChainParseTop
+import C3BootProofs.Proofs.TrustedRootReadChainRec
+import C3BootProofs.Proofs.TrustedRootReadChainLoop
+import C3BootProofs.Proofs.TrustedRootReadChainFin
+import C3BootProofs.Proofs.TrustedRootReadChainHead
+import C3BootProofs.Proofs.TrustedRootReadChain
+import C3BootProofs.Proofs.TrustedRootLift
+import C3BootProofs.Proofs.TrustedRootLiftCert
+import C3BootProofs.Proofs.TrustedRootLiftChain
 import C3BootProofs.Models.JsonLinkWalk
 import C3BootProofs.Models.JsonLinkValue
 import C3BootProofs.Models.JsonLinkParse
 import C3BootProofs.Models.JsonLinkUnique
 import C3BootProofs.Models.JsonLinkCanon
+import C3BootProofs.Models.TufLink
+import C3BootProofs.Models.TufLinkMeta
+import C3BootProofs.Models.TufLinkKeys
 
 /-!
 # Audit
@@ -9012,6 +9040,51 @@ end C3
 /-- info: 'C3.Json.objGet_val' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.objGet_val
 
+/-- info: 'C3.RV32.tufExpires_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufExpires_correct
+
+/-- info: 'C3.RV32.tufPemSpki_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufPemSpki_correct
+
+/-- info: 'C3.Json.pemSpkiModel_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.pemSpkiModel_sound
+
+/-- info: 'C3.Json.pemSpkiModel_complete' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.pemSpkiModel_complete
+
+/-- info: 'C3.Json.pemSpkiModel_p256' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.pemSpkiModel_p256
+
+/-- info: 'C3.Json.pemSpkiModel_p384' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.pemSpkiModel_p384
+
+/-- info: 'C3.RV32.tufParseMetadata_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufParseMetadata_correct
+
+/-- info: 'C3.RV32.tufParseRoot_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufParseRoot_correct
+
+/-- info: 'C3.RV32.tufRoleKeysRead_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysRead_correct
+
+/-- info: 'C3.RV32.trustedRootDecode_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.trustedRootDecode_correct
+
+/-- info: 'C3.RV32.trustedRootValidFor_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.trustedRootValidFor_correct
+
+/-- info: 'C3.RV32.trustedRootReadChain_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.trustedRootReadChain_correct
+/-- info: 'C3.RV32.validForPos_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.validForPos_spec
+/-- info: 'C3.RV32.trustedRootValidFor_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.trustedRootValidFor_spec
+/-- info: 'C3.RV32.rcParse_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.rcParse_spec
+/-- info: 'C3.RV32.readChainPos_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.readChainPos_spec
+/-- info: 'C3.RV32.trustedRootReadChain_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.trustedRootReadChain_spec
 /-- info: 'C3.Json.Members' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.Members
 
@@ -9054,3 +9127,21 @@ end C3
 
 /-- info: 'C3.Json.CanonEncode' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.CanonEncode
+
+/-- info: 'C3.Json.expiresModel_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.expiresModel_spec
+
+/-- info: 'C3.Json.pemSpkiModel_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.pemSpkiModel_spec
+
+/-- info: 'C3.Json.pmModel_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.pmModel_spec
+
+/-- info: 'C3.Json.prModel_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.prModel_spec
+
+/-- info: 'C3.Json.rkModel_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.rkModel_spec
+
+/-- info: 'C3.Json.thresholdMet_roleKeys' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.thresholdMet_roleKeys
