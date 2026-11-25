@@ -576,6 +576,7 @@ import C3BootProofs.Proofs.AcceptIndexSpec
 import C3BootProofs.Proofs.AcceptIndexLib
 import C3BootProofs.Proofs.AcceptIndexHead
 import C3BootProofs.Proofs.AcceptIndexHdr
+import C3BootProofs.Proofs.AcceptIndexSetup
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
