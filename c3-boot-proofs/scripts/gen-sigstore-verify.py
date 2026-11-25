@@ -1846,10 +1846,11 @@ class Gen:
                 self.emit("    all_goals (try simp only [BitVec.reduceMul, BitVec.zero_add])")
             if any(tokens(t)[1] == ".sll" for t in ins if tokens(t)[0] == ".aluImm"):
                 self.emit("    all_goals (try simp only [BitVec.reduceToNat, Nat.reduceMod, BitVec.reduceHShiftLeft])")
-            if any(op in lean_val(v) for op in ("&&&", "|||", "^^^")):
+            if any(op in lean_val(v) for op in ("&&&", "|||", "^^^")) or any(
+                    int(x, 16) >= 2**31 for x in re.findall(r"BitVec\.ofNat 32 (0x[0-9A-F]+)", lean_val(v))):
                 # `simp` leaves the immediates as `OfNat` literals, and the
                 # kernel's check that they equal `BitVec.ofNat` unfolds the
-                # bitwise operation on the symbolic operand without end.
+                # operation on the symbolic operand without end.
                 self.emit("    all_goals (try simp only [BitVec.ofNat_eq_ofNat])")
             self.emit(f"    all_goals first | with_reducible rfl | sv_addr | decide")
             new[r] = v
@@ -4844,7 +4845,7 @@ def stage_l8a():
     g.store(0x8EE, "sw")
     g.block(0x8F2, 0x8FA)
     stmt, proof = finish(g, 0x8FA, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 26, 27],
-                         set(range(0x54, 0x80, 4)) | set(range(0x80, 0x12C, 4)), set(g.bytes))
+                         set(range(0x30, 0x80, 4)) | set(range(0x80, 0x12C, 4)), set(g.bytes))
     info = {"name": "sv_l8a", "title": "the parsed leaf",
             "doc": "From 0x86A to the intermediates loop at 0x8FA: `sigstore::verify` copies the leaf's fields, "
             "with `r` and `s`, into its `Leaf` at offset 0x80 of the frame.",
@@ -4855,48 +4856,46 @@ def stage_l8a():
 
 def i_start(g):
     regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
-            19: ("U", "bp"), 27: ("S", 0xA20), 9: ("U", "x9"), 21: ("U", "x21"), 25: ("U", "il"), 26: ("U", "x26"),
-            20: ("U", "c")}
+            19: ("U", "bp"), 9: ("U", "x9"), 20: ("U", "x20"), 21: ("U", "x21"), 22: ("U", "x22"),
+            24: ("U", "x24"), 26: ("U", "x26"), 8: ("U", "c"), 23: ("U", "q")}
     words = {e: f"w{e:x}" for e in I_KEEP}
-    words.update({0x5C: "ip", 0x7C: "q"})
+    words.update({0x68: "ip", 0x64: "il"})
     params = start(g, regs, words, {})
     # The leaf's signature, `r` then `s`, as `sv_l8a` copied it.
-    g.bytes[0xD0] = "BitVec.ofNat 8 (sr.getD 0 0)"
-    g.ranges[0xD1] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")
-    g.ranges[0x100] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
-    params += [f"(b0_d0 : n0.mem ({fa(0xD0)}) = BitVec.ofNat 8 (sr.getD 0 0))",
-               "(q0_d1 : ∀ j, j < 47 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xD1 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0))",
-               "(q0_100 : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x100 + j)) = BitVec.ofNat 8 (ss.getD j 0))"]
+    g.bytes[0xC8] = "BitVec.ofNat 8 (sr.getD 0 0)"
+    g.ranges[0xC9] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")
+    g.ranges[0xF8] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
+    params += [f"(b0_c8 : n0.mem ({fa(0xC8)}) = BitVec.ofNat 8 (sr.getD 0 0))",
+               "(q0_c9 : ∀ j, j < 47 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xC9 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0))",
+               "(q0_f8 : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xF8 + j)) = BitVec.ofNat 8 (ss.getD j 0))"]
     return params
 
 
-I_KEEP = set(range(0x24, 0xD0, 4)) | {0x130}
-I_BINDERS = ("{B out bp x9 x21 x26 il c q ip subj slen : Word} "
-             + "{" + " ".join(f"w{e:x}" for e in sorted(I_KEEP) if e not in (0x5C, 0x7C))
+I_KEEP = set(range(0x30, 0xC8, 4)) | {0x128}
+I_REGS = [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 26]
+I_BINDERS = ("{B out bp x9 x20 x21 x22 x24 x26 c q ip il subj slen : Word} "
+             + "{" + " ".join(f"w{e:x}" for e in sorted(I_KEEP) if e not in (0x64, 0x68))
              + " : Word} {sr ss : Bytes} {v : Nat → Word} {n0 : Machine}")
 
 
 def i_entry(g):
-    """From 0xAE2 to the comparison at 0xB06, for an entry with a subject."""
-    g.branch(0xAE2, True, f"by rw [g{g.k}_20, s{g.k}.zero]; exact br_bne_t hc")
-    g.load(0xAEA, "lw")
-    g.load_mem(0xAEC, "subj", "hsubj", "es_in", "a_subj")
+    """From 0x8FA to the comparison at 0x912, for an entry with a subject."""
+    g.branch(0x8FA, False, f"by rw [g{g.k}_8, s{g.k}.zero]; exact br_beq_f hc")
+    g.load_mem(0x8FE, "subj", "hsubj", "es_in", "a_subj")
     hz = f"hz_{g.k}"
 
     def null(sub):
-        sub.branch(0xAF0, False, f"by rw [g{sub.k}_22, s{sub.k}.zero]; exact br_bne_f (Decidable.of_not_not {hz})")
-        sub.jump(0xAF4)
-        sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_2a82")
+        sub.branch(0x902, True, f"by rw [g{sub.k}_25, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not {hz})")
+        sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_1388")
     g.prop_check("subj ≠ 0", hz, null)
     g.pinned.add(hz)
     g.s_in = f"(s_in {hz})"
-    g.branch(0xAF0, True, f"by rw [g{g.k}_22, s{g.k}.zero]; exact br_bne_t {hz}")
-    g.load(0xAF8, "lw")
-    g.load_mem(0xAFA, "slen", "hslen", "el_in", "a_slen")
-    g.block(0xAFE, 0xB02)
-    g.load(0xB02, "lw")
-    g.block(0xB04, 0xB06)
-    return g.seqeq(0xB06, "subj", "slen.toNat", "ip", "il.toNat", f"(.inl {g.s_in})", "(.inl i_in)",
+    g.branch(0x902, False, f"by rw [g{g.k}_25, s{g.k}.zero]; exact br_beq_f {hz}")
+    g.load_mem(0x906, "slen", "hslen", "el_in", "a_slen")
+    g.block(0x90A, 0x90E)
+    g.load(0x90E, "lw")
+    g.load(0x910, "lw")
+    return g.seqeq(0x912, "subj", "slen.toNat", "ip", "il.toNat", f"(.inl {g.s_in})", "(.inl i_in)",
                    f"(by rw [g{g.k}_13, ofNat_toNat_self])", f"(by rw [g{g.k}_11, ofNat_toNat_self])")
 
 
@@ -4909,21 +4908,19 @@ I_EQ = "memBytes M0 subj slen.toNat = memBytes M0 ip il.toNat"
 
 
 def stage_imiss():
-    """One pass of the intermediates loop, from 0xAE2 back to it, for an entry
+    """One pass of the intermediates loop, from 0x8FA back to it, for an entry
     whose subject isn't the leaf's issuer."""
     g = Gen("Imiss")
     params = i_start(g) + I_PARAMS + [f"(hm : ¬ {I_EQ})"]
     ke = i_entry(g)
     g.set_a0(ke, 0, "ite_eq_right hm")
-    g.block(0xB0E, 0xB10)
-    g.block(0xB10, 0xB14)
-    g.store(0xB14, "sw")
-    g.branch(0xB16, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    stmt, proof = finish(g, 0xAE2, [2, 3, 4, 9, 18, 19, 20, 21, 25, 26, 27], I_KEEP, {0xD0})
+    g.block(0x91A, 0x920)
+    g.branch(0x920, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    stmt, proof = finish(g, 0x8FA, I_REGS, I_KEEP, {0xC8})
     info = {"name": "sv_imiss", "title": "an intermediate that didn't issue the leaf",
-            "doc": "One pass of the intermediates loop, from 0xAE2 back to it, for a listed intermediate whose "
+            "doc": "One pass of the intermediates loop, from 0x8FA back to it, for a listed intermediate whose "
             "subject isn't the leaf's issuer.",
-            "params": params, "stmt": stmt, "proof": proof, "binders": I_BINDERS, "start": 0xAE2,
+            "params": params, "stmt": stmt, "proof": proof, "binders": I_BINDERS, "start": 0x8FA,
             "import": "C3BootProofs.Proofs.SvFail"}
     return g, info
 
@@ -4934,21 +4931,20 @@ def stage_ihit():
     params = i_start(g) + I_PARAMS + [f"(hm : {I_EQ})"]
     ke = i_entry(g)
     g.set_a0(ke, 1, "ite_eq_left hm")
-    g.block(0xB0E, 0xB10)
-    g.block(0xB10, 0xB14)
-    g.store(0xB14, "sw")
-    g.branch(0xB16, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    g.load(0xB18, "lw")
-    g.block(0xB1A, 0xB20)
-    kn = g.sne(0xB20, "ip", "il.toNat", "subj", "slen.toNat", "(.inl i_in)", f"(.inl {g.s_in})",
+    g.block(0x91A, 0x920)
+    g.branch(0x920, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.load(0x922, "lw")
+    g.load(0x924, "lw")
+    g.block(0x926, 0x92A)
+    kn = g.sne(0x92A, "ip", "il.toNat", "subj", "slen.toNat", "(.inl i_in)", f"(.inl {g.s_in})",
                f"(by rw [g{g.k}_11, ofNat_toNat_self])", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
     g.set_a0(kn, 0, "ite_eq_left hm.symm")
-    g.branch(0xB28, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    stmt, proof = finish(g, 0xB56, [2, 3, 4, 8, 9, 18, 19, 21, 22, 23, 25, 26, 27], I_KEEP, {0xD0})
+    g.branch(0x932, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    stmt, proof = finish(g, 0x95C, I_REGS + [25, 27], I_KEEP, {0xC8})
     info = {"name": "sv_ihit", "title": "the intermediate that issued the leaf",
-            "doc": "The intermediates loop's end, from 0xAE2 to 0xB56, at a listed intermediate whose subject is the "
+            "doc": "The intermediates loop's end, from 0x8FA to 0x95C, at a listed intermediate whose subject is the "
             "leaf's issuer.",
-            "params": params, "stmt": stmt, "proof": proof, "binders": I_BINDERS, "start": 0xAE2,
+            "params": params, "stmt": stmt, "proof": proof, "binders": I_BINDERS, "start": 0x8FA,
             "import": "C3BootProofs.Proofs.SvFail"}
     return g, info
 
@@ -4960,16 +4956,15 @@ def stage_iend():
     hz = "hf"
 
     def none(sub):
-        sub.branch(0xAE2, False, f"by rw [g{sub.k}_20, s{sub.k}.zero]; exact br_bne_f hc")
-        sub.jump(0xAE6)
-        sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_2a82")
+        sub.branch(0x8FA, True, f"by rw [g{sub.k}_8, s{sub.k}.zero]; exact br_beq_t hc")
+        sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_1388")
     g.prop_check("False", hz, none)
-    stmt, _ = finish(g, 0xAE2, [2], set(), set())
+    stmt, _ = finish(g, 0x8FA, [2], set(), set())
     g.emit("  exact hf.elim")
     info = {"name": "sv_iend", "title": "no intermediate left",
-            "doc": "The intermediates loop at 0xAE2 with no entries left: no listed intermediate issued the leaf, "
+            "doc": "The intermediates loop at 0x8FA after the last entry: no listed intermediate issued the leaf, "
             "and `sigstore::verify` fails.",
-            "params": params, "stmt": stmt, "proof": "", "binders": I_BINDERS, "start": 0xAE2,
+            "params": params, "stmt": stmt, "proof": "", "binders": I_BINDERS, "start": 0x8FA,
             "import": "C3BootProofs.Proofs.SvFail"}
     return g, info
 

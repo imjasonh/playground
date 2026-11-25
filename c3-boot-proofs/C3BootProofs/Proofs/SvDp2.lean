@@ -1483,6 +1483,7 @@ theorem sv_dp2 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
   have g19_10 : reg n19 a0 = BitVec.ofNat 32 0xFFFFFFFF := by
     rw [rb19]; simp +decide only [runBlock, BInstr.run, svDp26f2, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g18_2, g18_3, g18_4, g18_9, g18_10, g18_18, g18_19, g18_20, g18_21, g18_22, g18_23, g18_24, g18_25, g18_27, s18.zero])
+    all_goals (try simp only [BitVec.ofNat_eq_ofNat])
     all_goals first | with_reducible rfl | sv_addr | decide
   have keep_kk19 : SvKeepL B n0.mem n19.mem [] := by rw [m19]; exact keep_kk18
   clear keep_kk18

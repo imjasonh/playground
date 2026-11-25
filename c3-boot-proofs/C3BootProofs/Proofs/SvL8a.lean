@@ -119,6 +119,15 @@ theorem sv_l8a {B out bp tbp dg rootp ll kp tbl sl0 sl1 sl2 sl3 sl4 sl5 sl6 sl7 
         reg n' (24 : Fin 32) = kp ∧
         reg n' (26 : Fin 32) = sl0 ∧
         reg n' (27 : Fin 32) = tbl ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = sl9 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x34) = sl7 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x38) = sl5 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x3C) = sl3 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x40) = sl1 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x44) = sl8 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x48) = sl6 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x4C) = sl4 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = sl2 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
@@ -3090,6 +3099,6 @@ theorem sv_l8a {B out bp tbp dg rootp ll kp tbl sl0 sl1 sl2 sl3 sl4 sl5 sl6 sl7 
   have q46_170 : ∀ j, j < 47 → n46.mem (B + 0x21A0 + BitVec.ofNat 32 (0x170 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0) := fun j hj => by rw [m46]; exact q45_170 j hj
   have q46_19f : ∀ j, j < 48 → n46.mem (B + 0x21A0 + BitVec.ofNat 32 (0x19F + j)) = BitVec.ofNat 8 (ss.getD j 0) := fun j hj => by rw [m46]; exact q45_19f j hj
   clear q45_19f q45_170 q45_f8 q45_c9 w45_128 b45_c8 w45_c4 w45_c0 w45_bc w45_b8 w45_b4 w45_b0 w45_ac w45_a8 w45_a4 w45_a0 w45_9c w45_98 w45_94 w45_90 w45_8c w45_88 w45_84 w45_80 w45_7c w45_78 w45_74 w45_70 w45_6c w45_68 w45_64 w45_60 w45_5c w45_58 w45_54 w45_50 w45_4c w45_48 w45_44 w45_40 w45_3c w45_38 w45_34 w45_30 g45_27 g45_26 g45_24 g45_22 g45_21 g45_20 g45_19 g45_18 g45_10 g45_9 g45_8 g45_4 g45_3 g45_2 V45 E45 fR45 t45 rg45 W45 K45 fr45 s45 d45
-  exact .inr ⟨n46, t46, s46, E46, V46, fR46, g46_2, g46_3, g46_4, g46_8, g46_9, g46_18, g46_19, g46_20, g46_21, g46_22, g46_23, g46_24, g46_26, g46_27, w46_54, w46_58, w46_5c, w46_60, w46_64, w46_68, w46_6c, w46_70, w46_74, w46_78, w46_7c, w46_80, w46_84, w46_88, w46_8c, w46_90, w46_94, w46_98, w46_9c, w46_a0, w46_a4, w46_a8, w46_ac, w46_b0, w46_b4, w46_b8, w46_bc, w46_c0, w46_c4, w46_128, b46_c8, q46_c9, q46_f8, q46_170, q46_19f, keep_kk46.mono (by decide)⟩
+  exact .inr ⟨n46, t46, s46, E46, V46, fR46, g46_2, g46_3, g46_4, g46_8, g46_9, g46_18, g46_19, g46_20, g46_21, g46_22, g46_23, g46_24, g46_26, g46_27, w46_30, w46_34, w46_38, w46_3c, w46_40, w46_44, w46_48, w46_4c, w46_50, w46_54, w46_58, w46_5c, w46_60, w46_64, w46_68, w46_6c, w46_70, w46_74, w46_78, w46_7c, w46_80, w46_84, w46_88, w46_8c, w46_90, w46_94, w46_98, w46_9c, w46_a0, w46_a4, w46_a8, w46_ac, w46_b0, w46_b4, w46_b8, w46_bc, w46_c0, w46_c4, w46_128, b46_c8, q46_c9, q46_f8, q46_170, q46_19f, keep_kk46.mono (by decide)⟩
 
 end C3.RV32.Sv
