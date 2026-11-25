@@ -2055,8 +2055,8 @@ class Gen:
         to offset `dst` of the frame."""
         k = self.k = self.k + 1
         self.emit(f"  -- 0x{off:X}: memcpy from the bundle")
-        self.emit(f"  obtain ⟨n{k}, P{k}, K{k}, X{k}⟩ := sv_mcIn (c := 0x{dst:X}) (N := 0x{N:X}) F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x}")
-        self.emit(f"    (by decide) (by decide) g{k-1}_2 {self.reg_is(k-1, 10, dst)} g{k-1}_11 g{k-1}_12 (by decide) {inp}")
+        self.emit(f"  obtain ⟨n{k}, P{k}, K{k}, X{k}⟩ := sv_mcRo2 (c := 0x{dst:X}) (N := 0x{N:X}) F RS E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x}")
+        self.emit(f"    (by decide) (by decide) g{k-1}_2 {self.reg_is(k-1, 10, dst)} g{k-1}_11 g{k-1}_12 (by decide) (.inl {inp})")
         self.emit(f"  have s{k} := P{k}.st")
         self.emit(f"  have fr{k} := P{k}.fr")
         self.common(k, f"P{k}.steps", f"fr{k}", f"V{k-1}.keep K{k} (by decide)")
@@ -2064,7 +2064,7 @@ class Gen:
         self.keep_frame(k, ("K", dst, N), {}, {})
         tmpl = f"M0 (({p}) + BitVec.ofNat 32 j)"
         self.emit(f"  have q{k}_{dst:x} : ∀ j, j < {N} → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{dst:X} + j)) = {tmpl} :=")
-        self.emit(f"    fun j hj => (X{k} j hj).trans (fR{k-1} _ ({inp}.r hj))")
+        self.emit(f"    fun j hj => (X{k} j hj).trans (fR{k-1} _ (SvRo2.r RS (.inl {inp}) hj))")
         self.ranges[dst] = (N, tmpl)
         self.end_step()
 
@@ -2123,7 +2123,7 @@ class Gen:
         k = self.k = self.k + 1
         self.call_head(k, off, "sv_updF", f"(hc := 0x420) (nl := {nl}) (msg := {msg})",
                        [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"H{k}", f"fr{k}"])
-        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) KS RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    F E{k-1} (S2.sv FW RS fR{k-1}) RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
         self.emit(f"    {self.reg_is(k - 1, 10, 0x420)} g{k-1}_11 g{k-1}_12 (by decide) (by decide) {inp} H{kh} {hn}")
         pre = [x for x in bl + [bound] if x]
         self.emit(f"    (by {'; '.join(pre) + '; ' if pre else ''}simp only [List.length_append, List.length_nil, memBytes_length]; omega)")
@@ -2144,7 +2144,7 @@ class Gen:
         k = self.k = self.k + 1
         self.call_head(k, off, "sv_b64eF", f"(hc := 0x420) (nl := {nl}) (msg := {msg})",
                        [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"H{k}", f"fr{k}"])
-        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) (RK0.sv F fR{k-1}) KS RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    F E{k-1} (S2.sv FW RS fR{k-1}) (RK0.sv FW fR{k-1}) RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
         self.emit(f"    g{k-1}_10 {ha1} {self.reg_is(k - 1, 12, 0x420)} (by decide) (by decide) {inp} H{kh}")
         pre = [x for x in bl + [bound] if x]
         self.emit(f"    (by {'; '.join(pre) + '; ' if pre else ''}simp only [List.length_append, List.length_nil, memBytes_length]; omega)")
@@ -2167,7 +2167,7 @@ class Gen:
         k = self.k = self.k + 1
         self.call_head(k, off, "sv_finF", f"(hc := 0x420) (oc := 0x{oc:X}) (msg := {msg})",
                        [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"D{k}", f"fr{k}"])
-        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) (RK0.sv F fR{k-1}) KS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    F E{k-1} (S2.sv FW RS fR{k-1}) (RK0.sv FW fR{k-1}) RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
         self.emit(f"    {self.reg_is(k - 1, 10, oc)} {self.reg_is(k - 1, 11, 0x420)} (by decide) (by decide) H{kh}")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
@@ -2179,16 +2179,16 @@ class Gen:
         self.digest = (k, oc, f"sha256 ({msg})")
 
     def rfi(self, off, pp, np, inp, ha7):
-        """`merkle::root_from_inclusion` with the digest at 0x1380 as the leaf
+        """`merkle::root_from_inclusion` with the digest at 0x400 as the leaf
         hash and the result at 0x420; returns k and the spec's value."""
         kd, ocd, lh = self.digest
-        assert ocd == 0x1380 and kd == self.k
+        assert ocd == 0x400 and kd == self.k
         k = self.k = self.k + 1
         a = [lean_val(self.regs[r]) for r in (11, 12, 13, 14)]
-        self.call_head(k, off, "sv_rfiF", f"(oc := 0x420) (lc := 0x1380) (np := {np})",
+        self.call_head(k, off, "sv_rfiF", f"(oc := 0x420) (lc := 0x400) (np := {np})",
                        [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"R{k}", f"fr{k}"])
-        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) (RK0.sv F fR{k-1}) KS RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
-        self.emit(f"    {self.reg_is(k - 1, 10, 0x420)} {self.reg_is(k - 1, 15, 0x1380)} g{k-1}_16 {ha7} (by decide) (by decide) {inp}")
+        self.emit(f"    F E{k-1} (S2.sv FW RS fR{k-1}) (RK0.sv FW fR{k-1}) RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, 0x420)} {self.reg_is(k - 1, 15, 0x400)} g{k-1}_16 {ha7} (by decide) (by decide) {inp}")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [g{k-1}_11, g{k-1}_12, g{k-1}_13, g{k-1}_14, D{kd}, sv_mbRo2 RS fR{k-1} {inp}] at R{k}")
         self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
@@ -2700,7 +2700,8 @@ class Gen:
         if exit_lemma == "sv_panic_1908":
             self.emit(f"  exact .inl ⟨({why_not}), Panics.of_steps t{k} (sv_panic_1908 F E{k} s{k} g{k}_2)⟩")
             return
-        self.emit(f"  exact .inl ⟨({why_not}), {exit_lemma} F E{k} s{k} t{k} (fun x hx => (fR{k} x hx).trans (fM x hx).symm) V{k} hret g{k}_2 g{k}_18 hO g{k}_3 g{k}_4⟩")
+        extra = f" (by rw [g{k}_10]; decide)" if exit_lemma == "sv_fail_138e" else ""
+        self.emit(f"  exact .inl ⟨({why_not}), {exit_lemma} F E{k} s{k} t{k} (fun x hx => (fR{k} x hx).trans (fM x hx).symm) V{k} hret g{k}_2 g{k}_18 hO g{k}_3 g{k}_4{extra}⟩")
 
     # --- calls through SvDer ----------------------------------------------------
 
@@ -7708,65 +7709,88 @@ def stage_csx():
     return g, info
 
 
+RK_BINDERS = ("{B out bp x20 x21 x22 x23 x24 x25 x26 x27 kp w1c w40 q w64 w74 : Word} {rt : Bytes} "
+              "{v : Nat → Word} {n0 : Machine}")
+
+
+def cr_start(g, regs=None, words=None):
+    """After the checkpoint's signature at 0x17F8: the checkpoint's key id at
+    0x34, its log id at `q`, its size in words 0x64 and 0x74, its root's
+    first byte in word 0x20 and the rest at 0x3E0."""
+    r = t_regs0()
+    r.update({k: ("U", v) for k, v in (regs or {}).items()})
+    w = {0x34: "kp", 0x1C: "w1c", 0x40: "w40", 0x4C: "q", 0x64: "w64", 0x74: "w74",
+         0x20: "(BitVec.ofNat 8 (rt.getD 0 0)).zeroExtend 32"}
+    w.update(words or {})
+    params = start(g, r, w, {})
+    g.ranges[0x3E0] = (31, "BitVec.ofNat 8 (rt.getD (1 + j) 0)")
+    params.append("(q0_3e0 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x3E0 + j)) = "
+                  "BitVec.ofNat 8 (rt.getD (1 + j) 0))")
+    return params
+
+
 def stage_cr1(eqhi):
-    """From the checkpoint's signature at 0x2F5A to 0x300E: the checkpoint's
-    fields go to offset 0x1020, and the entry's index is below the size."""
+    """From 0x17F8 to 0x189A: the checkpoint's fields go to offset 0x380, and
+    the entry's index is below the checkpoint's size."""
     g = Gen("Cr1" + ("e" if eqhi else "n"))
     g.generic_alu = True
-    params = cs_start(g)
-    params += ["(lid_in : SvIn B (q + BitVec.ofNat 32 0x5) 19)", "(h80 : w80 ≠ 0)",
+    params = cr_start(g)
+    params += ["(RS : SvRoSep B)", "(lid_in : SvIn B (q + BitVec.ofNat 32 0x5) 19)", "(h40 : w40 ≠ 0)",
                "(hlih : memLoad32 M0 (bp + 0x2C) = lih)", "(hlil : memLoad32 M0 (bp + 0x28) = lil)",
                "(lih_in : SvIn B (bp + 0x2C) 4)", "(lil_in : SvIn B (bp + 0x28) 4)",
                "(a_lih : (bp + 0x2C).toNat % 4 = 0)", "(a_lil : (bp + 0x28).toNat % 4 = 0)",
-               f"(hhi : lih {'=' if eqhi else '≠'} w70)"]
-    g.block(0x2F5A, 0x2F62)
-    g.mcIn(0x2F62, 0x240, lean_val(g.regs[11]), 0x13, "lid_in")
-    g.block(0x2F6A, 0x2F76)
-    g.mc(0x2F76, 0x1320, 0x320, 0x1F)
-    g.load(0x2F7E, "lw")
-    g.branch(0x2F80, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_t h80")
-    g.block(0x2F86, 0x2F92)
-    g.mc(0x2F92, 0x1025, 0x240, 0x13)
-    g.load(0x2F9A, "lw")
-    g.block(0x2F9C, 0x2FA0)
-    g.store(0x2FA0, "sw")
-    g.load(0x2FA2, "lw")
-    g.store(0x2FA4, "sw")
-    g.load(0x2FA6, "lw")
-    g.store(0x2FA8, "sb")
-    g.block(0x2FAC, 0x2FBE)
-    g.mc(0x2FBE, 0x1049, 0x1320, 0x1F)
-    g.load_mem(0x2FC6, "lih", "hlih", "lih_in", "a_lih")
-    g.load_mem(0x2FCA, "lil", "hlil", "lil_in", "a_lil")
-    g.load(0x2FCE, "lw")
-    g.store(0x2FD0, "sw")
-    g.store(0x2FD2, "sb")
-    g.load(0x2FD6, "lw")
-    g.store(0x2FD8, "sw")
-    g.load(0x2FDA, "lw")
-    g.store(0x2FDC, "sw")
+               f"(hhi : lih {'=' if eqhi else '≠'} w74)"]
+    g.load(0x17F8, "lw")
+    g.block(0x17FA, 0x1800)
+    g.mcIn(0x1800, 0x27C, lean_val(g.regs[11]), 0x13, "lid_in")
+    g.block(0x1808, 0x180E)
+    g.mc(0x180E, 0x25C, 0x3E0, 0x1F)
+    g.load(0x1816, "lw")
+    g.branch(0x1818, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f h40")
+    g.block(0x181A, 0x1822)
+    g.mc(0x1822, 0x385, 0x27C, 0x13)
+    g.load(0x182A, "lw")
+    g.store(0x182C, "sw")
+    g.load(0x1830, "lw")
+    g.store(0x1832, "sw")
+    g.load(0x1836, "lw")
+    g.store(0x1838, "sb")
+    g.block(0x183C, 0x1844)
+    g.mc(0x1844, 0x3A9, 0x25C, 0x1F)
+    g.load_mem(0x184C, "lih", "hlih", "lih_in", "a_lih")
+    g.load_mem(0x1850, "lil", "hlil", "lil_in", "a_lil")
+    g.load(0x1854, "lw")
+    g.block(0x1856, 0x1858)
+    g.store(0x1858, "sw")
+    g.store(0x185A, "sb")
+    g.load(0x185E, "lw")
+    g.store(0x1860, "sw")
+    g.load(0x1862, "lw")
+    g.store(0x1864, "sw")
     if eqhi:
-        g.branch(0x2FDE, True, f"by rw [g{g.k}_23, g{g.k}_10]; exact br_beq_t hhi")
-        g.load(0x3004, "lw")
-        g.block(0x3006, 0x300A)
+        g.branch(0x1866, True, f"by rw [g{g.k}_24, g{g.k}_10]; exact br_beq_t hhi")
+        g.load(0x1890, "lw")
+        g.block(0x1892, 0x1896)
     else:
-        g.branch(0x2FDE, False, f"by rw [g{g.k}_23, g{g.k}_10]; exact br_beq_f hhi")
-        g.load(0x2FE2, "lw")
-        g.block(0x2FE4, 0x2FE8)
-        g.jump(0x2FE8)
+        g.branch(0x1866, False, f"by rw [g{g.k}_24, g{g.k}_10]; exact br_beq_f hhi")
+        g.load(0x186A, "lw")
+        g.block(0x186C, 0x1870)
+        g.jump(0x1870)
     lt = lean_val(g.regs[10])
 
     def big(sub):
-        sub.branch(0x300A, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hidx)")
-        sub.fail(sub.fail_proof(("prop", "hidx")), "sv_fail_3122")
+        sub.branch(0x1896, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hidx)")
+        sub.block(0x19A2, 0x19A8)
+        sub.jump(0x19A8)
+        sub.fail(sub.fail_proof(("prop", "hidx")), "sv_fail_138e")
     g.prop_check(f"{lt} ≠ 0", "hidx", big)
-    g.branch(0x300A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hidx")
-    stmt, proof = finish(g, 0x300E, sorted(set(CL_KEEP_REGS + [8, 23])), set(g.words), set(g.bytes))
+    g.branch(0x1896, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hidx")
+    stmt, proof = finish(g, 0x189A, sorted(set(CL_KEEP_REGS)), set(g.words), set(g.bytes))
     info = {"name": "sv_cr1" + ("e" if eqhi else "n"), "title": "the entry's index against the checkpoint's size",
-            "doc": "From the checkpoint's signature at 0x2F5A to 0x300E: the checkpoint's log, size, and root go to "
-            "offset 0x1020, and the entry's 64-bit index is below the size.",
-            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS.replace("op ol : Word}", "op ol lih lil : Word}"),
-            "start": 0x2F5A, "import": "C3BootProofs.Proofs.SvRk"}
+            "doc": "From 0x17F8 to 0x189A: the checkpoint's key id, log id, size, and root go to offset 0x380, "
+            "and the entry's 64-bit index is below the size.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": RK_BINDERS.replace("w74 : Word}", "w74 lih lil : Word}"),
+            "start": 0x17F8, "import": "C3BootProofs.Proofs.SvRk"}
     return g, info
 
 

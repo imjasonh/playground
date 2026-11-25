@@ -14,8 +14,6 @@ import C3BootProofs.Proofs.SvConstsLink
 import C3BootProofs.Proofs.SvCosigLink
 import C3BootProofs.Proofs.SvCosigLoop
 import C3BootProofs.Proofs.SvCr1
-import C3BootProofs.Proofs.SvCr1e
-import C3BootProofs.Proofs.SvCr1n
 import C3BootProofs.Proofs.SvD
 import C3BootProofs.Proofs.SvDbc2m
 import C3BootProofs.Proofs.SvEdImage
@@ -36,7 +34,6 @@ import C3BootProofs.Proofs.SvLeafLink
 import C3BootProofs.Proofs.SvNSearch
 import C3BootProofs.Proofs.SvOk
 import C3BootProofs.Proofs.SvPvWitness
-import C3BootProofs.Proofs.SvRk
 import C3BootProofs.Proofs.SvRl
 import C3BootProofs.Proofs.SvRm
 import C3BootProofs.Proofs.SvSegAttr
