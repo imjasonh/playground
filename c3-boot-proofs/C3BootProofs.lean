@@ -583,6 +583,7 @@ import C3BootProofs.Proofs.AcceptTargetsRd
 import C3BootProofs.Proofs.AcceptTargetsDoc
 import C3BootProofs.Proofs.AcceptTargetsBody
 import C3BootProofs.Proofs.AcceptTargetsFld
+import C3BootProofs.Proofs.AcceptTargetsTex
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
