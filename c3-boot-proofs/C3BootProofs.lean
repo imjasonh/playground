@@ -448,3 +448,5 @@ import C3BootProofs.Proofs.SvCkpt
 import C3BootProofs.Proofs.SvCk1
 import C3BootProofs.Proofs.SvCk2a
 import C3BootProofs.Proofs.SvCk2b
+import C3BootProofs.Proofs.SvCkd
+import C3BootProofs.Proofs.SvCke
