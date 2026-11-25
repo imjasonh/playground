@@ -145,4 +145,70 @@ theorem acb_f2 {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {
         have := h8.sub (c := 4) (l := 4) (by decide); rwa [acSlot, add_ofNat_assoc] at this
       rw [m7, memStore32_get_sep (acb_sub0 h8 (by decide)), m4, memStore32_get_sep h38, fr2 x hx, m1]
 
+/-- One `lw rd sp k` from the frame slot `acSlot B c`. -/
+theorem acb_lws {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {L : Nat} {n0 n : Machine}
+    (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) {o o' c : Nat} {k : Word} {rd : Fin 32}
+    (s : St n.mem AC n o (reg n)) (hend : blockEnd bootMainClosure0Code o [.lw rd sp k] = some o')
+    (hk : (0x3A50 : Word) + k = BitVec.ofNat 32 (0x3A50 + c)) (hc : 0x3A50 + c ≤ 0x5A70) (h4 : c % 4 = 0)
+    (hrd : rd.val ∉ [0, 2, 3, 4]) :
+    ∃ n1, Steps n n1 ∧ AcbK B n0 n1 ∧ St n1.mem AC n1 o' (reg n1) ∧ n1.mem = n.mem ∧
+      reg n1 rd = memLoad32 n.mem (acSlot B c) ∧ ∀ x, x ≠ rd → reg n1 x = reg n x := by
+  have hz := s.zero
+  have e : reg n sp + k = acSlot B c := by rw [K.sp]; exact acb_sl B hk
+  obtain ⟨n1, c1, K1, s1, m1, r1, k1⟩ := acb_blk K s (G.code K) [.lw rd sp k] hend
+    (by simp only [BlockOk, BInstr.ok, and_true]; rw [e]; exact acb_al G.Y.fr _ hc (by omega))
+    (by simp only [runBlock, BInstr.run])
+    (by simp only [List.filterMap, BInstr.dst, List.mem_singleton]; rintro x rfl; exact hrd)
+  refine ⟨n1, c1, K1, s1, m1, ?_, fun x hx => k1 x ?_⟩
+  · rw [r1]; simp only [runBlock, BInstr.run]; rw [upd_same (fun h => hrd (by simp [h])), e]
+  · simp only [List.filterMap, BInstr.dst, List.mem_singleton]; exact hx
+
+/-- The leaf certificate's arguments. -/
+def acbA1 : List BInstr :=
+  [.aluImm .add a0 sp 0x350, .aluImm .add a1 sp 0x7FF, .aluImm .add a1 a1 0x5D1, .aluImm .add a2 x0 0x1,
+   .lui a3 0x1000]
+
+set_option maxRecDepth 100000 in
+theorem acbA1_end : blockEnd bootMainClosure0Code 0x1892 acbA1 = some 0x18A0 := by decide
+
+set_option maxRecDepth 100000 in
+theorem acb_lw18b0 : blockEnd bootMainClosure0Code 0x18B0 [.lw 23 sp 0x354] = some 0x18B4 := by decide
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 1000000 in
+/-- The leaf certificate and the image signature, from 0x1892 to 0x18DC. -/
+theorem acb_s1 {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {L l1 l2 : Nat} {n0 n : Machine}
+    (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) (s : St n.mem AC n 0x1892 (reg n))
+    (R : AcbRd B Bf L 6 n.mem) (h6 : 6 ≤ L)
+    (hl1 : (memLoad32 n0.mem (Bf + BitVec.ofNat 32 6)).toNat = l1)
+    (hl2 : (memLoad32 n0.mem (Bf + BitVec.ofNat 32 (10 + l1))).toNat = l2) :
+    AcbOr B n0 n (fun n' => St n'.mem AC n' 0x18DC (reg n') ∧ reg n' 26 = Bf + BitVec.ofNat 32 10 ∧
+      (reg n' 23).toNat = l1 ∧ memLoad32 n'.mem (acSlot B 0x38) = Bf + BitVec.ofNat 32 (14 + l1) ∧
+      (memLoad32 n'.mem (acSlot B 0x34)).toNat = l2 ∧ 1 ≤ l1 ∧ l1 ≤ 0x1000 ∧ 8 ≤ l2 ∧ l2 ≤ 0x48 ∧
+      14 + l1 + l2 ≤ L ∧ AcbRd B Bf L (14 + l1 + l2) n'.mem) := by
+  have hz := s.zero
+  refine acb_bind (acb_fld (lo := 1) (hi := 0x1000) (o' := 0x18B0) G K s R h6 acbA1 acbA1_end
+    (by simp only [BlockOk, BInstr.ok, acbA1, and_self]) (by simp only [runBlock, BInstr.run, acbA1])
+    (by decide) (by simp only [acbA1]; acb_rg; rw [K.sp]; exact acb_sl B (by decide))
+    (by simp only [acbA1]; acb_rg; rw [K.sp, acb_dd0]) (by simp only [acbA1]; acb_rg)
+    (by simp only [acbA1]; acb_rg) ac_at_18a0 ac_at_18a4 (by decide) (by decide) ac_at_18a8 (by decide)
+    ac_at_18ac (by decide) (by decide) (by decide)) ?_
+  rintro n1 K1 ⟨s1, -, r26, w1, b1, lo1, hi1, R1, -⟩
+  rw [hl1] at b1 lo1 hi1 R1
+  obtain ⟨n2, c2, K2, s2, m2, r2, k2⟩ := acb_lws G K1 s1 acb_lw18b0 (c := 0x354) (by decide) (by decide)
+    (by decide) (by decide)
+  have R2 : AcbRd B Bf L (6 + 4 + l1) n2.mem := by rw [m2]; exact R1
+  refine acb_pre c2 (acb_map (acb_f2 G K2 s2 R2 (by omega)) ?_)
+  rintro n3 ⟨s3, rk3, p3, w3, b3, lo3, hi3, R3, -⟩
+  have e10 : 6 + 4 + l1 = 10 + l1 := by omega
+  rw [e10, hl2] at b3 lo3 hi3 R3
+  rw [e10] at p3
+  refine ⟨s3, ?_, ?_, ?_, ?_, by simpa using lo1, by simpa using hi1, by simpa using lo3, by simpa using hi3,
+    by omega, ?_⟩
+  · rw [rk3 26 (by decide), k2 26 (by decide)]; exact r26
+  · rw [rk3 23 (by decide), r2, w1, hl1]
+  · rw [p3]; congr 2; omega
+  · rw [w3, hl2]
+  · rw [show 14 + l1 + l2 = 10 + l1 + 4 + l2 by omega]; exact R3
+
 end C3.RV32.Ac
