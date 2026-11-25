@@ -1116,7 +1116,7 @@ theorem sv_cmdn {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 k
     have b19_400 : n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x400) = (1 : BitVec 8) := by rw [m19]; exact b18_400
     have q19_1fc : ∀ j, j < 63 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m19]; exact q18_1fc j hj
     clear q18_1fc b18_400 b18_14 w18_50 w18_48 w18_44 w18_38 w18_34 w18_30 w18_2c w18_28 w18_24 w18_18 w18_10 w18_c w18_8 g18_25 g18_27 g18_26 g18_24 g18_23 g18_22 g18_21 g18_20 g18_19 g18_18 g18_10 g18_9 g18_8 g18_4 g18_3 g18_2 V18 E18 fR18 t18 fr18 rb18 s18 m18 u18 c18
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hf h0'), sv_fail_1882 F E19 s19 t19 (fun x hx => (fR19 x hx).trans (fM x hx).symm) V19 hret g19_2 g19_18 hO g19_3 g19_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hf h0'), sv_fail_1882 F E19 s19 t19 (fun x hx => (fR19 x hx).trans (fM x hx).symm) V19 hret g19_2 g19_18 hO g19_3 g19_4 (by rw [g19_25]; sv_code)⟩
   exact hf.elim
 
 

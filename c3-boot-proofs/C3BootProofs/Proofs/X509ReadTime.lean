@@ -370,6 +370,20 @@ theorem readTimeErr_tlvOk {b : Nat} {L : Bytes} {t : DerTlv} (hb : b = 0x17 ∨ 
 theorem xrt_ofNat8 (b : BitVec 8) : BitVec.ofNat 8 b.toNat = b :=
   BitVec.eq_of_toNat_eq (by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt b.isLt])
 
+theorem xrt_derErrByte_lt (e : DerError) : (derErrByte e).toNat < 0x27 := by
+  cases e <;> decide
+
+theorem xrt_readTimeErr_lt (L : Bytes) : readTimeErr L < 0x27 := by
+  unfold readTimeErr
+  repeat' split
+  all_goals first | decide | exact xrt_derErrByte_lt _
+
+/-- The byte `x509::read_time` writes on failure is below 0x27, the end of
+the closure's rejection table. -/
+theorem xrt_errByte_lt (L : Bytes) : (BitVec.ofNat 8 (readTimeErr L)).toNat < 0x27 := by
+  rw [BitVec.toNat_ofNat]
+  exact Nat.lt_of_le_of_lt (Nat.mod_le _ _) (xrt_readTimeErr_lt L)
+
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 16000000 in
 /-- **The compiled `x509::read_time`**: with a DER reader at `d` over the

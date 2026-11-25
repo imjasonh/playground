@@ -1705,7 +1705,7 @@ theorem sv_cmx {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b29_400 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x400) = (0 : BitVec 8) := by rw [m29]; exact b28_400
     have q29_1fc : ∀ j, j < 63 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m29]; exact q28_1fc j hj
     clear q28_1fc b28_400 b28_14 w28_420 w28_404 w28_50 w28_48 w28_44 w28_38 w28_34 w28_30 w28_2c w28_28 w28_24 w28_18 w28_10 w28_c w28_8 g28_25 g28_27 g28_26 g28_24 g28_23 g28_22 g28_21 g28_20 g28_19 g28_18 g28_12 g28_11 g28_10 g28_9 g28_8 g28_4 g28_3 g28_2 V28 E28 fR28 t28 fr28 rb28 s28 m28 u28 c28
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hf h0'), sv_fail_1882 F E29 s29 t29 (fun x hx => (fR29 x hx).trans (fM x hx).symm) V29 hret g29_2 g29_18 hO g29_3 g29_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hf h0'), sv_fail_1882 F E29 s29 t29 (fun x hx => (fR29 x hx).trans (fM x hx).symm) V29 hret g29_2 g29_18 hO g29_3 g29_4 (by rw [g29_25]; sv_code)⟩
   exact hf.elim
 
 

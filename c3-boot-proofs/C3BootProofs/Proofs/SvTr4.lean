@@ -388,14 +388,17 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have w7_424 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x424) = 0 := by rw [m7]; exact w6_424
     have b7_420 : n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (0 : BitVec 8) := by rw [m7]; exact b6_420
     clear b6_420 w6_424 w6_32c w6_328 g6_8 g6_27 g6_26 g6_25 g6_24 g6_23 g6_22 g6_21 g6_20 g6_19 g6_18 g6_10 g6_4 g6_3 g6_2 V6 E6 fR6 t6 fr6 rb6 s6 m6 u6 c6
-    exact .inl ⟨(fun ⟨tl2', h0', _⟩ => by rw [hr2] at h0'; cases h0'), sv_fail F E7 s7 t7 (fun x hx => (fR7 x hx).trans (fM x hx).symm) V7 hret g7_2 g7_18 hO g7_3 g7_4⟩
+    exact .inl ⟨(fun ⟨tl2', h0', _⟩ => by rw [hr2] at h0'; cases h0'), sv_fail F E7 s7 t7 (fun x hx => (fR7 x hx).trans (fM x hx).symm) V7 hret g7_2 g7_18 hO g7_3 g7_4 (by rw [g7_8]; sv_code)⟩
   · rw [hr2] at R2
-    obtain ⟨y0_2, -⟩ := R2
+    obtain ⟨y0_2, y1_2⟩ := R2
+    obtain ⟨ec_2, ey_2, hz_c2⟩ : ∃ b : BitVec 8, n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x421) = b ∧ b.toNat < 0x27 :=
+      ⟨_, y1_2, by sv_eb hr2⟩
     have keep_kk2 : SvKeepL B n0.mem n2.mem [(0x420, 0x18), (0x348, 0x8)] := keep_kk1.trans K2
     clear keep_kk1
     have w2_328 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x328) = sdp := (K2.w32 (by decide) (by decide)).trans w1_328
     have w2_32c : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x32C) = sdl := (K2.w32 (by decide) (by decide)).trans w1_32c
     have b2_420 : n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := y0_2
+    have b2_421 : n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x421) = ec_2 := ey_2
     clear w1_34c w1_348 w1_32c w1_328 g1_12 g1_11 g1_10 g1_27 g1_26 g1_25 g1_24 g1_23 g1_22 g1_21 g1_20 g1_19 g1_18 g1_4 g1_3 g1_2 V1 E1 fR1 t1 fr1 rb1 s1 m1 u1 c1 g0_4 g0_3 fR0 t0
     -- 0xCD6: lbu
     obtain ⟨n3, d3, u3⟩ := s2.lbu E2.self sv_at_cd6 (off' := 0xCDA) (by decide)
@@ -427,7 +430,8 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have w3_328 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x328) = sdp := by rw [m3]; exact w2_328
     have w3_32c : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x32C) = sdl := by rw [m3]; exact w2_32c
     have b3_420 : n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := by rw [m3]; exact b2_420
-    clear b2_420 w2_32c w2_328 y0_2
+    have b3_421 : n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x421) = ec_2 := by rw [m3]; exact b2_421
+    clear b2_421 b2_420 w2_32c w2_328 ey_2 y1_2 y0_2
     -- 0xCDA: branch, taken
     obtain ⟨n4, d4, u4⟩ := s3.taken E3.self 0x12A2 sv_at_cda
       (by decide) (by rw [g3_10, s3.zero]; decide)
@@ -457,7 +461,8 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have w4_328 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x328) = sdp := by rw [m4]; exact w3_328
     have w4_32c : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x32C) = sdl := by rw [m4]; exact w3_32c
     have b4_420 : n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := by rw [m4]; exact b3_420
-    clear b3_420 w3_32c w3_328 g3_10 g3_27 g3_26 g3_25 g3_24 g3_23 g3_22 g3_21 g3_20 g3_19 g3_18 g3_4 g3_3 g3_2 V3 E3 fR3 t3 fr3 m3 s3 u3 d3
+    have b4_421 : n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x421) = ec_2 := by rw [m4]; exact b3_421
+    clear b3_421 b3_420 w3_32c w3_328 g3_10 g3_27 g3_26 g3_25 g3_24 g3_23 g3_22 g3_21 g3_20 g3_19 g3_18 g3_4 g3_3 g3_2 V3 E3 fR3 t3 fr3 m3 s3 u3 d3
     -- 0x12A2: lbu
     obtain ⟨n5, d5, u5⟩ := s4.lbu E4.self sv_at_12a2 (off' := 0x12A6) (by decide)
     have s5 : St n5.mem SV n5 0x12A6 (reg n5) := ⟨u5.pc, rfl, fun _ => rfl⟩
@@ -481,12 +486,16 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have g5_25 : reg n5 (25 : Fin 32) = x25 := by rw [u5.regs, upd_ne (by decide) (by decide), g4_25]
     have g5_26 : reg n5 (26 : Fin 32) = x26 := by rw [u5.regs, upd_ne (by decide) (by decide), g4_26]
     have g5_27 : reg n5 (27 : Fin 32) = x27 := by rw [u5.regs, upd_ne (by decide) (by decide), g4_27]
+    have g5_8 : reg n5 (8 : Fin 32) = (ec_2).zeroExtend 32 := by
+      rw [u5.regs]; simp +decide only [upd, ↓reduceIte]
+      rw [g4_2, show B + 0x21A0 + 0x421 = B + 0x21A0 + BitVec.ofNat 32 0x421 by sv_addr, b4_421]
     have keep_kk5 : SvKeepL B n0.mem n5.mem [(0x420, 0x18), (0x348, 0x8)] := by rw [m5]; exact keep_kk4
     clear keep_kk4
     have w5_328 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x328) = sdp := by rw [m5]; exact w4_328
     have w5_32c : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x32C) = sdl := by rw [m5]; exact w4_32c
     have b5_420 : n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := by rw [m5]; exact b4_420
-    clear b4_420 w4_32c w4_328 g4_27 g4_26 g4_25 g4_24 g4_23 g4_22 g4_21 g4_20 g4_19 g4_18 g4_10 g4_4 g4_3 g4_2 V4 E4 fR4 t4 fr4 m4 s4 u4 d4
+    have b5_421 : n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x421) = ec_2 := by rw [m5]; exact b4_421
+    clear b4_421 b4_420 w4_32c w4_328 g4_27 g4_26 g4_25 g4_24 g4_23 g4_22 g4_21 g4_20 g4_19 g4_18 g4_10 g4_4 g4_3 g4_2 V4 E4 fR4 t4 fr4 m4 s4 u4 d4
     -- 0x12A6: j
     obtain ⟨n6, d6, u6⟩ := s5.jump E5.self sv_at_12a6 (off' := 0x7A4) (by decide)
       (by rw [s5.pc]; decide)
@@ -500,6 +509,7 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have g6_2 : reg n6 sp = B + 0x21A0 := by rw [u6.regs, g5_2]
     have g6_3 : reg n6 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [u6.regs, g5_3]
     have g6_4 : reg n6 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [u6.regs, g5_4]
+    have g6_8 : reg n6 (8 : Fin 32) = (ec_2).zeroExtend 32 := by rw [u6.regs, g5_8]
     have g6_10 : reg n6 a0 = ((1 : BitVec 8)).zeroExtend 32 := by rw [u6.regs, g5_10]
     have g6_18 : reg n6 (18 : Fin 32) = out := by rw [u6.regs, g5_18]
     have g6_19 : reg n6 (19 : Fin 32) = bp := by rw [u6.regs, g5_19]
@@ -516,8 +526,9 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have w6_328 : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x328) = sdp := by rw [m6]; exact w5_328
     have w6_32c : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x32C) = sdl := by rw [m6]; exact w5_32c
     have b6_420 : n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := by rw [m6]; exact b5_420
-    clear b5_420 w5_32c w5_328 g5_27 g5_26 g5_25 g5_24 g5_23 g5_22 g5_21 g5_20 g5_19 g5_18 g5_10 g5_4 g5_3 g5_2 V5 E5 fR5 t5 fr5 m5 s5 u5 d5
-    exact .inl ⟨(fun ⟨tl2', h0', _⟩ => by rw [hr2] at h0'; cases h0'), sv_fail F E6 s6 t6 (fun x hx => (fR6 x hx).trans (fM x hx).symm) V6 hret g6_2 g6_18 hO g6_3 g6_4⟩
+    have b6_421 : n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x421) = ec_2 := by rw [m6]; exact b5_421
+    clear b5_421 b5_420 w5_32c w5_328 g5_8 g5_27 g5_26 g5_25 g5_24 g5_23 g5_22 g5_21 g5_20 g5_19 g5_18 g5_10 g5_4 g5_3 g5_2 V5 E5 fR5 t5 fr5 m5 s5 u5 d5
+    exact .inl ⟨(fun ⟨tl2', h0', _⟩ => by rw [hr2] at h0'; cases h0'), sv_fail F E6 s6 t6 (fun x hx => (fR6 x hx).trans (fM x hx).symm) V6 hret g6_2 g6_18 hO g6_3 g6_4 (by rw [g6_8]; sv_code)⟩
   rw [hr2] at R2
   obtain ⟨y0_2, y4_2, y8_2, y12_2, y16_2, y20_2, d8_2, d12_2⟩ := R2
   have keep_kk2 : SvKeepL B n0.mem n2.mem [(0x420, 0x18), (0x348, 0x8)] := keep_kk1.trans K2
@@ -1455,7 +1466,7 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have b21_420 : n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (0 : BitVec 8) := by rw [m21]; exact b20_420
     have b21_434 : n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x434) = BitVec.ofNat 8 tl2.tag := by rw [m21]; exact b20_434
     clear b20_434 b20_420 b20_357 b20_356 b20_355 b20_354 w20_430 w20_42c w20_428 w20_424 w20_35c w20_358 w20_350 w20_34c w20_348 w20_32c w20_328 g20_8 g20_27 g20_26 g20_25 g20_24 g20_23 g20_22 g20_21 g20_20 g20_19 g20_18 g20_15 g20_14 g20_13 g20_12 g20_11 g20_10 g20_4 g20_3 g20_2 V20 E20 fR20 t20 fr20 rb20 s20 m20 u20 c20
-    exact .inl ⟨(fun ⟨tl2', h0', h1', _⟩ => by rw [hr2] at h0'; cases h0'; exact hrest0 h1'), sv_fail F E21 s21 t21 (fun x hx => (fR21 x hx).trans (fM x hx).symm) V21 hret g21_2 g21_18 hO g21_3 g21_4⟩
+    exact .inl ⟨(fun ⟨tl2', h0', h1', _⟩ => by rw [hr2] at h0'; cases h0'; exact hrest0 h1'), sv_fail F E21 s21 t21 (fun x hx => (fR21 x hx).trans (fM x hx).symm) V21 hret g21_2 g21_18 hO g21_3 g21_4 (by rw [g21_8]; sv_code)⟩
   -- 0xD14: branch, not taken
   obtain ⟨n21, d21, u21⟩ := s20.notTaken E20.self 0xD18 sv_at_d14
     (by decide) (by rw [g20_12, s20.zero]; exact br_bne_f hrest0)
@@ -1600,7 +1611,7 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
   have g23_27 : reg n23 (27 : Fin 32) = x27 := by rw [rk23 (27 : Fin 32) (by decide) (by decide), g22_27]
   obtain ⟨r23, hr23⟩ : ∃ r, derContent ((ecp) + BitVec.ofNat 32 tl2.header) (derElement 4 (memBytes M0 ((ecp) + BitVec.ofNat 32 tl2.header) (BitVec.ofNat 32 tl2.len).toNat)) = r := ⟨_, rfl⟩
   rcases r23 with er23 | ⟨vp23, vl23⟩
-  · obtain ⟨z23, -⟩ := Er23 er23 hr23
+  · obtain ⟨z23, ez23⟩ := Er23 er23 hr23
     have keep_kk23 : SvKeepL B n0.mem n23.mem [(0x420, 0x18), (0x348, 0x8), (0x350, 0x4), (0x354, 0x1), (0x355, 0x1), (0x356, 0x1), (0x357, 0x1), (0x358, 0x4), (0x35C, 0x4), (0x420, 0x8), (0x358, 0x8)] := keep_kk22.trans K23
     clear keep_kk22
     have w23_328 : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x328) = sdp := (K23.w32 (by decide) (by decide)).trans w22_328
@@ -1614,6 +1625,7 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have w23_430 : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = BitVec.ofNat 32 (tl2.header + tl2.len) := (K23.w32 (by decide) (by decide)).trans w22_430
     have b23_434 : n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x434) = BitVec.ofNat 8 tl2.tag := (K23.b8 (by decide) (by decide)).trans b22_434
     have w23_420 : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = 0 := z23
+    have b23_424 : n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x424) = derErrByte er23 := ez23
     clear b22_434 b22_420 w22_430 w22_42c w22_428 w22_424 w22_35c w22_358 w22_354 w22_350 w22_34c w22_348 w22_32c w22_328 g22_11 g22_10 g22_27 g22_26 g22_25 g22_24 g22_23 g22_22 g22_21 g22_20 g22_19 g22_18 g22_15 g22_14 g22_13 g22_12 g22_8 g22_4 g22_3 g22_2 V22 E22 fR22 t22 fr22 rb22 s22 m22 u22 c22
     -- 0xD26: lw
     obtain ⟨n24, d24, u24⟩ := s23.lw E23.self sv_at_d26 (off' := 0xD2A) (by decide)
@@ -1654,8 +1666,9 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have w24_428 : memLoad32 n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x428) = BitVec.ofNat 32 tl2.len := by rw [m24]; exact w23_428
     have w24_42c : memLoad32 n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x42C) = ecp := by rw [m24]; exact w23_42c
     have w24_430 : memLoad32 n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = BitVec.ofNat 32 (tl2.header + tl2.len) := by rw [m24]; exact w23_430
+    have b24_424 : n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x424) = derErrByte er23 := by rw [m24]; exact b23_424
     have b24_434 : n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x434) = BitVec.ofNat 8 tl2.tag := by rw [m24]; exact b23_434
-    clear w23_420 b23_434 w23_430 w23_42c w23_428 w23_354 w23_350 w23_34c w23_348 w23_32c w23_328 z23
+    clear b23_424 w23_420 b23_434 w23_430 w23_42c w23_428 w23_354 w23_350 w23_34c w23_348 w23_32c w23_328 ez23 z23
     -- 0xD2A: sw
     obtain ⟨n25, d25, s25, fr25, K25, W25, rg25⟩ := sv_sw F E24 s24 sv_at_d2a (off' := 0xD2C) (c := 0x74)
       (by decide) (by rw [g24_2]; sv_addr) (by decide) (by decide)
@@ -1690,9 +1703,10 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have w25_428 : memLoad32 n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x428) = BitVec.ofNat 32 tl2.len := (K25.w32 (by decide) (by decide)).trans w24_428
     have w25_42c : memLoad32 n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x42C) = ecp := (K25.w32 (by decide) (by decide)).trans w24_42c
     have w25_430 : memLoad32 n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = BitVec.ofNat 32 (tl2.header + tl2.len) := (K25.w32 (by decide) (by decide)).trans w24_430
+    have b25_424 : n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x424) = derErrByte er23 := (K25.b8 (by decide) (by decide)).trans b24_424
     have b25_434 : n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x434) = BitVec.ofNat 8 tl2.tag := (K25.b8 (by decide) (by decide)).trans b24_434
     have w25_74 : memLoad32 n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = 0 := by rw [W25, g24_10]
-    clear b24_434 w24_430 w24_42c w24_428 w24_420 w24_354 w24_350 w24_34c w24_348 w24_32c w24_328 g24_10 g24_27 g24_26 g24_25 g24_24 g24_23 g24_22 g24_21 g24_20 g24_19 g24_18 g24_8 g24_4 g24_3 g24_2 V24 E24 fR24 t24 fr24 m24 s24 u24 d24
+    clear b24_434 b24_424 w24_430 w24_42c w24_428 w24_420 w24_354 w24_350 w24_34c w24_348 w24_32c w24_328 g24_10 g24_27 g24_26 g24_25 g24_24 g24_23 g24_22 g24_21 g24_20 g24_19 g24_18 g24_8 g24_4 g24_3 g24_2 V24 E24 fR24 t24 fr24 m24 s24 u24 d24
     -- 0xD2C: branch, taken
     obtain ⟨n26, d26, u26⟩ := s25.taken E25.self 0x12AA sv_at_d2c
       (by decide) (by rw [g25_10, s25.zero]; rfl)
@@ -1731,8 +1745,9 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have w26_428 : memLoad32 n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x428) = BitVec.ofNat 32 tl2.len := by rw [m26]; exact w25_428
     have w26_42c : memLoad32 n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x42C) = ecp := by rw [m26]; exact w25_42c
     have w26_430 : memLoad32 n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = BitVec.ofNat 32 (tl2.header + tl2.len) := by rw [m26]; exact w25_430
+    have b26_424 : n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x424) = derErrByte er23 := by rw [m26]; exact b25_424
     have b26_434 : n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x434) = BitVec.ofNat 8 tl2.tag := by rw [m26]; exact b25_434
-    clear w25_74 b25_434 w25_430 w25_42c w25_428 w25_420 w25_354 w25_350 w25_34c w25_348 w25_32c w25_328 g25_27 g25_26 g25_25 g25_24 g25_23 g25_22 g25_21 g25_20 g25_19 g25_18 g25_10 g25_8 g25_4 g25_3 g25_2 V25 E25 fR25 t25 rg25 W25 K25 fr25 s25 d25
+    clear w25_74 b25_434 b25_424 w25_430 w25_42c w25_428 w25_420 w25_354 w25_350 w25_34c w25_348 w25_32c w25_328 g25_27 g25_26 g25_25 g25_24 g25_23 g25_22 g25_21 g25_20 g25_19 g25_18 g25_10 g25_8 g25_4 g25_3 g25_2 V25 E25 fR25 t25 rg25 W25 K25 fr25 s25 d25
     -- 0x12AA: lbu
     obtain ⟨n27, d27, u27⟩ := s26.lbu E26.self sv_at_12aa (off' := 0x12AE) (by decide)
     have s27 : St n27.mem SV n27 0x12AE (reg n27) := ⟨u27.pc, rfl, fun _ => rfl⟩
@@ -1756,6 +1771,9 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have g27_25 : reg n27 (25 : Fin 32) = x25 := by rw [u27.regs, upd_ne (by decide) (by decide), g26_25]
     have g27_26 : reg n27 (26 : Fin 32) = x26 := by rw [u27.regs, upd_ne (by decide) (by decide), g26_26]
     have g27_27 : reg n27 (27 : Fin 32) = x27 := by rw [u27.regs, upd_ne (by decide) (by decide), g26_27]
+    have g27_8 : reg n27 (8 : Fin 32) = (derErrByte er23).zeroExtend 32 := by
+      rw [u27.regs]; simp +decide only [upd, ↓reduceIte]
+      rw [g26_2, show B + 0x21A0 + 0x424 = B + 0x21A0 + BitVec.ofNat 32 0x424 by sv_addr, b26_424]
     have keep_kk27 : SvKeepL B n0.mem n27.mem [(0x420, 0x18), (0x348, 0x8), (0x350, 0x4), (0x354, 0x1), (0x355, 0x1), (0x356, 0x1), (0x357, 0x1), (0x358, 0x4), (0x35C, 0x4), (0x420, 0x8), (0x358, 0x8), (0x74, 0x4)] := by rw [m27]; exact keep_kk26
     clear keep_kk26
     have w27_74 : memLoad32 n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = 0 := by rw [m27]; exact w26_74
@@ -1769,8 +1787,9 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have w27_428 : memLoad32 n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x428) = BitVec.ofNat 32 tl2.len := by rw [m27]; exact w26_428
     have w27_42c : memLoad32 n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x42C) = ecp := by rw [m27]; exact w26_42c
     have w27_430 : memLoad32 n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = BitVec.ofNat 32 (tl2.header + tl2.len) := by rw [m27]; exact w26_430
+    have b27_424 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x424) = derErrByte er23 := by rw [m27]; exact b26_424
     have b27_434 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x434) = BitVec.ofNat 8 tl2.tag := by rw [m27]; exact b26_434
-    clear b26_434 w26_430 w26_42c w26_428 w26_420 w26_354 w26_350 w26_34c w26_348 w26_32c w26_328 w26_74 g26_27 g26_26 g26_25 g26_24 g26_23 g26_22 g26_21 g26_20 g26_19 g26_18 g26_10 g26_8 g26_4 g26_3 g26_2 V26 E26 fR26 t26 fr26 m26 s26 u26 d26
+    clear b26_434 b26_424 w26_430 w26_42c w26_428 w26_420 w26_354 w26_350 w26_34c w26_348 w26_32c w26_328 w26_74 g26_27 g26_26 g26_25 g26_24 g26_23 g26_22 g26_21 g26_20 g26_19 g26_18 g26_10 g26_8 g26_4 g26_3 g26_2 V26 E26 fR26 t26 fr26 m26 s26 u26 d26
     -- 0x12AE: j
     obtain ⟨n28, d28, u28⟩ := s27.jump E27.self sv_at_12ae (off' := 0x7A4) (by decide)
       (by rw [s27.pc]; decide)
@@ -1784,6 +1803,7 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have g28_2 : reg n28 sp = B + 0x21A0 := by rw [u28.regs, g27_2]
     have g28_3 : reg n28 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [u28.regs, g27_3]
     have g28_4 : reg n28 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [u28.regs, g27_4]
+    have g28_8 : reg n28 (8 : Fin 32) = (derErrByte er23).zeroExtend 32 := by rw [u28.regs, g27_8]
     have g28_10 : reg n28 a0 = 0 := by rw [u28.regs, g27_10]
     have g28_18 : reg n28 (18 : Fin 32) = out := by rw [u28.regs, g27_18]
     have g28_19 : reg n28 (19 : Fin 32) = bp := by rw [u28.regs, g27_19]
@@ -1808,9 +1828,10 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have w28_428 : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x428) = BitVec.ofNat 32 tl2.len := by rw [m28]; exact w27_428
     have w28_42c : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x42C) = ecp := by rw [m28]; exact w27_42c
     have w28_430 : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = BitVec.ofNat 32 (tl2.header + tl2.len) := by rw [m28]; exact w27_430
+    have b28_424 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x424) = derErrByte er23 := by rw [m28]; exact b27_424
     have b28_434 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x434) = BitVec.ofNat 8 tl2.tag := by rw [m28]; exact b27_434
-    clear b27_434 w27_430 w27_42c w27_428 w27_420 w27_354 w27_350 w27_34c w27_348 w27_32c w27_328 w27_74 g27_27 g27_26 g27_25 g27_24 g27_23 g27_22 g27_21 g27_20 g27_19 g27_18 g27_10 g27_4 g27_3 g27_2 V27 E27 fR27 t27 fr27 m27 s27 u27 d27
-    exact .inl ⟨(fun ⟨tl2', h0', h1', vp23', vl23', h2', _⟩ => by rw [hr2] at h0'; cases h0'; rw [hr23] at h2'; cases h2'), sv_fail F E28 s28 t28 (fun x hx => (fR28 x hx).trans (fM x hx).symm) V28 hret g28_2 g28_18 hO g28_3 g28_4⟩
+    clear b27_434 b27_424 w27_430 w27_42c w27_428 w27_420 w27_354 w27_350 w27_34c w27_348 w27_32c w27_328 w27_74 g27_8 g27_27 g27_26 g27_25 g27_24 g27_23 g27_22 g27_21 g27_20 g27_19 g27_18 g27_10 g27_4 g27_3 g27_2 V27 E27 fR27 t27 fr27 m27 s27 u27 d27
+    exact .inl ⟨(fun ⟨tl2', h0', h1', vp23', vl23', h2', _⟩ => by rw [hr2] at h0'; cases h0'; rw [hr23] at h2'; cases h2'), sv_fail F E28 s28 t28 (fun x hx => (fR28 x hx).trans (fM x hx).symm) V28 hret g28_2 g28_18 hO g28_3 g28_4 (by rw [g28_8]; sv_code)⟩
   obtain ⟨te23, ht23, -, -⟩ := content_ok_elem hr23
   obtain ⟨p0_23, p4_23⟩ := Ok23 vp23 vl23 hr23
   obtain ⟨d8_23, d12_23⟩ := A23 te23 ht23
@@ -2048,7 +2069,7 @@ theorem sv_tr4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 sdp sdl ecp ecl : Word}
     have w28_430 : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = BitVec.ofNat 32 (tl2.header + tl2.len) := by rw [m28]; exact w27_430
     have b28_434 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x434) = BitVec.ofNat 8 tl2.tag := by rw [m28]; exact b27_434
     clear b27_434 w27_430 w27_42c w27_428 w27_424 w27_420 w27_35c w27_358 w27_354 w27_350 w27_34c w27_348 w27_32c w27_328 w27_74 g27_10 g27_27 g27_26 g27_25 g27_24 g27_23 g27_22 g27_21 g27_20 g27_19 g27_18 g27_8 g27_4 g27_3 g27_2 V27 E27 fR27 t27 fr27 m27 s27 u27 d27
-    exact .inl ⟨(fun ⟨tl2', h0', h1', vp23', vl23', h2', te23', h3', h4', _⟩ => by rw [hr2] at h0'; cases h0'; rw [hr23] at h2'; cases h2'; rw [ht23] at h3'; cases h3'; exact hrest1 h4'), sv_fail F E28 s28 t28 (fun x hx => (fR28 x hx).trans (fM x hx).symm) V28 hret g28_2 g28_18 hO g28_3 g28_4⟩
+    exact .inl ⟨(fun ⟨tl2', h0', h1', vp23', vl23', h2', te23', h3', h4', _⟩ => by rw [hr2] at h0'; cases h0'; rw [hr23] at h2'; cases h2'; rw [ht23] at h3'; cases h3'; exact hrest1 h4'), sv_fail F E28 s28 t28 (fun x hx => (fR28 x hx).trans (fM x hx).symm) V28 hret g28_2 g28_18 hO g28_3 g28_4 (by rw [g28_8]; sv_code)⟩
   -- 0xD34: branch, not taken
   obtain ⟨n28, d28, u28⟩ := s27.notTaken E27.self 0xD38 sv_at_d34
     (by decide) (by rw [g27_10, s27.zero]; exact br_bne_f hrest1)

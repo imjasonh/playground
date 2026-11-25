@@ -22,14 +22,14 @@ theorem svWin7n1a98_end : blockEnd sigstoreVerifyCode 0x1A98 svWin7n1a98 = some 
   rfl
 
 set_option maxHeartbeats 0 in
-theorem sv_win7n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w78 w7c k88 k8c k90 k94 i2h i2l i3h i3l t4h t4l t5h t5l : Word} {v : Nat → Word} {n0 : Machine}
+theorem sv_win7n {B out bp x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w78 w7c k88 k8c k90 k94 i2h i2l i3h i3l t4h t4l t5h t5l : Word} {v : Nat → Word} {n0 : Machine}
     (FW : Fr (B + 0xFFFFEC10) 0x3A50) (E0 : SvCode n0.mem) (V0 : SvSaves B n0.mem v) (hret : v 0 &&& ~~~1 = v 0)
     (hO : SvOut B out) (s0 : St n0.mem SV n0 0x1A84 (reg n0))
     (M0 : Word → BitVec 8) (fM : ∀ x, SvR B x → n0.mem x = M0 x)
     (g0_2 : reg n0 sp = B + 0x21A0)
     (g0_18 : reg n0 (18 : Fin 32) = out)
     (g0_19 : reg n0 (19 : Fin 32) = bp)
-    (g0_20 : reg n0 (20 : Fin 32) = x20)
+    (g0_20 : reg n0 (20 : Fin 32) = BitVec.ofNat 32 0x1E)
     (g0_21 : reg n0 (21 : Fin 32) = x21)
     (g0_22 : reg n0 (22 : Fin 32) = x22)
     (g0_23 : reg n0 (23 : Fin 32) = x23)
@@ -61,7 +61,7 @@ theorem sv_win7n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w
         reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
-        reg n' (20 : Fin 32) = x20 ∧
+        reg n' (20 : Fin 32) = BitVec.ofNat 32 0x1E ∧
         reg n' (21 : Fin 32) = x21 ∧
         reg n' (22 : Fin 32) = x22 ∧
         reg n' (23 : Fin 32) = x23 ∧
@@ -101,7 +101,7 @@ theorem sv_win7n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w
   have g1_4 : reg n1 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [u1.regs, upd_ne (by decide) (by decide), g0_4]
   have g1_18 : reg n1 (18 : Fin 32) = out := by rw [u1.regs, upd_ne (by decide) (by decide), g0_18]
   have g1_19 : reg n1 (19 : Fin 32) = bp := by rw [u1.regs, upd_ne (by decide) (by decide), g0_19]
-  have g1_20 : reg n1 (20 : Fin 32) = x20 := by rw [u1.regs, upd_ne (by decide) (by decide), g0_20]
+  have g1_20 : reg n1 (20 : Fin 32) = BitVec.ofNat 32 0x1E := by rw [u1.regs, upd_ne (by decide) (by decide), g0_20]
   have g1_21 : reg n1 (21 : Fin 32) = x21 := by rw [u1.regs, upd_ne (by decide) (by decide), g0_21]
   have g1_22 : reg n1 (22 : Fin 32) = x22 := by rw [u1.regs, upd_ne (by decide) (by decide), g0_22]
   have g1_23 : reg n1 (23 : Fin 32) = x23 := by rw [u1.regs, upd_ne (by decide) (by decide), g0_23]
@@ -140,7 +140,7 @@ theorem sv_win7n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w
   have g2_10 : reg n2 a0 = k94 := by rw [u2.regs, upd_ne (by decide) (by decide), g1_10]
   have g2_18 : reg n2 (18 : Fin 32) = out := by rw [u2.regs, upd_ne (by decide) (by decide), g1_18]
   have g2_19 : reg n2 (19 : Fin 32) = bp := by rw [u2.regs, upd_ne (by decide) (by decide), g1_19]
-  have g2_20 : reg n2 (20 : Fin 32) = x20 := by rw [u2.regs, upd_ne (by decide) (by decide), g1_20]
+  have g2_20 : reg n2 (20 : Fin 32) = BitVec.ofNat 32 0x1E := by rw [u2.regs, upd_ne (by decide) (by decide), g1_20]
   have g2_21 : reg n2 (21 : Fin 32) = x21 := by rw [u2.regs, upd_ne (by decide) (by decide), g1_21]
   have g2_22 : reg n2 (22 : Fin 32) = x22 := by rw [u2.regs, upd_ne (by decide) (by decide), g1_22]
   have g2_23 : reg n2 (23 : Fin 32) = x23 := by rw [u2.regs, upd_ne (by decide) (by decide), g1_23]
@@ -182,7 +182,7 @@ theorem sv_win7n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w
   have g3_11 : reg n3 a1 = w7c := by rw [u3.regs, g2_11]
   have g3_18 : reg n3 (18 : Fin 32) = out := by rw [u3.regs, g2_18]
   have g3_19 : reg n3 (19 : Fin 32) = bp := by rw [u3.regs, g2_19]
-  have g3_20 : reg n3 (20 : Fin 32) = x20 := by rw [u3.regs, g2_20]
+  have g3_20 : reg n3 (20 : Fin 32) = BitVec.ofNat 32 0x1E := by rw [u3.regs, g2_20]
   have g3_21 : reg n3 (21 : Fin 32) = x21 := by rw [u3.regs, g2_21]
   have g3_22 : reg n3 (22 : Fin 32) = x22 := by rw [u3.regs, g2_22]
   have g3_23 : reg n3 (23 : Fin 32) = x23 := by rw [u3.regs, g2_23]
@@ -220,7 +220,7 @@ theorem sv_win7n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w
   have g4_10 : reg n4 a0 = k94 := by rw [u4.regs, upd_ne (by decide) (by decide), g3_10]
   have g4_18 : reg n4 (18 : Fin 32) = out := by rw [u4.regs, upd_ne (by decide) (by decide), g3_18]
   have g4_19 : reg n4 (19 : Fin 32) = bp := by rw [u4.regs, upd_ne (by decide) (by decide), g3_19]
-  have g4_20 : reg n4 (20 : Fin 32) = x20 := by rw [u4.regs, upd_ne (by decide) (by decide), g3_20]
+  have g4_20 : reg n4 (20 : Fin 32) = BitVec.ofNat 32 0x1E := by rw [u4.regs, upd_ne (by decide) (by decide), g3_20]
   have g4_21 : reg n4 (21 : Fin 32) = x21 := by rw [u4.regs, upd_ne (by decide) (by decide), g3_21]
   have g4_22 : reg n4 (22 : Fin 32) = x22 := by rw [u4.regs, upd_ne (by decide) (by decide), g3_22]
   have g4_23 : reg n4 (23 : Fin 32) = x23 := by rw [u4.regs, upd_ne (by decide) (by decide), g3_23]
@@ -262,7 +262,7 @@ theorem sv_win7n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w
   have g5_11 : reg n5 a1 = w7c := by rw [u5.regs, g4_11]
   have g5_18 : reg n5 (18 : Fin 32) = out := by rw [u5.regs, g4_18]
   have g5_19 : reg n5 (19 : Fin 32) = bp := by rw [u5.regs, g4_19]
-  have g5_20 : reg n5 (20 : Fin 32) = x20 := by rw [u5.regs, g4_20]
+  have g5_20 : reg n5 (20 : Fin 32) = BitVec.ofNat 32 0x1E := by rw [u5.regs, g4_20]
   have g5_21 : reg n5 (21 : Fin 32) = x21 := by rw [u5.regs, g4_21]
   have g5_22 : reg n5 (22 : Fin 32) = x22 := by rw [u5.regs, g4_22]
   have g5_23 : reg n5 (23 : Fin 32) = x23 := by rw [u5.regs, g4_23]
@@ -307,7 +307,7 @@ theorem sv_win7n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w
     rw [rb6, runBlock_reg _ _ _ (18 : Fin 32) s5.zero (by decide), g5_18]
   have g6_19 : reg n6 (19 : Fin 32) = bp := by
     rw [rb6, runBlock_reg _ _ _ (19 : Fin 32) s5.zero (by decide), g5_19]
-  have g6_20 : reg n6 (20 : Fin 32) = x20 := by
+  have g6_20 : reg n6 (20 : Fin 32) = BitVec.ofNat 32 0x1E := by
     rw [rb6, runBlock_reg _ _ _ (20 : Fin 32) s5.zero (by decide), g5_20]
   have g6_21 : reg n6 (21 : Fin 32) = x21 := by
     rw [rb6, runBlock_reg _ _ _ (21 : Fin 32) s5.zero (by decide), g5_21]
@@ -358,7 +358,7 @@ theorem sv_win7n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w
     have g7_11 : reg n7 a1 = w7c := by rw [u7.regs, g6_11]
     have g7_18 : reg n7 (18 : Fin 32) = out := by rw [u7.regs, g6_18]
     have g7_19 : reg n7 (19 : Fin 32) = bp := by rw [u7.regs, g6_19]
-    have g7_20 : reg n7 (20 : Fin 32) = x20 := by rw [u7.regs, g6_20]
+    have g7_20 : reg n7 (20 : Fin 32) = BitVec.ofNat 32 0x1E := by rw [u7.regs, g6_20]
     have g7_21 : reg n7 (21 : Fin 32) = x21 := by rw [u7.regs, g6_21]
     have g7_22 : reg n7 (22 : Fin 32) = x22 := by rw [u7.regs, g6_22]
     have g7_23 : reg n7 (23 : Fin 32) = x23 := by rw [u7.regs, g6_23]
@@ -380,7 +380,7 @@ theorem sv_win7n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w
     have w7_390 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x390) = k90 := by rw [m7]; exact w6_390
     have w7_394 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x394) = k94 := by rw [m7]; exact w6_394
     clear w6_394 w6_390 w6_38c w6_388 w6_7c w6_78 w6_60 w6_5c w6_58 w6_54 w6_3c g6_10 g6_27 g6_26 g6_25 g6_24 g6_23 g6_22 g6_21 g6_20 g6_19 g6_18 g6_11 g6_4 g6_3 g6_2 V6 E6 fR6 t6 fr6 rb6 s6 m6 u6 c6
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hwin h0'), sv_fail_1ab8 F E7 s7 t7 (fun x hx => (fR7 x hx).trans (fM x hx).symm) V7 hret g7_2 g7_18 hO g7_3 g7_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hwin h0'), sv_fail_1ab8 F E7 s7 t7 (fun x hx => (fR7 x hx).trans (fM x hx).symm) V7 hret g7_2 g7_18 hO g7_3 g7_4 (by rw [g7_20]; sv_code)⟩
   -- 0x1A9C: branch, not taken
   obtain ⟨n7, d7, u7⟩ := s6.notTaken E6.self 0x1A9E sv_at_1a9c
     (by decide) (by rw [g6_10, s6.zero]; exact br_bne_f hwin)
@@ -398,7 +398,7 @@ theorem sv_win7n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w
   have g7_11 : reg n7 a1 = w7c := by rw [u7.regs, g6_11]
   have g7_18 : reg n7 (18 : Fin 32) = out := by rw [u7.regs, g6_18]
   have g7_19 : reg n7 (19 : Fin 32) = bp := by rw [u7.regs, g6_19]
-  have g7_20 : reg n7 (20 : Fin 32) = x20 := by rw [u7.regs, g6_20]
+  have g7_20 : reg n7 (20 : Fin 32) = BitVec.ofNat 32 0x1E := by rw [u7.regs, g6_20]
   have g7_21 : reg n7 (21 : Fin 32) = x21 := by rw [u7.regs, g6_21]
   have g7_22 : reg n7 (22 : Fin 32) = x22 := by rw [u7.regs, g6_22]
   have g7_23 : reg n7 (23 : Fin 32) = x23 := by rw [u7.regs, g6_23]

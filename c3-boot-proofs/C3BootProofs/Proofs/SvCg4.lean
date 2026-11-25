@@ -3119,7 +3119,7 @@ theorem sv_cg4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b49_420 : n49.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := by rw [m49]; exact b48_420
     have q49_1fc : ∀ j, j < 63 → n49.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m49]; exact q48_1fc j hj
     clear q48_1fc b48_420 b48_14 w48_400 w48_50 w48_48 w48_44 w48_38 w48_34 w48_30 w48_2c w48_28 w48_24 w48_18 w48_10 w48_c w48_8 w48_4 g48_25 g48_27 g48_26 g48_24 g48_23 g48_22 g48_21 g48_20 g48_19 g48_18 g48_11 g48_10 g48_9 g48_8 g48_4 g48_3 g48_2 V48 E48 fR48 t48 fr48 rb48 s48 m48 u48 c48
-    exact .inl ⟨(fun ⟨bq44', h0', _⟩ => by rw [hr44] at h0'; cases h0'), sv_fail_1882 F E49 s49 t49 (fun x hx => (fR49 x hx).trans (fM x hx).symm) V49 hret g49_2 g49_18 hO g49_3 g49_4⟩
+    exact .inl ⟨(fun ⟨bq44', h0', _⟩ => by rw [hr44] at h0'; cases h0'), sv_fail_1882 F E49 s49 t49 (fun x hx => (fR49 x hx).trans (fM x hx).symm) V49 hret g49_2 g49_18 hO g49_3 g49_4 (by rw [g49_25]; sv_code)⟩
   by_cases hl3 : bq44.length ≤ 3
   rotate_left
   · have z44 := Bad44 fun b h => by rw [hr44] at h; cases h; omega
@@ -3406,7 +3406,7 @@ theorem sv_cg4 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b49_420 : n49.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := by rw [m49]; exact b48_420
     have q49_1fc : ∀ j, j < 63 → n49.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m49]; exact q48_1fc j hj
     clear q48_1fc b48_420 b48_14 w48_400 w48_50 w48_48 w48_44 w48_38 w48_34 w48_30 w48_2c w48_28 w48_24 w48_18 w48_10 w48_c w48_8 w48_4 g48_25 g48_27 g48_26 g48_24 g48_23 g48_22 g48_21 g48_20 g48_19 g48_18 g48_11 g48_10 g48_9 g48_8 g48_4 g48_3 g48_2 V48 E48 fR48 t48 fr48 rb48 s48 m48 u48 c48
-    exact .inl ⟨(fun ⟨bq44', h0', h1', _⟩ => by rw [hr44] at h0'; cases h0'; exact hl3 h1'), sv_fail_1882 F E49 s49 t49 (fun x hx => (fR49 x hx).trans (fM x hx).symm) V49 hret g49_2 g49_18 hO g49_3 g49_4⟩
+    exact .inl ⟨(fun ⟨bq44', h0', h1', _⟩ => by rw [hr44] at h0'; cases h0'; exact hl3 h1'), sv_fail_1882 F E49 s49 t49 (fun x hx => (fR49 x hx).trans (fM x hx).symm) V49 hret g49_2 g49_18 hO g49_3 g49_4 (by rw [g49_25]; sv_code)⟩
   have z44 := Ok44 bq44 hr44 hl3
   have keep_kk44 : SvKeepL B n0.mem n44.mem [(0x4, 0x4), (0x400, 0x4), (0x420, 0x8), (0x370, 0x3)] := keep_kk43.trans K44
   clear keep_kk43

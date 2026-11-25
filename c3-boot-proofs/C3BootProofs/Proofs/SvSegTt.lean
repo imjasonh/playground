@@ -126,6 +126,7 @@ theorem sv_seg_tt {B out bp x20 x21 x22 x23 x24 x25 x26 x27 tp tl : Word} {v : N
   obtain ⟨r1_2, hx1⟩ := hx1
   obtain ⟨r1_3, hx1⟩ := hx1
   obtain ⟨r1_4, hx1⟩ := hx1
+  obtain ⟨r1_8, hx1⟩ := hx1
   obtain ⟨r1_18, hx1⟩ := hx1
   obtain ⟨r1_19, hx1⟩ := hx1
   obtain ⟨r1_20, hx1⟩ := hx1
@@ -139,7 +140,7 @@ theorem sv_seg_tt {B out bp x20 x21 x22 x23 x24 x25 x26 x27 tp tl : Word} {v : N
   obtain ⟨w1_264, hx1⟩ := hx1
   obtain ⟨w1_268, hx1⟩ := hx1
   have K1_L := hx1
-  rcases sv_tt2 FW E1 V1 hret hO s1 M0 fR1 r1_2 r1_18 r1_19 r1_20 r1_21 r1_22 r1_23 r1_24 r1_25 r1_26 r1_27 w1_264 w1_268 ((((((tst_in).content x1_0).ofNatLen).restW x1_3).restW (derOid_ok_elem x1_5)).restW x1_6) D0 with ⟨-, e⟩ | hx2
+  rcases sv_tt2 FW E1 V1 hret hO s1 M0 fR1 r1_8 r1_2 r1_18 r1_19 r1_20 r1_21 r1_22 r1_23 r1_24 r1_25 r1_26 r1_27 w1_264 w1_268 ((((((tst_in).content x1_0).ofNatLen).restW x1_3).restW (derOid_ok_elem x1_5)).restW x1_6) D0 with ⟨-, e⟩ | hx2
   · exact .inl (SvErrRet.pre (c1) (by rw [r1_3]) (by rw [r1_4])
       (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)
   obtain ⟨tl2_2, hx2⟩ := hx2

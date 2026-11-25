@@ -68,7 +68,7 @@ theorem acs_rootIn {B : Word} (F : Fr B 0x5A70) : Sv.SvIn (B + 0x13F0) (acSlot B
   exact ⟨(sep_of_le (by rw [e2, e1]; omega) (by rw [e1]; omega)).symm, by rw [e1]; omega, by rw [e1]; omega⟩
 
 /-- **From 0x1816**: the closure panics or returns with `AcsRes`. -/
-theorem acs_bun (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {n : Machine}
+theorem acs_bun {X : AcsCtx} (ok : X.Ok) {n : Machine}
     {mf : Manifest} {header : ImageHeader} {parts : TufParts} {ver ex : Nat} {fs : List FulcioKey}
     {ls : List LogKey} {ts : List TsaKey} (S : AcsAt1816 X mf header parts ver ex fs ls ts n) : X.End n := by
   have E := ok.envsAt S.inv
@@ -119,7 +119,7 @@ theorem acs_bun (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {n : Machine}
   have hres : memLoad32 n'.mem (acSlot X.B 0x40) = X.r := by
     rw [← S.res]
     exact memLoad32_congr fun j hj => by rw [acf_slot_add]; exact P.keep _ (acs_bunWin (.inl ⟨by omega, by omega⟩))
-  exact acs_fin hFx ok I'
+  exact acs_fin ok I'
     ⟨⟨hpc, rfl, fun _ => rfl⟩, P.ra, P.a0, P.a1, P.a2, P.a3, hbAt,
       ⟨acb_al ok.F (0x3A50 + 0x1870) (by decide) (by decide), acs_rootIn ok.F, Pol.issuer, Pol.buildSignerUri,
         Pol.repositoryId, Pol.ownerId, Pol.trigger, hf, hl, ht⟩,

@@ -146,7 +146,7 @@ theorem acs_idxWin {B : Word} (F : Fr B 0x5A70) {M M' : Word → BitVec 8} (h : 
 
 /-- **From 0x2A6**: the index stage, then the pinned-root stage and the
 rest, end the closure. -/
-theorem acs_index (hE : AcExtractStage) (hFx : AcsFinishBad)
+theorem acs_index (hE : AcExtractStage) 
     {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest} {header : ImageHeader}
     (S : AcsAt2A6 X mf header n) : X.End n := by
   have E := ok.envsAt S.inv
@@ -163,7 +163,7 @@ theorem acs_index (hE : AcExtractStage) (hFx : AcsFinishBad)
     rw [hcnt, BitVec.toNat_ofNat]; omega
   have da := fun i (hi : i < parts.roots.length + 2) => acs_doc_at hd hL23 hcnt hl hi
   have r24 : reg n' (24 : Fin 32) = reg n (24 : Fin 32) := KR 24 (by decide)
-  refine acs_pin hE hFx ok
+  refine acs_pin hE ok
     { st := ⟨hpc, rfl, fun _ => rfl⟩
       inv := I'
       img := by

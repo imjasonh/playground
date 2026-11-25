@@ -26,6 +26,7 @@ theorem sv_seg_x2c {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur
     (M0 : Word → BitVec 8)
     (fM : ∀ x, SvR B x → n0.mem x = M0 x)
     (g0_2 : reg n0 sp = B + 0x21A0)
+    (g0_8 : reg n0 (8 : Fin 32) = BitVec.ofNat 32 0x15)
     (g0_9 : reg n0 (9 : Fin 32) = tbp)
     (g0_10 : reg n0 a0 = rem2)
     (g0_11 : reg n0 a1 = ol)
@@ -95,6 +96,7 @@ theorem sv_seg_x2c {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur
         reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧
         reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
         reg n' sp = B + 0x21A0 ∧
+        reg n' (8 : Fin 32) = BitVec.ofNat 32 0x15 ∧
         reg n' (9 : Fin 32) = tbp ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
@@ -109,6 +111,7 @@ theorem sv_seg_x2c {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x34) = vl14_1 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x38) = vp14_1 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x44) = BitVec.ofNat 32 0x16 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x48) = ol ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x4C) = op ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
@@ -139,7 +142,7 @@ theorem sv_seg_x2c {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x3C) = p0 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x40) = L ∧
         SvKeepL B n0.mem n'.mem [(0x408, 0x8), (0x44, 0x4), (0x420, 0x8), (0x408, 0x8), (0x38, 0x4), (0x34, 0x4), (0x44, 0x4), (0x44, 0x4), (0x50, 0x4)]) := by
-  rcases sv_x2c FW E0 V0 hret hO s0 M0 fM g0_2 g0_9 g0_10 g0_11 g0_18 g0_19 g0_20 g0_21 g0_22 g0_23 g0_24 g0_25 g0_27 w0_2c w0_30 w0_50 w0_54 w0_58 w0_5c w0_60 w0_64 w0_68 w0_6c w0_70 w0_74 w0_78 w0_7c w0_80 w0_84 w0_88 w0_8c w0_90 w0_94 w0_98 w0_9c w0_a0 w0_a4 w0_150 w0_154 w0_3c w0_40 w0_48 w0_4c w0_158 w0_15c w0_408 w0_40c in2 oid_in ea_in hle hr2 hb1 SD0 with ⟨-, e⟩ | hx1
+  rcases sv_x2c FW E0 V0 hret hO s0 M0 fM g0_2 g0_8 g0_9 g0_10 g0_11 g0_18 g0_19 g0_20 g0_21 g0_22 g0_23 g0_24 g0_25 g0_27 w0_2c w0_30 w0_50 w0_54 w0_58 w0_5c w0_60 w0_64 w0_68 w0_6c w0_70 w0_74 w0_78 w0_7c w0_80 w0_84 w0_88 w0_8c w0_90 w0_94 w0_98 w0_9c w0_a0 w0_a4 w0_150 w0_154 w0_3c w0_40 w0_48 w0_4c w0_158 w0_15c w0_408 w0_40c in2 oid_in ea_in hle hr2 hb1 SD0 with ⟨-, e⟩ | hx1
   · exact .inl e
   obtain ⟨x1_0, hx1⟩ := hx1
   obtain ⟨tb7_1, hx1⟩ := hx1
@@ -160,6 +163,7 @@ theorem sv_seg_x2c {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur
   obtain ⟨r1_2, hx1⟩ := hx1
   obtain ⟨r1_3, hx1⟩ := hx1
   obtain ⟨r1_4, hx1⟩ := hx1
+  obtain ⟨r1_8, hx1⟩ := hx1
   obtain ⟨r1_9, hx1⟩ := hx1
   obtain ⟨r1_18, hx1⟩ := hx1
   obtain ⟨r1_19, hx1⟩ := hx1
@@ -177,6 +181,7 @@ theorem sv_seg_x2c {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur
   obtain ⟨w1_38, hx1⟩ := hx1
   obtain ⟨w1_3c, hx1⟩ := hx1
   obtain ⟨w1_40, hx1⟩ := hx1
+  obtain ⟨w1_44, hx1⟩ := hx1
   obtain ⟨w1_48, hx1⟩ := hx1
   obtain ⟨w1_4c, hx1⟩ := hx1
   obtain ⟨w1_50, hx1⟩ := hx1
@@ -206,7 +211,7 @@ theorem sv_seg_x2c {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur
   obtain ⟨w1_158, hx1⟩ := hx1
   obtain ⟨w1_15c, hx1⟩ := hx1
   have K1_L := hx1
-  rcases sv_x2t (rem := 0) FW E1 V1 hret hO s1 M0 fR1 r1_2 r1_9 r1_18 r1_19 r1_20 r1_21 r1_22 r1_23 r1_24 r1_25 r1_26 r1_27 w1_2c w1_30 w1_54 w1_58 w1_5c w1_60 w1_64 w1_68 w1_6c w1_70 w1_74 w1_78 w1_7c w1_80 w1_84 w1_88 w1_8c w1_90 w1_94 w1_98 w1_9c w1_a0 w1_a4 w1_150 w1_154 w1_34 w1_38 w1_48 w1_4c w1_158 w1_15c (((in2).restW x1_1).contentIn x1_2) oid_in SD0 w1_50 with ⟨-, e⟩ | hx2
+  rcases sv_x2t (rem := 0) FW E1 V1 hret hO s1 M0 fR1 r1_2 r1_8 r1_9 r1_18 r1_19 r1_20 r1_21 r1_22 r1_23 r1_24 r1_25 r1_26 r1_27 w1_2c w1_30 w1_54 w1_58 w1_5c w1_60 w1_64 w1_68 w1_6c w1_70 w1_74 w1_78 w1_7c w1_80 w1_84 w1_88 w1_8c w1_90 w1_94 w1_98 w1_9c w1_a0 w1_a4 w1_150 w1_154 w1_34 w1_38 w1_48 w1_4c w1_158 w1_15c w1_44 (((in2).restW x1_1).contentIn x1_2) oid_in SD0 w1_50 with ⟨-, e⟩ | hx2
   · exact .inl (SvErrRet.pre (c1) (by rw [r1_3]) (by rw [r1_4])
       (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)
   obtain ⟨x2_0, hx2⟩ := hx2
@@ -219,6 +224,7 @@ theorem sv_seg_x2c {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur
   obtain ⟨r2_2, hx2⟩ := hx2
   obtain ⟨r2_3, hx2⟩ := hx2
   obtain ⟨r2_4, hx2⟩ := hx2
+  obtain ⟨r2_8, hx2⟩ := hx2
   obtain ⟨r2_9, hx2⟩ := hx2
   obtain ⟨r2_18, hx2⟩ := hx2
   obtain ⟨r2_19, hx2⟩ := hx2
@@ -233,6 +239,7 @@ theorem sv_seg_x2c {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur
   obtain ⟨w2_30, hx2⟩ := hx2
   obtain ⟨w2_34, hx2⟩ := hx2
   obtain ⟨w2_38, hx2⟩ := hx2
+  obtain ⟨w2_44, hx2⟩ := hx2
   obtain ⟨w2_48, hx2⟩ := hx2
   obtain ⟨w2_4c, hx2⟩ := hx2
   obtain ⟨w2_54, hx2⟩ := hx2
@@ -262,6 +269,6 @@ theorem sv_seg_x2c {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur
   obtain ⟨w2_15c, hx2⟩ := hx2
   have K2_L := hx2
   exact .inr ⟨x1_0, tb7_1, x1_1, vp14_1, vl14_1, x1_2, te14_1, x1_3, x1_4, x1_5, x2_0, n2, c1.trans (c2), fR2, s2, E2, V2,
-    by rw [r2_3, r1_3], by rw [r2_4, r1_4], r2_2, r2_9, r2_18, r2_19, r2_20, r2_21, r2_22, r2_23, r2_24, r2_25, r2_27, w2_2c, w2_30, w2_34, w2_38, w2_48, w2_4c, w2_54, w2_58, w2_5c, w2_60, w2_64, w2_68, w2_6c, w2_70, w2_74, w2_78, w2_7c, w2_80, w2_84, w2_88, w2_8c, w2_90, w2_94, w2_98, w2_9c, w2_a0, w2_a4, w2_150, w2_154, w2_158, w2_15c, ((K2_L.w32 (by decide) (by decide)).trans w1_3c), ((K2_L.w32 (by decide) (by decide)).trans w1_40), ((K1_L).trans K2_L).mono (by decide)⟩
+    by rw [r2_3, r1_3], by rw [r2_4, r1_4], r2_2, r2_8, r2_9, r2_18, r2_19, r2_20, r2_21, r2_22, r2_23, r2_24, r2_25, r2_27, w2_2c, w2_30, w2_34, w2_38, w2_44, w2_48, w2_4c, w2_54, w2_58, w2_5c, w2_60, w2_64, w2_68, w2_6c, w2_70, w2_74, w2_78, w2_7c, w2_80, w2_84, w2_88, w2_8c, w2_90, w2_94, w2_98, w2_9c, w2_a0, w2_a4, w2_150, w2_154, w2_158, w2_15c, ((K2_L.w32 (by decide) (by decide)).trans w1_3c), ((K2_L.w32 (by decide) (by decide)).trans w1_40), ((K1_L).trans K2_L).mono (by decide)⟩
 
 end C3.RV32.Sv

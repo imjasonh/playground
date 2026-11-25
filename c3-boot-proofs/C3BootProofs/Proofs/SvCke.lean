@@ -309,7 +309,7 @@ theorem sv_cke {B out bp x20 x21 x22 x23 x26 c p ckl rl rp w64 w74 : Word} {v : 
     have w5_64 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x64) = w64 := by rw [m5]; exact w4_64
     have w5_74 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = w74 := by rw [m5]; exact w4_74
     clear w4_74 w4_64 g4_25 g4_27 g4_26 g4_24 g4_23 g4_22 g4_21 g4_20 g4_19 g4_18 g4_10 g4_9 g4_8 g4_4 g4_3 g4_2 V4 E4 fR4 t4 fr4 rb4 s4 m4 u4 c4
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hsz h0'), sv_fail_1882 F E5 s5 t5 (fun x hx => (fR5 x hx).trans (fM x hx).symm) V5 hret g5_2 g5_18 hO g5_3 g5_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hsz h0'), sv_fail_1882 F E5 s5 t5 (fun x hx => (fR5 x hx).trans (fM x hx).symm) V5 hret g5_2 g5_18 hO g5_3 g5_4 (by rw [g5_25]; sv_code)⟩
   -- 0x1560: branch, not taken
   obtain ⟨n3, d3, u3⟩ := s2.notTaken E2.self 0x1564 sv_at_1560
     (by decide) (by rw [g2_10, s2.zero]; exact br_blt0_f hsz)
@@ -675,7 +675,7 @@ theorem sv_cke {B out bp x20 x21 x22 x23 x26 c p ckl rl rp w64 w74 : Word} {v : 
     have w11_74 : memLoad32 n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = w74 := by rw [m11]; exact w10_74
     have b11_400 : n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x400) = (1 : BitVec 8) := by rw [m11]; exact b10_400
     clear b10_400 w10_74 w10_64 g10_25 g10_27 g10_26 g10_24 g10_23 g10_22 g10_21 g10_20 g10_19 g10_18 g10_10 g10_9 g10_8 g10_4 g10_3 g10_2 V10 E10 fR10 t10 fr10 rb10 s10 m10 u10 c10
-    exact .inl ⟨(fun ⟨h0', bs7', h1', _⟩ => by rw [hr7] at h1'; cases h1'), sv_fail_1882 F E11 s11 t11 (fun x hx => (fR11 x hx).trans (fM x hx).symm) V11 hret g11_2 g11_18 hO g11_3 g11_4⟩
+    exact .inl ⟨(fun ⟨h0', bs7', h1', _⟩ => by rw [hr7] at h1'; cases h1'), sv_fail_1882 F E11 s11 t11 (fun x hx => (fR11 x hx).trans (fM x hx).symm) V11 hret g11_2 g11_18 hO g11_3 g11_4 (by rw [g11_25]; sv_code)⟩
   by_cases hl32 : bs7.length = 32
   rotate_left
   · by_cases hle : bs7.length ≤ 0x60
@@ -835,7 +835,7 @@ theorem sv_cke {B out bp x20 x21 x22 x23 x26 c p ckl rl rp w64 w74 : Word} {v : 
       have w11_74 : memLoad32 n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = w74 := by rw [m11]; exact w10_74
       have b11_400 : n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x400) = (1 : BitVec 8) := by rw [m11]; exact b10_400
       clear b10_400 w10_74 w10_64 g10_25 g10_27 g10_26 g10_24 g10_23 g10_22 g10_21 g10_20 g10_19 g10_18 g10_10 g10_9 g10_8 g10_4 g10_3 g10_2 V10 E10 fR10 t10 fr10 rb10 s10 m10 u10 c10
-      exact .inl ⟨(fun ⟨h0', bs7', h1', h2', _⟩ => by rw [hr7] at h1'; cases h1'; exact hl32 h2'), sv_fail_1882 F E11 s11 t11 (fun x hx => (fR11 x hx).trans (fM x hx).symm) V11 hret g11_2 g11_18 hO g11_3 g11_4⟩
+      exact .inl ⟨(fun ⟨h0', bs7', h1', h2', _⟩ => by rw [hr7] at h1'; cases h1'; exact hl32 h2'), sv_fail_1882 F E11 s11 t11 (fun x hx => (fR11 x hx).trans (fM x hx).symm) V11 hret g11_2 g11_18 hO g11_3 g11_4 (by rw [g11_25]; sv_code)⟩
     obtain ⟨b0_7, b4_7, -⟩ := Ok7 bs7 hr7 hle
     have keep_kk7 : SvKeepL B n0.mem n7.mem [(0x420, 0x60), (0x400, 0x8), (0x420, 0x60)] := keep_kk6.trans K7
     clear keep_kk6
@@ -1114,7 +1114,7 @@ theorem sv_cke {B out bp x20 x21 x22 x23 x26 c p ckl rl rp w64 w74 : Word} {v : 
     have w14_404 : memLoad32 n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x404) = BitVec.ofNat 32 bs7.length := by rw [m14]; exact w13_404
     have b14_400 : n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x400) = (0 : BitVec 8) := by rw [m14]; exact b13_400
     clear b13_400 w13_404 w13_74 w13_64 g13_25 g13_27 g13_26 g13_24 g13_23 g13_22 g13_21 g13_20 g13_19 g13_18 g13_10 g13_9 g13_8 g13_4 g13_3 g13_2 V13 E13 fR13 t13 fr13 rb13 s13 m13 u13 c13
-    exact .inl ⟨(fun ⟨h0', bs7', h1', h2', _⟩ => by rw [hr7] at h1'; cases h1'; exact hl32 h2'), sv_fail_1882 F E14 s14 t14 (fun x hx => (fR14 x hx).trans (fM x hx).symm) V14 hret g14_2 g14_18 hO g14_3 g14_4⟩
+    exact .inl ⟨(fun ⟨h0', bs7', h1', h2', _⟩ => by rw [hr7] at h1'; cases h1'; exact hl32 h2'), sv_fail_1882 F E14 s14 t14 (fun x hx => (fR14 x hx).trans (fM x hx).symm) V14 hret g14_2 g14_18 hO g14_3 g14_4 (by rw [g14_25]; sv_code)⟩
   obtain ⟨b0_7, b4_7, bm_7⟩ := Ok7 bs7 hr7 (by omega)
   have keep_kk7 : SvKeepL B n0.mem n7.mem [(0x420, 0x60), (0x400, 0x8), (0x420, 0x60)] := keep_kk6.trans K7
   clear keep_kk6
