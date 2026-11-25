@@ -3,7 +3,7 @@ import C3BootProofs.Models.JsonLinkWalk
 /-!
 # `check_keys` against `keysOk`
 
-On an object that the spec reads, `checkKeys` accepts exactly when no key
+On an object that the lax grammar reads, `checkKeys` accepts exactly when no key
 has a byte below `0x20` and the keys pass `keysOk` (`jlk_check`). A key with
 such a byte stops `nextMember`, so `check_keys` rejects the object.
 -/
@@ -39,7 +39,7 @@ theorem jlk_keysNC_tail {k : Bytes} {v : Json} {ms : List (Bytes × Json)} (hk :
 
 /-- `nextMember` walks the members up to the first key with a control byte. -/
 theorem jlk_to (c : Bool) (d : Bytes) : ∀ f {dep p : Nat} {ms : List (Bytes × Json)} {r : Bytes},
-    p ≤ d.length → parseMembers c f dep (d.drop p) = some (ms, r) → jlwKeysNC ms = false →
+    p ≤ d.length → jlxMembers c f dep (d.drop p) = some (ms, r) → jlwKeysNC ms = false →
       jlkTo d p (ms.takeWhile fun m => jlkNC m.1)
   | 0, _, _, _, _, _, h, _ => by rw [jls_pm_zero] at h; cases h
   | f + 1, dep, p, ms, r, hp, h, hn => by
@@ -70,15 +70,15 @@ theorem jlk_to (c : Bool) (d : Bytes) : ∀ f {dep p : Nat} {ms : List (Bytes ×
       rw [List.takeWhile_cons_of_neg (p := fun m : Bytes × Json => jlkNC m.1) (a := (k, v)) (by rw [hk32']; decide)]
       exact hnm
 
-theorem jlk_canon_from {c : Bool} {o : Bytes} : ∀ {p : Nat} {ms : List (Bytes × Json)}, MembersFrom c o p ms →
+theorem jlk_canon_from {c : Bool} {o : Bytes} : ∀ {p : Nat} {ms : List (Bytes × Json)}, MembersFromX c o p ms →
     ∀ k prev, ms.length < k →
       keysCanon o k prev p = if keysIncreasing (prev.toList ++ ms.map (·.1)) then .ok () else .error 0x20
   | p, [], h, k + 1, prev, _ => by
-    simp only [MembersFrom] at h
+    simp only [MembersFromX] at h
     simp only [keysCanon, h]
     cases prev <;> rfl
   | p, (k0, j0) :: ms, h, k + 1, prev, hk => by
-    simp only [MembersFrom] at h
+    simp only [MembersFromX] at h
     obtain ⟨kp, vp, vl, a, hn, hsl, -, hm⟩ := h
     have IH := jlk_canon_from hm k (some k0) (by simp only [List.length_cons] at hk; omega)
     simp only [keysCanon, hn]
@@ -98,14 +98,14 @@ theorem jlk_dec_ne (k1 key : Bytes) : decide (k1 ≠ key) = !(key == k1) := by
   · rw [beq_iff_eq.mp h]; exact decide_eq_false fun e => e rfl
 
 theorem jlk_unique {c : Bool} {o : Bytes} (key : Bytes) : ∀ {p : Nat} {ms : List (Bytes × Json)},
-    MembersFrom c o p ms → ∀ k u, ms.length < k →
+    MembersFromX c o p ms → ∀ k u, ms.length < k →
       keysUnique o key k u p = .ok (u && !(ms.map (·.1)).contains key)
   | p, [], h, k + 1, u, _ => by
-    simp only [MembersFrom] at h
+    simp only [MembersFromX] at h
     simp only [keysUnique, h]
     cases u <;> rfl
   | p, (k1, j1) :: ms, h, k + 1, u, hk => by
-    simp only [MembersFrom] at h
+    simp only [MembersFromX] at h
     obtain ⟨kp, vp, vl, a, hn, hsl, -, hm⟩ := h
     have IH := jlk_unique key hm k (u && decide (k1 ≠ key)) (by simp only [List.length_cons] at hk; omega)
     simp only [keysUnique, hn]
@@ -113,13 +113,13 @@ theorem jlk_unique {c : Bool} {o : Bytes} (key : Bytes) : ∀ {p : Nat} {ms : Li
     rw [List.map_cons, List.contains_cons]
     cases u <;> cases key == k1 <;> rfl
 
-theorem jlk_strict_from {c : Bool} {o : Bytes} : ∀ {p : Nat} {ms : List (Bytes × Json)}, MembersFrom c o p ms →
+theorem jlk_strict_from {c : Bool} {o : Bytes} : ∀ {p : Nat} {ms : List (Bytes × Json)}, MembersFromX c o p ms →
     ∀ k, ms.length < k → keysStrict o k p = if distinct (ms.map (·.1)) then .ok () else .error 0x20
   | p, [], h, k + 1, _ => by
-    simp only [MembersFrom] at h
+    simp only [MembersFromX] at h
     simp only [keysStrict, h]; rfl
   | p, (k0, j0) :: ms, h, k + 1, hk => by
-    simp only [MembersFrom] at h
+    simp only [MembersFromX] at h
     obtain ⟨kp, vp, vl, a, hn, hsl, -, hm⟩ := h
     have IH := jlk_strict_from hm k (by simp only [List.length_cons] at hk; omega)
     have hL := jlw_mf_len hm
@@ -170,7 +170,7 @@ theorem jlk_strict_to {o : Bytes} : ∀ {p : Nat} {ms : List (Bytes × Json)}, j
 
 /-- `checkKeys` on an object that the spec reads, with members `ms`. -/
 theorem jlk_check {c : Bool} {rest : Bytes} {f dep : Nat} {ms : List (Bytes × Json)}
-    (h : (ms = [] ∧ ws c rest = [125]) ∨ parseMembers c f dep (ws c rest) = some (ms, [])) :
+    (h : (ms = [] ∧ ws c rest = [125]) ∨ jlxMembers c f dep (ws c rest) = some (ms, [])) :
     ((jlwKeysNC ms && keysOk c (ms.map (·.1))) = true → checkKeys c (123 :: rest) = .ok ()) ∧
       ((jlwKeysNC ms && keysOk c (ms.map (·.1))) = false → ∃ e, checkKeys c (123 :: rest) = .error e) := by
   have hck : checkKeys c (123 :: rest) = if c then keysCanon (123 :: rest) ((123 :: rest).length + 1) none
@@ -181,8 +181,8 @@ theorem jlk_check {c : Bool} {rest : Bytes} {f dep : Nat} {ms : List (Bytes × J
   rcases h with ⟨rfl, hw⟩ | hm
   · have hq := jlw_skip (d := 123 :: rest) (i := 1) hw rfl
     obtain ⟨hqL, hqb, -⟩ := jlp_drop_cons_inv hq
-    have hend : MembersFrom c (123 :: rest) (skipWs (123 :: rest) 1) [] := by
-      simp only [MembersFrom]; unfold nextMember; rw [jlp_if_pos ⟨hqL, hqb⟩]
+    have hend : MembersFromX c (123 :: rest) (skipWs (123 :: rest) 1) [] := by
+      simp only [MembersFromX]; unfold nextMember; rw [jlp_if_pos ⟨hqL, hqb⟩]
     refine ⟨fun _ => ?_, fun h' => (by cases c <;> cases h')⟩
     rw [hck]
     cases c
@@ -190,7 +190,7 @@ theorem jlk_check {c : Bool} {rest : Bytes} {f dep : Nat} {ms : List (Bytes × J
     · rw [jlk_canon_from hend _ none (by simp only [List.length_nil]; omega)]; rfl
   · obtain ⟨t, ht⟩ := jlw_pm_head hm
     have hq := jlw_skip (d := 123 :: rest) (i := 1) ht rfl
-    have hm' : parseMembers c f dep ((123 :: rest).drop (skipWs (123 :: rest) 1)) = some (ms, []) := by
+    have hm' : jlxMembers c f dep ((123 :: rest).drop (skipWs (123 :: rest) 1)) = some (ms, []) := by
       rw [hq, ← ht]; exact hm
     have hp := jlw_skip_le h1
     cases hnc : jlwKeysNC ms

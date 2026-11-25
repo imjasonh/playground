@@ -212,14 +212,14 @@ theorem jlsc_container {d : Bytes} {p e n : Nat} {j : Json}
 from `s`: the members and the elements through the bracket that closes
 them. -/
 theorem jlsc_main (c : Bool) (d : Bytes) : ∀ f,
-    (∀ {dep s j r}, jlscSuf d s → parseValue c f dep s = some (j, r) →
+    (∀ {dep s j r}, jlscSuf d s → jlxValue c f dep s = some (j, r) →
       ∃ n, jlpEnd d s + n ≤ jlpEnd d r ∧
         (∀ k δ, cScan d (k + n) (δ + 1) (jlpEnd d s) = cScan d k (δ + 1) (jlpEnd d r)) ∧
         (jlscCont j = true → ∀ k, cScan d (k + n) 0 (jlpEnd d s) = some (jlpEnd d r))) ∧
-    (∀ {dep s ms r}, jlscSuf d s → parseMembers c f dep s = some (ms, r) →
+    (∀ {dep s ms r}, jlscSuf d s → jlxMembers c f dep s = some (ms, r) →
       ∃ n, jlpEnd d s + n ≤ jlpEnd d r ∧ ∀ k δ,
         cScan d (k + n) (δ + 1) (jlpEnd d s) = if δ = 0 then some (jlpEnd d r) else cScan d k δ (jlpEnd d r)) ∧
-    (∀ {dep s js r}, jlscSuf d s → parseElems c f dep s = some (js, r) →
+    (∀ {dep s js r}, jlscSuf d s → jlxElems c f dep s = some (js, r) →
       ∃ n, jlpEnd d s + n ≤ jlpEnd d r ∧ ∀ k δ,
         cScan d (k + n) (δ + 1) (jlpEnd d s) = if δ = 0 then some (jlpEnd d r) else cScan d k δ (jlpEnd d r))
   | 0 => by
@@ -325,7 +325,7 @@ theorem jlsc_lit_head {s r : Bytes} {j : Json} (h : parseLiteral s = some (j, r)
 
 /-- `value_end` stops where the spec's parse of the value stops. -/
 theorem jlsc_valueEnd {c : Bool} {d r : Bytes} {i f dep : Nat} {j : Json} (hi : i ≤ d.length)
-    (h : parseValue c f dep (d.drop i) = some (j, r)) : valueEnd d i = some (jlpEnd d r) := by
+    (h : jlxValue c f dep (d.drop i) = some (j, r)) : valueEnd d i = some (jlpEnd d r) := by
   have hs := jlsc_suf_drop d hi
   have hpi := jlp_end_drop d hi
   obtain ⟨n, hn, -, hC⟩ := (jlsc_main c d f).1 hs h
@@ -359,7 +359,7 @@ theorem jlsc_valueEnd {c : Bool} {d r : Bytes} {i f dep : Nat} {j : Json} (hi : 
     rfl
 
 theorem jlsc_readItem {c : Bool} {d r : Bytes} {i f dep : Nat} {j : Json} (hi : i ≤ d.length)
-    (h : parseValue c f dep (d.drop i) = some (j, r)) : readItem d i = some (itemTail d (jlpEnd d r)) := by
+    (h : jlxValue c f dep (d.drop i) = some (j, r)) : readItem d i = some (itemTail d (jlpEnd d r)) := by
   unfold readItem; rw [jlsc_valueEnd hi h]; rfl
 
 end C3.Json

@@ -1,28 +1,28 @@
 import C3BootProofs.Models.JsonLink
-import C3BootProofs.Models.JsonLinkSpec
+import C3BootProofs.Models.JsonLinkFilter
 
 /-!
 # A slice holds one value
 
-`parseValue` gives the same value and rest at every fuel and depth that
-accept, so `JVal` names at most one value.
+`jlxValue` gives the same value and rest at every fuel and depth that
+accept, so `JValX` names at most one value, and so does `JVal`.
 -/
 
 namespace C3.Json
 
-/-- `parseValue`, `parseMembers`, and `parseElems` agree on every fuel and
+/-- `jlxValue`, `jlxMembers`, and `jlxElems` agree on every fuel and
 depth that accept. -/
 def jluDet (c : Bool) (f : Nat) : Prop :=
   ∀ f',
-    (∀ {dep dep' : Nat} {s r r' : Bytes} {j j' : Json}, parseValue c f dep s = some (j, r) →
-      parseValue c f' dep' s = some (j', r') → j = j' ∧ r = r') ∧
-    (∀ {dep dep' : Nat} {s r r' : Bytes} {ms ms' : List (Bytes × Json)}, parseMembers c f dep s = some (ms, r) →
-      parseMembers c f' dep' s = some (ms', r') → ms = ms' ∧ r = r') ∧
-    (∀ {dep dep' : Nat} {s r r' : Bytes} {js js' : List Json}, parseElems c f dep s = some (js, r) →
-      parseElems c f' dep' s = some (js', r') → js = js' ∧ r = r')
+    (∀ {dep dep' : Nat} {s r r' : Bytes} {j j' : Json}, jlxValue c f dep s = some (j, r) →
+      jlxValue c f' dep' s = some (j', r') → j = j' ∧ r = r') ∧
+    (∀ {dep dep' : Nat} {s r r' : Bytes} {ms ms' : List (Bytes × Json)}, jlxMembers c f dep s = some (ms, r) →
+      jlxMembers c f' dep' s = some (ms', r') → ms = ms' ∧ r = r') ∧
+    (∀ {dep dep' : Nat} {s r r' : Bytes} {js js' : List Json}, jlxElems c f dep s = some (js, r) →
+      jlxElems c f' dep' s = some (js', r') → js = js' ∧ r = r')
 
 theorem jlu_value {c : Bool} {f f' dep dep' : Nat} {s r r' : Bytes} {j j' : Json} (ih : jluDet c f)
-    (h1 : parseValue c (f + 1) dep s = some (j, r)) (h2 : parseValue c (f' + 1) dep' s = some (j', r')) :
+    (h1 : jlxValue c (f + 1) dep s = some (j, r)) (h2 : jlxValue c (f' + 1) dep' s = some (j', r')) :
     j = j' ∧ r = r' := by
   rcases jls_pv_inv h1 with ⟨rest, rfl, -, h1'⟩ | ⟨rest, rfl, -, h1'⟩ | ⟨rest, st, rfl, rfl, h1'⟩ |
       ⟨b, tl, rfl, hb1, hb2, hb3, hd, h1'⟩ | ⟨b, tl, rfl, hb1, hb2, hb3, hd, h1'⟩ <;>
@@ -57,8 +57,8 @@ theorem jlu_value {c : Bool} {f f' dep dep' : Nat} {s r r' : Bytes} {j j' : Json
   · subst hb; rw [h1'] at h2'; cases h2'; exact ⟨rfl, rfl⟩
 
 theorem jlu_members {c : Bool} {f f' dep dep' : Nat} {s r r' : Bytes} {ms ms' : List (Bytes × Json)}
-    (ih : jluDet c f) (h1 : parseMembers c (f + 1) dep s = some (ms, r))
-    (h2 : parseMembers c (f' + 1) dep' s = some (ms', r')) : ms = ms' ∧ r = r' := by
+    (ih : jluDet c f) (h1 : jlxMembers c (f + 1) dep s = some (ms, r))
+    (h2 : jlxMembers c (f' + 1) dep' s = some (ms', r')) : ms = ms' ∧ r = r' := by
   obtain ⟨rest, k, r1, r2, v, r3, rfl, hk, hc, hv, ht⟩ := jls_pm_inv h1
   obtain ⟨rest', k', r1', r2', v', r3', hs, hk', hc', hv', ht'⟩ := jls_pm_inv h2
   injection hs with _ hs; subst hs
@@ -74,8 +74,8 @@ theorem jlu_members {c : Bool} {f f' dep dep' : Nat} {s r r' : Bytes} {ms ms' : 
   · exact ⟨rfl, hs2⟩
 
 theorem jlu_elems {c : Bool} {f f' dep dep' : Nat} {s r r' : Bytes} {js js' : List Json}
-    (ih : jluDet c f) (h1 : parseElems c (f + 1) dep s = some (js, r))
-    (h2 : parseElems c (f' + 1) dep' s = some (js', r')) : js = js' ∧ r = r' := by
+    (ih : jluDet c f) (h1 : jlxElems c (f + 1) dep s = some (js, r))
+    (h2 : jlxElems c (f' + 1) dep' s = some (js', r')) : js = js' ∧ r = r' := by
   obtain ⟨v, r1, hv, ht⟩ := jls_pe_inv h1
   obtain ⟨v', r1', hv', ht'⟩ := jls_pe_inv h2
   obtain ⟨rfl, rfl⟩ := (ih f').1 hv hv'
@@ -99,6 +99,9 @@ theorem jlu_det (c : Bool) : ∀ f, jluDet c f
       have ih := jlu_det c f
       exact ⟨fun h1 h2 => jlu_value ih h1 h2, fun h1 h2 => jlu_members ih h1 h2, fun h1 h2 => jlu_elems ih h1 h2⟩
 
-theorem JValUnique : JValUniqueStmt := fun c _ _ _ ⟨f, _, h⟩ ⟨f', _, h'⟩ => ((jlu_det c f f').1 h h').1
+theorem jlx_JValUnique : jlxJValUniqueStmt := fun c _ _ _ ⟨f, _, h⟩ ⟨f', _, h'⟩ => ((jlu_det c f f').1 h h').1
+
+theorem JValUnique : JValUniqueStmt := fun c v j j' h h' =>
+  jlx_JValUnique c v j j' (jlf_jval.mp h).1 (jlf_jval.mp h').1
 
 end C3.Json

@@ -4,8 +4,8 @@ import C3BootProofs.Models.JsonLinkValue
 /-!
 # `parse` and `parseJson`
 
-The value step of the fuel induction, and the three statements about
-`parse` in `JsonLink.lean`.
+The value step of the fuel induction, the three statements about `parse`
+for the lax grammar, and the same statements for the spec.
 -/
 
 namespace C3.Json
@@ -14,13 +14,13 @@ open C3.RV32
 
 /-- The claim of `jlmV` at one value position. -/
 abbrev jlmVAt (c : Bool) (d : Bytes) (start f dep pos : Nat) (stk : List (Bool × Nat)) : Prop :=
-  (∀ {j : Json} {r : Bytes}, parseValue c f dep (d.drop pos) = some (j, r) →
+  (∀ {j : Json} {r : Bytes}, jlxValue c f dep (d.drop pos) = some (j, r) →
     (noCtlKeys j = true → ∃ n, n ≤ jlpEnd d r - pos ∧
       (∀ k, parseLoop c d start (k + n) stk pos =
         afterClose (closeLoop c d start 17 stk (jlpEnd d r)) (parseLoop c d start k)) ∧
       ∀ k, k < n → jlmErr (parseLoop c d start k stk pos)) ∧
     (noCtlKeys j = false → ∀ k, jlmErr (parseLoop c d start k stk pos))) ∧
-  (parseValue c f dep (d.drop pos) = none → 2 * (d.length - pos) + 2 ≤ f →
+  (jlxValue c f dep (d.drop pos) = none → 2 * (d.length - pos) + 2 ≤ f →
     ∀ k, jlmErr (parseLoop c d start k stk pos))
 
 theorem jlm_err0 (c : Bool) (d : Bytes) (start : Nat) (stk : List (Bool × Nat)) (pos : Nat) :
@@ -48,7 +48,7 @@ theorem jlm_head_dec (s : Bytes) (b : Nat) : (∃ r, s = b :: r) ∨ ∀ r, s �
     · exact .inr fun r' h => ha (List.cons.inj h).1
 
 theorem jlm_V_scal {c : Bool} {d : Bytes} {start f dep pos : Nat} {stk : List (Bool × Nat)}
-    {E : Option (Json × Bytes)} (hpos : pos ≤ d.length) (hpv : parseValue c f dep (d.drop pos) = E)
+    {E : Option (Json × Bytes)} (hpos : pos ≤ d.length) (hpv : jlxValue c f dep (d.drop pos) = E)
     (hPL : ∀ k, parseLoop c d start (k + 1) stk pos = jlmScal c d start k stk (E.map fun p => jlpEnd d p.2))
     (hnc : ∀ j r, E = some (j, r) → noCtlKeys j = true) : jlmVAt c d start f dep pos stk := by
   unfold jlmVAt
@@ -67,7 +67,7 @@ theorem jlm_V_scal {c : Bool} {d : Bytes} {start f dep pos : Nat} {stk : List (B
     · rw [hn] at h; cases h
 
 theorem jlm_V_bad {c : Bool} {d : Bytes} {start f dep pos : Nat} {stk : List (Bool × Nat)}
-    (hpv : parseValue c f dep (d.drop pos) = none) (hPL : ∀ k, jlmErr (parseLoop c d start (k + 1) stk pos)) :
+    (hpv : jlxValue c f dep (d.drop pos) = none) (hPL : ∀ k, jlmErr (parseLoop c d start (k + 1) stk pos)) :
     jlmVAt c d start f dep pos stk := by
   unfold jlmVAt
   rw [hpv]
@@ -78,7 +78,7 @@ theorem jlm_V_obj {c : Bool} {d : Bytes} {start f dep pos : Nat} {stk : List (Bo
     jlmVAt c d start (f + 1) dep pos stk := by
   by_cases hd16 : 16 ≤ stk.length
   · have hdz : ¬1 ≤ dep := by omega
-    have hnone : parseValue c (f + 1) dep (d.drop pos) = none := by
+    have hnone : jlxValue c (f + 1) dep (d.drop pos) = none := by
       have hr : require (decide (dep ≥ 1)) = none := by unfold require; rw [decide_eq_false hdz]; rfl
       rw [hs, jls_pv_obj, hr]; rfl
     exact jlm_V_bad hnone fun k => jlm_pl_deep c d start k stk hs (.inr rfl) hd16
@@ -109,14 +109,14 @@ theorem jlm_V_obj {c : Bool} {d : Bytes} {start f dep pos : Nat} {stk : List (Bo
     fun k => (jlm_pl_obj c d start k stk hs hs16).2.2.2.2 hnot
   have IH := hM (dep := dep - 1) (p := wsIn c d (pos + 1)) (st := pos) stk hqL (by omega) (by omega)
   rw [hw] at IH
-  have hpvE : parseValue c (f + 1) dep (123 :: tl) = (parseMembers c f (dep - 1) (ws c tl)).bind
+  have hpvE : jlxValue c (f + 1) dep (123 :: tl) = (jlxMembers c f (dep - 1) (ws c tl)).bind
       fun (ms, r) => (require (keysOk c (ms.map (·.1)))).bind fun _ => some (.obj ms, r) := by
     rw [jls_pv_obj, hr1, Option.bind_some]
     revert hnot; generalize ws c tl = w; intro hnot
     split
     · exact absurd rfl (hnot _)
     · rfl
-  cases hm : parseMembers c f (dep - 1) (ws c tl) with
+  cases hm : jlxMembers c f (dep - 1) (ws c tl) with
   | none =>
     rw [hpvE, hm]
     exact ⟨fun h => (by cases h), fun _ hf => jlm_all_err fun k => by rw [hPK]; exact IH.2 hm (by omega) k⟩
@@ -125,7 +125,7 @@ theorem jlm_V_obj {c : Bool} {d : Bytes} {start f dep pos : Nat} {stk : List (Bo
     obtain ⟨z, -, hz⟩ := jls_pm_suf hm
     have hty : tl = (x ++ z) ++ r := by rw [hx, hz, List.append_assoc]
     have hwy : ws c (x ++ z) = z := jls_ws_trunc c _ r _ (by rw [← hty, hz])
-    have hmz : parseMembers c f (dep - 1) (ws c (x ++ z)) = some (ms, []) := by
+    have hmz : jlxMembers c f (dep - 1) (ws c (x ++ z)) = some (ms, []) := by
       rw [hwy]; exact (jls_trunc c r f).2.1 (t := []) (by rw [← hz]; exact hm)
     have CK := jlk_check (.inr hmz)
     rw [← jlm_slice hs hty] at CK
@@ -140,7 +140,7 @@ theorem jlm_V_obj {c : Bool} {d : Bytes} {start f dep pos : Nat} {stk : List (Bo
           rw [hEq']; obtain ⟨e, he⟩ := hck; rw [he]; exact ⟨e, rfl⟩) k) k
     cases hko : keysOk c (ms.map (·.1)) with
     | false =>
-      have hnone : parseValue c (f + 1) dep (123 :: tl) = none := by
+      have hnone : jlxValue c (f + 1) dep (123 :: tl) = none := by
         rw [hpvE, hm]
         show (require (keysOk c (ms.map (·.1)))).bind _ = none
         rw [hko]; rfl
@@ -173,7 +173,7 @@ theorem jlm_V_arr {c : Bool} {d : Bytes} {start f dep pos : Nat} {stk : List (Bo
     jlmVAt c d start (f + 1) dep pos stk := by
   by_cases hd16 : 16 ≤ stk.length
   · have hdz : ¬1 ≤ dep := by omega
-    have hnone : parseValue c (f + 1) dep (d.drop pos) = none := by
+    have hnone : jlxValue c (f + 1) dep (d.drop pos) = none := by
       have hr : require (decide (dep ≥ 1)) = none := by unfold require; rw [decide_eq_false hdz]; rfl
       rw [hs, jls_pv_arr, hr]; rfl
     exact jlm_V_bad hnone fun k => jlm_pl_deep c d start k stk hs (.inl rfl) hd16
@@ -198,9 +198,9 @@ theorem jlm_V_arr {c : Bool} {d : Bytes} {start f dep pos : Nat} {stk : List (Bo
     fun k => (jlm_pl_arr c d start k stk hs hs16).2.2.2.2 hnot
   have IH := hE (dep := dep - 1) (p := wsIn c d (pos + 1)) (st := pos) stk hqL (by omega)
   rw [hw] at IH
-  cases he : parseElems c f (dep - 1) (ws c tl) with
+  cases he : jlxElems c f (dep - 1) (ws c tl) with
   | none =>
-    have hnone : parseValue c (f + 1) dep (91 :: tl) = none := by
+    have hnone : jlxValue c (f + 1) dep (91 :: tl) = none := by
       rw [jls_pv_arr, hr1, Option.bind_some]
       revert hnot he; generalize ws c tl = w; intro hnot he
       split
@@ -284,17 +284,17 @@ theorem jlm_V_top (c : Bool) (d : Bytes) :
   (jlm_all c d (wsIn c d 0) (2 * d.length + 2)).1 [] (jlp_wsIn_le (Nat.zero_le _)) rfl
 
 theorem jlm_pj {c : Bool} {d : Bytes} {j : Json} :
-    parseJson c d = some j ↔
-      ∃ r, parseValue c (2 * d.length + 2) 16 (ws c d) = some (j, r) ∧ (ws c r).isEmpty = true := by
+    jlxJson c d = some j ↔
+      ∃ r, jlxValue c (2 * d.length + 2) 16 (ws c d) = some (j, r) ∧ (ws c r).isEmpty = true := by
   constructor
   · intro h
-    unfold parseJson at h
+    unfold jlxJson at h
     obtain ⟨⟨v, r⟩, h1, h⟩ := Option.bind_eq_some_iff.mp h
     obtain ⟨u, h2, h⟩ := Option.bind_eq_some_iff.mp h
     cases h
     exact ⟨r, h1, require_eq_some.mp h2⟩
   · rintro ⟨r, h1, h2⟩
-    unfold parseJson
+    unfold jlxJson
     rw [h1]
     show (require (ws c r).isEmpty).bind (fun _ => pure j) = some j
     rw [h2]; rfl
@@ -319,9 +319,9 @@ theorem jlm_trail {c : Bool} {d r : Bytes} {e : Nat} (he : e ≤ d.length) (hr :
     | cons a l => rw [hw] at h; cases h
 
 theorem jlm_model_some {c : Bool} {d r : Bytes} {j : Json}
-    (h1 : parseValue c (2 * d.length + 2) 16 (ws c d) = some (j, r)) (hn : noCtlKeys j = true) :
+    (h1 : jlxValue c (2 * d.length + 2) 16 (ws c d) = some (j, r)) (hn : noCtlKeys j = true) :
     parseModel c d = if (ws c r).isEmpty then .ok (wsIn c d 0, jlpEnd d r - wsIn c d 0) else .error 0x20 := by
-  have h1' : parseValue c (2 * d.length + 2) 16 (d.drop (wsIn c d 0)) = some (j, r) := by rw [jlm_hs0]; exact h1
+  have h1' : jlxValue c (2 * d.length + 2) 16 (d.drop (wsIn c d 0)) = some (j, r) := by rw [jlm_hs0]; exact h1
   obtain ⟨n, hn', hEq, -⟩ := ((jlm_V_top c d).1 h1').1 hn
   obtain ⟨-, hlt, hle, hdr⟩ := jlw_den (jlp_wsIn_le (Nat.zero_le _)) h1'
   unfold parseModel
@@ -331,24 +331,24 @@ theorem jlm_model_some {c : Bool} {d r : Bytes} {j : Json}
   · rw [jlp_if_neg ht, jlp_if_neg (fun h => ht ((jlm_trail hle hdr).mpr h))]; rfl
 
 theorem jlm_den_top {c : Bool} {d r : Bytes} {j : Json}
-    (h1 : parseValue c (2 * d.length + 2) 16 (ws c d) = some (j, r)) :
-    JDen c d (wsIn c d 0) (jlpEnd d r - wsIn c d 0) j :=
+    (h1 : jlxValue c (2 * d.length + 2) 16 (ws c d) = some (j, r)) :
+    JDenX c d (wsIn c d 0) (jlpEnd d r - wsIn c d 0) j :=
   (jlw_den (jlp_wsIn_le (Nat.zero_le _)) (by rw [jlm_hs0]; exact h1)).1
 
-theorem ParseJsonSome : ParseJsonSomeStmt := by
+theorem jlx_ParseJsonSome : jlxParseJsonSomeStmt := by
   intro c d j h hn
   obtain ⟨r, h1, h2⟩ := jlm_pj.mp h
   exact ⟨_, _, by rw [jlm_model_some h1 hn, jlp_if_pos h2], jlm_den_top h1⟩
 
-theorem ParseModelOk : ParseModelOkStmt := by
+theorem jlx_ParseModelOk : jlxParseModelOkStmt := by
   intro c d a l h
-  cases h1 : parseValue c (2 * d.length + 2) 16 (ws c d) with
+  cases h1 : jlxValue c (2 * d.length + 2) 16 (ws c d) with
   | none =>
     obtain ⟨e, he⟩ := (jlm_V_top c d).2 (by rw [jlm_hs0]; exact h1) (by omega) (d.length + 1)
     unfold parseModel at h; rw [he] at h; cases h
   | some jr =>
     obtain ⟨j, r⟩ := jr
-    have h1' : parseValue c (2 * d.length + 2) 16 (d.drop (wsIn c d 0)) = some (j, r) := by rw [jlm_hs0]; exact h1
+    have h1' : jlxValue c (2 * d.length + 2) 16 (d.drop (wsIn c d 0)) = some (j, r) := by rw [jlm_hs0]; exact h1
     cases hn : noCtlKeys j
     · obtain ⟨e, he⟩ := ((jlm_V_top c d).1 h1').2 hn (d.length + 1)
       unfold parseModel at h; rw [he] at h; cases h
@@ -359,16 +359,35 @@ theorem ParseModelOk : ParseModelOkStmt := by
         exact ⟨j, jlm_pj.mpr ⟨r, h1, h2⟩, jlm_den_top h1, hn⟩
       · rw [jlp_if_neg h2] at h; cases h
 
-theorem ParseModelError : ParseModelErrorStmt := by
+theorem jlx_ParseModelError : jlxParseModelErrorStmt := by
   intro c d e h j hj
   cases hn : noCtlKeys j
   · refine ⟨?_, rfl⟩
     cases c
     · obtain ⟨r, h1, -⟩ := jlm_pj.mp hj
-      have := StrictNoCtl _ _ (jlm_den_top h1).2
+      have := jlx_StrictNoCtl _ _ (jlm_den_top h1).2
       rw [hn] at this; cases this
     · rfl
-  · obtain ⟨a, l, hm, -⟩ := ParseJsonSome c d j hj hn
+  · obtain ⟨a, l, hm, -⟩ := jlx_ParseJsonSome c d j hj hn
     rw [hm] at h; cases h
+
+/-! ## The spec -/
+
+theorem ParseJsonSome : ParseJsonSomeStmt := fun c doc j hj => by
+  obtain ⟨hx, hn⟩ := jlf_json.mp hj
+  obtain ⟨a, l, hm, hd⟩ := jlx_ParseJsonSome c doc j hx hn
+  exact ⟨a, l, hm, jlf_jden.mpr ⟨hd, hn⟩⟩
+
+theorem ParseModelOk : ParseModelOkStmt := fun c doc a l hm => by
+  obtain ⟨j, hx, hd, hn⟩ := jlx_ParseModelOk c doc a l hm
+  exact ⟨j, jlf_json.mpr ⟨hx, hn⟩, jlf_jden.mpr ⟨hd, hn⟩⟩
+
+theorem ParseModelError : ParseModelErrorStmt := fun c doc e he => by
+  cases hp : parseJson c doc with
+  | none => rfl
+  | some j =>
+    obtain ⟨hx, hn⟩ := jlf_json.mp hp
+    have h := (jlx_ParseModelError c doc e he j hx).2
+    rw [hn] at h; cases h
 
 end C3.Json

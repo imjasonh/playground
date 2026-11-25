@@ -5,8 +5,8 @@ import C3BootProofs.Models.JsonLinkWalk
 
 `strRes`, `u64Val`, and `curOpen` on a value agree with `Json.asStr`,
 `Json.asNum`, `Json.asObj`, and `Json.asArr` (`StrRes`, `U64Val`,
-`CurOpen`). A strict-mode value has no control byte in a key
-(`StrictNoCtl`), and increasing keys are distinct
+`CurOpen`). A strict-mode lax value has no control byte in a key
+(`jlx_StrictNoCtl`), and increasing keys are distinct
 (`KeysIncreasingDistinct`).
 -/
 
@@ -26,7 +26,7 @@ theorem jlv_asNum {j : Json} {n : Nat} (h : j.asNum = some n) : j = .num n := by
   rfl
 
 theorem jlv_pv_str {c : Bool} {f dep : Nat} {v r : Bytes} {st : Bytes}
-    (h : parseValue c (f + 1) dep v = some (.str st, r)) :
+    (h : jlxValue c (f + 1) dep v = some (.str st, r)) :
     ∃ rest, v = 34 :: rest ∧ parseString c rest = some (st, r) := by
   rcases jls_pv_inv h with ⟨rest, hs, -, ⟨e, -⟩ | ⟨_, e, -⟩⟩ | ⟨rest, hs, -, ⟨e, -⟩ | ⟨_, e, -⟩⟩ |
       ⟨rest, st', hs, e, hp⟩ | ⟨b, tl, hs, -, -, -, -, hn⟩ | ⟨b, tl, hs, -, -, -, -, hl⟩
@@ -39,7 +39,7 @@ theorem jlv_pv_str {c : Bool} {f dep : Nat} {v r : Bytes} {st : Bytes}
   · rcases jls_lit_inv hl with ⟨-, e⟩ | ⟨-, -, e⟩ | ⟨-, -, -, e⟩ <;> cases e
 
 theorem jlv_pv_num {c : Bool} {f dep n : Nat} {v r : Bytes}
-    (h : parseValue c (f + 1) dep v = some (.num n, r)) : parseNumber v = some (.num n, r) := by
+    (h : jlxValue c (f + 1) dep v = some (.num n, r)) : parseNumber v = some (.num n, r) := by
   rcases jls_pv_inv h with ⟨rest, hs, -, ⟨e, -⟩ | ⟨_, e, -⟩⟩ | ⟨rest, hs, -, ⟨e, -⟩ | ⟨_, e, -⟩⟩ |
       ⟨rest, st', hs, e, hp⟩ | ⟨b, tl, hs, -, -, -, -, hn⟩ | ⟨b, tl, hs, -, -, -, -, hl⟩
   · cases e
@@ -50,7 +50,7 @@ theorem jlv_pv_num {c : Bool} {f dep n : Nat} {v r : Bytes}
   · exact hn
   · rcases jls_lit_inv hl with ⟨-, e⟩ | ⟨-, -, e⟩ | ⟨-, -, -, e⟩ <;> cases e
 
-theorem StrRes : StrResStmt := by
+theorem jlx_StrRes : jlxStrResStmt := by
   intro c v j p ⟨fuel, dep, h⟩
   cases fuel with
   | zero => rw [jls_pv_zero] at h; cases h
@@ -106,7 +106,7 @@ theorem jlv_dv_lt : ∀ (l : Bytes) (acc : Nat), l.all isDigit = true →
 
 theorem jlv_pow : (10 : Nat) ^ 19 < 2 ^ 64 := by decide
 
-theorem U64Val : U64ValStmt := by
+theorem jlx_U64Val : jlxU64ValStmt := by
   intro c v j ⟨fuel, dep, h⟩
   cases fuel with
   | zero => rw [jls_pv_zero] at h; cases h
@@ -154,7 +154,7 @@ theorem U64Val : U64ValStmt := by
     rw [jlp_if_neg (List.cons_ne_nil _ _), jlp_if_neg (fun e => by rw [hall] at e; cases e), jlp_if_pos hlt,
       ← e1, ← ht']
 
-theorem CurOpen : CurOpenStmt := by
+theorem jlx_CurOpen : jlxCurOpenStmt := by
   intro c v j p ⟨fuel, dep, h⟩
   cases fuel with
   | zero => rw [jls_pv_zero] at h; cases h
@@ -196,9 +196,9 @@ theorem jlv_ps_ctl {l s r : Bytes} (h : parseString false l = some (s, r)) :
   · rw [jlp_if_neg hc, h] at h2; cases h2
 
 theorem jlv_strict (f : Nat) :
-    (∀ {dep s j r}, parseValue false f dep s = some (j, r) → noCtlKeys j = true) ∧
-    (∀ {dep s ms r}, parseMembers false f dep s = some (ms, r) → noCtlMembers ms = true) ∧
-    (∀ {dep s js r}, parseElems false f dep s = some (js, r) → noCtlElems js = true) := by
+    (∀ {dep s j r}, jlxValue false f dep s = some (j, r) → noCtlKeys j = true) ∧
+    (∀ {dep s ms r}, jlxMembers false f dep s = some (ms, r) → noCtlMembers ms = true) ∧
+    (∀ {dep s js r}, jlxElems false f dep s = some (js, r) → noCtlElems js = true) := by
   induction f with
   | zero =>
     exact ⟨fun h => (by rw [jls_pv_zero] at h; cases h), fun h => (by rw [jls_pm_zero] at h; cases h),
@@ -224,7 +224,7 @@ theorem jlv_strict (f : Nat) :
       · simp only [noCtlElems, Bool.and_eq_true]; exact ⟨ihv hv, ihe hm⟩
       · simp only [noCtlElems, Bool.and_eq_true]; exact ⟨ihv hv, trivial⟩
 
-theorem StrictNoCtl : StrictNoCtlStmt := fun _ _ ⟨f, _, h⟩ => (jlv_strict f).1 h
+theorem jlx_StrictNoCtl : jlxStrictNoCtlStmt := fun _ _ ⟨f, _, h⟩ => (jlv_strict f).1 h
 
 theorem jlv_lt_irrefl : ∀ a : Bytes, bytesLt a a = false
   | [] => rfl
@@ -277,5 +277,13 @@ theorem jlv_distinct : ∀ ks : List Bytes, keysIncreasing ks = true → distinc
       cases this
 
 theorem KeysIncreasingDistinct : KeysIncreasingDistinctStmt := jlv_distinct
+
+/-! ## The spec -/
+
+theorem StrRes : StrResStmt := fun c v j p hj => jlx_StrRes c v j p (jlf_jval.mp hj).1
+
+theorem U64Val : U64ValStmt := fun c v j hj => jlx_U64Val c v j (jlf_jval.mp hj).1
+
+theorem CurOpen : CurOpenStmt := fun c v j p hj => jlx_CurOpen c v j p (jlf_jval.mp hj).1
 
 end C3.Json

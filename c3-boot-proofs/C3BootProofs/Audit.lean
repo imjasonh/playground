@@ -9064,8 +9064,6 @@ end C3
 /-- info: 'C3.Json.CurOpen' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.CurOpen
 
-/-- info: 'C3.Json.StrictNoCtl' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.Json.StrictNoCtl
 
 /-- info: 'C3.Json.KeysIncreasingDistinct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.KeysIncreasingDistinct
