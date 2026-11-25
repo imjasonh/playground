@@ -411,7 +411,8 @@ Root and targets documents use canonical JSON: no whitespace outside
 strings, and object keys in strictly increasing byte order.
 `trusted_root.json` uses strict JSON: whitespace (space, tab, line feed,
 carriage return) between tokens, no control characters in strings, and no
-key twice in an object. Both profiles allow only these values, which
+key twice in an object. In both profiles, object keys have no control
+characters. Both profiles allow only these values, which
 Sigstore's metadata fits:
 
 - Strings without escape sequences.

@@ -2,7 +2,8 @@
 //!
 //! [`Mode::Canonical`] is TUF's canonical JSON, the form that root and
 //! targets signatures cover: no whitespace, object keys in strictly
-//! increasing byte order, and strings written raw. [`Mode::Strict`] is
+//! increasing byte order, and strings written raw. A string value may hold
+//! control bytes, but an object key never does. [`Mode::Strict`] is
 //! RFC 8259 JSON, for `trusted_root.json`, with no duplicate keys.
 //!
 //! Both profiles are narrower than their standards, and
@@ -25,7 +26,7 @@ pub const MAX_DIGITS: usize = 19;
 pub enum Mode {
     /// RFC 8259 JSON with no duplicate keys.
     Strict,
-    /// TUF's canonical JSON.
+    /// TUF's canonical JSON. Its object keys have no control bytes.
     Canonical,
 }
 
@@ -445,6 +446,14 @@ mod tests {
         assert_eq!(canonical("{\"b\":1,\"a\":2}"), Err(TufError::Json));
         assert!(strict("{\"b\":1,\"a\":2}").is_ok());
         assert_eq!(strict("\"line\nfeed\""), Err(TufError::Json));
+    }
+
+    #[test]
+    fn rejects_control_bytes_in_keys() {
+        assert_eq!(canonical("{\"\u{1}\":1}"), Err(TufError::Json));
+        assert_eq!(strict("{\"\u{1}\":1}"), Err(TufError::Json));
+        assert!(canonical("\"\u{1}\"").is_ok());
+        assert!(canonical("{\"a\":\"\u{1}\"}").is_ok());
     }
 
     #[test]
