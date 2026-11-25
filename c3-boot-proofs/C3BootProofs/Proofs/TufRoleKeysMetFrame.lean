@@ -58,10 +58,12 @@ structure RmBase (M0 M1 : Word → BitVec 8) (s F R MP SP : Word) (ML SL : Nat) 
 
 /-- What `RoleKeys::met` leaves: it halts as `H` says, or it returns with
 memory outside the 0x3920 bytes at `s` as before, and `S` holds when it
-returns `Ok(true)`. `Env` sets `H` to a panic. -/
+returns `Ok(true)`. `a0` is 0 for `Ok` and 1 for `Err`, and the low byte of
+`a1` in an `Err` is an error code below 0x27. `Env` sets `H` to a panic. -/
 abbrev rmQ (H : Post) (M0 : Word → BitVec 8) (s : Word) (g0 : Fin 32 → Word) (S : Prop) : Post :=
   fun pc M g => H pc M g ∨
-    (RPost (g0 ra) (fun M' => ∀ x, Sep x 1 s 0x3920 → M' x = M0 x) g0 pc M g ∧ (g a0 = 0 → g a1 ≠ 0 → S))
+    (RPost (g0 ra) (fun M' => ∀ x, Sep x 1 s 0x3920 → M' x = M0 x) g0 pc M g ∧ (g a0 = 0 → g a1 ≠ 0 → S) ∧
+      (g a0 = 0 ∨ g a0 = 1) ∧ (g a0 ≠ 0 → (g a1 &&& 0xFF).toNat < 0x27))
 
 section
 variable {M0 M1 Mk : Word → BitVec 8} {s F R MP SP : Word} {ML SL : Nat} {g0 : Fin 32 → Word}
@@ -217,11 +219,13 @@ section
 variable {M0 Mf : Word → BitVec 8} {s F : Word} {g g0 : Fin 32 → Word} {S : Prop} {H : Post}
 
 /-- The epilogue from 0x36E: `a0` is whether the loop stopped early, `a1`
-the error byte or the result. -/
+the error byte or the result. When the loop stopped early, the low byte of
+`s10` is an error code below 0x27. -/
 theorem rm_epi (hsp : g sp = F) (hv : RkSaved (F + 0x180) g0 Mf)
     (hsp0 : g0 sp = F + BitVec.ofNat 32 0x1F0) (hret : g0 ra &&& ~~~1 = g0 ra) (hal : F.toNat % 4 = 0)
     (hz0 : g0 0 = 0) (hfr : ∀ x, x ∉ rkE → g x = g0 x) (hR : ∀ x, Sep x 1 s 0x3920 → Mf x = M0 x)
-    (hS : aluEval .sltu (g 22) (g 20) = 0 → g 26 ≠ 0 → S) :
+    (hS : aluEval .sltu (g 22) (g 20) = 0 → g 26 ≠ 0 → S)
+    (hE : aluEval .sltu (g 22) (g 20) ≠ 0 → (g 26 &&& 0xFF).toNat < 0x27) :
     WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mf 0x36E g := by
   obtain ⟨e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12⟩ := hv
   have hA : (F + 0x180).toNat % 4 = 0 := aligned_add hal (k := 0x180) (by decide)
@@ -243,7 +247,7 @@ theorem rm_epi (hsp : g sp = F) (hv : RkSaved (F + 0x180) g0 Mf)
   refine WP.lw rkm_at_39e (by rsimp; exact aligned_add hA (k := 0x40) (by decide)) ?_; wn
   refine WP.lw rkm_at_3a2 (by rsimp; exact aligned_add hA (k := 0x3C) (by decide)) ?_; wn
   refine WP.aluImm rkm_at_3a6 ?_; wn
-  refine WP.ret rkm_at_3a8 (.inr ⟨⟨?_, hR, ?_⟩, ?_⟩)
+  refine WP.ret rkm_at_3a8 (.inr ⟨⟨?_, hR, ?_⟩, ?_, ?_, ?_⟩)
   · rsimp; erw [e0]; rw [add_lit_zero, hret]
   · refine frame_of (L2 := [ra, sp, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]) (by keepz hz0) fun x hx => ?_
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
@@ -263,6 +267,10 @@ theorem rm_epi (hsp : g sp = F) (hv : RkSaved (F + 0x180) g0 Mf)
     · exact e11
     · exact e12
   · rsimp; exact fun h1 h2 => hS h1 fun h3 => h2 (by rw [h3]; rfl)
+  · rsimp
+    show (if _ then (1 : Word) else 0) = 0 ∨ (if _ then (1 : Word) else 0) = 1
+    split <;> decide
+  · rsimp; exact fun h1 => by rw [show (0 : Word) + g 26 = g 26 from BitVec.zero_add _]; exact hE h1
 
 end
 
