@@ -1,0 +1,120 @@
+import Std.Tactic.BVDecide
+
+/-!
+Formal specification and correctness proofs for ESP32-C3 silicon ROM AES-128 helper routines
+(`esp32c3_rev3_rom.elf` `.bt_text` section):
+- `r_aes_xor_128` (`0x40002be6..0x40002c16`)
+- `r_aes_shift_left_128` (`0x40002c18..0x40002c44`)
+- `r_aes_ccm_xor_128_lsb` (`0x40001f4c..0x40001f82`)
+- `r_aes_ccm_xor_128_msb` (`0x40001f84..0x40001fb2`)
+-/
+
+namespace Esp32c3Rom.Aes
+
+/-- `r_aes_xor_128(dst, a, b, len)`:
+    for `i = len - 1` down to `0`, `dst[i] := a[i] ^^^ b[i]`. -/
+def aesXor128 (a b : List UInt8) : List UInt8 :=
+  List.zipWith (· ^^^ ·) a b
+
+theorem aesXor128_comm (a b : List UInt8) :
+    aesXor128 a b = aesXor128 b a := by
+  unfold aesXor128
+  induction a generalizing b with
+  | nil => cases b <;> rfl
+  | cons x xs ih =>
+    cases b with
+    | nil => rfl
+    | cons y ys =>
+      simp only [List.zipWith_cons_cons, ih]
+      congr 1
+      apply UInt8.eq_of_toBitVec_eq
+      change x.toBitVec ^^^ y.toBitVec = y.toBitVec ^^^ x.toBitVec
+      bv_decide
+
+theorem aesXor128_self_cancel (a b : List UInt8) (hlen : a.length = b.length) :
+    aesXor128 (aesXor128 a b) b = a := by
+  unfold aesXor128
+  induction a generalizing b with
+  | nil => cases b <;> simp_all
+  | cons x xs ih =>
+    cases b with
+    | nil => simp at hlen
+    | cons y ys =>
+      simp only [List.length_cons, Nat.succ.injEq] at hlen
+      simp only [List.zipWith_cons_cons, ih ys hlen]
+      congr 1
+      apply UInt8.eq_of_toBitVec_eq
+      change (x.toBitVec ^^^ y.toBitVec) ^^^ y.toBitVec = x.toBitVec
+      bv_decide
+
+/-- `r_aes_shift_left_128(src, dst)` on a 16-byte little-endian block:
+    `dst[0] = src[0] <<< 1`,
+    `dst[i] = (src[i] <<< 1) ||| (src[i - 1] >>> 7)` for `1 ≤ i < 16`. -/
+def aesShiftLeft128Step (prev cur : BitVec 8) : BitVec 8 :=
+  (cur <<< 1) ||| (prev >>> 7)
+
+/-- Pack 16 bytes (little-endian: `b0` is LSB, `b15` is MSB) into a `BitVec 128`. -/
+def pack128 (b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15 : BitVec 8) : BitVec 128 :=
+  b15 ++ b14 ++ b13 ++ b12 ++ b11 ++ b10 ++ b9 ++ b8 ++
+  b7 ++ b6 ++ b5 ++ b4 ++ b3 ++ b2 ++ b1 ++ b0
+
+/-- `r_aes_shift_left_128` equals 128-bit left shift by 1 (`x <<< 1`). -/
+theorem aesShiftLeft128_eq_shl1
+    (b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15 : BitVec 8) :
+    pack128
+      (b0 <<< 1)
+      (aesShiftLeft128Step b0 b1)
+      (aesShiftLeft128Step b1 b2)
+      (aesShiftLeft128Step b2 b3)
+      (aesShiftLeft128Step b3 b4)
+      (aesShiftLeft128Step b4 b5)
+      (aesShiftLeft128Step b5 b6)
+      (aesShiftLeft128Step b6 b7)
+      (aesShiftLeft128Step b7 b8)
+      (aesShiftLeft128Step b8 b9)
+      (aesShiftLeft128Step b9 b10)
+      (aesShiftLeft128Step b10 b11)
+      (aesShiftLeft128Step b11 b12)
+      (aesShiftLeft128Step b12 b13)
+      (aesShiftLeft128Step b13 b14)
+      (aesShiftLeft128Step b14 b15)
+    = (pack128 b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15) <<< 1 := by
+  unfold pack128 aesShiftLeft128Step
+  bv_decide
+
+/-- `r_aes_ccm_xor_128_lsb(dst, a, b, len, offset)`:
+    for `0 ≤ i < len`, `dst[15 - offset - i] := a[15 - offset - i] ^^^ b[i]`. -/
+def aesCcmXor128Lsb (a b : Nat → UInt8) (len offset : Nat) (k : Nat) : UInt8 :=
+  if k ≤ 15 - offset ∧ (15 - offset - k) < len then
+    a k ^^^ b (15 - offset - k)
+  else
+    a k
+
+/-- `r_aes_ccm_xor_128_msb(dst, a, b, len)`:
+    for `0 ≤ i < len`, `dst[i] := a[i] ^^^ b[15 - i]`. -/
+def aesCcmXor128Msb (a b : Nat → UInt8) (len : Nat) (k : Nat) : UInt8 :=
+  if k < len then
+    a k ^^^ b (15 - k)
+  else
+    a k
+
+theorem aesCcmXor128Msb_self_cancel (a b : Nat → UInt8) (len k : Nat) :
+    aesCcmXor128Msb (aesCcmXor128Msb a b len) b len k = a k := by
+  unfold aesCcmXor128Msb
+  split
+  · apply UInt8.eq_of_toBitVec_eq
+    change (a k).toBitVec ^^^ (b (15 - k)).toBitVec ^^^ (b (15 - k)).toBitVec = (a k).toBitVec
+    bv_decide
+  · rfl
+
+theorem aesCcmXor128Lsb_self_cancel (a b : Nat → UInt8) (len offset k : Nat) :
+    aesCcmXor128Lsb (aesCcmXor128Lsb a b len offset) b len offset k = a k := by
+  unfold aesCcmXor128Lsb
+  split
+  · apply UInt8.eq_of_toBitVec_eq
+    change (a k).toBitVec ^^^ (b (15 - offset - k)).toBitVec ^^^ (b (15 - offset - k)).toBitVec =
+      (a k).toBitVec
+    bv_decide
+  · rfl
+
+end Esp32c3Rom.Aes
