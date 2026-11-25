@@ -26,8 +26,8 @@ Statements with a variable offset, immediate, or code are not facts about
 the image and are left alone.
 
 `Sha256Rounds*.lean` is skipped, because `gen-sha256.py` writes it, and so
-are the modules that `C3BootProofs/Pending.lean` imports, which wait to be
-proved again against a changed function.
+are the modules that `C3BootProofs/Pending.lean` imports, when that file
+exists, which wait to be proved again against a changed function.
 
 Usage: image-facts.py [--image BOOTLOADER_LEAN] [--check]
 

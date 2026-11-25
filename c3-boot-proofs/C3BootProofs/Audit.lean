@@ -158,6 +158,8 @@ import C3BootProofs.Proofs.Bundle
 import C3BootProofs.Proofs.BsDecode
 import C3BootProofs.Proofs.ImageTopCur
 import C3BootProofs.Proofs.BootWrite
+import C3BootProofs.Proofs.Boot
+import C3BootProofs.Proofs.BootLevel
 import C3BootProofs.Proofs.Dec384End
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Fs256Main
@@ -8903,6 +8905,45 @@ end C3
 
 /-- info: 'C3.RV32.Cur.bootWrite_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bootWrite_correct
+
+/-- info: 'C3.RV32.Cur.bt_inv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bt_inv
+
+/-- info: 'C3.RV32.Cur.bt_map' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bt_map
+
+/-- info: 'C3.RV32.Cur.bt_copy' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bt_copy
+
+/-- info: 'C3.RV32.Cur.HdrEq.bootMem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.HdrEq.bootMem
+
+/-- info: 'C3.RV32.Cur.epr_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.epr_correct
+
+/-- info: 'C3.RV32.Cur.rs_raise' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.rs_raise
+
+/-- info: 'C3.RV32.Cur.bt_lock' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bt_lock
+
+/-- info: 'C3.RV32.Cur.bt_body' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bt_body
+
+/-- info: 'C3.RV32.Cur.boot_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.boot_correct
+
+/-- info: 'C3.RV32.BootLevel.btPop_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.BootLevel.btPop_toNat
+
+/-- info: 'C3.RV32.BootLevel.popN_mod' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.BootLevel.popN_mod
+
+/-- info: 'C3.RV32.BootLevel.btPop_level' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.BootLevel.btPop_level
+
+/-- info: 'C3.RV32.BootLevel.btPop_ge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.BootLevel.btPop_ge
 
 /-- info: 'C3.RV32.Dq.p384Decompress_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Dq.p384Decompress_correct

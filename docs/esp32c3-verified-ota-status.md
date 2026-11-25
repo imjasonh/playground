@@ -28,8 +28,7 @@ and the stages `SvEcA*`, `SvIv*`, `SvEcD`, `SvEcT*`, `SvEcW*`, `SvEcMl*`,
 and `SvZ*` covered it. The current image calls `p256_verify_prehash`
 instead, which `p256VerifyPrehash_correct` proves on its own, so those
 stages are gone. The stages of the current `sigstore::verify` (6,854 bytes,
-frame 0x4C0) are being ported; the old ones are in `Pending.lean` until
-then.
+frame 0x4C0) are proved, and the old ones are deleted.
 
 ### Composing the rest of `sigstore::verify`
 
@@ -295,15 +294,11 @@ The key-set chain and trust-root blob are gone from the code, so their specifica
 
 The specification follows c3-verify's version 2 manifest, whose third part is the TUF part, and drops `checkSlot`. The V0 image's `manifest::parse` proofs keep the version 1 format as `decodeManifestV1`.
 
-Six functions changed shape: `manifest_parse`, `generalized_time`, `sigstore::verify`, `boot`, `boot_main`'s first closure, and `boot_main`. The modules that prove something about them, or import a module that does, were pending. `sigstore::verify` is proved again: `sv_verify`, `sv_verify_at`, and `sv_verify_spec` describe the new code and the 0x428-byte `TrustRoot`, the root module builds them, and `Audit` checks that `sv_verify_spec` depends only on `propext` and `Quot.sound`. The old stages are deleted. `C3BootProofs/Pending.lean` imports them, the root module doesn't, and CI doesn't build them. They are unchanged, for the next proofs to start from:
+Six functions changed shape: `manifest_parse`, `generalized_time`, `sigstore::verify`, `boot`, `boot_main`'s first closure, and `boot_main`. All but `boot_main` and its first closure, which accepts a slot, are proved again. `sigstore::verify` is proved by `sv_verify`, `sv_verify_at`, and `sv_verify_spec`, which describe the new code and the 0x428-byte `TrustRoot`.
 
-| Pending modules | Why |
-|-----------------|-----|
-| `Proofs/ParseCur` | `manifest_parse` reads version 2. |
-| `Proofs/GeneralizedTime`, `Proofs/X509ReadTime` | `generalized_time` changed. |
-| `Proofs/BootSpec`, `Proofs/Boot` | `boot`, `boot_main`, and its first closure now read the TUF part and burn eFuses. |
+`boot` (680 bytes at 0x403b699e) is proved by `boot_correct` in `Proofs/Boot`. From entry, called with the slot, the accepted header, the image's flash offset, the target security level, and the level the caller read, `boot` either panics or jumps to the header's entry point with the slot in `a0`. Memory outside its stack and the eFuse and flash registers is then what `bootMem` says: the header's RAM segments loaded from flash and its other segments mapped through the MMU. The level it reaches is at least the target, as the caller's level or the eFuse field shows. On the way it raises the eFuse security level: `rs_raise` (`Proofs/BootRaise`) proves the raise loop, which halts unless the level that `btPop` reads reaches the target, and `btPop_level` (`Proofs/BootLevel`) shows that `btPop` computes `level` from `Spec/Level` on the eFuse word's 16 level bits. `Audit` checks that each of these depends only on `propext` and `Quot.sound`. `Pending.lean` and `AuditPending.lean` are deleted.
 
-`C3BootProofs/AuditPending.lean` keeps their axiom checks.
+`boot_main` (898 bytes at 0x403b6df6) and its first closure are not proved against `decideBoot` and `acceptTufSlot` yet, and no theorem composes `boot_main` with `boot`. `Closure0Contract` (`Proofs/BootMainContract`) states what `boot_main`'s proof assumes of the closure's call: it returns with the result `None` when `acceptTufSlot` rejects the slot, and otherwise with the image's flash address and security version, or it panics.
 
 `p256VerifyPrehash_correct` proves `p256_verify_prehash`: on a call with the
 public key, the digest, and the signature's `r` and `s` outside the stack, it

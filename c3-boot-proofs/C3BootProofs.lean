@@ -134,6 +134,11 @@ import C3BootProofs.Proofs.Bundle
 import C3BootProofs.Proofs.BsDecode
 import C3BootProofs.Proofs.ImageTopCur
 import C3BootProofs.Proofs.BootWrite
+import C3BootProofs.Proofs.BootSpec
+import C3BootProofs.Proofs.BootRaise
+import C3BootProofs.Proofs.Boot
+import C3BootProofs.Proofs.BootLevel
+import C3BootProofs.Proofs.BootMainContract
 import C3BootProofs.Proofs.Dec384End
 import C3BootProofs.Proofs.Pv384Main
 import C3BootProofs.Proofs.Fs384Main
