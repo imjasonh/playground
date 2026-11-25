@@ -613,6 +613,19 @@ import C3BootProofs.Proofs.TufRoleKeysTree
 import C3BootProofs.Proofs.TufRoleKeysDecode
 import C3BootProofs.Proofs.TufRoleKeysLoop
 import C3BootProofs.Proofs.TufRoleKeysRead
+import C3BootProofs.Proofs.TufRoleKeysMetAt
+import C3BootProofs.Proofs.TufRoleKeysMetModel
+import C3BootProofs.Proofs.TufRoleKeysMetFrame
+import C3BootProofs.Proofs.TufRoleKeysMetLookup
+import C3BootProofs.Proofs.TufRoleKeysMetCmp
+import C3BootProofs.Proofs.TufRoleKeysMetDup
+import C3BootProofs.Proofs.TufRoleKeysMetCalls
+import C3BootProofs.Proofs.TufRoleKeysMetEnv
+import C3BootProofs.Proofs.TufRoleKeysMetSig
+import C3BootProofs.Proofs.TufRoleKeysMetVer
+import C3BootProofs.Proofs.TufRoleKeysMetLoop
+import C3BootProofs.Proofs.TufRoleKeysMet
+import C3BootProofs.Proofs.TufRoleKeysMetSpec
 import C3BootProofs.Proofs.TrustedRootDecode
 import C3BootProofs.Proofs.TrustedRootValidFor
 import C3BootProofs.Proofs.TrustedRootReadChainAt
@@ -652,3 +665,4 @@ import C3BootProofs.Models.JsonLinkCanon
 import C3BootProofs.Models.TufLink
 import C3BootProofs.Models.TufLinkMeta
 import C3BootProofs.Models.TufLinkKeys
+import C3BootProofs.Models.TufLinkMet
