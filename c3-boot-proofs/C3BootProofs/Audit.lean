@@ -240,6 +240,7 @@ import C3BootProofs.Models.JsonLinkCanon
 import C3BootProofs.Models.TufLink
 import C3BootProofs.Models.TufLinkMeta
 import C3BootProofs.Models.TufLinkKeys
+import C3BootProofs.Proofs.AcceptStages
 
 /-!
 # Audit
@@ -9175,3 +9176,24 @@ end C3
 
 /-- info: 'C3.Json.thresholdMet_roleKeys' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.thresholdMet_roleKeys
+
+/-- info: 'C3.RV32.Ac.ac_pro' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_pro
+
+/-- info: 'C3.RV32.Ac.ac_ret' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_ret
+
+/-- info: 'C3.RV32.Ac.ac_none' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_none
+
+/-- info: 'C3.RV32.Ac.ac_fail' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_fail
+
+/-- info: 'C3.RV32.Ac.ac_from806' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_from806
+
+/-- info: 'C3.RV32.Ac.ac_reject' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_reject
+
+/-- info: 'C3.RV32.Ac.ac_exit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_exit
