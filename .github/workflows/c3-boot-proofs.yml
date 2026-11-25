@@ -120,7 +120,7 @@ jobs:
             "${RUNNER_TEMP}/BootloaderData2.lean" "${RUNNER_TEMP}/BootloaderData3.lean" \
             "${RUNNER_TEMP}/BootloaderData4.lean" "${RUNNER_TEMP}/BootloaderData5.lean" \
             "${RUNNER_TEMP}/BootloaderData6.lean" "${RUNNER_TEMP}/BootloaderData7.lean" \
-            "${RUNNER_TEMP}/BootloaderData8.lean"
+            "${RUNNER_TEMP}/BootloaderData8.lean" "${RUNNER_TEMP}/BootloaderData9.lean"
           diff ../c3-boot-proofs/C3BootProofs/Image/Bootloader.lean "${RUNNER_TEMP}/Bootloader.lean"
           diff ../c3-boot-proofs/C3BootProofs/Image/BootloaderData.lean "${RUNNER_TEMP}/BootloaderData.lean"
           diff ../c3-boot-proofs/C3BootProofs/Image/BootloaderData2.lean "${RUNNER_TEMP}/BootloaderData2.lean"
@@ -130,6 +130,7 @@ jobs:
           diff ../c3-boot-proofs/C3BootProofs/Image/BootloaderData6.lean "${RUNNER_TEMP}/BootloaderData6.lean"
           diff ../c3-boot-proofs/C3BootProofs/Image/BootloaderData7.lean "${RUNNER_TEMP}/BootloaderData7.lean"
           diff ../c3-boot-proofs/C3BootProofs/Image/BootloaderData8.lean "${RUNNER_TEMP}/BootloaderData8.lean"
+          diff ../c3-boot-proofs/C3BootProofs/Image/BootloaderData9.lean "${RUNNER_TEMP}/BootloaderData9.lean"
 
       - name: Check the image facts against the extracted functions
         working-directory: c3-boot-proofs
