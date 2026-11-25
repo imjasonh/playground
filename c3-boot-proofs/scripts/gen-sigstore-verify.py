@@ -4737,7 +4737,8 @@ def stage_deku1():
 
 
 def eku_start(g):
-    params = bc_start(g)[:-2]
+    params = [x for x in bc_start(g)[:-2] if not x.startswith("(w0_50 ")]
+    g.words.pop(0x50)
     g.regs[26] = ("U", "found")
     params.append("(g0_26 : reg n0 (26 : Fin 32) = found)")
     return params + ["(c_in : SvIn B cp cl.toNat)"]

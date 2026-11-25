@@ -319,7 +319,7 @@ theorem sv_seg_sv {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Mach
         reg n' sp = B + 0x21A0 ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
-        reg n' (20 : Fin 32) = (BitVec.ofNat 32 0x1E) ∧
+        reg n' (20 : Fin 32) = BitVec.ofNat 32 0x1E ∧
         reg n' (21 : Fin 32) = (memLoad32 M0 (bp + 0x28)) ∧
         reg n' (22 : Fin 32) = ll ∧
         reg n' (23 : Fin 32) = ((q'_4_1) + BitVec.ofNat 32 0x20) ∧

@@ -893,11 +893,7 @@ theorem acf_seg_write {M : Word → BitVec 8} {m : Machine} {B r : Word} {v : Na
   · exact K8 x (acf_F16W hw) hx.symm
 
 /-- The low byte of a byte widened to a word is the byte. -/
-theorem acf_zx_and (b : BitVec 8) : ((b.zeroExtend 32 : Word) &&& 0xFF).toNat = b.toNat := by
-  rw [BitVec.toNat_and, BitVec.toNat_setWidth, show (0xFF : Word).toNat = 2 ^ 8 - 1 from rfl,
-    Nat.and_two_pow_sub_one_eq_mod]
-  have := b.isLt
-  omega
+theorem acf_zx_and : ∀ b : BitVec 8, ((b.zeroExtend 32 : Word) &&& 0xFF).toNat = b.toNat := by decide
 
 /-- At 0x7D6 after `sigstore::verify` returned: the invariant, and the exit
 with the code in `s5`. -/

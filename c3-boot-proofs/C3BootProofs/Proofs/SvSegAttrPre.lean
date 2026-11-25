@@ -107,6 +107,7 @@ theorem sv_seg_attr_pre {B out bp x20 x21 x22 x23 x25 dg flag p0 L0 cp rem sip s
   obtain ⟨r1_2, hx1⟩ := hx1
   obtain ⟨r1_3, hx1⟩ := hx1
   obtain ⟨r1_4, hx1⟩ := hx1
+  obtain ⟨r1_8, hx1⟩ := hx1
   obtain ⟨r1_9, hx1⟩ := hx1
   obtain ⟨r1_18, hx1⟩ := hx1
   obtain ⟨r1_19, hx1⟩ := hx1
@@ -129,7 +130,7 @@ theorem sv_seg_attr_pre {B out bp x20 x21 x22 x23 x25 dg flag p0 L0 cp rem sip s
   obtain ⟨w1_408, hx1⟩ := hx1
   obtain ⟨w1_40c, hx1⟩ := hx1
   have K1_L := hx1
-  rcases sv_trv FW E1 V1 hret hO s1 M0 fR1 r1_2 r1_9 r1_18 r1_19 r1_20 r1_21 r1_22 r1_23 r1_24 r1_25 r1_26 r1_27 w1_64 w1_7c w1_25c w1_260 w1_264 w1_268 w1_378 w1_37c w1_408 w1_40c ((cr_in).restW x1_1) p0_in si_in ((((((cr_in).content x1_1).ofNatLen).restW (derOid_ok_elem x1_3)).content x1_4).ofNatLen) ((((cr_in).content x1_1).ofNatLen).oidIn x1_2) dg_or0 with e | hx2
+  rcases sv_trv FW E1 V1 hret hO s1 M0 fR1 r1_2 r1_8 r1_9 r1_18 r1_19 r1_20 r1_21 r1_22 r1_23 r1_24 r1_25 r1_26 r1_27 w1_64 w1_7c w1_25c w1_260 w1_264 w1_268 w1_378 w1_37c w1_408 w1_40c ((cr_in).restW x1_1) p0_in si_in ((((((cr_in).content x1_1).ofNatLen).restW (derOid_ok_elem x1_3)).content x1_4).ofNatLen) ((((cr_in).content x1_1).ofNatLen).oidIn x1_2) dg_or0 with e | hx2
   · exact .inl (SvErrRet.pre (c1) (by rw [r1_3]) (by rw [r1_4])
       (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)
   obtain ⟨trv_w64_2, hx2⟩ := hx2

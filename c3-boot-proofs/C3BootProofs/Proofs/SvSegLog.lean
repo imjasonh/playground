@@ -139,7 +139,7 @@ theorem sv_seg_log {B out bp x20 x21 x22 x23 x24 x25 x26 x27 pv ckp ckl : Word} 
         reg n' sp = B + 0x21A0 ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
-        reg n' (20 : Fin 32) = (BitVec.ofNat 32 0x1E) ∧
+        reg n' (20 : Fin 32) = BitVec.ofNat 32 0x1E ∧
         reg n' (21 : Fin 32) = (memLoad32 M0 (bp + 0x28)) ∧
         reg n' (22 : Fin 32) = x22 ∧
         reg n' (23 : Fin 32) = x23 ∧
