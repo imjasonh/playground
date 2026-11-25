@@ -3,7 +3,8 @@ import C3BootProofs.Proofs.TufReadDoc
 import C3BootProofs.Proofs.TufParseRoot
 import C3BootProofs.Proofs.TufRoleKeysRead
 import C3BootProofs.Proofs.TufExpires
-import C3BootProofs.Proofs.TufRoleKeysMetSpec
+import C3BootProofs.Proofs.TufRoleKeysMetResult
+import C3BootProofs.Proofs.AcceptPinnedErr
 import C3BootProofs.Proofs.TufRoleKeysMetCalls
 import C3BootProofs.Proofs.JsonGet
 import C3BootProofs.Models.TufLinkMeta
@@ -27,10 +28,9 @@ The loop keeps the trusted root's `RoleKeys` in three places: its first
 byte in `[sp + 0x28]`, its second in `s6`, and the rest at `sp + 0x1322`.
 `acoTB` puts them back together.
 
-`AcRootsGap` lists what the stage assumes about its callees and their
-contracts don't say: that the error bytes of `prModel`, `rkModel`, and
-`expiresModel` are `TufError` codes, and `AcMetSpec`, `tufRoleKeysMet_spec`
-with the two facts about `a0` and `a1` that the loop branches on.
+The loop rejects with the error bytes of `parse_root`, `RoleKeys::read`,
+`expires`, and `RoleKeys::met`. `AcceptPinnedErr` and
+`tufRoleKeysMet_result` show that each is a `TufError` code.
 -/
 
 namespace C3.RV32.Ac
@@ -60,44 +60,6 @@ theorem aco_verifyTuf (pinned : Bytes) (parts : TufParts) :
       let digest ← entry.field (ascii!"hashes") >>= Json.field (ascii!"sha256") >>= Json.asStr
       require (length == parts.trustedRoot.length && digest == hexBytes (sha256 parts.trustedRoot))
       pure (root.version, min rootExpires targetsExpires)) := rfl
-
-/-! ## The callees' gaps -/
-
-/-- `tufRoleKeysMet_spec`, with what the loop reads of the result: `a0`
-is zero when its bit 0 is, and when bit 0 is set, the low byte of `a1` is
-a `TufError` code. -/
-def AcMetSpec : Prop :=
-  ∀ (m : Machine) {retAddr s R A MP SP : Word} {ML SL t : Nat}
-    {md : Meta} {dj sj : Json} {role : Bytes} {es : List (Bytes × Option TufKey)}
-    {M : Word → BitVec 8} {DP : Word} {DL : Nat},
-    m.pc = TRM → reg m a0 = R → reg m a1 = A → reg m sp = s + BitVec.ofNat 32 0x3920 →
-    reg m ra = retAddr → retAddr &&& ~~~1 = retAddr → s.toNat % 16 = 0 →
-    0x3FC80000 ≤ s.toNat → s.toNat + 0x3920 ≤ 0x3FCE0000 →
-    Sep s 0x3920 (BitVec.ofNat 32 (img% dataWindowAddress)) (img% dataWindowSize) →
-    Sep s 0x3920 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize) →
-    (∀ M : Word → BitVec 8, (∀ x, Sep x 1 s 0x3920 → M x = m.mem x) → RmCode M) →
-    R.toNat % 4 = 0 → R.toNat + 0x540 ≤ 0x40000000 → Sep s 0x3920 R 0x540 →
-    MP.toNat + ML ≤ 0x40000000 → ML < 2 ^ 31 → Sep s 0x3920 MP ML →
-    SP.toNat ≠ 0 → SP.toNat + SL ≤ 0x40000000 → SL < 2 ^ 31 → Sep s 0x3920 SP SL →
-    A.toNat % 4 = 0 → Sep s 0x3920 A 16 → memLoad32 m.mem A = MP →
-    memLoad32 m.mem (A + BitVec.ofNat 32 4) = BitVec.ofNat 32 ML →
-    memLoad32 m.mem (A + BitVec.ofNat 32 8) = SP →
-    memLoad32 m.mem (A + BitVec.ofNat 32 12) = BitVec.ofNat 32 SL →
-    roleKeys dj role = some (t, es) → JVal true (memBytes M DP DL) dj → RkAt m.mem R t (es.map C3.Json.rkTag) →
-    RkWf (es.map C3.Json.rkTag) → memBytes m.mem MP ML = encode md.signed →
-    JVal true (memBytes m.mem SP SL) sj → (sj.asArr >>= List.mapM sigPair) = some md.sigs →
-    ∃ m', Steps m m' ∧
-      (rmH m'.pc m'.mem (reg m') ∨
-        (m'.pc = retAddr ∧ (∀ x, Sep x 1 s 0x3920 → m'.mem x = m.mem x) ∧ (∀ r, r ∉ jClob → reg m' r = reg m r) ∧
-          (reg m' a0 &&& 1 = 0 → reg m' a0 = 0 ∧ (reg m' a1 ≠ 0 → thresholdMet md dj role = some true)) ∧
-          (reg m' a0 &&& 1 ≠ 0 → (reg m' a1 &&& 0xFF).toNat < 0x27)))
-
-/-- What the stage assumes and its callees' contracts don't say. -/
-structure AcRootsGap : Prop where
-  pr : ∀ d e, prModel d = .error e → e < 0x27
-  rk : ∀ d role e, rkModel d role = .error e → e < 0x27
-  ex : ∀ d e, expiresModel d = .error e → e < 0x27
-  met : AcMetSpec
 
 /-! ## The stage's environment, pre- and postcondition -/
 
@@ -234,11 +196,10 @@ structure AcoInv (B Bf : Word) (docs : List Bytes) (first : TufRoot) (n0 n : Mac
 
 /-- **The root-chain stage**, from 0x584 to 0x836, for the callees' code
 and data `AcRootsEnv` in memory that agrees with `M0` outside the stack and
-`Buffers`, given the callees' gaps `AcRootsGap`. It reaches 0x836 only when
-the fold over the roots succeeds and the last root's expiry parses, and then
-`AcRootsPost` holds. -/
+`Buffers`. It reaches 0x836 only when the fold over the roots succeeds and
+the last root's expiry parses, and then `AcRootsPost` holds. -/
 def AcRootsStage : Prop :=
-  AcRootsGap → ∀ (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romCode : List Nat), RomRead flash R romBase romCode →
+  ∀ (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romCode : List Nat), RomRead flash R romBase romCode →
   ∀ (n : Machine) (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (docs : List Bytes)
     (first : TufRoot),
     (∀ M, (∀ x, Sep x 1 B 0x5A70 → Sep x 1 Bf acBufLen → M x = M0 x) → AcRootsEnv R romBase romCode B Bf M) →
@@ -540,7 +501,6 @@ structure AcoCtx (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romCode 
   hR : R ≤ 0x38D0
   inv : AcInv B Bf g t v M0 n0
   pre : AcRootsPre flash B Bf r docs first n0
-  gap : AcRootsGap
 
 section ctx
 
@@ -998,8 +958,8 @@ theorem aco_met (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n
   have K1 : AcoKeep B Bf n0.mem n1.mem := by rw [mem1]; exact K
   have sp1 : reg n1 sp = (B + 0x130) + BitVec.ofNat 32 0x3920 := by
     rw [r1 sp (by decide), C.sp KR, BitVec.add_assoc]; rfl
-  obtain ⟨n2, c2, q⟩ := C.gap.met n1 (retAddr := AC + BitVec.ofNat 32 (off + 8)) (s := B + 0x130) (MP := q1)
-    (R := acSlot B kR) (A := acSlot B 0x1ED0)
+  obtain ⟨n2, c2, q⟩ := tufRoleKeysMet_result n1 (retAddr := AC + BitVec.ofNat 32 (off + 8)) (s := B + 0x130)
+    (MP := q1) (R := acSlot B kR) (A := acSlot B 0x1ED0)
     (SP := q2) (ML := l1) (SL := l2) (md := md) (dj := dj) (sj := sj) (role := role) (es := es) (t := tt)
     pc1 (by rw [r1 a0 (by decide)]; exact ha0) (by rw [r1 a1 (by decide)]; exact ha1) sp1
     (by rw [regs1]; simp [upd]) hret (by aco_num) (by aco_num) (by aco_num) (aco_ds C (by decide))
@@ -1059,7 +1019,7 @@ theorem aco_rk (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n0
   · cases hm : rkModel (memBytes n.mem q1 l1) role with
     | error e =>
       rw [hm] at res
-      have he := C.gap.rk _ _ e hm
+      have he := acp_rkModel _ _ e hm
       refine .inl ⟨?_, ?_⟩
       · show n2.mem (acSlot B kO + BitVec.ofNat 32 0) = _
         rw [add_ofNat_zero]; exact res.2.1
@@ -1114,7 +1074,7 @@ theorem aco_tex (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n
   · cases hm : expiresModel (memBytes n.mem q1 l1) with
     | error e =>
       rw [hm] at res
-      have he := C.gap.ex _ e hm
+      have he := acp_expiresModel _ e hm
       refine ⟨fun z => absurd (res.2.1.symm.trans z) (by decide), fun _ => ?_⟩
       have e1 : acSlot B 0x1310 + 1 = acSlot B 0x1311 := aco_so B 0x1310 1 (by decide)
       have := res.2.2
@@ -2090,7 +2050,7 @@ theorem aco_B2 (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n0
       exact KR.a q hq
     · rw [g3]; simp +decide only [runBlock, BInstr.run, acoB2, upd, ↓reduceIte]
       rw [rsp2]; aco_simp; rw [M2, he, aco_ze8, BitVec.toNat_ofNat]
-      have := C.gap.pr d e hpm; omega
+      have := acp_prModel d e hpm; omega
   · obtain ⟨rt, sj, hpr, hrv, hJ1, hJ2, hps⟩ := hspec
     obtain ⟨_, L70, L74, L78, L7C, Lv⟩ := hP
     have hgl := hJ1.1; have hsl := hJ2.1
@@ -2597,9 +2557,9 @@ end ctx
 
 /-- **The root-chain stage holds.** -/
 theorem acRootsStage : AcRootsStage := by
-  intro gap flash R romBase romCode hrom n B Bf g t r v M0 docs first henv F sB bal bhi hR s inv pre
+  intro flash R romBase romCode hrom n B Bf g t r v M0 docs first henv F sB bal bhi hR s inv pre
   have C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n :=
-    ⟨hrom, henv, F, sB, aco_num F sB bal bhi, hR, inv, pre, gap⟩
+    ⟨hrom, henv, F, sB, aco_num F sB bal bhi, hR, inv, pre⟩
   exact aco_loop C _ n 0 rfl s ⟨Nat.zero_le _, fun _ _ => rfl, fun _ _ => rfl, pre.2.2.2.1,
     ⟨first, rfl, pre.2.2.2.2.2.2.1, fun _ => pre.2.2.2.2.2.2.2⟩⟩
 
