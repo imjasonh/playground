@@ -2738,9 +2738,6 @@ class Gen:
         """Close the failing case at 0x966 (or, with `exit_lemma`, 0xEE4 or
         0x2A82) with `why_not`, a proof that the stage's checks failed."""
         k = self.k
-        if exit_lemma == "sv_panic_1908":
-            self.emit(f"  exact .inl ⟨({why_not}), Panics.of_steps t{k} (sv_panic_1908 F E{k} s{k} g{k}_2)⟩")
-            return
         extra = f" (by rw [g{k}_10]; decide) (by rw [g{k}_10]; decide)" if exit_lemma == "sv_fail_138e" else ""
         cr = {"sv_fail": 8, "sv_fail_1882": 25, "sv_fail_1ab8": 20, "sv_fail_e3a": 10}.get(exit_lemma)
         if cr is not None:
@@ -2968,8 +2965,7 @@ def finish(g, off, keep_regs, keep_words=None, keep_bytes=None):
     conj = conj + [f"SvKeepL B n0.mem n'.mem {kl_lean(union)}"]
     terms = terms + [f"keep_kk{g.k}.mono (by decide)"]
     body = "∃ n', " + " ∧\n        ".join(conj)
-    bad = "Panics n0" if getattr(g, "panics", False) else "SvErrRet B out v n0"
-    stmt = (f"(¬ ({g.sc_prop()}) ∧ {bad}) ∨\n    (" + g.sc_ok(body) + ")")
+    stmt = (f"(¬ ({g.sc_prop()}) ∧ SvErrRet B out v n0) ∨\n    (" + g.sc_ok(body) + ")")
     proof = "  exact .inr ⟨" + ", ".join(g.sc_terms() + [f"n{g.k}"] + terms) + "⟩"
     for tag, sub in g.exits:
         assert sub.sc_prop() == g.sc_prop(), (tag, sub.sc_prop(), g.sc_prop())

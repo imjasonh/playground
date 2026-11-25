@@ -12,7 +12,7 @@ open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2 C3.RV32.P2v
 
 set_option maxHeartbeats 64000000 in
 set_option maxRecDepth 100000 in
-/-- **`sigstore::verify`**: called with the bundle at `a1`, the trust root at `a2`, the artifact's digest at `a3`, and the result at `a0`, it returns `Err`, panics, or meets the success condition and returns `Ok`. -/
+/-- **`sigstore::verify`**: called with the bundle at `a1`, the trust root at `a2`, the artifact's digest at `a3`, and the result at `a0`, it returns `Err`, panics only if an inversion bound fails, or meets the success condition and returns `Ok`. -/
 theorem sv_verify {Me : Word → BitVec 8} {n : Machine} {B : Word}
     (C : CodeIn Me SV sigstoreVerifyCode) (E : SvCode Me) (FW : Fr (B + 0xFFFFEC10) 0x3A50)
     (s : St Me SV n 0 (reg n)) (rsp : reg n sp = B + 0x2660) (hb : (reg n a1).toNat % 4 = 0)
@@ -120,7 +120,7 @@ theorem sv_verify {Me : Word → BitVec 8} {n : Machine} {B : Word}
     (it5l : ∀ i, i < 8 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x100), ((reg n a2) + BitVec.ofNat 32 0x308)) → (memLoad32 Me (y1 + 0x20)) ≠ 0 → SvIn B (((y1) + BitVec.ofNat 32 0x20) + 0x10) 4)
     (at5l : ∀ i, i < 8 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x100), ((reg n a2) + BitVec.ofNat 32 0x308)) → (memLoad32 Me (y1 + 0x20)) ≠ 0 → (((y1) + BitVec.ofNat 32 0x20) + 0x10).toNat % 4 = 0)
     (hOk : SvOutOk B (reg n a0)) :
-    SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ Panics n ∨
+    SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ PanicIf n ∨
     (∃ t_1_1_1, derElement 0x30 (memBytes Me (memLoad32 Me (reg n a1)) (memLoad32 Me (reg n a1 + 4)).toNat) = .ok t_1_1_1 ∧ (memLoad32 Me (reg n a1 + 4)) - BitVec.ofNat 32 (t_1_1_1.header + t_1_1_1.len) = 0 ∧
       ∃ tl1_2_1_1, derElement 0x30 (memBytes Me (((memLoad32 Me (reg n a1)) + BitVec.ofNat 32 t_1_1_1.header)) ((BitVec.ofNat 32 t_1_1_1.len)).toNat) = .ok tl1_2_1_1 ∧
       ∃ tl8_2_1_1, derElement 0x30 (memBytes Me ((((memLoad32 Me (reg n a1)) + BitVec.ofNat 32 t_1_1_1.header)) + BitVec.ofNat 32 (tl1_2_1_1.header + tl1_2_1_1.len)) (((BitVec.ofNat 32 t_1_1_1.len)) - BitVec.ofNat 32 (tl1_2_1_1.header + tl1_2_1_1.len)).toNat) = .ok tl8_2_1_1 ∧
@@ -293,7 +293,7 @@ theorem sv_verify {Me : Word → BitVec 8} {n : Machine} {B : Word}
   have hm : ∀ x, SvR B x → n1.mem x = n.mem x := fun x hx => by rw [fM1 x hx, s.mem]
   rcases sv_verify_5c (B := B) (out := reg n a0) (bp := reg n a1) (rootp := reg n a2) (dg := reg n a3) (lp := memLoad32 Me (reg n a1)) (ll := memLoad32 Me (reg n a1 + 4)) (v := (fun k => reg n (savedReg k))) (sl5 := memLoad32 (svProMem Me B n (memLoad32 Me (reg n a1)) (memLoad32 Me (reg n a1 + 4))) (B + 0x21A0 + BitVec.ofNat 32 0x94)) (sl7 := memLoad32 (svProMem Me B n (memLoad32 Me (reg n a1)) (memLoad32 Me (reg n a1 + 4))) (B + 0x21A0 + BitVec.ofNat 32 0x9C)) (sl9 := memLoad32 (svProMem Me B n (memLoad32 Me (reg n a1)) (memLoad32 Me (reg n a1 + 4))) (B + 0x21A0 + BitVec.ofNat 32 0xA4)) (n0 := n1) FW (E.fr F fM1) (by rw [s1.mem]; exact svProMem_saves) hret hO (by rw [s1.mem]; exact s1) Me fM1 sp1 (ra0.trans (by rw [BitVec.add_assoc]; rfl)) (ra1.trans (by rw [BitVec.add_assoc]; rfl)) r18 r19 r20 r21 r22 r26 (by rw [s1.mem]; exact svProMem_reader.1) (by rw [s1.mem]; exact svProMem_reader.2.1) (by rw [s1.mem]; exact svProMem_reader.2.2.1) (by rw [s1.mem]; exact svProMem_reader.2.2.2) lc_in D0 (by rw [s1.mem]) (by rw [s1.mem]) (by rw [s1.mem]) SD0 H' HE0 RS PE0 pkp_in apk pk_in side he0p_in he0l_in ae0p ae0l e0_in he1p_in he1l_in ae1p ae1l e1_in he2p_in he2l_in ae2p ae2l e2_in he3p_in he3l_in ae3p ae3l e3_in he4p_in he4l_in ae4p ae4l e4_in hsgp_in hsgl_in asgp asgl sg_in PE0' dg_in htsp_in htsl_in atsp atsl ts_in D0' H'' S2 pkp_in' apk' pk_in' side' CK0 ckp_in4 ckl_in4 a_ckp a_ckl ck_in H''' kp_in4 kw_in4 a_kp a_kw kp_in EE0 hiv pk_in'' lid_in lih_in lil_in a_lih a_lil RK0 dgi_in pp_in4 pl_in4 a_pp a_pl pp_in ii2h ai2h ii2l ai2l ii3h ai3h ii3l ai3l it4h at4h it4l at4l it5h at5h it5l at5l hOk with e | e | hx
   · exact .inl (SvErrRet.pre c1 (rk _ (by decide)) (rk _ (by decide)) hm e)
-  · exact .inr (.inl (Panics.of_steps c1 e))
+  · exact .inr (.inl (PanicIf.of_steps c1 e))
   obtain ⟨t_1_1_1, hx⟩ := hx
   obtain ⟨p1, hx⟩ := hx
   obtain ⟨p2, hx⟩ := hx

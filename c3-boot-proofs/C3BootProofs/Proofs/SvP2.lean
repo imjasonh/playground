@@ -182,7 +182,7 @@ theorem sv_p2c {B out : Word} {v : Nat → Word} {n0 : Machine}
     (g0_2 : reg n0 sp = B + 0x21A0) (g0_18 : reg n0 (18 : Fin 32) = out)
     (PE0 : P2vEnv M0) (RS : SvRoSep B)
     (k_in : SvIn B (reg n0 (24 : Fin 32)) 0x41) (dg_in : SvIn B (reg n0 (20 : Fin 32)) 32) :
-    SvErrRet B out v n0 ∨ Panics n0 ∨
+    SvErrRet B out v n0 ∨ PanicIf n0 ∨
     (SvP256Facts n0.mem (reg n0 (24 : Fin 32)) (reg n0 (20 : Fin 32))
         (memBytes n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x130) 32)
         (memBytes n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x150) 32) ∧
@@ -210,7 +210,7 @@ theorem sv_p2c {B out : Word} {v : Nat → Word} {n0 : Machine}
           rw [g0_2]; rfl)
       (by decide) (by decide) k_in dg_in with
     hp | ⟨n2, c2, s2, sp2, k2, a2, K2, f2⟩ | ⟨hf, n2, c2, s2, sp2, k2, a2, K2, f2⟩
-  · exact .inr (.inl (Panics.of_steps c1 hp.panics))
+  · exact .inr (.inl (PanicIf.of_steps c1 hp))
   · rw [m1] at K2 f2
     have E2 : SvCode n2.mem := E0.fr F f2
     obtain ⟨n3, d3, u3⟩ := s2.taken E2.self 0xE4E sv_at_a5c (by decide)

@@ -11,10 +11,12 @@ import C3BootProofs.Proofs.SvSpecAux
 /-!
 # `sigstore::verify` computes `sigstoreVerify`
 
-`sv_verify_spec`: called with a `Bundle` and a `SigstoreRoot` laid out as
-`SvBundleAt` and `SvRootAt` say, and the artifact's digest at `a3`, the
-compiled `sigstore::verify` returns `Err`, panics, or returns `Ok` with the
-time and log index of `sigstoreVerify bundle root digest`.
+`sv_verify_spec_pi`: called with a `Bundle` and a `SigstoreRoot` laid out
+as `SvBundleAt` and `SvRootAt` say, and the artifact's digest at `a3`, the
+compiled `sigstore::verify` returns `Err`, panics only if an inversion bound
+fails (`PanicIf`), or returns `Ok` with the time and log index of
+`sigstoreVerify bundle root digest`. `sv_verify_spec` weakens the panic to
+`Panics`.
 -/
 
 namespace C3.RV32.Sv
@@ -47,50 +49,59 @@ theorem tsa_addr {r q : Word} {i : Nat} (h : q = r + BitVec.ofNat 32 0x308 + Bit
 theorem dec1_toNat {k : Nat} (h1 : 1 ≤ k) (h2 : k < 2 ^ 32) : (BitVec.ofNat 32 k + BitVec.ofNat 32 0xFFFFFFFF).toNat = k - 1 := by
   rw [BitVec.toNat_add, ofNat_toNat_lt h2, ofNat_toNat_lt (by decide)]; omega
 
+/-- **`sv_verify_spec` with its panic refined**: `sigstore::verify` returns
+`Err`, panics only if an inversion bound fails, or computes
+`sigstoreVerify`. -/
+def SvVerifySpecPI : Prop :=
+  ∀ {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle : Bundle} {root : SigstoreRoot}
+    (_Bd : SvBundleAt B Me (reg n a1) bundle) (_R : SvRootAt B Me (reg n a2) root)
+    (_C : CodeIn Me SV sigstoreVerifyCode)
+    (_E : SvCode Me)
+    (_FW : Fr (B + 0xFFFFEC10) 0x3A50)
+    (_s : St Me SV n 0 (reg n))
+    (_rsp : reg n sp = B + 0x2660)
+    (_hret : ((fun k => reg n (savedReg k))) 0 &&& ~~~1 = ((fun k => reg n (savedReg k))) 0)
+    (_hO : SvOut B (reg n a0))
+    (_D0 : P2Data Me)
+    (_SD0 : SvData Me)
+    (_HE0 : HfEnv Me)
+    (_RS : SvRoSep B)
+    (_PE0 : PvEnv7 Me)
+    (_PE0' : P2vEnv Me)
+    (_dg_in : SvIn B (reg n a3) 32)
+    (_S2 : SvSha2Code Me)
+    (_CK0 : SvCkCode Me)
+    (_EE0 : EvEnv Me)
+    (_hiv : (s5Hv Me (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)
+    (_RK0 : SvRkCode Me)
+    (_hOk : SvOutOk B (reg n a0))
+    (_OD : SvOidData Me)
+    (_ND : CodeIn Me (BitVec.ofNat 32 b2sOrder256Address) b2sOrder256Data)
+    (_UD : CodeIn Me (BitVec.ofNat 32 p256OneAddress) p256OneData)
+    (_LD : CodeIn Me (BitVec.ofNat 32 edOrderAddress) edOrderData)
+    (_PD : CodeIn Me (BitVec.ofNat 32 edPrimeAddress) edPrimeData)
+    (_PmD : CodeIn Me (BitVec.ofNat 32 edPm1Address) edPm1Data)
+    (_E1D : CodeIn Me (BitVec.ofNat 32 edOneAddress) edOneData)
+    (_EdD : CodeIn Me (BitVec.ofNat 32 edDAddress) edDData)
+    (_SmD : CodeIn Me (BitVec.ofNat 32 edSqrtM1Address) edSqrtM1Data)
+    (_D2D : CodeIn Me (BitVec.ofNat 32 edwardsD2Address) edwardsD2Data)
+    (_BsD : CodeIn Me (BitVec.ofNat 32 edBaseAddress) edBaseData)
+    (_KRD : CodeIn Me (BitVec.ofNat 32 edMontRAddress) edMontRData)
+    (_KRRD : CodeIn Me (BitVec.ofNat 32 edMontRRAddress) edMontRRData)
+    (_RD : SvRekorData Me),
+    SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ PanicIf n ∨
+      ∃ v, sigstoreVerify bundle root (memBytes Me (reg n a3) 32) = some v ∧
+        SvOkRet B (reg n a0) (fun k => reg n (savedReg k)) n (BitVec.ofNat 32 (v.signedTime % 2 ^ 32))
+          (BitVec.ofNat 32 (v.signedTime / 2 ^ 32)) (BitVec.ofNat 32 (v.logIndex % 2 ^ 32))
+          (BitVec.ofNat 32 (v.logIndex / 2 ^ 32))
+
 set_option maxHeartbeats 64000000 in
 set_option maxRecDepth 100000 in
-/-- **`sigstore::verify` computes `sigstoreVerify`.** -/
-theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle : Bundle} {root : SigstoreRoot}
-    (Bd : SvBundleAt B Me (reg n a1) bundle) (R : SvRootAt B Me (reg n a2) root)
-    (C : CodeIn Me SV sigstoreVerifyCode)
-    (E : SvCode Me)
-    (FW : Fr (B + 0xFFFFEC10) 0x3A50)
-    (s : St Me SV n 0 (reg n))
-    (rsp : reg n sp = B + 0x2660)
-    (hret : ((fun k => reg n (savedReg k))) 0 &&& ~~~1 = ((fun k => reg n (savedReg k))) 0)
-    (hO : SvOut B (reg n a0))
-    (D0 : P2Data Me)
-    (SD0 : SvData Me)
-    (HE0 : HfEnv Me)
-    (RS : SvRoSep B)
-    (PE0 : PvEnv7 Me)
-    (PE0' : P2vEnv Me)
-    (dg_in : SvIn B (reg n a3) 32)
-    (S2 : SvSha2Code Me)
-    (CK0 : SvCkCode Me)
-    (EE0 : EvEnv Me)
-    (hiv : (s5Hv Me (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)
-    (RK0 : SvRkCode Me)
-    (hOk : SvOutOk B (reg n a0))
-    (OD : SvOidData Me)
-    (ND : CodeIn Me (BitVec.ofNat 32 b2sOrder256Address) b2sOrder256Data)
-    (UD : CodeIn Me (BitVec.ofNat 32 p256OneAddress) p256OneData)
-    (LD : CodeIn Me (BitVec.ofNat 32 edOrderAddress) edOrderData)
-    (PD : CodeIn Me (BitVec.ofNat 32 edPrimeAddress) edPrimeData)
-    (PmD : CodeIn Me (BitVec.ofNat 32 edPm1Address) edPm1Data)
-    (E1D : CodeIn Me (BitVec.ofNat 32 edOneAddress) edOneData)
-    (EdD : CodeIn Me (BitVec.ofNat 32 edDAddress) edDData)
-    (SmD : CodeIn Me (BitVec.ofNat 32 edSqrtM1Address) edSqrtM1Data)
-    (D2D : CodeIn Me (BitVec.ofNat 32 edwardsD2Address) edwardsD2Data)
-    (BsD : CodeIn Me (BitVec.ofNat 32 edBaseAddress) edBaseData)
-    (KRD : CodeIn Me (BitVec.ofNat 32 edMontRAddress) edMontRData)
-    (KRRD : CodeIn Me (BitVec.ofNat 32 edMontRRAddress) edMontRRData)
-    (RD : SvRekorData Me) :
-    SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ Panics n ∨
-    ∃ v, sigstoreVerify bundle root (memBytes Me (reg n a3) 32) = some v ∧
-      SvOkRet B (reg n a0) (fun k => reg n (savedReg k)) n (BitVec.ofNat 32 (v.signedTime % 2 ^ 32))
-        (BitVec.ofNat 32 (v.signedTime / 2 ^ 32)) (BitVec.ofNat 32 (v.logIndex % 2 ^ 32))
-        (BitVec.ofNat 32 (v.logIndex / 2 ^ 32)) := by
+/-- **`sigstore::verify` computes `sigstoreVerify`**, and panics only if an
+inversion bound fails. -/
+theorem sv_verify_spec_pi : SvVerifySpecPI := by
+  intro Me n B bundle root Bd R C E FW s rsp hret hO D0 SD0 HE0 RS PE0 PE0' dg_in S2 CK0 EE0 hiv RK0 hOk OD ND UD LD
+    PD PmD E1D EdD SmD D2D BsD KRD KRRD RD
   rcases sv_verify_at Bd R C E FW s rsp hret hO D0 SD0 HE0 RS PE0
     (fun _ _ _ _ _ _ M => C3.RV32.Safegcd.pvSide_holds M _ _ _ _ _) PE0' dg_in S2
     (fun _ _ _ _ _ _ M => C3.RV32.Safegcd.pvSide_holds M _ _ _ _ _) CK0 EE0 hiv RK0 hOk with e | p | hsc
@@ -408,5 +419,52 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
   refine ⟨_, rfl, ?_⟩
   rw [Bd.logIndex.2.1, h2C, Bd.logIndex.2.2, ← ofNat_mod32 bundle.logIndex] at c198
   exact c198
+
+
+/-- **`sigstore::verify` computes `sigstoreVerify`.** It returns `Err`, panics, or
+returns `Ok` as `sv_verify_spec_pi` says. -/
+theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle : Bundle} {root : SigstoreRoot}
+    (Bd : SvBundleAt B Me (reg n a1) bundle) (R : SvRootAt B Me (reg n a2) root)
+    (C : CodeIn Me SV sigstoreVerifyCode)
+    (E : SvCode Me)
+    (FW : Fr (B + 0xFFFFEC10) 0x3A50)
+    (s : St Me SV n 0 (reg n))
+    (rsp : reg n sp = B + 0x2660)
+    (hret : ((fun k => reg n (savedReg k))) 0 &&& ~~~1 = ((fun k => reg n (savedReg k))) 0)
+    (hO : SvOut B (reg n a0))
+    (D0 : P2Data Me)
+    (SD0 : SvData Me)
+    (HE0 : HfEnv Me)
+    (RS : SvRoSep B)
+    (PE0 : PvEnv7 Me)
+    (PE0' : P2vEnv Me)
+    (dg_in : SvIn B (reg n a3) 32)
+    (S2 : SvSha2Code Me)
+    (CK0 : SvCkCode Me)
+    (EE0 : EvEnv Me)
+    (hiv : (s5Hv Me (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)
+    (RK0 : SvRkCode Me)
+    (hOk : SvOutOk B (reg n a0))
+    (OD : SvOidData Me)
+    (ND : CodeIn Me (BitVec.ofNat 32 b2sOrder256Address) b2sOrder256Data)
+    (UD : CodeIn Me (BitVec.ofNat 32 p256OneAddress) p256OneData)
+    (LD : CodeIn Me (BitVec.ofNat 32 edOrderAddress) edOrderData)
+    (PD : CodeIn Me (BitVec.ofNat 32 edPrimeAddress) edPrimeData)
+    (PmD : CodeIn Me (BitVec.ofNat 32 edPm1Address) edPm1Data)
+    (E1D : CodeIn Me (BitVec.ofNat 32 edOneAddress) edOneData)
+    (EdD : CodeIn Me (BitVec.ofNat 32 edDAddress) edDData)
+    (SmD : CodeIn Me (BitVec.ofNat 32 edSqrtM1Address) edSqrtM1Data)
+    (D2D : CodeIn Me (BitVec.ofNat 32 edwardsD2Address) edwardsD2Data)
+    (BsD : CodeIn Me (BitVec.ofNat 32 edBaseAddress) edBaseData)
+    (KRD : CodeIn Me (BitVec.ofNat 32 edMontRAddress) edMontRData)
+    (KRRD : CodeIn Me (BitVec.ofNat 32 edMontRRAddress) edMontRRData)
+    (RD : SvRekorData Me) :
+    SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ Panics n ∨
+    ∃ v, sigstoreVerify bundle root (memBytes Me (reg n a3) 32) = some v ∧
+      SvOkRet B (reg n a0) (fun k => reg n (savedReg k)) n (BitVec.ofNat 32 (v.signedTime % 2 ^ 32))
+        (BitVec.ofNat 32 (v.signedTime / 2 ^ 32)) (BitVec.ofNat 32 (v.logIndex % 2 ^ 32))
+        (BitVec.ofNat 32 (v.logIndex / 2 ^ 32)) :=
+  (sv_verify_spec_pi Bd R C E FW s rsp hret hO D0 SD0 HE0 RS PE0 PE0' dg_in S2 CK0 EE0 hiv RK0 hOk OD ND UD LD PD
+    PmD E1D EdD SmD D2D BsD KRD KRRD RD).imp_right (Or.imp_left PanicIf.panics)
 
 end C3.RV32.Sv

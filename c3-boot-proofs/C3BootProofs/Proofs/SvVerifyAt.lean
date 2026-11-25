@@ -40,7 +40,7 @@ theorem sv_verify_at {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle :
     (hiv : (s5Hv Me (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)
     (RK0 : SvRkCode Me)
     (hOk : SvOutOk B (reg n a0)) :
-    SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ Panics n ∨
+    SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ PanicIf n ∨
     (∃ t_1_1_1, derElement 0x30 (memBytes Me (memLoad32 Me (reg n a1)) (memLoad32 Me (reg n a1 + 4)).toNat) = .ok t_1_1_1 ∧ (memLoad32 Me (reg n a1 + 4)) - BitVec.ofNat 32 (t_1_1_1.header + t_1_1_1.len) = 0 ∧
       ∃ tl1_2_1_1, derElement 0x30 (memBytes Me (((memLoad32 Me (reg n a1)) + BitVec.ofNat 32 t_1_1_1.header)) ((BitVec.ofNat 32 t_1_1_1.len)).toNat) = .ok tl1_2_1_1 ∧
       ∃ tl8_2_1_1, derElement 0x30 (memBytes Me ((((memLoad32 Me (reg n a1)) + BitVec.ofNat 32 t_1_1_1.header)) + BitVec.ofNat 32 (tl1_2_1_1.header + tl1_2_1_1.len)) (((BitVec.ofNat 32 t_1_1_1.len)) - BitVec.ofNat 32 (tl1_2_1_1.header + tl1_2_1_1.len)).toNat) = .ok tl8_2_1_1 ∧

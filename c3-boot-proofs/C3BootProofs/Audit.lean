@@ -10819,6 +10819,9 @@ end C3
 /-- info: 'C3.RV32.Sv.sv_p2F' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Sv.sv_p2F
 
+/-- info: 'C3.RV32.Sv.sv_verify_spec_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Sv.sv_verify_spec_pi
+
 /-- info: 'C3.RV32.Ac.AcStagePI.acStage' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.AcStagePI.acStage
 

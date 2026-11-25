@@ -24,7 +24,8 @@ one is a current theorem's statement with its panic disjunct refined:
 The theorems that prove them are to be named after the theorem they refine
 with the suffix `_pi`, such as `tufRoleKeysMet_ret_pi :
 TufRoleKeysMetRetPI`, and the headline `reset_correct_loaded_np :
-ResetCorrectLoadedNP`.
+ResetCorrectLoadedNP`. `Sv.SvVerifySpecPI` is stated in `SvSpec.lean`,
+beside `Sv.sv_verify_spec_pi : SvVerifySpecPI`, which proves it.
 
 `Cur.BootsSlot` is the boot outcome that `bootMain_correct` and
 `reset_correct_loaded` share; `bootMain_correct_boots` and
@@ -69,58 +70,6 @@ def TufRoleKeysMetRetPI : Prop :=
             (reg m' a0 = 0 ∨ reg m' a0 = 1) ∧ (reg m' a0 ≠ 0 → (reg m' a1 &&& 0xFF).toNat < 0x27)))
 
 end C3.RV32
-
-namespace C3.RV32.Sv
-
-open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2 C3.RV32.Gd C3.RV32.P2v
-
-/-- **`sv_verify_spec` with its panic refined**: `sigstore::verify` returns
-`Err`, panics only if an inversion bound fails, or computes
-`sigstoreVerify`. -/
-def SvVerifySpecPI : Prop :=
-  ∀ {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle : Bundle} {root : SigstoreRoot}
-    (_Bd : SvBundleAt B Me (reg n a1) bundle) (_R : SvRootAt B Me (reg n a2) root)
-    (_C : CodeIn Me SV sigstoreVerifyCode)
-    (_E : SvCode Me)
-    (_FW : Fr (B + 0xFFFFEC10) 0x3A50)
-    (_s : St Me SV n 0 (reg n))
-    (_rsp : reg n sp = B + 0x2660)
-    (_hret : ((fun k => reg n (savedReg k))) 0 &&& ~~~1 = ((fun k => reg n (savedReg k))) 0)
-    (_hO : SvOut B (reg n a0))
-    (_D0 : P2Data Me)
-    (_SD0 : SvData Me)
-    (_HE0 : HfEnv Me)
-    (_RS : SvRoSep B)
-    (_PE0 : PvEnv7 Me)
-    (_PE0' : P2vEnv Me)
-    (_dg_in : SvIn B (reg n a3) 32)
-    (_S2 : SvSha2Code Me)
-    (_CK0 : SvCkCode Me)
-    (_EE0 : EvEnv Me)
-    (_hiv : (s5Hv Me (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)
-    (_RK0 : SvRkCode Me)
-    (_hOk : SvOutOk B (reg n a0))
-    (_OD : SvOidData Me)
-    (_ND : CodeIn Me (BitVec.ofNat 32 b2sOrder256Address) b2sOrder256Data)
-    (_UD : CodeIn Me (BitVec.ofNat 32 p256OneAddress) p256OneData)
-    (_LD : CodeIn Me (BitVec.ofNat 32 edOrderAddress) edOrderData)
-    (_PD : CodeIn Me (BitVec.ofNat 32 edPrimeAddress) edPrimeData)
-    (_PmD : CodeIn Me (BitVec.ofNat 32 edPm1Address) edPm1Data)
-    (_E1D : CodeIn Me (BitVec.ofNat 32 edOneAddress) edOneData)
-    (_EdD : CodeIn Me (BitVec.ofNat 32 edDAddress) edDData)
-    (_SmD : CodeIn Me (BitVec.ofNat 32 edSqrtM1Address) edSqrtM1Data)
-    (_D2D : CodeIn Me (BitVec.ofNat 32 edwardsD2Address) edwardsD2Data)
-    (_BsD : CodeIn Me (BitVec.ofNat 32 edBaseAddress) edBaseData)
-    (_KRD : CodeIn Me (BitVec.ofNat 32 edMontRAddress) edMontRData)
-    (_KRRD : CodeIn Me (BitVec.ofNat 32 edMontRRAddress) edMontRRData)
-    (_RD : SvRekorData Me),
-    SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ PanicIf n ∨
-      ∃ v, sigstoreVerify bundle root (memBytes Me (reg n a3) 32) = some v ∧
-        SvOkRet B (reg n a0) (fun k => reg n (savedReg k)) n (BitVec.ofNat 32 (v.signedTime % 2 ^ 32))
-          (BitVec.ofNat 32 (v.signedTime / 2 ^ 32)) (BitVec.ofNat 32 (v.logIndex % 2 ^ 32))
-          (BitVec.ofNat 32 (v.logIndex / 2 ^ 32))
-
-end C3.RV32.Sv
 
 namespace C3.RV32.Ac
 

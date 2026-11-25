@@ -146,14 +146,14 @@ class Stage:
         if '\n    (¬' in st:
             k = st.index('\n    (¬')
             neg = st[k + len('\n    (¬ ('):]
-            e = min(x for x in (neg.find(') ∧ SvErrRet'), neg.find(') ∧ P2vRet'), neg.find(') ∧ Panics'))
+            e = min(x for x in (neg.find(') ∧ SvErrRet'), neg.find(') ∧ P2vRet'), neg.find(') ∧ PanicIf'))
                     if x >= 0)
             self.sc = neg[:e]
-            self.fail = 'Panics' if neg[e:].startswith(') ∧ Panics') else 'SvErrRet'
+            self.fail = 'Panics' if neg[e:].startswith(') ∧ PanicIf') else 'SvErrRet'
         else:
             k = st.index('\n    SvErrRet B out v n0 ∨')
             self.sc = None
-            both = st[k:].startswith('\n    SvErrRet B out v n0 ∨ Panics n0 ∨')
+            both = st[k:].startswith('\n    SvErrRet B out v n0 ∨ PanicIf n0 ∨')
             self.fail = 'Both' if both else 'SvErrRet'
             self.errpat = 'e | e' if both else 'e'
         self.params = []

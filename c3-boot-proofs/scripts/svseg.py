@@ -340,7 +340,7 @@ class Segment:
         if kk == 1:
             P(f"{indent}· exact .inr (.inl e)" if kind == 'Panics' else f"{indent}· exact .inl e")
         elif kind == 'Panics':
-            P(f"{indent}· exact .inr (.inl (Panics.of_steps ({chain_steps(kk - 1)}) e))")
+            P(f"{indent}· exact .inr (.inl (PanicIf.of_steps ({chain_steps(kk - 1)}) e))")
         else:
             r3 = ", ".join(f"r{j}_3" for j in range(kk - 1, 0, -1))
             r4 = ", ".join(f"r{j}_4" for j in range(kk - 1, 0, -1))
@@ -395,7 +395,7 @@ class Segment:
         part = f"{dbind}(({branches[0]}) ∨ ({branches[1]}))"
         facts = [f for key, f in merged.items() if key != 'STEPS']
         body = " ∧\n        ".join(re.sub(rf"(?<![\w.'])n{kk}(?![\w'])", "n'", f.text) for f in facts)
-        P(f"  have M{kk} : SvErrRet B out v n{k} ∨ Panics n{k} ∨ {part} ∧")
+        P(f"  have M{kk} : SvErrRet B out v n{k} ∨ PanicIf n{k} ∨ {part} ∧")
         P(f"      ∃ n', Steps n{k} n' ∧\n        {body} := by")
         P(f"    by_cases hb : {runs[0][6]}")
         for i, (st, args, names, pats, sc, prev, tc) in enumerate(runs):
@@ -932,7 +932,7 @@ class Segment:
         out = [f"theorem {self.name} BINDERS"]
         out += [f"    ({p} : {t})" for p, t in self.hyps]
         out[-1] += " :"
-        out.append("    SvErrRet B out v n0 ∨ Panics n0 ∨" if self.panics else "    SvErrRet B out v n0 ∨")
+        out.append("    SvErrRet B out v n0 ∨ PanicIf n0 ∨" if self.panics else "    SvErrRet B out v n0 ∨")
         lines = [f"{x} ∧" for x in self.sc] + ["∃ n', Steps n0 n' ∧"]
         out.append("    (" + lines[0])
         out += ["      " + x if x != lines[-1] else "    " + x for x in lines[1:]]

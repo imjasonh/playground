@@ -143,7 +143,7 @@ theorem sv_seg_sv {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Mach
     (at5h : ∀ i, i < 8 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x100), (rootp + BitVec.ofNat 32 0x308)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → (((y1) + BitVec.ofNat 32 0x20) + 0x14).toNat % 4 = 0)
     (it5l : ∀ i, i < 8 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x100), (rootp + BitVec.ofNat 32 0x308)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (((y1) + BitVec.ofNat 32 0x20) + 0x10) 4)
     (at5l : ∀ i, i < 8 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x100), (rootp + BitVec.ofNat 32 0x308)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → (((y1) + BitVec.ofNat 32 0x20) + 0x10).toNat % 4 = 0) :
-    SvErrRet B out v n0 ∨ Panics n0 ∨
+    SvErrRet B out v n0 ∨ PanicIf n0 ∨
     (∃ t_1_1_1, derElement 0x30 (memBytes M0 lp ll.toNat) = .ok t_1_1_1 ∧ ll - BitVec.ofNat 32 (t_1_1_1.header + t_1_1_1.len) = 0 ∧
       ∃ tl1_2_1_1, derElement 0x30 (memBytes M0 ((lp + BitVec.ofNat 32 t_1_1_1.header)) ((BitVec.ofNat 32 t_1_1_1.len)).toNat) = .ok tl1_2_1_1 ∧
       ∃ tl8_2_1_1, derElement 0x30 (memBytes M0 (((lp + BitVec.ofNat 32 t_1_1_1.header)) + BitVec.ofNat 32 (tl1_2_1_1.header + tl1_2_1_1.len)) (((BitVec.ofNat 32 t_1_1_1.len)) - BitVec.ofNat 32 (tl1_2_1_1.header + tl1_2_1_1.len)).toNat) = .ok tl8_2_1_1 ∧
@@ -605,7 +605,7 @@ theorem sv_seg_sv {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Mach
   rcases sv_p2st FW E1 V1 hret hO s1 M0 fR1 r1_2 r1_18 r1_19 r1_20 r1_21 r1_22 r1_23 r1_24 r1_26 b1_130 q1_131 q1_150 PE0' RS (by have h := SvIn.bitsW (((((((((((((lc_in).content x1_0).ofNatLen).content x1_2).ofNatLen).restW (opt_ok_elem x1_7)).restW x1_11).restW x1_14).restW x1_17).restW x1_18).restW x1_22).content x1_23).restN x1_25) x1_29 x1_30; rw [x1_31] at h; exact h) dg_in with e | e | hx2
   · exact .inl (SvErrRet.pre (c1) (by rw [r1_3]) (by rw [r1_4])
       (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)
-  · exact .inr (.inl (Panics.of_steps (c1) e))
+  · exact .inr (.inl (PanicIf.of_steps (c1) e))
   obtain ⟨x2_0, hx2⟩ := hx2
   obtain ⟨n2, hx2⟩ := hx2
   obtain ⟨c2, hx2⟩ := hx2
@@ -628,7 +628,7 @@ theorem sv_seg_sv {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Mach
   rcases sv_seg_ts FW E2 V2 hret hO s2 M0 fR2 r2_2 r2_18 r2_19 r2_20 r2_21 r2_22 r2_23 r2_24 rfl r2_26 rfl rfl rfl htsp_in htsl_in atsp atsl ts_in D0' (fun i hi c'_6_3 q'_6_3 h => ⟨(H'' i hi c'_6_3 q'_6_3 h).1, (H'' i hi c'_6_3 q'_6_3 h).2.1, (H'' i hi c'_6_3 q'_6_3 h).2.2.1, (H'' i hi c'_6_3 q'_6_3 h).2.2.2.1, (H'' i hi c'_6_3 q'_6_3 h).2.2.2.2⟩) ((K2_L.w32 (by decide) (by decide)).trans w1_68) ((K2_L.w32 (by decide) (by decide)).trans w1_70) S2 RS (sg_in) PE0 pkp_in' apk' pk_in' side' with e | e | hx3
   · exact .inl (SvErrRet.pre (c1.trans (c2)) (by rw [r2_3, r1_3]) (by rw [r2_4, r1_4])
       (fun x hx => (fR2 x hx).trans (fM x hx).symm) e)
-  · exact .inr (.inl (Panics.of_steps (c1.trans (c2)) e))
+  · exact .inr (.inl (PanicIf.of_steps (c1.trans (c2)) e))
   obtain ⟨tl10_1_1_3, hx3⟩ := hx3
   obtain ⟨x3_0, hx3⟩ := hx3
   obtain ⟨x3_1, hx3⟩ := hx3
