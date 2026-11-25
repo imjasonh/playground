@@ -100,6 +100,7 @@ build:
 	  $(MAKE) --no-print-directory build-app BOARD=$$b APP=$$a PROFILING=$(PROFILING) || exit 1; \
 	done
 	@$(MAKE) --no-print-directory build-gzip-bench
+	@$(MAKE) --no-print-directory build-gzip-bench-xiao
 
 GZIP_BENCH_TARGET_DIR := $(CURDIR)/target/waveshare-epd75-nobt
 GZIP_BENCH_BIN := $(GZIP_BENCH_TARGET_DIR)/xtensa-esp32-espidf/release/waveshare-epd75-gzip-bench
@@ -128,6 +129,31 @@ flash-gzip-bench: build-gzip-bench
 
 profile-gzip-bench:
 	python3 scripts/gzip-bench-profile.py --port $(PORT) --elf $(GZIP_BENCH_BIN) --svg docs/esp32-rom-miniz-flamegraph.svg
+
+XIAO_GZIP_BENCH_TARGET_DIR := $(CURDIR)/target/xiao-esp32c3-nobt
+XIAO_GZIP_BENCH_BIN := $(XIAO_GZIP_BENCH_TARGET_DIR)/riscv32imc-esp-espidf/release/xiao-esp32c3-gzip-bench
+XIAO_GZIP_BENCH_SDKCONFIG_DEFAULTS := $(XIAO_GZIP_BENCH_TARGET_DIR)/sdkconfig.defaults
+XIAO_GZIP_BENCH_SDKCONFIG := $(XIAO_GZIP_BENCH_TARGET_DIR)/sdkconfig
+
+$(XIAO_GZIP_BENCH_SDKCONFIG_DEFAULTS): sdkconfig.defaults.xiao-nobt.in partitions.csv
+	@mkdir -p $(XIAO_GZIP_BENCH_TARGET_DIR)
+	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' sdkconfig.defaults.xiao-nobt.in > $@
+
+build-gzip-bench-xiao: ensure-python-shim $(XIAO_GZIP_BENCH_SDKCONFIG_DEFAULTS)
+	$(PROFILE_CARGO_ENV) \
+	MCU=esp32c3 \
+	CARGO_TARGET_DIR=$(XIAO_GZIP_BENCH_TARGET_DIR) \
+	ESP_IDF_SDKCONFIG_DEFAULTS=$(XIAO_GZIP_BENCH_SDKCONFIG_DEFAULTS) \
+	ESP_IDF_SDKCONFIG=$(XIAO_GZIP_BENCH_SDKCONFIG) \
+	  cargo +$(ESP_TOOLCHAIN) build --release \
+	    --features standalone \
+	    --bin xiao-esp32c3-gzip-bench \
+	    --target riscv32imc-esp-espidf \
+	    -Z build-std=std,panic_abort
+	@echo "firmware xiao-esp32c3-gzip-bench -> $(XIAO_GZIP_BENCH_BIN) ($$(wc -c < "$(XIAO_GZIP_BENCH_BIN)") bytes ELF)"
+
+flash-gzip-bench-xiao: build-gzip-bench-xiao
+	espflash flash --port $(PORT) --partition-table partitions.csv $(XIAO_GZIP_BENCH_BIN)
 
 build-app: ensure-python-shim $(SDKCONFIG_DEFAULTS)
 	@if [ -z "$(FIRMWARE_ID)" ]; then \

@@ -73,3 +73,48 @@ Assuming zero software bottlenecks (240 MHz, IRAM hot loops, 64-bit bitbuffer, 3
 | **Deflate — Fast greedy (`p1`)** | **1.39–3.69 MB/s** | **~12–20 MB/s** (JSON) / **~24–40 MB/s** (RLE) | **~24–40 MB/s** / **~48–80 MB/s** |
 | **Deflate — Default (`p128`, level ~6)** | **0.82–3.17 MB/s** | **~4–8 MB/s** | **~8–16 MB/s** |
 | **CRC32** | **10.49 MB/s** | **~48–68 MB/s** (Slicing-by-8) | **~96–136 MB/s** |
+
+---
+
+## XIAO ESP32-C3 (`riscv32imc` @ 160 MHz, `miniz_oxide`)
+
+Measured directly over USB-C (`/dev/cu.usbmodem1101`) on **Seeed Studio XIAO ESP32-C3** (`esp32c3` rev v0.4, 160 MHz single-core RISC-V RV32IMC, 400 KiB SRAM, no PSRAM) with `CONFIG_BT_ENABLED=n`.
+
+![XIAO ESP32-C3 miniz_oxide 2 kHz PC Flame Chart](esp32c3-miniz-oxide-flamegraph.svg)
+
+### Reproduce on USB-C
+
+```bash
+cd mcu-lab
+make flash-gzip-bench-xiao PORT=/dev/cu.usbmodem1101
+```
+
+### Measured Throughput @ 160 MHz
+
+| Operation | Corpus (in → out, ratio) | Time / op | Throughput @ 160 MHz | Cycles / Byte |
+|-----------|--------------------------|----------:|---------------------:|--------------:|
+| **SRAM `memcpy` ceiling** | `8k_sram` (8192 B) | 36.6 µs | **223.76 MB/s** | **0.7** |
+| **`miniz_oxide` inflate** | `rle_epd` (125 → 8192 B, 65.5×) | 699.8 µs | **11.71 MB/s** | 13.7 |
+| **`miniz_oxide` inflate** | `json_otel` (585 → 4096 B, 7.0×) | 811.0 µs | **5.05 MB/s** | 31.7 |
+| **`miniz_oxide` inflate** | `code_ascii` (1058 → 4096 B, 3.9×) | 1,029.8 µs | **3.98 MB/s** | 40.2 |
+| **`miniz_oxide` inflate** | `incompressible` (2053 → 2048 B, stored) | 18.3 µs | **112.10 MB/s** | 1.4 |
+| **ROM `esp_rom_crc32_le`** | All corpora | 852.4 µs / 8 KiB | **9.61 MB/s** | 16.6 |
+| **Rust `protocol::crc32`** | All corpora (bit-by-bit) | 4,153.6 µs / 8 KiB | **1.97 MB/s** | 81.1 |
+| **`miniz_oxide` deflate** | `CompressorOxide` | — | **OOM** (aborted on `85,196 B` alloc; `free_heap=291,660 B`, `largest_block=126,976 B`) | — |
+
+### ESP32-C3 `miniz_oxide` Bottlenecks (2 kHz `mepc` Profile)
+
+1. **`miniz_oxide::inflate::core::init_tree` (29.9% of inflate):** Rebuilding Huffman lookup tables on every 4–8 KiB block dominates small-block inflate (`core.rs:989-991`, `specialize.rs:66`).
+2. **`miniz_oxide::inflate::core::transfer` + `copy<u8>` (14.7% of inflate):** Byte-by-byte match copy (~1.75× faster per MHz than Xtensa Flash-XIP `miniz_oxide` — `13.7 cyc/B` on RV32IMC vs `23.6 cyc/B` on LX6 — matching ESP32 Mask-ROM `tinfl`'s `13.4 cyc/B`).
+3. **`miniz_oxide` deflate (`CompressorOxide`) OOM:** `sizeof(CompressorOxide) = 65,656 B` plus `HashBuffers` (33 + 64 + 64 KiB) and `LocalBuf` (83 KiB) + `Default::default()` stack frame exceeds ESP32-C3's `319,616 B` total free SRAM even with BLE disabled.
+4. **Bit-by-bit `protocol::crc32` (81.1 cyc/B, 1.97 MB/s):** Calling ROM `esp_rom_crc32_le` (`16.6 cyc/B`, `9.61 MB/s`) is **4.9× faster** at zero extra RAM cost.
+
+### Theoretical Max Throughput (160 MHz RISC-V RV32IMC, 1 Core)
+
+| Operation | Measured @ 160 MHz | Theoretical Max @ 160 MHz |
+|-----------|-------------------:|--------------------------:|
+| **SRAM `memcpy` ceiling** | **223.8 MB/s** | **~224 MB/s** |
+| **Inflate — Stored block** | **112.1 MB/s** | **~160–200 MB/s** |
+| **Inflate — RLE (`rle_epd`)** | **11.71 MB/s** | **~55–90 MB/s** |
+| **Inflate — Typical JSON / code** | **3.98–5.05 MB/s** | **~20–32 MB/s** |
+| **CRC32** | **9.61 MB/s** (`ROM`) / **1.97 MB/s** (`Rust`) | **~32–45 MB/s** (Slicing-by-8) |
