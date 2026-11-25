@@ -572,6 +572,11 @@ import C3BootProofs.Proofs.AcceptAt
 import C3BootProofs.Proofs.AcceptSlot
 import C3BootProofs.Proofs.AcceptLib
 import C3BootProofs.Proofs.AcceptStages
+import C3BootProofs.Proofs.AcceptBundleLib
+import C3BootProofs.Proofs.AcceptBundleCall
+import C3BootProofs.Proofs.AcceptBundleSteps
+import C3BootProofs.Proofs.AcceptBundleSegs
+import C3BootProofs.Proofs.AcceptBundle
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
