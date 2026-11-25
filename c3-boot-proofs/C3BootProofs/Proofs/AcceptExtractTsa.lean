@@ -15,9 +15,9 @@ part and appends an entry to the array of 8 at `sp + 0x890`.
 
 The invariant is `AceTsaInv`: the items left, the keys so far as
 `aceKeys aceTsa` (`mapM`, then `filterMap`) of the items done, the cursor,
-and the three arrays. `acets_pass` proves one pass from its end back to its
-start, and `acets_stage` proves `AceTsaStage` by induction on the items
-left.
+and the three arrays. `acets_p1` to `acets_p5` and `acets_back` prove one
+pass, from 0x123A back to 0x123A or out to 0x1434, and `acets_loop` proves
+`AceTsaStage` by induction on the items left.
 
 `read_chain`'s theorem leaves the error byte unconstrained when the model's
 error carries no code (a decoded chain that overflows the buffer, or a
@@ -1633,7 +1633,7 @@ theorem acets_p2 (H : AcetsRcErr) {M : Word → BitVec 8} {f : Fin 32 → Word}
   refine acets_p3a O C (fp1 := fp + BitVec.ofNat 32 s.dec.length) (ip := cert.issuer) (sq := cert.serial)
     (kp := cert.key) (iss := info.issuer) (ser := info.serial) (key := rcView s.dec (a4, 0x61))
     (w := ⟨s.nb, s.na⟩) ?_ (fun d hd => acets_tsaSome hrc hpk hd) (by acets_hr)
-    (by rsimp <;> simp only [ev_add, R.rz, acets_0add])
+    (by rsimp <;> simp only [ev_add, acets_0add])
   exact {
     lo := by omega, f0 := by omega, f1 := by omega, i0 := by omega, i1 := by rw [li]; omega,
     s0 := by omega, s1 := by rw [ls']; omega, k0 := by omega, k1 := by omega, nb := snb, na := sna,
@@ -1652,5 +1652,226 @@ theorem acets_p2 (H : AcetsRcErr) {M : Word → BitVec 8} {f : Fin 32 → Word}
     ptr := hptr3, len := hlen3 }
 
 end Pass
+
+/-! ## The loop -/
+
+section Loop
+variable {X : AceCtx} (O : X.Ok) {n0 : Machine} {fp : Word} {jr : Json} {fs : List FulcioKey}
+  {ls : List LogKey} {ts : List TsaKey}
+
+theorem acets_R0 {rest : List Json} (A : AceAt X n0 0x123A fp) (I : AceTsaInv X n0 fp jr fs ls rest ts) :
+    AcetsR X ts.length (reg n0) :=
+  ⟨rfl, A.inv.sp, A.inv.gp, A.inv.tp, A.keep.regs 21 (by decide), A.keep.regs 25 (by decide), I.r26,
+    A.keep.regs 27 (by decide)⟩
+
+include O
+
+/-- The exit at 0x1434 when no items are left. -/
+theorem acets_exit (A : AceAt X n0 0x123A fp) (I : AceTsaInv X n0 fp jr fs ls [] ts)
+    {M : Word → BitVec 8} {f : Fin 32 → Word}
+    (hm : ∀ x : Word, AcetsO X.B.toNat X.Bf.toNat fp.toNat 0 0 x.toNat → M x = n0.mem x)
+    (hptr : memLoad32 M (X.B + BitVec.ofNat 32 0x5A2C) = fp)
+    (hlen : memLoad32 M (X.B + BitVec.ofNat 32 0x5A30) = BitVec.ofNat 32 (X.Bf.toNat + 0xB840 - fp.toNat))
+    (R : AcetsR X ts.length f) :
+    WP bootMainClosure0Code AC (acetsQ X (AcetsNext X jr fs ls [])) M 0x1434 f := by
+  have F := O.lay.fr
+  have N := acets_n O
+  have ⟨_, _, _, _, _, _, _, _⟩ := N
+  have := A.fr.lo
+  have := A.fr.hi
+  have buf : ∀ y : Word, X.Bf.toNat + 0x4000 ≤ y.toNat → y.toNat < fp.toNat → M y = n0.mem y :=
+    fun y h1 h2 => hm y (by acets_o)
+  refine WP.here fun n hpc hn hr => ?_
+  have h2 : reg n (2 : Fin 32) = X.B + 0x3A50 := by rw [hr]; exact R.rsp
+  refine ⟨acets_inv O A hm (.inl (Nat.le_refl _)) (.inl (Nat.le_refl _)) hn h2 (by rw [hr]; exact R.rgp)
+      (by rw [hr]; exact R.rtp),
+    .inr (.inl ⟨hpc, fp, ts,
+      acets_at O A hm (.inl (Nat.le_refl _)) (.inl (Nat.le_refl _)) hn hpc h2 (by rw [hr]; exact R.rgp)
+        (by rw [hr]; exact R.rtp) (by rw [hr]; exact R.r21) (by rw [hr]; exact R.r25)
+        (by rw [hr]; exact R.r27) (Nat.le_refl _) A.fr.hi hptr hlen,
+      ⟨jr, I.root, I.cas, I.tlogs, I.tsas⟩, ?_, ?_, ?_⟩)⟩
+  · rw [hn]
+    exact acets_arrMv I.fulcio (fun c hc => hm _ (by
+      have e := F.at (0x3A50 + 0x1ED0 + c) (by omega)
+      rw [ace_slot, e]; acets_o)) buf (Nat.le_refl _)
+  · rw [hn]
+    exact acets_arrMv I.logs (fun c hc => hm _ (by
+      have e := F.at (0x3A50 + 0x350 + c) (by omega)
+      rw [ace_slot, e]; acets_o)) buf (Nat.le_refl _)
+  · rw [hn]
+    exact acets_arrMv I.tsaKeys (fun c hc => hm _ (by
+      have e := F.at (0x3A50 + 0x890 + c) (by omega)
+      rw [ace_slot, e]; acets_o)) buf (Nat.le_refl _)
+
+set_option maxHeartbeats 1000000 in
+/-- From 0x123A: `next_element` on the cursor, then the exit at 0x1434
+when no items are left, or the pass over the next item. -/
+theorem acets_p1 (H : AcetsRcErr) {rest : List Json} (A : AceAt X n0 0x123A fp)
+    (I : AceTsaInv X n0 fp jr fs ls rest ts) :
+    WP bootMainClosure0Code AC (acetsQ X (AcetsNext X jr fs ls rest)) n0.mem 0x123A (reg n0) := by
+  have F := O.lay.fr
+  have N := acets_n O
+  have ⟨_, _, _, _, _, _, lay, _⟩ := N
+  have := A.fr.lo
+  have := A.fr.hi
+  have := F.hi
+  have R := acets_R0 A I
+  have hm0 : ∀ x : Word, AcetsO X.B.toNat X.Bf.toNat fp.toNat 0 0 x.toNat → n0.mem x = n0.mem x :=
+    fun _ _ => rfl
+  have E := acets_env O A hm0 (.inl (Nat.le_refl _)) (.inl (Nat.le_refl _))
+  have hdoc := acets_doc O A hm0 (.inl (Nat.le_refl _)) (.inl (Nat.le_refl _))
+  have hAC := ace_AC
+  have hcd := A.code
+  obtain ⟨p, l', pos, c0, c4, c8, hpos, hD, hpl, hE⟩ := I.cur
+  have ec : acSlot X.B 0x1DC8 = X.B + BitVec.ofNat 32 0x5818 := rfl
+  have e4 : X.B + BitVec.ofNat 32 0x5818 + 4 = X.B + BitVec.ofNat 32 0x581C := add_ofNat_assoc _ _ _
+  have e8 : X.B + BitVec.ofNat 32 0x5818 + 8 = X.B + BitVec.ofNat 32 0x5820 := add_ofNat_assoc _ _ _
+  rw [ec] at c0 c4 c8
+  have hv : memBytes n0.mem p l' = (X.json.drop (p.toNat - X.D.toNat)).take l' := by
+    have ep : X.D + BitVec.ofNat 32 (p.toNat - X.D.toNat) = p := by
+      apply BitVec.eq_of_toNat_eq
+      rw [acets_tn (by omega)]; omega
+    rw [← hdoc, memBytes_drop_take (by omega), ep]
+  have tS := F.at 0x39BC (by decide)
+  have tO := F.at 0x4D70 (by decide)
+  have tC := F.at 0x5818 (by decide)
+  have hs : (X.B + BitVec.ofNat 32 0x39BC).toNat + 148 ≤ 0x40000000 := by rw [tS]; omega
+  have hso : (X.B + BitVec.ofNat 32 0x4D70).toNat + 12 ≤ 0x40000000 := by rw [tO]; omega
+  have hsc : (X.B + BitVec.ofNat 32 0x5818).toNat + 12 ≤ 0x40000000 := by rw [tC]; omega
+  have ln := (O.lay.ro.sub (c := 0x39BC) (l := 148) (by decide)).subR (c := 0x766) (l := 8) (by decide)
+  rw [show BitVec.ofNat 32 roWindowAddress + BitVec.ofNat 32 0x766 =
+    BitVec.ofNat 32 (img% roWindowAddress + 0x766) from rfl] at ln
+  have lf := (O.lay.ro.sub (c := 0x39BC) (l := 148) (by decide)).subR (c := 0x8F2) (l := 5) (by decide)
+  rw [show BitVec.ofNat 32 roWindowAddress + BitVec.ofNat 32 0x8F2 =
+    BitVec.ofNat 32 (img% roWindowAddress + 0x8F2) from rfl] at lf
+  have hrs : RiSep (X.B + BitVec.ofNat 32 0x39BC) 148 (RJN + 0xFFFFF7E0) :=
+    ⟨lowSep hs (by decide) (by decide), lowSep hs (by decide) (by decide), lowSep hs (by decide) (by decide),
+      lowSep hs (by decide) (by decide), lowSep hs (by decide) (by decide), lowSep hs (by decide) (by decide),
+      lowSep hs (by decide) (by decide), ln, lf⟩
+  have fr : ∀ M2 : Word → BitVec 8, (∀ x : Word, Sep x 1 (X.B + BitVec.ofNat 32 0x39BC) 148 →
+      Sep x 1 (X.B + BitVec.ofNat 32 0x4D70) 12 → Sep x 1 (X.B + BitVec.ofNat 32 0x5820) 4 → M2 x = n0.mem x) →
+      ∀ y : Word, (y.toNat < X.B.toNat + 0x39BC ∨ X.B.toNat + 0x3A50 ≤ y.toNat) →
+        (y.toNat < X.B.toNat + 0x4D70 ∨ X.B.toNat + 0x4D7C ≤ y.toNat) →
+        (y.toNat < X.B.toNat + 0x5820 ∨ X.B.toNat + 0x5824 ≤ y.toNat) → M2 y = n0.mem y :=
+    fun M2 h y g1 g2 g3 => by
+      have := y.isLt
+      exact h y (acets_sepO F (by decide) (by omega) (by omega)).symm
+        (acets_sepO F (by decide) (by omega) (by omega)).symm (acets_sepO F (by decide) (by omega) (by omega)).symm
+  refine WP.lui ac_at_123a ?_; wn
+  refine WP.aluImm ac_at_123c ?_; wn
+  refine WP.alu ac_at_1240 ?_; wn
+  refine WP.lui ac_at_1242 ?_; wn
+  refine WP.aluImm ac_at_1244 ?_; wn
+  refine WP.alu ac_at_1248 ?_; wn
+  refine WP.callNextElement (tb := RJN) (out := X.B + BitVec.ofNat 32 0x4D70)
+    (c := X.B + BitVec.ofNat 32 0x5818) (s := X.B + BitVec.ofNat 32 0x39BC) (p := p) (n := l') (pos := pos)
+    ac_at_124a ac_at_124e (by decide) (by decide) (by decide) E.next E.item
+    (by rsimp; simp only [ev_add, R.rsp]; bv_omega) (by rsimp; simp only [ev_add, R.rsp]; bv_omega)
+    (by rsimp; rw [R.rsp, BitVec.add_assoc]; rfl) (by rw [tS]; omega) (by rw [tO]; omega) (by rw [tC]; omega)
+    c0 c4 c8 (by omega) hpos (by omega) (by omega) hrs
+    (lowSep hs (by decide) (by decide)) (acets_sepO F (by decide) (by omega) (by omega))
+    (ace_sepB' F (.inr (by decide)) (by decide) (by decide))
+    (ace_sepB' F (.inr (by decide)) (by decide) (by decide))
+    (ace_sepB' F (.inl (by decide)) (by decide) (by decide))
+    (lowSep hso (by decide) (by decide)) (lowSep hsc (by decide) (by decide))
+    (lowSep hs hAC.1 hAC.2) (lowSep hso hAC.1 hAC.2) (lowSep hsc hAC.1 hAC.2) fun m2 hR => ?_
+  wn
+  rw [hv] at hR
+  have ldk : ∀ {M2 : Word → BitVec 8}, (∀ y : Word, (y.toNat < X.B.toNat + 0x39BC ∨ X.B.toNat + 0x3A50 ≤ y.toNat) →
+        (y.toNat < X.B.toNat + 0x4D70 ∨ X.B.toNat + 0x4D7C ≤ y.toNat) →
+        (y.toNat < X.B.toNat + 0x5820 ∨ X.B.toNat + 0x5824 ≤ y.toNat) → M2 y = n0.mem y) →
+      (∀ x : Word, AcetsO X.B.toNat X.Bf.toNat fp.toNat 0 0 x.toNat → M2 x = n0.mem x) ∧
+      memLoad32 M2 (X.B + BitVec.ofNat 32 0x5A2C) = fp ∧
+      memLoad32 M2 (X.B + BitVec.ofNat 32 0x5A30) = BitVec.ofNat 32 (X.Bf.toNat + 0xB840 - fp.toNat) :=
+    fun h => ⟨fun x hx => by
+        have hx' := hx
+        unfold AcetsO at hx'
+        obtain ⟨g1, -, g3, g4, -⟩ := hx'
+        exact h x (by omega) (by omega) (by omega),
+      (acets_ld F (c := 0x5A2C) (by decide) fun y g1 g2 => h y (by omega) (by omega) (by omega)).trans A.fr.ptr,
+      (acets_ld F (c := 0x5A30) (by decide) fun y g1 g2 => h y (by omega) (by omega) (by omega)).trans A.fr.len⟩
+  cases rest with
+  | nil =>
+    simp only [ElementsFrom] at hE
+    rw [hE] at hR
+    simp only [elemRes, Option.map_some, Option.map_none] at hR
+    obtain ⟨M1, hO1, hz, t0, t4⟩ := hR
+    obtain ⟨hm2, hptr, hlen⟩ := ldk (fr m2.mem fun x g1 g2 _ => (hz x g2).trans (hO1 x g1))
+    refine acets_lbu F ac_at_1252 (c := 0x4D70) (by rsimp; rw [I.r19]; simp only [acSlot]; bv_omega) ?_; wn
+    rw [t0]
+    refine WP.branch ac_at_1256 (fun eb => ?_) (fun _ => ?_) <;> wn
+    · rsimp at eb <;> exact absurd eb (by decide)
+    refine acets_lw F ac_at_125a (c := 0x4D74) (by rsimp; rw [I.r19]; simp only [acSlot]; bv_omega) (by decide)
+      (by decide) ?_; wn
+    rw [show X.B + BitVec.ofNat 32 0x4D74 = X.B + BitVec.ofNat 32 0x4D70 + 4 from
+      (add_ofNat_assoc X.B 0x4D70 4).symm, t4]
+    refine WP.branch ac_at_125e (fun _ => ?_) (fun eb => ?_) <;> wn
+    rotate_left
+    · rsimp at eb <;> exact absurd eb (by decide)
+    exact acets_exit O A I hm2 hptr hlen (by acets_hr)
+  | cons j rest' =>
+    obtain ⟨l, a, hE1, hJ, hE'⟩ := hE
+    obtain ⟨-, -, -, hl1, ha1⟩ := nextElement_lt hE1
+    simp only [List.length_take, List.length_drop] at hl1 ha1
+    rw [hE1] at hR
+    simp only [elemRes, Option.map_some] at hR
+    obtain ⟨M1, hO1, hz, t0, t4, t8, tc⟩ := hR
+    rw [e8] at tc
+    obtain ⟨hm2, hptr, hlen⟩ := ldk (fr m2.mem fun x g1 g2 g3 => (hz x g2 (by rw [e8]; exact g3)).trans (hO1 x g1))
+    have tq : (p + BitVec.ofNat 32 pos).toNat = p.toNat + pos := acets_tn (by omega)
+    rw [← hv] at hJ
+    have C : AcetsC X n0 fp jr fs ls j rest' ts (p + BitVec.ofNat 32 pos) l a :=
+      { at0 := A, inv := I
+        cur := ⟨p, l', c0, by rw [ec]; exact c4, by omega, hD, hpl, hE'⟩
+        qlo := by omega
+        qhi := by omega
+        jv := trch_mem hJ }
+    refine acets_lbu F ac_at_1252 (c := 0x4D70) (by rsimp; rw [I.r19]; simp only [acSlot]; bv_omega) ?_; wn
+    rw [t0]
+    refine WP.branch ac_at_1256 (fun eb => ?_) (fun _ => ?_) <;> wn
+    · rsimp at eb <;> exact absurd eb (by decide)
+    refine acets_lw F ac_at_125a (c := 0x4D74) (by rsimp; rw [I.r19]; simp only [acSlot]; bv_omega) (by decide)
+      (by decide) ?_; wn
+    rw [show X.B + BitVec.ofNat 32 0x4D74 = X.B + BitVec.ofNat 32 0x4D70 + 4 from
+      (add_ofNat_assoc X.B 0x4D70 4).symm, t4]
+    refine WP.branch ac_at_125e (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso
+      rsimp at eb
+      have h0 := congrArg BitVec.toNat (acets_beqT eb)
+      rw [tq, show (0 : Word).toNat = 0 from rfl] at h0
+      omega
+    refine acets_p2 O C H hm2 ?_ ?_ hptr hlen (by acets_hr) (by rsimp)
+    · rw [show X.B + BitVec.ofNat 32 0x4D78 = X.B + BitVec.ofNat 32 0x4D70 + 8 from
+        (add_ofNat_assoc X.B 0x4D70 8).symm]
+      exact t8
+    · exact tc
+
+/-- The loop, by induction on the items left. -/
+theorem acets_loop (H : AcetsRcErr) {rest : List Json} :
+    ∀ {n : Machine} {fp : Word} {ts : List TsaKey}, AceAt X n 0x123A fp → AceTsaInv X n fp jr fs ls rest ts →
+      X.stage n 0x1434 fun n' => ∃ fp' ts', AceAt X n' 0x1434 fp' ∧ AceKeysRead X n' fp' fs ls ts' := by
+  induction rest with
+  | nil =>
+    intro n fp ts A I
+    obtain ⟨m', c, q⟩ := acets_p1 O H A I (by decide) A.code n A.st
+    obtain ⟨hI, hF | ⟨hpc, hk⟩ | ⟨-, j, rest', e, -⟩⟩ := q m' rfl rfl fun _ => rfl
+    · exact ⟨m', c, .inr ⟨hI, .inl hF⟩⟩
+    · exact ⟨m', c, .inr ⟨hI, .inr ⟨hpc, hk⟩⟩⟩
+    · exact absurd e (List.cons_ne_nil _ _).symm
+  | cons j rest ih =>
+    intro n fp ts A I
+    obtain ⟨m', c, q⟩ := acets_p1 O H A I (by decide) A.code n A.st
+    obtain ⟨hI, hF | ⟨hpc, hk⟩ | ⟨-, j', rest', e, fp', ts', A', I'⟩⟩ := q m' rfl rfl fun _ => rfl
+    · exact ⟨m', c, .inr ⟨hI, .inl hF⟩⟩
+    · exact ⟨m', c, .inr ⟨hI, .inr ⟨hpc, hk⟩⟩⟩
+    · injection e with _ e2
+      subst e2
+      obtain ⟨m'', c', h⟩ := ih A' I'
+      exact ⟨m'', c.trans c', h⟩
+
+end Loop
+
+/-- `AceTsaStage`, given `AcetsRcErr`. -/
+theorem acets_stage (H : AcetsRcErr) : AceTsaStage := fun _ O _ _ _ _ _ _ _ A I => acets_loop O H A I
 
 end C3.RV32.Ac
