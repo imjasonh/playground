@@ -929,6 +929,21 @@ class Gen:
         self.frame_after(k, [], {})
         return k
 
+    def spf(self, off, p, sl, q, pl, hp, hq, ha1=None, ha3=None):
+        """`strip_prefix` of the `pl` bytes at `q` from the `sl` bytes at `p`;
+        returns k. `a0_k` is the rest's address or 0, and `a1_k` its length."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_spfF", f"(sl := {sl}) (pl := {pl})",
+                       [f"c{k}", f"s{k}", f"rk{k}", f"a0_{k}", f"a1_{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (CK0.sv FW fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    g{k-1}_10 {ha1 or f'g{k-1}_11'} g{k-1}_12 {ha3 or f'g{k-1}_13'} {hp} {hq}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [spf_ite FW fR{k-1} {hp}, sv_mbRo (q := {q}) (ql := {pl}) FW fR{k-1} {hq}] at a0_{k}")
+        self.keep_regs(k, [r for r in range(32) if r not in (1, 10, 11, 12, 13, 14)],
+                       lambda r: f"rk{k} {rname(r)} (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)")
+        self.frame_after(k, [], {})
+        return k
+
     def set_a0(self, k, val, how):
         """`a0` after a comparison at step `k` is the constant `val`."""
         self.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 {val} := by rw [a0_{k}, {how}]; rfl")
@@ -7183,93 +7198,86 @@ def stage_cs1():
     return g, info
 
 
-CS_BINDERS = (CL_BINDERS.replace("op ol : Word} {rt : Bytes}", "op ol : Word} {rt sg : Bytes}").replace(" w10 ", " ")
-              .replace("{v : Nat → Word}", "{waa4 : Word} {v : Nat → Word}"))
-RK_BINDERS = CS_BINDERS.replace(" w70 ", " w70 w74 ")
+CS_BINDERS = ("{B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp ckp bl : Word} {sg : Bytes} "
+              "{v : Nat → Word} {n0 : Machine}")
 
 
 def cs_start(g):
-    """The signature loop's head at 0x2D6E: the word at 0x30 says whether a
-    signature by the log was found, which would be at offsets 0x10 and 0x1480."""
+    """The signature loop's head at 0x1642: the word at 0x30 says whether a
+    signature by the log was found, which would be at offsets 0x14 and 0x1FC;
+    the rest of the signature section is the `w50` bytes at `w38`."""
+    params = start(g, t_regs0(), {0x30: "f", 0x38: "w38", 0x50: "w50", 0x18: "kh", 0x48: "w48", 0x44: "w44",
+                                  0x34: "kp", 0x28: "ckp", 0x24: "bl"}, {})
     # Only the word's first byte matters, and only once a signature is found.
-    params = [q for q in cl_start(g) if not q.startswith("(w0_10 :")]
-    g.words.pop(0x10, None)
-    g.bytes[0x10] = "BitVec.ofNat 8 (sg.getD 0 0)"
-    params.append(f"(b0_10 : n0.mem ({fa(0x10)}) = BitVec.ofNat 8 (sg.getD 0 0))")
-    g.ranges[0x1480] = (63, "BitVec.ofNat 8 (sg.getD (1 + j) 0)")
-    params.append("(q0_1480 : ∀ j, j < 63 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0))")
-    # The signature loop changes the frame words and registers that the struct
-    # at 0xA20 copied during the log search, and uses 0x420 to 0x42C as scratch.
-    for e in CS_STRUCT:
-        if e in g.words:
-            g.words[e] = ("U", f"w{e:x}")
-            params = [q if not q.startswith(f"(w0_{e:x} :") else f"(w0_{e:x} : memLoad32 n0.mem ({fa(e)}) = w{e:x})"
-                      for q in params]
-    g.words.pop(0x428, None)
-    params = [q for q in params if not q.startswith("(w0_428 :")]
-    # The loop over the groups moves `s8` past the copy of it at 0xAA4.
-    g.words[0xAA4] = ("U", "waa4")
-    params = [q if not q.startswith("(w0_aa4 :") else f"(w0_aa4 : memLoad32 n0.mem ({fa(0xAA4)}) = waa4)" for q in params]
+    g.bytes[0x14] = "BitVec.ofNat 8 (sg.getD 0 0)"
+    params.append(f"(b0_14 : n0.mem ({fa(0x14)}) = BitVec.ofNat 8 (sg.getD 0 0))")
+    g.ranges[0x1FC] = (63, "BitVec.ofNat 8 (sg.getD (1 + j) 0)")
+    params.append("(q0_1fc : ∀ j, j < 63 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = "
+                  "BitVec.ofNat 8 (sg.getD (1 + j) 0))")
     return params
 
 
-CS_STRUCT = [0xA20, 0xA24, 0xA28, 0xA2C, 0xA30, 0xA34, 0xA38, 0xA3C]
-
-
 def stage_csa():
-    """From the signature loop's head at 0x2D6E to the name scan at 0x2DCC:
+    """From the signature loop's head at 0x1642 to the name scan at 0x1694:
     the next line of the signature section starts with an em dash and a space."""
     g = Gen("Csa")
     g.generic_alu = True
-    params = cs_start(g) + ["(hrem : w5c ≠ 0)", "(sg_in : SvIn B w38 w5c.toNat)", "(CK0 : SvCkCode M0)"]
-    g.load(0x2D6E, "lw")
-    g.block(0x2D70, 0x2D72)
-    g.store(0x2D72, "sw")
-    g.load(0x2D74, "lw")
-    g.branch(0x2D76, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hrem")
-    g.block(0x2D7A, 0x2D7E)
-    g.load(0x2D7E, "lw")
-    g.load(0x2D80, "lw")
-    k, ix, rp, rn, rin = g.line(0x2D82, 0x420, "w38", "(w5c).toNat", "(.inl sg_in)",
-                                f"(by rw [g{g.k}_12, ofNat_toNat_self])", ck_line_tail(0x2D8A, 22))
-    g.load(0x2D8A, "lw")
-    g.branch(0x2D8E, False, f"by rw [g{g.k}_22, s{g.k}.zero]; exact br_beq_f sg_in.pos_ne")
-    g.load(0x2D92, "lw")
-    g.block(0x2D96, 0x2D98)
-
-    def short(sub):
-        sub.branch(0x2D98, True, f"by rw [g{sub.k}_8, g{sub.k}_10]; exact br_bltu_t (by rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)")
-        ck_fail_1878(sub, "h4")
-    g.prop_check(f"4 ≤ {ix}", "h4", short)
-    g.branch(0x2D98, False, f"by rw [g{g.k}_8, g{g.k}_10]; exact br_bltu_f (by rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)")
-    g.pinned.add("h4")
-    g.load(0x2D9C, "lw")
-    g.store(0x2DA0, "sw")
-    g.load(0x2DA2, "lw")
-    g.store(0x2DA6, "sw")
-    g.block(0x2DA8, 0x2DB4)
-    ke = g.esl(0x2DB4, "w38", "BitVec.ofNat 32 (img% svConstAddress + 0x3D)", "4", f"(.inl (sg_in.shrink (by omega)))",
-               "(.inr ⟨by decide, by decide⟩)")
-    eq = "memBytes M0 w38 4 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x3D)) 4"
+    params = cs_start(g) + ["(hrem : w50 ≠ 0)", "(sg_in : SvIn B w38 w50.toNat)", "(CK0 : SvCkCode M0)"]
+    g.load(0x1642, "lw")
+    g.block(0x1644, 0x1646)
+    g.store(0x1646, "sw")
+    g.load(0x1648, "lw")
+    g.branch(0x164A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hrem")
+    g.block(0x164E, 0x1652)
+    g.load(0x1652, "lw")
+    g.load(0x1654, "lw")
+    k, ix, rp, rn, rin = g.line(0x1656, 0x420, "w38", "(w50).toNat", "(.inl sg_in)",
+                                f"(by rw [g{g.k}_12, ofNat_toNat_self])", ck_line_tail(0x165E, 10))
+    g.load(0x165E, "lw")
+    g.branch(0x1662, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f sg_in.pos_ne")
+    g.block(0x1666, 0x166A)
+    g.load(0x166A, "lw")
+    g.load(0x166C, "lw")
+    g.store(0x166E, "sw")
+    g.load(0x1670, "lw")
+    g.store(0x1672, "sw")
+    g.block(0x1674, 0x167E)
+    dash = "BitVec.ofNat 32 (img% svDashAddress)"
+    hp = f"(.inl (sg_in.shrink (Nat.le_of_lt hix{k})))"
+    ke = g.spf(0x167E, "w38", ix, dash, "4", hp, "(.inr ⟨by decide, by decide⟩)")
+    eq = f"4 ≤ {ix} ∧ memBytes M0 w38 4 = memBytes M0 ({dash}) 4"
 
     def no_dash(sub):
-        sub.set_a0(ke, 0, "ite_eq_right hdash")
-        sub.branch(0x2DBC, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.emit(f"  have g{ke}_10 : reg n{ke} a0 = BitVec.ofNat 32 0x0 := by rw [a0_{ke}, if_neg hdash]; rfl")
+        sub.regs[10] = ("C", 0)
+        sub.branch(0x1686, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
         ck_fail_1878(sub, "hdash")
     g.prop_check(eq, "hdash", no_dash)
-    g.set_a0(ke, 1, "ite_eq_left hdash")
-    g.branch(0x2DBC, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    g.block(0x2DC0, 0x2DC2)
-    g.block(0x2DC2, 0x2DC6)
-    g.block(0x2DC6, 0x2DC8)
-    g.store(0x2DC8, "sw")
-    g.store(0x2DCA, "sw")
-    stmt, proof = finish(g, 0x2DCC, CL_KEEP_REGS + [8, 10], set(g.words), set(g.bytes))
+    g.pinned.add("hdash")
+    g.emit(f"  have g{ke}_10 : reg n{ke} a0 = w38 + BitVec.ofNat 32 4 := by rw [a0_{ke}, if_pos hdash]")
+    g.regs[10] = ("U", "w38 + BitVec.ofNat 32 4")
+    g.emit(f"  have g{ke}_11 : reg n{ke} a1 = BitVec.ofNat 32 ({ix} - 4) := a1_{ke} hdash.1")
+    g.regs[11] = ("U", f"BitVec.ofNat 32 ({ix} - 4)")
+    g.branch(0x1686, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f "
+             f"((sg_in.shrink (Nat.le_of_lt hix{k})).drop hdash.1).pos_ne")
+    g.block(0x168A, 0x168C)
+    g.block(0x168C, 0x168E)
+    g.block(0x168E, 0x1690)
+
+    def bare(sub):
+        sub.branch(0x1690, True, f"by rw [g{sub.k}_11, s{sub.k}.zero]; exact br_beq_t "
+                   f"(by rw [show {ix} - 4 = 0 by omega]; rfl)")
+        ck_fail_1878(sub, "hsp")
+    g.prop_check(f"4 < {ix}", "hsp", bare)
+    g.pinned.add("hsp")
+    g.branch(0x1690, False, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_beq_f "
+             f"(ofNat_ne_zero (by omega) (by have := w50.isLt; omega))")
+    stmt, proof = finish(g, 0x1694, CL_KEEP_REGS + [8, 24, 27], set(g.words), set(g.bytes))
     info = {"name": "sv_csa", "title": "a signature line's em dash",
-            "doc": "From the signature loop's head at 0x2D6E to the name scan at 0x2DCC: the signature section isn't "
-            "empty, and its next line has at least four bytes, an em dash and a space.",
-            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS, "start": 0x2D6E,
-            "import": "C3BootProofs.Proofs.SvEd"}
+            "doc": "From the signature loop's head at 0x1642 to the name scan at 0x1694: the signature section isn't "
+            "empty, and its next line starts with an em dash and a space and goes on past them.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS, "start": 0x1642,
+            "import": "C3BootProofs.Proofs.SvCs"}
     return g, info
 
 
