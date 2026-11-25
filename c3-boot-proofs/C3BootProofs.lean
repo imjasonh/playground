@@ -570,6 +570,7 @@ import C3BootProofs.Proofs.SvSpecAux
 import C3BootProofs.Proofs.SvSpec
 import C3BootProofs.Proofs.AcceptAt
 import C3BootProofs.Proofs.AcceptSlot
+import C3BootProofs.Proofs.AcceptLib
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
