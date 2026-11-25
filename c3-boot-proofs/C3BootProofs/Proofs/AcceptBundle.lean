@@ -36,12 +36,13 @@ structure AcBundlePost (B Bf : Word) (L : Nat) (n0 n : Machine) : Prop where
 
 /-- **The bundle stage**, from 0x1816 to the call to `sigstore::verify` at
 0x1A46. It reaches 0x1A46 only when the bundle part decodes, and then
-`AcBundlePost` holds. -/
+`AcBundlePost` holds and `s5`, `s9`, and `s11` are as at 0x1816. -/
 def AcBundleStage : Prop :=
   ∀ (n : Machine) (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (L : Nat),
     CodeIn n.mem AC bootMainClosure0Code → AcBundleEnv n.mem → Fr B 0x5A70 → Sep B 0x5A70 Bf acBufLen →
     St n.mem AC n 0x1816 (reg n) → AcInv B Bf g t v M0 n → memLoad32 n.mem (acSlot B 0x40) = r →
-    AcBundlePre B Bf L n → AcStage B Bf g t r v M0 n 0x1A46 (AcBundlePost B Bf L n)
+    AcBundlePre B Bf L n → AcStage B Bf g t r v M0 n 0x1A46 (fun n' =>
+      AcBundlePost B Bf L n n' ∧ ∀ q : Fin 32, q.val ∈ [21, 25, 27] → reg n' q = reg n q)
 
 theorem acb_sq (B : Word) (a : Nat) (k : Word) {c : Nat}
     (h : BitVec.ofNat 32 (0x3A50 + a) + k = BitVec.ofNat 32 (0x3A50 + c)) : acSlot B a + k = acSlot B c := by

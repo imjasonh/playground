@@ -6,8 +6,8 @@ import C3BootProofs.Proofs.AcceptExtractSeq
 
 Five calls of `memcpy` put the `TrustRoot` together at `sp + 0x1320`: the
 Fulcio keys from `sp + 0x1ED0`, the logs from `sp + 0x350`, the timestamp
-authorities from `sp + 0x890`, and the policy's 0x23 bytes from
-0x3FCC4051. Then the whole struct goes to `sp + 0xDD0`, and the closure
+authorities from `sp + 0x890`, and the identity policy's 0x23 bytes from
+`acPolicyAddress`. Then the whole struct goes to `sp + 0xDD0`, and the closure
 sets up the call at 0x1816 that copies it on to `sp + 0x1875`.
 -/
 
@@ -28,7 +28,7 @@ def aceT3 : List BInstr :=
     .aluImm .add a1 a1 0x91, .aluImm .add a2 x0 0x100]
 
 def aceT4 : List BInstr :=
-  [.lui a1 0x3FCC4000, .aluImm .add a1 a1 0x51, .lui a0 0x1000, .aluImm .add a0 a0 0x320,
+  [.lui a1 (img% hi20 acPolicyAddress), .aluImm .add a1 a1 (img% lo12 acPolicyAddress), .lui a0 0x1000, .aluImm .add a0 a0 0x320,
     .alu .add a0 a0 sp, .aluImm .add a2 x0 0x23]
 
 def aceT5 : List BInstr :=
@@ -89,7 +89,7 @@ theorem ace_tail : AceTailStage := by
   -- the policy's bytes to `sp + 0x1320`
   have pS := ok.lay.polStack
   obtain ⟨n4, c4, s4, I4, C4, W4, K4⟩ := ace_bcpy (is := aceT4) (o1 := 0x17DA) (d := 0x1320) (N := 0x23)
-    (src := 0x3FCC4051) F C3 E3.stub E3.body s3' I3 (by decide)
+    (src := (img% acPolicyAddress)) F C3 E3.stub E3.body s3' I3 (by decide)
     (by simp [aceT4, BlockOk, BInstr.ok]) rfl (by decide) (by decide) ac_at_17da ac_at_17de (by decide)
     (by simp +decide only [aceT4, runBlock, BInstr.run, upd, aluEval, ↓reduceIte]
         rw [K3 sp (by decide), K2 sp (by decide), K1 sp (by decide), rsp]; simp only [acSlot]; bv_omega)
@@ -189,9 +189,9 @@ theorem ace_tail : AceTailStage := by
     fun y h1 h2 => ace_cpO W5 (by decide) (ace_bufOut ok.lay (y := y) (by omega)
       (by have := A.fr.hi; unfold acBufLen; omega))
   have KI5 := KI4.move S5k hbuf5
-  have P3 : AceSame n3.mem 0x3FCC4051 X.M0 0x3FCC4051 0x23 := fun c hc =>
+  have P3 : AceSame n3.mem (img% acPolicyAddress) X.M0 (img% acPolicyAddress) 0x23 := fun c hc =>
     I3.out _ (pS.sub (c := c) (l := 1) (by omega)) (ok.lay.polBuf.sub (c := c) (l := 1) (by omega))
-  have S4 : AceSame n4.mem (acSlot X.B 0x1320) n3.mem 0x3FCC4051 0x23 := ace_cpS F W4 (by decide)
+  have S4 : AceSame n4.mem (acSlot X.B 0x1320) n3.mem (img% acPolicyAddress) 0x23 := ace_cpS F W4 (by decide)
   refine ⟨n7, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6.trans (.single e7)))))),
     .inr ⟨I7, .inr ⟨u7.pc, fp, fs, ls, ts, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩⟩⟩
   · obtain ⟨jr, hr, hc, hl, ht⟩ := K.root

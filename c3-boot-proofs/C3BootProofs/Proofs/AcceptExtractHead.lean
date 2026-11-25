@@ -257,7 +257,7 @@ theorem ace_d04 {X : AceCtx} (O : X.Ok) {M : Word → BitVec 8} {f : Fin 32 → 
   refine WP.alu ac_at_d10 ?_; wn
   refine WP.lw ac_at_d12 (by rsimp; rw [R.rsp, e30]; exact ace_al4 F (by decide) (by decide)) ?_; wn
   refine WP.callField (tb := BitVec.ofNat 32 jsonFieldAddress) (out := acSlot X.B 0x350)
-    (s := X.B + BitVec.ofNat 32 0x394C) (p := p0) (kq := 0x3FCC47DC) (n := w30.toNat) (kl := 0x16)
+    (s := X.B + BitVec.ofNat 32 0x394C) (p := p0) (kq := (img% acCasKeyAddress)) (n := w30.toNat) (kl := 0x16)
     ac_at_d14 ac_at_d18 (by decide) (by decide) (by decide) E.field
     (by rsimp; rw [R.rsp]; simp only [ev_add, acSlot]; bv_omega)
     (by rsimp; simp only [ev_add]; exact (BitVec.zero_add _).trans h26)
@@ -492,7 +492,7 @@ theorem ace_c6e {X : AceCtx} (O : X.Ok) {M Mx : Word → BitVec 8} {f : Fin 32 �
   have hl32 : (BitVec.ofNat 32 l).toNat = l := by rw [BitVec.toNat_ofNat]; omega
   have hpD : (X.D + BitVec.ofNat 32 a).toNat - X.D.toNat = a := by omega
   refine WP.callField (tb := BitVec.ofNat 32 jsonFieldAddress) (out := acSlot X.B 0x1320)
-    (s := X.B + BitVec.ofNat 32 0x394C) (p := X.D + BitVec.ofNat 32 a) (kq := 0x3FCC479A) (n := l) (kl := 9)
+    (s := X.B + BitVec.ofNat 32 0x394C) (p := X.D + BitVec.ofNat 32 a) (kq := (img% acMediaTypeKeyAddress)) (n := l) (kl := 9)
     ac_at_c98 ac_at_c9c (by decide) (by decide) (by decide) E1.field
     (by rsimp; simp only [ev_add, acSlot]; bv_omega)
     (by rsimp; simp only [ev_add]; exact BitVec.zero_add _)
@@ -612,7 +612,7 @@ theorem ace_c6e {X : AceCtx} (O : X.Ok) {M Mx : Word → BitVec 8} {f : Fin 32 �
     omega
   have esp : X.B + 0x3A50 + 0xFFFFFFEC = X.B + BitVec.ofNat 32 0x3A3C := by bv_omega
   refine WP.callSliceNe (tb := RSN) (p := X.D + BitVec.ofNat 32 a + BitVec.ofNat 32 vp + 1)
-    (q := 0x3FCC47A3) (pl := str.length) (ql := 0x39) ac_at_cd2 ac_at_cd6 (by decide) (by decide) (by decide)
+    (q := (img% acMediaTypeAddress)) (pl := str.length) (ql := 0x39) ac_at_cd2 ac_at_cd6 (by decide) (by decide) (by decide)
     E3.sliceNe (by rw [show RSN + 0xFFFFF372 = RSE by decide]; exact E3.sliceEq)
     (by rw [show RSN + 0xFFFFDF1C = RES by decide]; exact E3.equal)
     (by rw [show RSN + 0xB2DA = RMC by decide]; exact E3.memcmp)

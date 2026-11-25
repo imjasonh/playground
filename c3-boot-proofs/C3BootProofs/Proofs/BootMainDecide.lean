@@ -547,7 +547,7 @@ theorem bmd_oth {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M
   have sp1 : reg n1 sp = F := by rw [k1 sp (by decide) (by decide) (by decide) (by decide) (by decide)]; exact P.rsp
   have hK1 : BmKeep M0 n1.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) := by
     rw [m1]; exact hK
-  rcases bmc_call X t1 sp1 hF hK1 (k := 0xBD20) (sl := (plan st).first.other) (by decide) (by decide)
+  rcases bmc_call X t1 sp1 hF hK1 (k := 0xBD20) (sl := (plan st).first.other) (by decide) (by decide) (by decide)
     ha0 ha1 ha2 ha3 bm_at_25e bm_at_262 (by decide) (by decide) with
     ⟨n2, c2, t2, keep2, hK2, _, hres⟩ | hp
   rotate_left
@@ -731,7 +731,7 @@ theorem bmd_main {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
     (by rintro rfl; exact absurd hq (by decide)) (by rintro rfl; exact absurd hq (by decide))
   have hK1 : BmKeep M0 n1.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) := by
     rw [m1]; exact hK
-  rcases bmc_call X t1 P1.rsp hF hK1 (k := 0xBBF0) (sl := (plan st).first) (by decide) (by decide)
+  rcases bmc_call X t1 P1.rsp hF hK1 (k := 0xBBF0) (sl := (plan st).first) (by decide) (by decide) (by decide)
     ha0 ha1 ha2 ha3 bm_at_204 bm_at_208 (by decide) (by decide) with
     ⟨n2, c2, t2, keep2, hK2, _, hres⟩ | hp
   rotate_left

@@ -79,9 +79,27 @@ same bytes, so when `bmcAccept` returns `mf`, that header exists. -/
 def AccOk (flash : Nat → BitVec 8) (slot : Word) (mf : Manifest) (M : Word → BitVec 8) (acc : Word) : Prop :=
   ∀ h, decodeImageHeader (bmcImage flash slot mf) mf.image.length = some h → HdrAt M acc h
 
+/-- Where the call puts things: the stack pointer `sp` 16-byte aligned with
+`stack` bytes of RAM below it, the result `res` and the `Buffers` `bufs`
+word-aligned in RAM, `bufs` at or above `sp` with 14 bytes after it, the
+eFuse level below 256, and an even return address `ra`. -/
+structure C0Args (stack : Nat) (sp res bufs level ra : Word) : Prop where
+  spa : sp.toNat % 16 = 0
+  splo : 0x3FCC8000 + stack ≤ sp.toNat
+  sphi : sp.toNat ≤ 0x3FCE0000
+  resa : res.toNat % 4 = 0
+  reslo : 0x3FCC8000 ≤ res.toNat
+  reshi : res.toNat + 0x12C ≤ 0x40000000
+  bufa : bufs.toNat % 4 = 0
+  bufsp : sp.toNat ≤ bufs.toNat
+  bufhi : bufs.toNat + 0xB954 + 14 ≤ 0x40000000
+  lev : level.toNat < 256
+  ra : ra &&& ~~~1 = ra
+
 /-- **The closure's contract.** Called at its entry with the closure's code
 in memory, memory that satisfies `E` (the callees' code and data), at least
-`stack` bytes of stack, and the result, the `Buffers`, and the stack apart:
+`stack` bytes of stack, the result, the `Buffers`, and the stack apart, and
+the arguments placed as `C0Args` says:
 the closure returns to `ra` with the registers that `romKeep` names kept and
 memory unchanged outside the stack, the result, and the `Buffers`, or it
 panics. On return, the result is `None` when `bmcAccept` is `none`.
@@ -94,6 +112,7 @@ def Closure0Contract (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romC
     CodeIn m.mem (BitVec.ofNat 32 bootMainClosure0Address) bootMainClosure0Code → E m.mem →
     m.pc = BitVec.ofNat 32 bootMainClosure0Address → stack ≤ (reg m sp).toNat →
     reg m a0 = res → reg m a1 = level → reg m a2 = bufs → reg m a3 = slot → slot.toNat < 2 →
+    C0Args stack (reg m sp) res bufs level (reg m ra) →
     Sep res 0x12C bufs 0xB954 → Sep res 0x12C (reg m sp - BitVec.ofNat 32 stack) stack →
     Sep bufs 0xB954 (reg m sp - BitVec.ofNat 32 stack) stack →
     (∃ m', Steps m m' ∧ m'.pc = reg m ra &&& ~~~1 ∧ (∀ q, romKeep q = true → reg m' q = reg m q) ∧

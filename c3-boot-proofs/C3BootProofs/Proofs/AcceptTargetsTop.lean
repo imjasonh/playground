@@ -24,14 +24,12 @@ theorem act_836 {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R rom
     (hR4 : R % 4 = 0) (hR : R ≤ 0x3A50 - 0x180)
     (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
     (hr : memLoad32 M (acSlot B 0x40) = r) {pinned : Bytes} {parts : TufParts} {root : TufRoot} {re : Nat}
-    {x21 x25 x27 : Word} {Mi : Word → BitVec 8} {tt : Nat} {es : List (Bytes × Option TufKey)}
+    {x21 x25 x27 : Word} {Mi : Word → BitVec 8}
     (hO : ∀ x, ActOut B Bf x → M x = Mi x)
     (hroot : actRoot pinned parts = some root) (hre : expires root.md = some re)
     (h1318 : memLoad32 M (acSlot B 0x1318) = BitVec.ofNat 32 re)
     (h131C : memLoad32 M (acSlot B 0x131C) = BitVec.ofNat 32 (re / 2 ^ 32))
-    (hrk : roleKeys root.md.signed (ascii!"targets") = some (tt, es))
-    (hRk : RkAt M (acSlot B 0xDD0) tt (es.map C3.Json.rkTag)) (hw : RkWf (es.map C3.Json.rkTag))
-    (hB : RkBytes es)
+    (hRk : ActRk M (acSlot B 0xDD0) root)
     (hdT : ActDoc flash M (acSlot B 0x244) (f 24) (memLoad32 M (acSlot B 0x1C)).toNat parts.targets)
     (hdoc : ActDoc flash M (acSlot B 0x244) (f 24) ((memLoad32 M (acSlot B 0x1C)).toNat + 1) parts.trustedRoot)
     (hs4 : f 20 = Bf + 0x4000) (hs5 : f 21 = x21) (hs9 : f 25 = x25) (hs11 : f 27 = x27) :
@@ -84,7 +82,7 @@ theorem act_836 {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R rom
   have hdoc1 : ActDoc flash M1 (acSlot B 0x244) (f 24) ((memLoad32 M1 (acSlot B 0x1C)).toNat + 1)
       parts.trustedRoot := by
     rw [l1C]; exact K1.doc X (by decide) (Or.inr (by decide)) hdoc
-  have hRk1 : RkAt M1 (B + BitVec.ofNat 32 0x4820) tt (es.map C3.Json.rkTag) := hRk.congr fun o ho => by
+  have hRk1 : ActRk M1 (B + BitVec.ofNat 32 0x4820) root := hRk.congr fun o ho => by
     rw [add_ofNat_assoc]
     exact K1.at X (by decide) (by omega) (by omega) (Or.inr (by omega))
   clear hI hr hO hdT hdoc hRk l1C
@@ -116,7 +114,7 @@ theorem act_836 {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R rom
       rw [add_ofNat_assoc]; exact act_rd_at X hfr hc0 (by omega) (by omega) (by omega)
   have hdoc2 : ActDoc flash m2.mem (acSlot B 0x244) (f 24) ((memLoad32 m2.mem (acSlot B 0x1C)).toNat + 1)
       parts.trustedRoot := fun o l e => hdoc1 o l (by rw [← tid2, ← l1C]; exact e)
-  have hRk2 : RkAt m2.mem (B + BitVec.ofNat 32 0x4820) tt (es.map C3.Json.rkTag) := hRk1.congr fun o ho => by
+  have hRk2 : ActRk m2.mem (B + BitVec.ofNat 32 0x4820) root := hRk1.congr fun o ho => by
     rw [add_ofNat_assoc]
     exact act_rd_at X hfr hc0 (by omega) (by omega) (Or.inr (by omega))
   have hres := act_trd_res hout (fun o l h => hdT1 o l h) (fun e h => act_tid_err h)
@@ -187,7 +185,7 @@ theorem act_836 {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R rom
       rw [add_ofNat_assoc]; exact P3 _ (by omega) (by omega) (by omega)
   have hdoc3 : ActDoc flash m3.mem (acSlot B 0x244) (f 24) ((memLoad32 m3.mem (acSlot B 0x1C)).toNat + 1)
       parts.trustedRoot := fun o l e => hdoc2 o l (by rw [← tid3, ← l1C3]; exact e)
-  have hRk3 : RkAt m3.mem (B + BitVec.ofNat 32 0x4820) tt (es.map C3.Json.rkTag) := hRk2.congr fun o ho => by
+  have hRk3 : ActRk m3.mem (B + BitVec.ofNat 32 0x4820) root := hRk2.congr fun o ho => by
     rw [add_ofNat_assoc]; exact P3 _ (by omega) (by omega) (by omega)
   clear hI2 hr2 h28' h2C' l1C tid3 hdoc2 hRk2
   wn
@@ -248,7 +246,7 @@ theorem act_836 {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R rom
   refine act_89a (S := Bf + 0x4000 + BitVec.ofNat 32 gp) (SP := Bf + 0x4000 + BitVec.ofNat 32 sq) hROM hR4 hR X
     (hI3.regs (by act_r) (by act_r) (by act_r)) hr3 (fun x hx => (kO3 x hx).trans ((kO2 x hx).trans (kO1 x hx)))
     (by act_r; exact hdoc3) (by act_r; exact hs4) (by act_r; exact hq) (by act_r) hq4 hq8 hqC
-    (by omega) (by omega) (by omega) (by omega) hd (CanonEncode _ _ hv1) hsj hps hrk hRk3 hw hB ?_ h28 h2C
+    (by omega) (by omega) (by omega) (by omega) hd (CanonEncode _ _ hv1) hsj hps hRk3 ?_ h28 h2C
     (by act_r; exact hs5) (by act_r; exact hs9) (by act_r; exact hs11)
   intro hth te hte p1 l1 p2 l2 p3 l3 val p4 l4 p5 l5 body h1 h2 h3 h4 h5 h6 h7 hv hbd
   rw [act_verifyTuf, hroot]
@@ -260,11 +258,11 @@ end
 theorem act_stage : AcTargetsStage := by
   intro flash R romBase romCode hROM n B Bf g t r v M0 pinned parts root re hE hC F sB sRo sRom sBR bal bhi hR4 hR
     hS hInv hPre
-  obtain ⟨hroot, hre, h1318, h131C, ⟨tt, es, hrk, hRk, hw, hB⟩, hdT, hdoc, hs4, hr⟩ := hPre
+  obtain ⟨hroot, hre, h1318, h131C, hRk, hdT, hdoc, hs4, hr⟩ := hPre
   have X : ActX romBase romCode B Bf M0 := ⟨F, sB, sRo, sRom, sBR, bal, bhi, hE⟩
   have hI : ActI B Bf g t v M0 n.mem (reg n) := ⟨hInv.sp, hInv.gp, hInv.tp, hInv.saves, hInv.out⟩
   obtain ⟨n', hst, hq⟩ := act_836 hROM hR4 hR X hI hr (Mi := n.mem) (fun _ _ => rfl) hroot hre h1318 h131C
-    hrk hRk hw hB hdT hdoc hs4 rfl rfl rfl (by decide) hC n hS
+    hRk hdT hdoc hs4 rfl rfl rfl (by decide) hC n hS
   exact ⟨n', hst, hq n' rfl rfl rfl⟩
 
 end C3.RV32.Ac

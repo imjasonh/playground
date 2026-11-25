@@ -742,3 +742,15 @@ import C3BootProofs.Models.TufLink
 import C3BootProofs.Models.TufLinkMeta
 import C3BootProofs.Models.TufLinkKeys
 import C3BootProofs.Models.TufLinkMet
+import C3BootProofs.Proofs.AcceptSpecTime
+import C3BootProofs.Proofs.AcceptSpecLib
+import C3BootProofs.Proofs.AcceptSpecEnd
+import C3BootProofs.Proofs.AcceptSpecBun
+import C3BootProofs.Proofs.AcceptSpecExt
+import C3BootProofs.Proofs.AcceptSpecTgt
+import C3BootProofs.Proofs.AcceptSpecRoots
+import C3BootProofs.Proofs.AcceptSpecPin
+import C3BootProofs.Proofs.AcceptSpecDocs
+import C3BootProofs.Proofs.AcceptSpecIdx
+import C3BootProofs.Proofs.AcceptSpecImg
+import C3BootProofs.Proofs.AcceptSpec

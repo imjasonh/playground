@@ -14,6 +14,8 @@ import C3BootProofs.Proofs.AcceptTargetsSpec
 The stage from 0x836 to 0xC12. With the last root's keys for the `targets`
 role at `sp + 0xDD0`, it reads `targets.json` into `doc`, parses it as
 metadata, checks the role's threshold of signatures, and reads its expiry.
+When the root gave an error for the role instead of keys, it returns that
+error after parsing `targets.json`.
 It then looks up `trusted_root.json`'s length and SHA-256 under
 `signed.targets`, reads `trusted_root.json` into `doc`, and compares its
 length and the lowercase hex of its SHA-256 with them.
@@ -59,9 +61,22 @@ structure AcTargetsEnv (romBase : Word) (romCode : List Nat) (M : Word → BitVe
 def ActDoc (flash : Nat → BitVec 8) (M : Word → BitVec 8) (idx start : Word) (i : Nat) (d : Bytes) : Prop :=
   ∀ o l, tufIndexDocSpec M idx i = .ok (o, l) → flashBytes flash (start.toNat + o) l = d
 
+/-- The root's keys for `targets` at `a` in `M`: the `RoleKeys` that
+`roleKeys` gives, every byte of their key IDs and keys below 256, or 0xFE
+and then an error code below 0x27. -/
+def ActRk (M : Word → BitVec 8) (a : Word) (root : TufRoot) : Prop :=
+  (∃ t es, roleKeys root.md.signed (ascii!"targets") = some (t, es) ∧
+    RkAt M a t (es.map C3.Json.rkTag) ∧ RkWf (es.map C3.Json.rkTag) ∧ RkBytes es) ∨
+  (M (a + BitVec.ofNat 32 0) = 0xFE ∧ (M (a + BitVec.ofNat 32 1)).toNat < 0x27)
+
+theorem ActRk.congr {M M' : Word → BitVec 8} {a : Word} {root : TufRoot} (h : ActRk M a root)
+    (hb : ∀ o < 0x540, M' (a + BitVec.ofNat 32 o) = M (a + BitVec.ofNat 32 o)) : ActRk M' a root := by
+  rcases h with ⟨t, es, h1, h2, h3, h4⟩ | ⟨h1, h2⟩
+  · exact .inl ⟨t, es, h1, RkB.congr h2 hb, h3, h4⟩
+  · exact .inr ⟨(hb 0 (by decide)).trans h1, by rw [hb 1 (by decide)]; exact h2⟩
+
 /-- At 0x836: the roots led to `root`, whose expiry `re` is at `sp + 0x1318`
-and whose keys for `targets` are at `sp + 0xDD0`, every byte of their key
-IDs and keys below 256. The index at `sp + 0x244`
+and whose keys for `targets` (`ActRk`) are at `sp + 0xDD0`. The index at `sp + 0x244`
 locates `targets.json` and `trusted_root.json` as documents
 `sp[0x1C]` and `sp[0x1C] + 1` of the TUF part at `s8`, of `s7` bytes. `s4`
 is `doc`, and `sp + 0x40` holds the result pointer `r`. -/
@@ -70,8 +85,7 @@ def AcTargetsPre (flash : Nat → BitVec 8) (pinned : Bytes) (parts : TufParts) 
   actRoot pinned parts = some root ∧ expires root.md = some re ∧
   memLoad32 n.mem (acSlot B 0x1318) = BitVec.ofNat 32 re ∧
   memLoad32 n.mem (acSlot B 0x131C) = BitVec.ofNat 32 (re / 2 ^ 32) ∧
-  (∃ t es, roleKeys root.md.signed (ascii!"targets") = some (t, es) ∧
-    RkAt n.mem (acSlot B 0xDD0) t (es.map C3.Json.rkTag) ∧ RkWf (es.map C3.Json.rkTag) ∧ RkBytes es) ∧
+  ActRk n.mem (acSlot B 0xDD0) root ∧
   ActDoc flash n.mem (acSlot B 0x244) (reg n (24 : Fin 32))
     (memLoad32 n.mem (acSlot B 0x1C)).toNat parts.targets ∧
   ActDoc flash n.mem (acSlot B 0x244) (reg n (24 : Fin 32))

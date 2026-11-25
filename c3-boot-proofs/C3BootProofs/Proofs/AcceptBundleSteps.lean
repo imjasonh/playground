@@ -44,12 +44,19 @@ theorem acb_st32 {M M' : Word → BitVec 8} {a x v : Word} (h : M x = M' x) :
     memStore32 M a v x = memStore32 M' a v x := by
   unfold memStore32; exact acb_st8 (acb_st8 (acb_st8 (acb_st8 h)))
 
-/-- What holds of every state the stage reaches from `n0`. -/
-structure AcbK (B : Word) (n0 n : Machine) : Prop where
+/-- What holds of every state the stage reaches from `n0`, the reject exit included. -/
+structure AcbKw (B : Word) (n0 n : Machine) : Prop where
   sp : reg n sp = B + 0x3A50
   gp : reg n (3 : Fin 32) = reg n0 (3 : Fin 32)
   tp : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)
   keep : ∀ x, AcbOut acbV B x → n.mem x = acbMi n0.mem B x
+
+/-- What holds of every state the stage reaches from `n0` before an exit:
+`AcbKw`, and `s5`, `s9`, and `s11` kept. -/
+structure AcbK (B : Word) (n0 n : Machine) : Prop extends AcbKw B n0 n where
+  s5 : reg n (21 : Fin 32) = reg n0 (21 : Fin 32)
+  s9 : reg n (25 : Fin 32) = reg n0 (25 : Fin 32)
+  s11 : reg n (27 : Fin 32) = reg n0 (27 : Fin 32)
 
 /-- What the stage keeps of its start `n0`. -/
 structure AcbG (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (L : Nat) (n0 : Machine) :
@@ -64,8 +71,10 @@ section G
 
 variable {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {L : Nat} {n0 n : Machine}
 
-theorem AcbK.kw (K : AcbK B n0 n) : ∀ x, AcbOut acbW B x → n.mem x = n0.mem x := fun x hx =>
+theorem AcbKw.kw (K : AcbKw B n0 n) : ∀ x, AcbOut acbW B x → n.mem x = n0.mem x := fun x hx =>
   (K.keep x (acb_VW hx)).trans (acb_Mi hx)
+
+theorem AcbK.kw (K : AcbK B n0 n) : ∀ x, AcbOut acbW B x → n.mem x = n0.mem x := K.toAcbKw.kw
 
 theorem AcbG.hi (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) :
     ∀ x : Word, 0x40000000 ≤ x.toNat → n.mem x = n0.mem x := fun x hx =>
@@ -83,7 +92,7 @@ theorem AcbG.buf (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) {c : Nat} (hc
     memLoad32 n.mem (Bf + BitVec.ofNat 32 c) = memLoad32 n0.mem (Bf + BitVec.ofNat 32 c) :=
   acb_ldBuf (K.kw) (by decide) G.Y.hs hc
 
-theorem AcbG.inv (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) : AcInv B Bf g t v M0 n where
+theorem AcbG.invW (G : AcbG B Bf g t r v M0 L n0) (K : AcbKw B n0 n) : AcInv B Bf g t v M0 n where
   sp := K.sp
   gp := K.gp.trans G.I.gp
   tp := K.tp.trans G.I.tp
@@ -94,7 +103,10 @@ theorem AcbG.inv (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) : AcInv B Bf 
     rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> omega
   out x h1 h2 := (K.kw x (acb_stack (by decide) h1)).trans (G.I.out x h1 h2)
 
-theorem AcbG.res (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) : memLoad32 n.mem (acSlot B 0x40) = r :=
+theorem AcbG.inv (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) : AcInv B Bf g t v M0 n :=
+  G.invW K.toAcbKw
+
+theorem AcbG.resW (G : AcbG B Bf g t r v M0 L n0) (K : AcbKw B n0 n) : memLoad32 n.mem (acSlot B 0x40) = r :=
   (acb_ld (K.kw) (c := 0x3A50 + 0x40) (by decide) (by decide) (by decide)).trans G.r
 
 end G
@@ -104,31 +116,36 @@ def AcbEx (n : Machine) : Prop := n.pc = AC + 0x7D6 ∧ (reg n (21 : Fin 32) &&&
 
 /-- From `n`, the stage reaches the reject exit, or a state that `P` holds of. -/
 def AcbOr (B : Word) (n0 n : Machine) (P : Machine → Prop) : Prop :=
-  ∃ n', Steps n n' ∧ AcbK B n0 n' ∧ (AcbEx n' ∨ P n')
+  ∃ n', Steps n n' ∧ (AcbKw B n0 n' ∧ AcbEx n' ∨ AcbK B n0 n' ∧ P n')
 
 theorem acb_bind {B : Word} {n0 n : Machine} {P P' : Machine → Prop} (h : AcbOr B n0 n P)
     (k : ∀ n1, AcbK B n0 n1 → P n1 → AcbOr B n0 n1 P') : AcbOr B n0 n P' := by
-  obtain ⟨n1, c1, K1, h1 | h1⟩ := h
-  · exact ⟨n1, c1, K1, Or.inl h1⟩
-  · obtain ⟨n2, c2, K2, h2⟩ := k n1 K1 h1
-    exact ⟨n2, c1.trans c2, K2, h2⟩
+  obtain ⟨n1, c1, h1 | ⟨K1, h1⟩⟩ := h
+  · exact ⟨n1, c1, Or.inl h1⟩
+  · obtain ⟨n2, c2, h2⟩ := k n1 K1 h1
+    exact ⟨n2, c1.trans c2, h2⟩
 
 theorem acb_ret {B : Word} {n0 n : Machine} {P : Machine → Prop} (K : AcbK B n0 n) (h : P n) : AcbOr B n0 n P :=
-  ⟨n, .refl _, K, Or.inr h⟩
+  ⟨n, .refl _, Or.inr ⟨K, h⟩⟩
 
 theorem acb_stage {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {L : Nat} {n0 : Machine}
     {o' : Nat} {Q : Machine → Prop} (G : AcbG B Bf g t r v M0 L n0)
     (h : AcbOr B n0 n0 (fun n => n.pc = AC + BitVec.ofNat 32 o' ∧ Q n)) :
-    AcStage B Bf g t r v M0 n0 o' Q := by
-  obtain ⟨n, c, K, ex | ⟨hp, hq⟩⟩ := h
-  · exact ⟨n, c, Or.inr ⟨G.inv K, Or.inl (Or.inr (Or.inr (Or.inl ⟨ex.1, G.res K, ex.2⟩)))⟩⟩
-  · exact ⟨n, c, Or.inr ⟨G.inv K, Or.inr ⟨hp, hq⟩⟩⟩
+    AcStage B Bf g t r v M0 n0 o' (fun n => Q n ∧ ∀ q : Fin 32, q.val ∈ [21, 25, 27] → reg n q = reg n0 q) := by
+  obtain ⟨n, c, ⟨K, ex⟩ | ⟨K, hp, hq⟩⟩ := h
+  · exact ⟨n, c, Or.inr ⟨G.invW K, Or.inl (Or.inr (Or.inr (Or.inl ⟨ex.1, G.resW K, ex.2⟩)))⟩⟩
+  · refine ⟨n, c, Or.inr ⟨G.inv K, Or.inr ⟨hp, hq, fun q hq => ?_⟩⟩⟩
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
+    rcases hq with h | h | h <;> rw [show q = ⟨_, by omega⟩ from Fin.ext h]
+    · exact K.s5
+    · exact K.s9
+    · exact K.s11
 
 theorem acb_x6a {B : Word} {n0 n : Machine} {P : Machine → Prop} (K : AcbK B n0 n)
     (s : St n.mem AC n 0x1A6A (reg n)) (C : CodeIn n.mem AC bootMainClosure0Code)
     (hb : (reg n (8 : Fin 32) &&& 0xFF).toNat < 0x27) : AcbOr B n0 n P := by
   obtain ⟨n', c, pc, mem, rg, r21⟩ := acb_t6a s C
-  refine ⟨n', c, ⟨?_, ?_, ?_, fun x hx => by rw [mem]; exact K.keep x hx⟩, Or.inl ⟨pc, by rw [r21]; exact hb⟩⟩
+  refine ⟨n', c, Or.inl ⟨⟨?_, ?_, ?_, fun x hx => by rw [mem]; exact K.keep x hx⟩, pc, by rw [r21]; exact hb⟩⟩
   · rw [rg sp (by decide)]; exact K.sp
   · rw [rg 3 (by decide)]; exact K.gp
   · rw [rg 4 (by decide)]; exact K.tp
@@ -137,8 +154,7 @@ theorem acb_x66 {B : Word} {n0 n : Machine} {P : Machine → Prop} (K : AcbK B n
     (s : St n.mem AC n 0x1A66 (reg n)) (C : CodeIn n.mem AC bootMainClosure0Code)
     (hb : (n.mem (acSlot B 0x354)).toNat < 0x27) : AcbOr B n0 n P := by
   obtain ⟨n', c, pc, mem, rg, r21⟩ := acb_t66 s C K.sp
-  refine ⟨n', c, ⟨?_, ?_, ?_, fun x hx => by rw [mem]; exact K.keep x hx⟩,
-    Or.inl ⟨pc, by rw [r21, acb_zb]; exact hb⟩⟩
+  refine ⟨n', c, Or.inl ⟨⟨?_, ?_, ?_, fun x hx => by rw [mem]; exact K.keep x hx⟩, pc, by rw [r21, acb_zb]; exact hb⟩⟩
   · rw [rg sp (by decide)]; exact K.sp
   · rw [rg 3 (by decide)]; exact K.gp
   · rw [rg 4 (by decide)]; exact K.tp
@@ -149,15 +165,17 @@ theorem acb_spk (B : Word) {k : Word} {c : Nat} (h : (0x3A50 : Word) + k = BitVe
 
 theorem acb_pre {B : Word} {n0 n n' : Machine} {P : Machine → Prop} (c : Steps n n') (h : AcbOr B n0 n' P) :
     AcbOr B n0 n P := by
-  obtain ⟨n2, c2, K2, h2⟩ := h
-  exact ⟨n2, c.trans c2, K2, h2⟩
+  obtain ⟨n2, c2, h2⟩ := h
+  exact ⟨n2, c.trans c2, h2⟩
 
-/-- `AcbK` survives steps that keep the memory, `sp`, `gp`, and `tp`. -/
+/-- `AcbK` survives steps that keep the memory, `sp`, `gp`, `tp`, `s5`, `s9`, and `s11`. -/
 theorem AcbK.regs {B : Word} {n0 n n' : Machine} {l : List Nat} (K : AcbK B n0 n) (hm : n'.mem = n.mem)
     (hr : ∀ x : Fin 32, x.val ∉ l → reg n' x = reg n x) (h2 : (2 : Nat) ∉ l := by decide)
-    (h3 : (3 : Nat) ∉ l := by decide) (h4 : (4 : Nat) ∉ l := by decide) : AcbK B n0 n' :=
-  ⟨by rw [hr (2 : Fin 32) h2]; exact K.sp, by rw [hr 3 h3]; exact K.gp, by rw [hr 4 h4]; exact K.tp,
-    fun x hx => by rw [hm]; exact K.keep x hx⟩
+    (h3 : (3 : Nat) ∉ l := by decide) (h4 : (4 : Nat) ∉ l := by decide) (h21 : (21 : Nat) ∉ l := by decide)
+    (h25 : (25 : Nat) ∉ l := by decide) (h27 : (27 : Nat) ∉ l := by decide) : AcbK B n0 n' :=
+  ⟨⟨by rw [hr (2 : Fin 32) h2]; exact K.sp, by rw [hr 3 h3]; exact K.gp, by rw [hr 4 h4]; exact K.tp,
+    fun x hx => by rw [hm]; exact K.keep x hx⟩, by rw [hr 21 h21]; exact K.s5, by rw [hr 25 h25]; exact K.s9,
+    by rw [hr 27 h27]; exact K.s11⟩
 
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 4000000 in
@@ -175,7 +193,7 @@ theorem acb_fstep {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8
     (h4 : fetchRel bootMainClosure0Code (o + 12) = some (.branch .beq rd x0 bimm, blen))
     (hT : BitVec.ofNat 32 (o + 12) + bimm = BitVec.ofNat 32 0x1A66)
     (hF : BitVec.ofNat 32 (o + 12) + blen = BitVec.ofNat 32 o')
-    (hrd : rd.val ∉ [0, 2, 3, 4])
+    (hrd : rd.val ∉ [0, 2, 3, 4, 21, 25, 27])
     (ra0 : reg n a0 = acSlot B 0x350) (ra1 : reg n a1 = acSlot B 0xDD0) (ra2 : reg n a2 = lo)
     (ra3 : reg n a3 = hi) :
     AcbOr B n0 n (fun n' => St n'.mem AC n' o' (reg n') ∧
@@ -191,16 +209,19 @@ theorem acb_fstep {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8
   have hr0 : rd.val ≠ 0 := fun e => hrd (by rw [e]; decide)
   obtain ⟨n1, c1, s1, rg1, fr1, p1, l1, res⟩ :=
     acb_fcall s (G.code K) (G.env K) G.Y R hq h1 h2 hb hl K.sp ra0 ra1 ra2 ra3
-  have K1 : AcbK B n0 n1 := ⟨by rw [rg1 sp (by decide)]; exact K.sp, by rw [rg1 3 (by decide)]; exact K.gp,
-    by rw [rg1 4 (by decide)]; exact K.tp, fun x hx => (fr1 x (acb_FcV hx)).trans (K.keep x hx)⟩
+  have K1 : AcbK B n0 n1 := ⟨⟨by rw [rg1 sp (by decide)]; exact K.sp, by rw [rg1 3 (by decide)]; exact K.gp,
+    by rw [rg1 4 (by decide)]; exact K.tp, fun x hx => (fr1 x (acb_FcV hx)).trans (K.keep x hx)⟩,
+    by rw [rg1 21 (by decide)]; exact K.s5, by rw [rg1 25 (by decide)]; exact K.s9,
+    by rw [rg1 27 (by decide)]; exact K.s11⟩
   have C1 := G.code K1
   have eA : B + 0x3A50 + 0x350 = acSlot B 0x350 := acb_spk B (by decide)
   obtain ⟨n2, e2, s2⟩ := s1.self.lw C1 h3 e3 (by rw [K1.sp, eA]; exact acb_al G.Y.fr _ (by decide) (by decide))
   rw [K1.sp, eA] at s2
   have rg2 : ∀ x : Fin 32, x ≠ rd → reg n2 x = reg n1 x := fun x hx => by rw [s2.regs, updz s1.zero hx]
-  have K2 : AcbK B n0 n2 := ⟨by rw [rg2 sp (acb_ne hrd).symm]; exact K1.sp,
+  have K2 : AcbK B n0 n2 := ⟨⟨by rw [rg2 sp (acb_ne hrd).symm]; exact K1.sp,
     by rw [rg2 3 (acb_ne hrd).symm]; exact K1.gp, by rw [rg2 4 (acb_ne hrd).symm]; exact K1.tp,
-    fun x hx => by rw [s2.mem]; exact K1.keep x hx⟩
+    fun x hx => by rw [s2.mem]; exact K1.keep x hx⟩, by rw [rg2 21 (acb_ne hrd).symm]; exact K1.s5,
+    by rw [rg2 25 (acb_ne hrd).symm]; exact K1.s9, by rw [rg2 27 (acb_ne hrd).symm]; exact K1.s11⟩
   have vrd : reg n2 rd = memLoad32 n1.mem (acSlot B 0x350) := by rw [s2.regs, upd_same hr0]
   rcases res with ⟨f0, f4⟩ | ⟨g1, g2, g3, g4, g5, g6⟩
   · obtain ⟨n3, e3', s3⟩ := s2.taken C1 0x1A66 h4 hT (by rw [upd_same hr0, f0]; rfl)
@@ -369,15 +390,17 @@ theorem acb_init {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8}
       BitVec.reduceAdd, acb_lst, acb_lsb, hb, hl]
     rfl
   have g : ∀ q, reg n2 q = (runBlock acbI (n1.mem, reg n1)).2 q := fun q => by rw [u2.regs]
-  have rk : ∀ q : Fin 32, q.val ∈ [2, 3, 4] → reg n2 q = reg n1 q := fun q hq => by
+  have rk : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 21, 25, 27] → reg n2 q = reg n1 q := fun q hq => by
     rw [g, runBlock_reg _ _ _ q hz (by simp only [acbI]; revert hq; revert q; decide)]
-  have K2 : AcbK B n0 n2 := ⟨by rw [rk sp (by decide)]; exact rsp1, by rw [rk 3 (by decide), rg1 3 (by decide)],
+  have K2 : AcbK B n0 n2 := ⟨⟨by rw [rk sp (by decide)]; exact rsp1, by rw [rk 3 (by decide), rg1 3 (by decide)],
     by rw [rk 4 (by decide), rg1 4 (by decide)], fun x hx => by
       rw [m2, memStore32_get_sep (a := acSlot B 0xDD8) (acb_sep hx (p := (0x4820, 0xC)) (by decide) (by decide) (by decide)),
         memStore32_get_sep (a := acSlot B 0xDD4) (acb_sep hx (p := (0x4820, 0xC)) (by decide) (by decide) (by decide)),
         memStore32_get_sep (a := acSlot B 0xDD0) (acb_sep hx (p := (0x4820, 0xC)) (by decide) (by decide) (by decide))]
       unfold acbMi
-      exact acb_st8 (acb_st32 (mem1 x (acb_sep hx (p := (0, 0x3A50)) (by decide) (by decide) (by decide))))⟩
+      exact acb_st8 (acb_st32 (mem1 x (acb_sep hx (p := (0, 0x3A50)) (by decide) (by decide) (by decide))))⟩,
+    by rw [rk 21 (by decide), rg1 21 (by decide)], by rw [rk 25 (by decide), rg1 25 (by decide)],
+    by rw [rk 27 (by decide), rg1 27 (by decide)]⟩
   refine ⟨n2, c1.trans c2, K2, ⟨u2.pc, rfl, fun _ => rfl⟩, ?_, ?_, ?_, ?_, ?_⟩
   · rw [g]; simp +decide only [runBlock, BInstr.run, acbI, upd, ↓reduceIte]; rw [rsp1]
     simp (disch := decide) only [acSlot, aluEval, Dq.frame_lit, BitVec.reduceToNat, Nat.reduceAdd]
@@ -390,10 +413,12 @@ theorem acb_init {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8}
 outside `acbFc`. -/
 theorem AcbK.call {B : Word} {n0 n n' : Machine} {l : List Nat} (K : AcbK B n0 n)
     (hr : ∀ x : Fin 32, x.val ∉ l → reg n' x = reg n x) (hf : ∀ x, AcbOut acbFc B x → n'.mem x = n.mem x)
-    (h2 : (2 : Nat) ∉ l := by decide) (h3 : (3 : Nat) ∉ l := by decide) (h4 : (4 : Nat) ∉ l := by decide) :
+    (h2 : (2 : Nat) ∉ l := by decide) (h3 : (3 : Nat) ∉ l := by decide) (h4 : (4 : Nat) ∉ l := by decide)
+    (h21 : (21 : Nat) ∉ l := by decide) (h25 : (25 : Nat) ∉ l := by decide) (h27 : (27 : Nat) ∉ l := by decide) :
     AcbK B n0 n' :=
-  ⟨by rw [hr (2 : Fin 32) h2]; exact K.sp, by rw [hr 3 h3]; exact K.gp, by rw [hr 4 h4]; exact K.tp,
-    fun x hx => (hf x (acb_FcV hx)).trans (K.keep x hx)⟩
+  ⟨⟨by rw [hr (2 : Fin 32) h2]; exact K.sp, by rw [hr 3 h3]; exact K.gp, by rw [hr 4 h4]; exact K.tp,
+    fun x hx => (hf x (acb_FcV hx)).trans (K.keep x hx)⟩, by rw [hr 21 h21]; exact K.s5,
+    by rw [hr 25 h25]; exact K.s9, by rw [hr 27 h27]; exact K.s11⟩
 
 theorem acb_dd0 (B : Word) : B + 0x3A50 + 0x7FF + 0x5D1 = acSlot B 0xDD0 := by
   rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
@@ -448,8 +473,8 @@ theorem acb_hdr {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} 
 
 theorem acb_map {B : Word} {n0 n : Machine} {P Q : Machine → Prop} (h : AcbOr B n0 n P)
     (k : ∀ n', P n' → Q n') : AcbOr B n0 n Q := by
-  obtain ⟨n2, c2, K2, h2⟩ := h
-  exact ⟨n2, c2, K2, h2.imp_right (k n2)⟩
+  obtain ⟨n2, c2, h2⟩ := h
+  exact ⟨n2, c2, h2.imp_right fun h => ⟨h.1, k n2 h.2⟩⟩
 
 set_option maxRecDepth 100000 in
 /-- A block `is` of register steps that sets the arguments of
@@ -460,7 +485,7 @@ theorem acb_fld {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} 
     (is : List BInstr) (hend : blockEnd bootMainClosure0Code o is = some oc)
     (hok : BlockOk AC bootMainClosure0Code.length is (n.mem, reg n))
     (hm : (runBlock is (n.mem, reg n)).1 = n.mem)
-    (hs : ∀ x ∈ is.filterMap BInstr.dst, x.val ∉ [0, 2, 3, 4])
+    (hs : ∀ x ∈ is.filterMap BInstr.dst, x.val ∉ [0, 2, 3, 4, 21, 25, 27])
     (ra0 : (runBlock is (n.mem, reg n)).2 a0 = acSlot B 0x350)
     (ra1 : (runBlock is (n.mem, reg n)).2 a1 = acSlot B 0xDD0)
     (ra2 : (runBlock is (n.mem, reg n)).2 a2 = lo) (ra3 : (runBlock is (n.mem, reg n)).2 a3 = hi)
@@ -473,7 +498,7 @@ theorem acb_fld {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} 
     (h4 : fetchRel bootMainClosure0Code (oc + 12) = some (.branch .beq rd x0 bimm, blen))
     (hT : BitVec.ofNat 32 (oc + 12) + bimm = BitVec.ofNat 32 0x1A66)
     (hF : BitVec.ofNat 32 (oc + 12) + blen = BitVec.ofNat 32 o')
-    (hrd : rd.val ∉ [0, 2, 3, 4]) :
+    (hrd : rd.val ∉ [0, 2, 3, 4, 21, 25, 27]) :
     AcbOr B n0 n (fun n' => St n'.mem AC n' o' (reg n') ∧
       (∀ x : Fin 32, x.val ∉ [1, 6, 10, 11, 12, 13, 14, 15] → x ≠ rd →
         reg n' x = (runBlock is (n.mem, reg n)).2 x) ∧
@@ -487,8 +512,9 @@ theorem acb_fld {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} 
   obtain ⟨n1, c1, u1⟩ := s.block is (G.code K) hend hok
   have m1 : n1.mem = n.mem := by rw [u1.mem, hm]
   have r1 : ∀ x, reg n1 x = (runBlock is (n.mem, reg n)).2 x := fun x => by rw [u1.regs]
-  have aux : ∀ x : Fin 32, x.val ∉ [0, 1] ++ List.range' 5 27 → x.val ∈ [0, 2, 3, 4] := by decide
-  have K1 : AcbK B n0 n1 := K.regs (l := [0, 1] ++ List.range' 5 27) m1 (fun x hx => by
+  have aux : ∀ x : Fin 32, x.val ∉ [0, 1] ++ List.range' 5 16 ++ [22, 23, 24, 26, 28, 29, 30, 31] →
+      x.val ∈ [0, 2, 3, 4, 21, 25, 27] := by decide
+  have K1 : AcbK B n0 n1 := K.regs (l := [0, 1] ++ List.range' 5 16 ++ [22, 23, 24, 26, 28, 29, 30, 31]) m1 (fun x hx => by
     rw [r1, runBlock_reg _ _ _ x s.zero (fun h => hs x h (aux x hx))])
   refine acb_pre c1 (acb_map (acb_fstep G K1 ⟨u1.pc, rfl, fun _ => rfl⟩ (by rw [m1]; exact R) hq h1 h2 hb hl
     h3 e3 h4 hT hF hrd (by rw [r1, ra0]) (by rw [r1, ra1]) (by rw [r1, ra2]) (by rw [r1, ra3])) ?_)
