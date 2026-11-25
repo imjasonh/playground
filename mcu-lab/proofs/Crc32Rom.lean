@@ -1,4 +1,5 @@
 import Std.Tactic.BVDecide
+import Rv32imc
 
 /-!
 Formal specification and RV32IMC correctness proof for ESP32-C3 silicon ROM `crc32_le`
@@ -147,5 +148,10 @@ theorem romCrc32Le_eq_ieeeCrc32 (init : UInt32) (buf : List UInt8) :
     romCrc32Le init buf = ieeeCrc32 init buf := by
   unfold romCrc32Le ieeeCrc32
   rw [foldl_romLoopStep_eq_crcByteBitwise]
+
+/-- Machine-code stream check: all 52 bytes of `crc32_le` decode cleanly as 18 RV32IMC instructions. -/
+theorem crc32LeBytes_valid_rv32imc :
+    Esp32c3Rom.Rv32imc.validRv32imcStream crc32LeBytes 0 18 = true := by
+  decide
 
 end Esp32c3Rom.Crc32

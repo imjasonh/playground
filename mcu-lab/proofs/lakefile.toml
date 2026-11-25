@@ -1,5 +1,8 @@
 name = "mcu_lab_proofs"
-defaultTargets = ["Crc32Rom", "AesRom", "MemRom", "MzCrc32Rom", "CryptoRom", "MinizRom"]
+defaultTargets = ["Rv32imc", "Crc32Rom", "AesRom", "MemRom", "MzCrc32Rom", "CryptoRom", "MinizRom"]
+
+[[lean_lib]]
+name = "Rv32imc"
 
 [[lean_lib]]
 name = "Crc32Rom"
