@@ -5,7 +5,9 @@ import C3BootProofs.Proofs.SvEcdsa
 
 Besides 0x7A4, four error exits store `Err` and the code themselves and
 jump to the epilogue at 0x7AE: 0xE3A with the code in `a0`, 0x1882 with it
-in `s9`, 0x1AB8 with it in `s4`, and 0x1388 with the code 0x1D.
+in `s9`, 0x1AB8 with it in `s4`, and 0x138E with `Err` and the code in the
+low half of `a0`. 0x1388, 0xE46, and 0xE4E set `a0` and jump to 0x138E, and
+0xE38 sets `a0` and falls through to 0xE3A.
 -/
 
 namespace C3.RV32.Sv
@@ -138,40 +140,31 @@ theorem St.sh {M : Word → BitVec 8} {base : Word} {code : List Nat} {m : Machi
   · intro r; rw [← s.regs r]; rfl
 
 set_option maxRecDepth 100000 in
-/-- **The error exit at 0x1388**: no listed intermediate issued the leaf.
-`sh` stores `Err` and the code 0x1D at `out` at once. -/
-theorem sv_fail_1388 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B 0x2660) (E : SvCode n.mem)
-    (s : St n.mem SV n 0x1388 (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
+/-- **The store at 0x138E**: `sh` stores the low half of `a0`, `Err` and a
+code, at `out` at once. -/
+theorem sv_fail_138e {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B 0x2660) (E : SvCode n.mem)
+    (s : St n.mem SV n 0x138E (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
     (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
     (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
-    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) : SvErrRet B out v n0 := by
-  have hz := s.zero
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32))
+    (hlo : (reg n a0).extractLsb' 0 8 = 1) : SvErrRet B out v n0 := by
   have e0 : out + 0 = out := BitVec.add_zero _
   have sOC := hO.code
   have sOS := out_sep B out hO
   have sO0 : Sep out 1 SV sigstoreVerifyCode.length := by
     have := sOC.sub (c := 0) (l := 1) (by decide); rwa [add_ofNat_zero] at this
   have sO1 : Sep (out + 1) 1 SV sigstoreVerifyCode.length := sOC.sub (c := 1) (l := 1) (by decide)
-  obtain ⟨n1, c1, u1⟩ := s.block (off' := 0x138E) [.lui a0 0x2000, .aluImm .add a0 a0 0xFFFFFD01] E.self (by decide)
-    (by simp only [BlockOk, BInstr.ok]; exact ⟨trivial, trivial, trivial⟩)
-  have s1 : St n.mem SV n1 0x138E (reg n1) := ⟨u1.pc, u1.mem, fun _ => rfl⟩
-  have ra0 : reg n1 a0 = 0x1D01 := by
-    rw [u1.regs]; simp only [runBlock, BInstr.run, aluEval, upd, ↓reduceIte]; rfl
-  have r1 : ∀ q, q ≠ a0 → reg n1 q = reg n q := fun q hq => by
-    rw [u1.regs]; simp only [runBlock, BInstr.run]; exact (updz (upd_zero _ _ _) hq).trans (updz hz hq)
-  have r18 : reg n1 (18 : Fin 32) + 0x0 = out := by rw [r1 18 (by decide), hout, e0]
-  obtain ⟨n2, d2, s2⟩ := s1.sh (off' := 0x1392) E.self sv_at_138e (by decide) (by rw [r18]; exact hO.al)
-  rw [r18, ra0] at s2
-  have s2' : St (memStore8 (memStore8 n.mem out 1) (out + 1) 0x1D) SV n2 0x1392 (reg n1) :=
-    ⟨s2.pc, by rw [s2.mem]; rfl, s2.regs⟩
-  have C2 : CodeIn (memStore8 (memStore8 n.mem out 1) (out + 1) 0x1D) SV sigstoreVerifyCode :=
-    (E.self.store8 sO0).store8 sO1
-  obtain ⟨n3, d3, u3⟩ := s2'.jump C2 sv_at_1392
-    (show BitVec.ofNat 32 0x1392 + 0xFFFFF41C = BitVec.ofNat 32 0x7AE by decide) (by rw [s2'.pc]; decide)
-  have s3 : St (memStore8 (memStore8 n.mem out 1) (out + 1) 0x1D) SV n3 0x7AE (reg n3) :=
-    ⟨u3.pc, u3.mem, fun _ => rfl⟩
-  have hS : ∀ k, k < 13 → memLoad32 (memStore8 (memStore8 n.mem out 1) (out + 1) 0x1D)
-      (B + BitVec.ofNat 32 (0x265C - 4 * k)) = v k := fun k hk => by
+  have r18 : reg n (18 : Fin 32) + 0x0 = out := by rw [hout, e0]
+  obtain ⟨n2, d2, s2⟩ := s.sh (off' := 0x1392) E.self sv_at_138e (by decide) (by rw [r18]; exact hO.al)
+  rw [r18, hlo] at s2
+  have C2 : CodeIn (memStore8 (memStore8 n.mem out 1) (out + 1) ((reg n a0).extractLsb' 8 8))
+      SV sigstoreVerifyCode := (E.self.store8 sO0).store8 sO1
+  obtain ⟨n3, d3, u3⟩ := s2.jump C2 sv_at_1392
+    (show BitVec.ofNat 32 0x1392 + 0xFFFFF41C = BitVec.ofNat 32 0x7AE by decide) (by rw [s2.pc]; decide)
+  have s3 : St (memStore8 (memStore8 n.mem out 1) (out + 1) ((reg n a0).extractLsb' 8 8))
+      SV n3 0x7AE (reg n3) := ⟨u3.pc, u3.mem, fun _ => rfl⟩
+  have hS : ∀ k, k < 13 → memLoad32 (memStore8 (memStore8 n.mem out 1) (out + 1)
+      ((reg n a0).extractLsb' 8 8)) (B + BitVec.ofNat 32 (0x265C - 4 * k)) = v k := fun k hk => by
     rw [← V k hk]
     have hs : Sep out 2 (B + BitVec.ofNat 32 (0x265C - 4 * k)) 4 := by
       have := sOS.symm.sub (c := 0x30 - 4 * k) (l := 4) (by omega)
@@ -182,11 +175,102 @@ theorem sv_fail_1388 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr 
       have h0 : B + BitVec.ofNat 32 (0x265C - 4 * k) + BitVec.ofNat 32 j ≠ out := fun e =>
         hs 0 (by decide) j hj (by rw [add_ofNat_zero]; exact e.symm)
       rw [memStore8_ne h1, memStore8_ne h0]
-  refine sv_ret_err (n := n3) F C2 s3 (t.trans (c1.trans ((Steps.single d2).trans (.single d3)))) hS hret
-    (by rw [u3.regs, r1 sp (by decide), rsp]) (by rw [u3.regs, r1 3 (by decide), r3])
-    (by rw [u3.regs, r1 4 (by decide), r4]) ?_ ?_
+  refine sv_ret_err (n := n3) F C2 s3 (t.trans ((Steps.single d2).trans (.single d3))) hS hret
+    (by rw [u3.regs, rsp]) (by rw [u3.regs, r3]) (by rw [u3.regs, r4]) ?_ ?_
   · rw [memStore8_ne (out_ne1 out), memStore8_same]
   · intro x hx h0 h1; rw [memStore8_ne h1, memStore8_ne h0, fR x hx]
+
+set_option maxRecDepth 100000 in
+/-- An error exit that sets `a0` with `is` and jumps to 0x138E. -/
+theorem sv_fail_to138e {B out : Word} {v : Nat → Word} {n0 n : Machine} {off off' : Nat} {is : List BInstr}
+    {o : Word} (F : Fr B 0x2660) (E : SvCode n.mem)
+    (s : St n.mem SV n off (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
+    (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
+    (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32))
+    (he : blockEnd sigstoreVerifyCode off is = some off') (hok : BlockOk SV sigstoreVerifyCode.length is (n.mem, reg n))
+    (hm : (runBlock is (n.mem, reg n)).1 = n.mem)
+    (hr : ∀ q : Fin 32, q ≠ a0 → (runBlock is (n.mem, reg n)).2 q = reg n q)
+    (hj : fetchRel sigstoreVerifyCode off' = some (.jal x0 o, 2))
+    (ht : BitVec.ofNat 32 off' + o = BitVec.ofNat 32 0x138E)
+    (hlo : ((runBlock is (n.mem, reg n)).2 a0).extractLsb' 0 8 = 1) : SvErrRet B out v n0 := by
+  obtain ⟨n1, c1, u1⟩ := s.block is E.self he hok
+  rw [hm] at u1
+  have s1 : St n.mem SV n1 off' (reg n1) := ⟨u1.pc, u1.mem, fun _ => rfl⟩
+  have rr : ∀ q : Fin 32, q ≠ a0 → reg n1 q = reg n q := fun q hq => by rw [u1.regs, hr q hq]
+  obtain ⟨n2, d2, u2⟩ := s1.jump E.self hj ht (by rw [s1.pc, BitVec.add_assoc, ht]; decide)
+  have s2 : St n.mem SV n2 0x138E (reg n2) := ⟨u2.pc, u2.mem, fun _ => rfl⟩
+  have m2 : n2.mem = n.mem := u2.mem
+  have E2 : SvCode n2.mem := by rw [m2]; exact E
+  rw [← m2] at s2
+  exact sv_fail_138e F E2 s2 (t.trans (c1.trans (.single d2))) (by rw [m2]; exact fR) (by rw [m2]; exact V) hret
+    (by rw [u2.regs, rr sp (by decide), rsp]) (by rw [u2.regs, rr 18 (by decide), hout])
+    hO (by rw [u2.regs, rr 3 (by decide), r3]) (by rw [u2.regs, rr 4 (by decide), r4])
+    (by rw [u2.regs, u1.regs]; exact hlo)
+
+set_option maxRecDepth 100000 in
+/-- **The error exit at 0x1388**: no listed intermediate issued the leaf,
+code 0x1D. -/
+theorem sv_fail_1388 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B 0x2660) (E : SvCode n.mem)
+    (s : St n.mem SV n 0x1388 (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
+    (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
+    (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) : SvErrRet B out v n0 := by
+  obtain ⟨n1, c1, u1⟩ := s.block (off' := 0x138E) [.lui a0 0x2000, .aluImm .add a0 a0 0xFFFFFD01] E.self (by decide)
+    (by simp only [BlockOk, BInstr.ok]; exact ⟨trivial, trivial, trivial⟩)
+  have s1 : St n1.mem SV n1 0x138E (reg n1) := ⟨u1.pc, rfl, fun _ => rfl⟩
+  have m1 : n1.mem = n.mem := u1.mem
+  have r1 : ∀ q, q ≠ a0 → reg n1 q = reg n q := fun q hq => by
+    rw [u1.regs]; simp only [runBlock, BInstr.run]; exact (updz (upd_zero _ _ _) hq).trans (updz s.zero hq)
+  have ra0 : reg n1 a0 = 0x1D01 := by
+    rw [u1.regs]; simp only [runBlock, BInstr.run, aluEval, upd, ↓reduceIte]; rfl
+  exact sv_fail_138e F (by rw [m1]; exact E) s1 (t.trans c1) (by rw [m1]; exact fR) (by rw [m1]; exact V) hret
+    (by rw [r1 sp (by decide), rsp]) (by rw [r1 18 (by decide), hout]) hO (by rw [r1 3 (by decide), r3])
+    (by rw [r1 4 (by decide), r4]) (by rw [ra0]; rfl)
+
+set_option maxRecDepth 100000 in
+/-- **The error exit at 0xE46**: a policy value differs from the trust
+root's, code 0x17. -/
+theorem sv_fail_e46 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B 0x2660) (E : SvCode n.mem)
+    (s : St n.mem SV n 0xE46 (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
+    (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
+    (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) : SvErrRet B out v n0 :=
+  sv_fail_to138e (is := [.lui a0 0x1000, .aluImm .add a0 a0 0x701]) F E s t fR V hret rsp hout hO r3 r4
+    (by decide) (by simp only [BlockOk, BInstr.ok]; exact ⟨trivial, trivial, trivial⟩) rfl
+    (fun q hq => by simp only [runBlock, BInstr.run]; exact (updz (upd_zero _ _ _) hq).trans (updz s.zero hq))
+    sv_at_e4c (by decide) (by simp only [runBlock, BInstr.run, aluEval, upd, ↓reduceIte]; rfl)
+
+set_option maxRecDepth 100000 in
+/-- **The error exit at 0xE4E**: the image's signature doesn't verify,
+code 0x10. -/
+theorem sv_fail_e4e {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B 0x2660) (E : SvCode n.mem)
+    (s : St n.mem SV n 0xE4E (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
+    (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
+    (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) : SvErrRet B out v n0 :=
+  sv_fail_to138e (is := [.lui a0 0x1000, .aluImm .add a0 a0 0x1]) F E s t fR V hret rsp hout hO r3 r4
+    (by decide) (by simp only [BlockOk, BInstr.ok]; exact ⟨trivial, trivial, trivial⟩) rfl
+    (fun q hq => by simp only [runBlock, BInstr.run]; exact (updz (upd_zero _ _ _) hq).trans (updz s.zero hq))
+    sv_at_e52 (by decide) (by simp only [runBlock, BInstr.run, aluEval, upd, ↓reduceIte]; rfl)
+
+set_option maxRecDepth 100000 in
+/-- **The error exit at 0xE38**: the leaf's signature doesn't verify, code
+0x10. -/
+theorem sv_fail_e38 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B 0x2660) (E : SvCode n.mem)
+    (s : St n.mem SV n 0xE38 (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
+    (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
+    (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) : SvErrRet B out v n0 := by
+  obtain ⟨n1, c1, u1⟩ := s.block (off' := 0xE3A) [.aluImm .add a0 x0 0x10] E.self (by decide)
+    (by simp only [BlockOk, BInstr.ok]; exact ⟨trivial, trivial⟩)
+  have s1 : St n1.mem SV n1 0xE3A (reg n1) := ⟨u1.pc, rfl, fun _ => rfl⟩
+  have m1 : n1.mem = n.mem := u1.mem
+  have r1 : ∀ q, q ≠ a0 → reg n1 q = reg n q := fun q hq => by
+    rw [u1.regs]; simp only [runBlock, BInstr.run]; exact updz s.zero hq
+  exact sv_fail_e3a F (by rw [m1]; exact E) s1 (t.trans c1) (by rw [m1]; exact fR) (by rw [m1]; exact V) hret
+    (by rw [r1 sp (by decide), rsp]) (by rw [r1 18 (by decide), hout]) hO (by rw [r1 3 (by decide), r3])
+    (by rw [r1 4 (by decide), r4])
 
 theorem shr_byte (x : Word) (k : Nat) (hk : k + 8 ≤ 32) : (x >>> k).extractLsb' 0 8 = x.extractLsb' k 8 := by
   apply BitVec.eq_of_toNat_eq
