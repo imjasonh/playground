@@ -279,6 +279,7 @@ import C3BootProofs.Proofs.AcceptExtractTsa
 import C3BootProofs.Proofs.AcceptExtractCa
 import C3BootProofs.Proofs.ResetLoaded
 import C3BootProofs.Proofs.PanicFree
+import C3BootProofs.Proofs.PanicFreeTargets
 import C3BootProofs.Proofs.SramAlias
 import C3BootProofs.Proofs.AcceptExtractTlogStage
 
@@ -10817,3 +10818,24 @@ end C3
 
 /-- info: 'C3.RV32.Sv.sv_p2F' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Sv.sv_p2F
+
+/-- info: 'C3.RV32.Ac.AcStagePI.acStage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcStagePI.acStage
+
+/-- info: 'C3.RV32.BootMainContract.Closure0ContractPI.weaken' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.BootMainContract.Closure0ContractPI.weaken
+
+/-- info: 'C3.RV32.Cur.bootMain_correct_boots' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bootMain_correct_boots
+
+/-- info: 'C3.RV32.Cur.bootMainCorrect_of_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bootMainCorrect_of_pi
+
+/-- info: 'C3.RV32.Cur.reset_correct_loaded_boots' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_correct_loaded_boots
+
+/-- info: 'C3.RV32.Cur.resetCorrectLoaded_of_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.resetCorrectLoaded_of_pi
+
+/-- info: 'C3.RV32.Cur.resetCorrectLoaded_np_of_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.resetCorrectLoaded_np_of_pi
