@@ -16,8 +16,10 @@
 //! Waveshare's init), so a table can choose how long a pixel is driven but
 //! not how hard.
 //!
-//! The controller picks a pixel's table from its `(old, new)` plane bits:
-//! `WW` = `(0, 0)`, `KW` = `(1, 0)`, `WK` = `(0, 1)`, `KK` = `(1, 1)`. The
+//! With `DDX[1:0] = 01` (`VCOM_DATA_INTERVAL[0] = 0x31`, matching GxEPD2),
+//! `1` is white (`W`) and `0` is black (`K`), so the controller picks a
+//! pixel's table from its `(old, new)` plane bits as:
+//! `WW` = `(1, 1)`, `KW` = `(0, 1)`, `WK` = `(1, 0)`, `KK` = `(0, 0)`. The
 //! drive planner keeps a pixel's direction in the old plane and sets the new
 //! plane to differ from it only when the pixel should move, so `WW` and `KK`
 //! hold, `WK` pushes black, and `KW` pushes white.
