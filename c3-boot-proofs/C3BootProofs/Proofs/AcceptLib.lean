@@ -90,10 +90,10 @@ theorem ac_pro {M : Word → BitVec 8} {n : Machine} {B : Word} (C : CodeIn M AC
     rw [BitVec.add_assoc]; rfl
   have alB : ∀ (k : Word), 0x5970 + k.toNat + 4 ≤ 0x5A70 → (0x5970 + k.toNat) % 4 = 0 →
       (B + BitVec.ofNat 32 0x5970 + k).toNat % 4 = 0 := fun k h1 h2 => by
-    rw [frame_lit k (by omega), F.at _ (by omega)]; omega
+    rw [Dq.frame_lit k (by omega), F.at _ (by omega)]; omega
   have sepB : ∀ (k : Word), 0x5970 + k.toNat + 4 ≤ 0x5A70 →
       Sep (B + BitVec.ofNat 32 0x5970 + k) 4 AC bootMainClosure0Code.length := fun k h1 => by
-    rw [frame_lit k (by omega)]; exact F.sepHi (by omega) (by decide) (by decide)
+    rw [Dq.frame_lit k (by omega)]; exact F.sepHi (by omega) (by decide) (by decide)
   obtain ⟨n1, c1, u1⟩ := s.block acA1 C acA1_end (by
     simp only [BlockOk, BInstr.ok, BInstr.run, acA1]; simp +decide only [upd, ↓reduceIte, true_and, and_true]
     rw [rsp, hA]
@@ -113,7 +113,7 @@ theorem ac_pro {M : Word → BitVec 8} {n : Machine} {B : Word} (C : CodeIn M AC
   have m1 : n1.mem = acSaves M B n := by
     rw [u1.mem]; simp only [runBlock, BInstr.run, acA1]; simp +decide only [upd, ↓reduceIte]
     rw [rsp, hA]
-    simp (disch := decide) only [frame_lit, BitVec.reduceToNat, Nat.reduceAdd]
+    simp (disch := decide) only [Dq.frame_lit, BitVec.reduceToNat, Nat.reduceAdd]
     unfold acSaves
     rfl
   have g : ∀ q, reg n1 q = (runBlock acA1 (M, reg n)).2 q := fun q => by rw [u1.regs]
@@ -160,7 +160,7 @@ theorem ac_ret {M : Word → BitVec 8} {n : Machine} {B : Word} {v : Nat → Wor
     rw [BitVec.add_assoc]; rfl
   have alB : ∀ (k : Word), 0x5970 + k.toNat + 4 ≤ 0x5A70 → (0x5970 + k.toNat) % 4 = 0 →
       (B + BitVec.ofNat 32 0x5970 + k).toNat % 4 = 0 := fun k h1 h2 => by
-    rw [frame_lit k (by omega), F.at _ (by omega)]; omega
+    rw [Dq.frame_lit k (by omega), F.at _ (by omega)]; omega
   obtain ⟨n1, c1, u1⟩ := s.block acE C acE_end (by
     simp only [BlockOk, BInstr.ok, BInstr.run, acE]; simp +decide only [upd, ↓reduceIte, true_and, and_true]
     rw [rsp, hA]
@@ -173,7 +173,7 @@ theorem ac_ret {M : Word → BitVec 8} {n : Machine} {B : Word} {v : Nat → Wor
   obtain ⟨n2, st2, pc2, mem2, regs2⟩ := u1.jalr (by rw [m1]; exact C) ac_at_1a8
   have ld : ∀ k, k < 13 → ∀ c : Word, c.toNat = 0xFC - 4 * k →
       memLoad32 M (B + BitVec.ofNat 32 0x5970 + c) = v k := fun k hk c hc => by
-    rw [frame_lit _ (by omega), hc, show 0x5970 + (0xFC - 4 * k) = 0x5A6C - 4 * k by omega]; exact hS k hk
+    rw [Dq.frame_lit _ (by omega), hc, show 0x5970 + (0xFC - 4 * k) = 0x5A6C - 4 * k by omega]; exact hS k hk
   have ra1 : (runBlock acE (M, reg n)).2 ra = v 0 := by
     simp +decide only [runBlock, BInstr.run, acE, upd, ↓reduceIte]
     rw [rsp, hA]; exact ld 0 (by decide) _ (by decide)
@@ -440,7 +440,7 @@ def acF1 : List BInstr := [.lw (19 : Fin 32) sp 0x40, .lw (8 : Fin 32) sp 0x3C]
 theorem ac_fa {B : Word} (F : Fr B 0x5A70) (k : Word) (h1 : 0x3A50 + k.toNat + 4 ≤ 0x5A70)
     (h2 : (0x3A50 + k.toNat) % 4 = 0) : (B + 0x3A50 + k).toNat % 4 = 0 := by
   have hSa := F.al
-  rw [show (B + 0x3A50 : Word) = B + BitVec.ofNat 32 0x3A50 from rfl, frame_lit k (by omega), F.at _ (by omega)]
+  rw [show (B + 0x3A50 : Word) = B + BitVec.ofNat 32 0x3A50 from rfl, Dq.frame_lit k (by omega), F.at _ (by omega)]
   omega
 
 set_option maxRecDepth 100000 in

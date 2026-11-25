@@ -2,6 +2,8 @@ import C3BootProofs.Proofs.AcceptAt
 import C3BootProofs.Proofs.Panic
 import C3BootProofs.Proofs.JsonFrame
 import C3BootProofs.Proofs.TufRoleKeys
+import C3BootProofs.Proofs.TufRoleKeysMetSpec
+import C3BootProofs.Proofs.SvSpec
 import C3BootProofs.Models.JsonLink
 import C3BootProofs.Models.TufLinkKeys
 import C3BootProofs.Models.TufLinkMeta
@@ -60,45 +62,8 @@ The stage files are `AcceptLib` (frame, prologue, exits, and calls),
 against `verifyTuf`'s `foldlM`), `AcceptTargets`, `AcceptExtract`,
 `AcceptBundle`, and `AcceptSpec` (the composition).
 
-## Contracts not yet proved
+## Contracts
 
-`RoleKeys::met` (`tufRoleKeysMet`) is in flight. Until it lands, the
-closure's theorem takes `TufRoleKeysMetContract` as a hypothesis.
+Each call has a proved contract in the root: `RoleKeys::met` is
+`tufRoleKeysMet_spec`, and `sigstoreVerify` is `sv_verify_spec`.
 -/
-
-namespace C3.RV32.Ac
-
-open C3.Image C3.Json
-
-/-- Where `RoleKeys::met` is in the image. -/
-abbrev ACM : Word := BitVec.ofNat 32 tufRoleKeysMetAddress
-
-/-- What the closure assumes about `RoleKeys::met(keys, meta)` until its
-proof lands. `Code M` is the code that `met` and its callees run, which
-must hold for any memory that agrees with the caller's outside the 0x3920
-bytes at `s`. `met` is called with `sp = s + 0x3920`, the role's keys at
-`R`, and at `Mt` the metadata that `parse_metadata` read from the document
-`d` at `D`: the `signed` value at `gp` and the `signatures` array at `sq`.
-It panics, or it returns with memory outside its stack and the registers
-outside `jClob` as they were. When it returns `Ok(true)`, the keys met
-the threshold over `md`. -/
-def TufRoleKeysMetContract (Code : (Word → BitVec 8) → Prop) : Prop :=
-  ∀ (m : Machine) (s R Mt D : Word) (d : Bytes) (gp gl sq sl t : Nat) (md : Meta) (sj : Json)
-    (keys : List (Bytes × Option TufKey)),
-    (∀ M, Out m.mem M s 0x3920 → Code M) → m.pc = ACM → reg m a0 = R → reg m a1 = Mt →
-    reg m sp = s + BitVec.ofNat 32 0x3920 → reg m ra &&& ~~~1 = reg m ra →
-    s.toNat % 16 = 0 → 0x3FC80000 ≤ s.toNat → s.toNat + 0x3920 ≤ 0x3FCE0000 →
-    Sep s 0x3920 (BitVec.ofNat 32 dataWindowAddress) dataWindowSize →
-    Sep s 0x3920 (BitVec.ofNat 32 roWindowAddress) roWindowSize →
-    RkAt m.mem R t (keys.map rkTag) → R.toNat % 4 = 0 → R.toNat + 0x540 ≤ 0x40000000 → Sep s 0x3920 R 0x540 →
-    Mt.toNat % 4 = 0 → Sep s 0x3920 Mt 16 →
-    memLoad32 m.mem Mt = D + BitVec.ofNat 32 gp → memLoad32 m.mem (Mt + 4) = BitVec.ofNat 32 gl →
-    memLoad32 m.mem (Mt + 8) = D + BitVec.ofNat 32 sq → memLoad32 m.mem (Mt + 0xC) = BitVec.ofNat 32 sl →
-    memBytes m.mem D d.length = d → D.toNat ≠ 0 → D.toNat + d.length ≤ 0x40000000 → d.length < 2 ^ 31 →
-    Sep s 0x3920 D d.length →
-    JDen true d gp gl md.signed → JDen true d sq sl sj → (sj.asArr >>= List.mapM sigPair) = some md.sigs →
-    ∃ m', Steps m m' ∧ (Halting m' ∨
-      (m'.pc = reg m ra ∧ Out m.mem m'.mem s 0x3920 ∧ (∀ q, q ∉ jClob → reg m' q = reg m q) ∧
-        (reg m' a0 &&& 1 = 0 → reg m' a1 &&& 1 = 1 → metOf md t keys = true)))
-
-end C3.RV32.Ac
