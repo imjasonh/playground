@@ -402,3 +402,5 @@ import C3BootProofs.Proofs.TufRoleKeysReadAt
 import C3BootProofs.Proofs.TufRoleKeys
 import C3BootProofs.Proofs.TufRoleKeysCalls
 import C3BootProofs.Proofs.TufRoleKeysEnv
+import C3BootProofs.Proofs.TufRoleKeysKey
+import C3BootProofs.Proofs.TufRoleKeysPub

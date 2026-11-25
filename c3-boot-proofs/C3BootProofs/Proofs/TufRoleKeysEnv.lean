@@ -110,7 +110,7 @@ structure RkEnv (M0 M1 : Word → BitVec 8) (s out F P : Word) (N : Nat) (g0 : F
   hret : g0 ra &&& ~~~1 = g0 ra
   hz0 : g0 0 = 0
   hP0 : P.toNat ≠ 0
-  hPN : P.toNat + N < 2 ^ 32
+  hPN : P.toNat + N ≤ 0x40000000
   hN : N < 2 ^ 31
   hSP : Sep s 3056 P N
 
