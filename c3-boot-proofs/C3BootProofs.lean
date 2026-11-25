@@ -404,6 +404,9 @@ import C3BootProofs.Proofs.TufRoleKeysCalls
 import C3BootProofs.Proofs.TufRoleKeysEnv
 import C3BootProofs.Proofs.TufRoleKeysKey
 import C3BootProofs.Proofs.TufRoleKeysPub
+import C3BootProofs.Proofs.TufRoleKeysTree
+import C3BootProofs.Proofs.TufRoleKeysDecode
+import C3BootProofs.Proofs.TufRoleKeysLoop
 import C3BootProofs.Models.JsonLink
 import C3BootProofs.Models.JsonLinkLax
 import C3BootProofs.Models.JsonLinkSpec
