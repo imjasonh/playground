@@ -89,11 +89,6 @@ theorem AcStagePI.seq {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitV
   · obtain ⟨n2, s2, h2'⟩ := h2 n1 I1 hp hq
     exact ⟨n2, s1.trans s2, h2'⟩
 
-/-- A stage from `n1` is one from `n` when `n` steps to `n1`. -/
-theorem AcStagePI.pre {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {n n1 : Machine} {o : Nat}
-    {Q : Machine → Prop} (h : Steps n n1) (e : AcStagePI B Bf g t r v M0 n1 o Q) : AcStagePI B Bf g t r v M0 n o Q :=
-  let ⟨n', s, q⟩ := e; ⟨n', h.trans s, q⟩
-
 /-- The flash address of slot `slot`'s first byte. -/
 def acBase (slot : Word) : Nat := if slot = 0 then 0x30000 else 0x210000
 

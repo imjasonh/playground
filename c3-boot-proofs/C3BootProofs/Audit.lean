@@ -10846,9 +10846,6 @@ end C3
 /-- info: 'C3.RV32.Ac.AcStagePI.seq' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.AcStagePI.seq
 
-/-- info: 'C3.RV32.Ac.AcStagePI.pre' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.Ac.AcStagePI.pre
-
 /-- info: 'C3.RV32.Ac.AcReadStagePI.acStage' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.AcReadStagePI.acStage
 
