@@ -223,6 +223,10 @@ macro "rc_g" : tactic => `(tactic| (
   repeat (refine RcG.trans ?_ (RcCtx.swG ‹_› (by decide)))
   exact fun _ _ => rfl))
 
+theorem rc_x0 {f : Fin 32 → Word} {v : Word} (h : f 0 = 0) : aluEval .add (f x0) v = v := by
+  show aluEval .add (f 0) v = v
+  rw [h]; exact ev0 v
+
 /-- From 0x38C: the `Cert` `c` at `F + 0xE0`. Copies the first
 certificate, `c` when there was none, through `F + 0x60` to `F + 0x30`,
 and counts down. -/
@@ -404,6 +408,166 @@ theorem RcCtx.pRecMem (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
   · exact ⟨by rc_ld, by rc_ld, by rc_ld, by rc_ld, by rc_ld, by rc_ld, by rc_ld, by rc_ld, by rc_ld, by rc_ld,
       by rc_ld, hcb, hca, hs0⟩
 
+
+/-- From 0x328: intersects the window's end `na` with the certificate's,
+then goes on from 0x348. -/
+theorem RcCtx.pMin (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word}
+    {Q : Post} {nb na k pos an : Nat} {c : RcCert} {first : Option RcCert} {ap : Word} {dec : Bytes}
+    (hR : RcRegs F out fr g0 f) (hI : RcMemInv M0 G F fr fp fl g0 M) (hW : RcWin nb na f)
+    (h20 : f 20 = c.serial) (h22 : f 22 = BitVec.ofNat 32 c.serialLen)
+    (hm18 : memLoad32 M (F + BitVec.ofNat 32 0x18) = c.issuer)
+    (hm1C : memLoad32 M (F + BitVec.ofNat 32 0x1C) = BitVec.ofNat 32 c.issuerLen)
+    (hm10 : memLoad32 M (F + BitVec.ofNat 32 0x10) = c.subject)
+    (hm14 : memLoad32 M (F + BitVec.ofNat 32 0x14) = BitVec.ofNat 32 c.subjectLen)
+    (h9 : f 9 = BitVec.ofNat 32 (c.notBefore % 2 ^ 32)) (h8 : f 8 = BitVec.ofNat 32 (c.notBefore / 2 ^ 32))
+    (h23 : f 23 = BitVec.ofNat 32 (c.notAfter % 2 ^ 32)) (h18 : f 18 = BitVec.ofNat 32 (c.notAfter / 2 ^ 32))
+    (hcb : c.notBefore < 2 ^ 64) (hca : c.notAfter < 2 ^ 64) (ha1 : f a1 = c.key) (hs0 : c.serial ≠ 0)
+    (hm20 : memLoad32 M (F + BitVec.ofNat 32 0x20) = BitVec.ofNat 32 k) (hk : 1 ≤ k ∧ k ≤ 4)
+    (hm24 : memLoad32 M (F + BitVec.ofNat 32 0x24) = ap)
+    (hm28 : memLoad32 M (F + BitVec.ofNat 32 0x28) = BitVec.ofNat 32 an)
+    (hm2C : memLoad32 M (F + BitVec.ofNat 32 0x2C) = BitVec.ofNat 32 pos) (hpos : pos < 2 ^ 32)
+    (hF : RcFirst M (F + BitVec.ofNat 32 0x30) first) (hB : RcBuf M fr fp fl dec)
+    (kTop : ∀ M' f', RcLoopInv M0 G F out fr fp fl g0 ap an (k - 1)
+      ⟨pos, dec, first.or (some c), nb, min na c.notAfter⟩ M' f' → k - 1 ≠ 0 →
+      WP trustedRootReadChainCode TRC Q M' 0xFA f')
+    (kFin : ∀ M' f', RcLoopInv M0 G F out fr fp fl g0 ap an (k - 1)
+      ⟨pos, dec, first.or (some c), nb, min na c.notAfter⟩ M' f' → k - 1 = 0 →
+      WP trustedRootReadChainCode TRC Q M' 0x4D8 f') :
+    WP trustedRootReadChainCode TRC Q M 0x328 f := by
+  obtain ⟨w19, w21, w27, w24, hnb, hna⟩ := hW
+  have kM : ∀ f1 : Fin 32 → Word, RcRegs F out fr g0 f1 → RcK [8, 9, 11, 18, 19, 20, 21, 22, 23] f f1 →
+      f1 a2 = f 27 → f1 a3 = f 24 → f1 a0 = (if decide (c.notAfter < na) = true then 1 else 0) →
+      WP trustedRootReadChainCode TRC Q M 0x33E f1 := by
+    intro f1 hR1 hK1 ha2 ha3 ha0
+    refine WP.alu trc_at_33e ?_; wn
+    refine WP.alu trc_at_340 ?_; wn
+    have go : ∀ f2 : Fin 32 → Word, RcRegs F out fr g0 f2 → RcK [8, 9, 11, 18, 19, 20, 21, 22, 23] f f2 →
+        RcWin nb (min na c.notAfter) f2 → WP trustedRootReadChainCode TRC Q M 0x348 f2 :=
+      fun f2 hR2 hK2 hW2 => X.pRecMem hR2 hI hW2 ((hK2 20 (by decide)).trans h20) ((hK2 22 (by decide)).trans h22)
+        hm18 hm1C hm10 hm14 ((hK2 9 (by decide)).trans h9) ((hK2 8 (by decide)).trans h8)
+        ((hK2 23 (by decide)).trans h23) ((hK2 18 (by decide)).trans h18) hcb hca ((hK2 11 (by decide)).trans ha1)
+        hs0 hm20 hk hm24 hm28 hm2C hpos hF hB kTop kFin
+    by_cases hP : c.notAfter < na
+    · have e : min na c.notAfter = c.notAfter := by omega
+      refine WP.branch trc_at_342 (fun _ => ?_) (fun hf => absurd hf (by trsimp; rw [ha0]; simp [hP] <;> decide)); wn
+      refine go _ (by rc_r hR1) (by rc_k hK1) ⟨?_, ?_, ?_, ?_, hnb, by omega⟩
+      · trsimp; exact (hK1 19 (by decide)).trans w19
+      · trsimp; exact (hK1 21 (by decide)).trans w21
+      · trsimp; try rw [rc_x0 hR1.1]
+        rw [e]; exact (hK1 23 (by decide)).trans h23
+      · trsimp; try rw [rc_x0 hR1.1]
+        rw [e]; exact (hK1 18 (by decide)).trans h18
+    · have e : min na c.notAfter = na := by omega
+      refine WP.branch trc_at_342 (fun ht => absurd ht (by trsimp; rw [ha0]; simp [hP] <;> decide)) (fun _ => ?_); wn
+      refine WP.alu trc_at_344 ?_; wn
+      refine WP.alu trc_at_346 ?_; wn
+      refine go _ (by rc_r hR1) (by rc_k hK1) ⟨?_, ?_, ?_, ?_, hnb, by omega⟩
+      · trsimp; exact (hK1 19 (by decide)).trans w19
+      · trsimp; exact (hK1 21 (by decide)).trans w21
+      · trsimp; try rw [rc_x0 hR1.1]
+        rw [e, ha2]; exact w27
+      · trsimp; try rw [rc_x0 hR1.1]
+        rw [e, ha3]; exact w24
+  refine WP.branch trc_at_328 (fun ht => ?_) (fun hf => ?_)
+  · have he : BitVec.ofNat 32 (c.notAfter / 2 ^ 32) = BitVec.ofNat 32 (na / 2 ^ 32) := by
+      revert ht; simp only [branchTaken, beq_iff_eq]; rw [h18, w24]; exact id
+    wn
+    refine WP.alu trc_at_336 ?_; wn
+    refine WP.alu trc_at_338 ?_; wn
+    refine WP.alu trc_at_33a ?_; wn
+    refine kM _ (by rc_r hR) (by rc_k (fun _ _ => rfl)) (by trsimp; try rw [rc_x0 hR.1])
+      (by trsimp; try rw [rc_x0 hR.1]) ?_
+    trsimp; simp only [aluEval]; rw [h23, w27, rc_ultLo hca hna he]
+  · have he : BitVec.ofNat 32 (c.notAfter / 2 ^ 32) ≠ BitVec.ofNat 32 (na / 2 ^ 32) := by
+      revert hf; simp only [branchTaken, beq_eq_false_iff_ne]; rw [h18, w24]; exact id
+    wn
+    refine WP.alu trc_at_32c ?_; wn
+    refine WP.alu trc_at_32e ?_; wn
+    refine WP.alu trc_at_330 ?_; wn
+    refine WP.jal trc_at_334 (by decide) ?_; wn
+    refine kM _ (by rc_r hR) (by rc_k (fun _ _ => rfl)) (by trsimp; try rw [rc_x0 hR.1])
+      (by trsimp; try rw [rc_x0 hR.1]) ?_
+    trsimp; simp only [aluEval]; rw [h18, w24, rc_ultHi hca hna he]
+
+/-- From 0x308: intersects the window `nb`–`na` with the certificate's
+validity, stores the certificate, and counts down. -/
+theorem RcCtx.pRec (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word}
+    {Q : Post} {nb na k pos an : Nat} {c : RcCert} {first : Option RcCert} {ap : Word} {dec : Bytes}
+    (hR : RcRegs F out fr g0 f) (hI : RcMemInv M0 G F fr fp fl g0 M) (hW : RcWin nb na f)
+    (h20 : f 20 = c.serial) (h22 : f 22 = BitVec.ofNat 32 c.serialLen)
+    (hm18 : memLoad32 M (F + BitVec.ofNat 32 0x18) = c.issuer)
+    (hm1C : memLoad32 M (F + BitVec.ofNat 32 0x1C) = BitVec.ofNat 32 c.issuerLen)
+    (hm10 : memLoad32 M (F + BitVec.ofNat 32 0x10) = c.subject)
+    (hm14 : memLoad32 M (F + BitVec.ofNat 32 0x14) = BitVec.ofNat 32 c.subjectLen)
+    (h9 : f 9 = BitVec.ofNat 32 (c.notBefore % 2 ^ 32)) (h8 : f 8 = BitVec.ofNat 32 (c.notBefore / 2 ^ 32))
+    (h23 : f 23 = BitVec.ofNat 32 (c.notAfter % 2 ^ 32)) (h18 : f 18 = BitVec.ofNat 32 (c.notAfter / 2 ^ 32))
+    (hcb : c.notBefore < 2 ^ 64) (hca : c.notAfter < 2 ^ 64) (ha1 : f a1 = c.key) (hs0 : c.serial ≠ 0)
+    (hm20 : memLoad32 M (F + BitVec.ofNat 32 0x20) = BitVec.ofNat 32 k) (hk : 1 ≤ k ∧ k ≤ 4)
+    (hm24 : memLoad32 M (F + BitVec.ofNat 32 0x24) = ap)
+    (hm28 : memLoad32 M (F + BitVec.ofNat 32 0x28) = BitVec.ofNat 32 an)
+    (hm2C : memLoad32 M (F + BitVec.ofNat 32 0x2C) = BitVec.ofNat 32 pos) (hpos : pos < 2 ^ 32)
+    (hF : RcFirst M (F + BitVec.ofNat 32 0x30) first) (hB : RcBuf M fr fp fl dec)
+    (kTop : ∀ M' f', RcLoopInv M0 G F out fr fp fl g0 ap an (k - 1)
+      ⟨pos, dec, first.or (some c), max nb c.notBefore, min na c.notAfter⟩ M' f' → k - 1 ≠ 0 →
+      WP trustedRootReadChainCode TRC Q M' 0xFA f')
+    (kFin : ∀ M' f', RcLoopInv M0 G F out fr fp fl g0 ap an (k - 1)
+      ⟨pos, dec, first.or (some c), max nb c.notBefore, min na c.notAfter⟩ M' f' → k - 1 = 0 →
+      WP trustedRootReadChainCode TRC Q M' 0x4D8 f') :
+    WP trustedRootReadChainCode TRC Q M 0x308 f := by
+  obtain ⟨w19, w21, w27, w24, hnb, hna⟩ := hW
+  have kM : ∀ f1 : Fin 32 → Word, RcRegs F out fr g0 f1 → RcK [8, 9, 11, 18, 20, 22, 23, 24, 27] f f1 →
+      f1 a2 = f 19 → f1 a3 = f 21 → f1 a0 = (if decide (nb < c.notBefore) = true then 1 else 0) →
+      WP trustedRootReadChainCode TRC Q M 0x31E f1 := by
+    intro f1 hR1 hK1 ha2 ha3 ha0
+    refine WP.alu trc_at_31e ?_; wn
+    refine WP.alu trc_at_320 ?_; wn
+    have go : ∀ f2 : Fin 32 → Word, RcRegs F out fr g0 f2 → RcK [8, 9, 11, 18, 20, 22, 23, 24, 27] f f2 →
+        RcWin (max nb c.notBefore) na f2 → WP trustedRootReadChainCode TRC Q M 0x328 f2 :=
+      fun f2 hR2 hK2 hW2 => X.pMin hR2 hI hW2 ((hK2 20 (by decide)).trans h20) ((hK2 22 (by decide)).trans h22)
+        hm18 hm1C hm10 hm14 ((hK2 9 (by decide)).trans h9) ((hK2 8 (by decide)).trans h8)
+        ((hK2 23 (by decide)).trans h23) ((hK2 18 (by decide)).trans h18) hcb hca ((hK2 11 (by decide)).trans ha1)
+        hs0 hm20 hk hm24 hm28 hm2C hpos hF hB kTop kFin
+    by_cases hP : nb < c.notBefore
+    · have e : max nb c.notBefore = c.notBefore := by omega
+      refine WP.branch trc_at_322 (fun _ => ?_) (fun hf => absurd hf (by trsimp; rw [ha0]; simp [hP] <;> decide)); wn
+      refine go _ (by rc_r hR1) (by rc_k hK1) ⟨?_, ?_, ?_, ?_, by omega, hna⟩
+      · trsimp; try rw [rc_x0 hR1.1]
+        rw [e]; exact (hK1 9 (by decide)).trans h9
+      · trsimp; try rw [rc_x0 hR1.1]
+        rw [e]; exact (hK1 8 (by decide)).trans h8
+      · trsimp; exact (hK1 27 (by decide)).trans w27
+      · trsimp; exact (hK1 24 (by decide)).trans w24
+    · have e : max nb c.notBefore = nb := by omega
+      refine WP.branch trc_at_322 (fun ht => absurd ht (by trsimp; rw [ha0]; simp [hP] <;> decide)) (fun _ => ?_); wn
+      refine WP.alu trc_at_324 ?_; wn
+      refine WP.alu trc_at_326 ?_; wn
+      refine go _ (by rc_r hR1) (by rc_k hK1) ⟨?_, ?_, ?_, ?_, by omega, hna⟩
+      · trsimp; try rw [rc_x0 hR1.1]
+        rw [e, ha2]; exact w19
+      · trsimp; try rw [rc_x0 hR1.1]
+        rw [e, ha3]; exact w21
+      · trsimp; exact (hK1 27 (by decide)).trans w27
+      · trsimp; exact (hK1 24 (by decide)).trans w24
+  refine WP.branch trc_at_308 (fun ht => ?_) (fun hf => ?_)
+  · have he : BitVec.ofNat 32 (nb / 2 ^ 32) = BitVec.ofNat 32 (c.notBefore / 2 ^ 32) := by
+      revert ht; simp only [branchTaken, beq_iff_eq]; rw [h8, w21]; exact Eq.symm
+    wn
+    refine WP.alu trc_at_316 ?_; wn
+    refine WP.alu trc_at_318 ?_; wn
+    refine WP.alu trc_at_31a ?_; wn
+    refine kM _ (by rc_r hR) (by rc_k (fun _ _ => rfl)) (by trsimp; try rw [rc_x0 hR.1])
+      (by trsimp; try rw [rc_x0 hR.1]) ?_
+    trsimp; simp only [aluEval]; rw [w19, h9, rc_ultLo hnb hcb he]
+  · have he : BitVec.ofNat 32 (nb / 2 ^ 32) ≠ BitVec.ofNat 32 (c.notBefore / 2 ^ 32) := by
+      revert hf; simp only [branchTaken, beq_eq_false_iff_ne]; rw [h8, w21]; exact Ne.symm
+    wn
+    refine WP.alu trc_at_30c ?_; wn
+    refine WP.alu trc_at_30e ?_; wn
+    refine WP.alu trc_at_310 ?_; wn
+    refine WP.jal trc_at_314 (by decide) ?_; wn
+    refine kM _ (by rc_r hR) (by rc_k (fun _ _ => rfl)) (by trsimp; try rw [rc_x0 hR.1])
+      (by trsimp; try rw [rc_x0 hR.1]) ?_
+    trsimp; simp only [aluEval]; rw [w21, h8, rc_ultHi hnb hcb he]
 end
 
 end C3.RV32
