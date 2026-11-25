@@ -574,6 +574,7 @@ import C3BootProofs.Proofs.AcceptSlot
 import C3BootProofs.Proofs.AcceptLib
 import C3BootProofs.Proofs.AcceptStages
 import C3BootProofs.Proofs.AcceptImageSpec
+import C3BootProofs.Proofs.AcceptImage
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
