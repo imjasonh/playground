@@ -10428,6 +10428,12 @@ end C3
 /-- info: 'C3.RV32.Ac.acs_tgt' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acs_tgt
 
+/-- info: 'C3.RV32.Ac.acs_rootsEnv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_rootsEnv
+
+/-- info: 'C3.RV32.Ac.acs_roots' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_roots
+
 /-- info: 'C3.RV32.Ac.acs_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acs_spec
 

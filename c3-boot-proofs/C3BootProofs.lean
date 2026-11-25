@@ -735,4 +735,5 @@ import C3BootProofs.Proofs.AcceptSpecEnd
 import C3BootProofs.Proofs.AcceptSpecBun
 import C3BootProofs.Proofs.AcceptSpecExt
 import C3BootProofs.Proofs.AcceptSpecTgt
+import C3BootProofs.Proofs.AcceptSpecRoots
 import C3BootProofs.Proofs.AcceptSpec
