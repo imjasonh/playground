@@ -276,4 +276,74 @@ theorem acb_s2 {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {
     exact R1
   · intro x hx; rw [s4.mem, m3, m2, f1 x hx]
 
+/-- The log index's bytes, spilled to the frame. -/
+def acbB : List BInstr :=
+  [.lbu a1 a0 0x4, .sw sp a1 0x30, .lbu 19 a0 0x5, .lbu a1 a0 0x6, .sw sp a1 0x18, .lbu a1 a0 0x7,
+   .sw sp a1 0x14, .lbu 9 a0 0x0, .lbu a1 a0 0x1, .sw sp a1 0x1C, .lbu a1 a0 0x2, .sw sp a1 0x2C,
+   .lbu a0 a0 0x3, .sw sp a0 0x28]
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 1000000 in
+theorem acbB_end : blockEnd bootMainClosure0Code 0x1906 acbB = some 0x1932 := by decide
+
+/-- The frame slots of the log index's bytes. -/
+def acbS : List (Nat × Nat) := [(0x3A64, 0xC), (0x3A78, 0xC)]
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 4000000 in
+/-- The log index's bytes, from 0x1906 to 0x1932. -/
+theorem acb_blkB {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {L : Nat} {n0 n : Machine}
+    (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) {P : Word} (s : St n.mem AC n 0x1906 (reg n))
+    (ra0 : reg n a0 = P)
+    (hP : ∀ k : Word, k.toNat < 8 → ∀ c : Nat, c + 4 ≤ 0x5A70 → Sep (B + BitVec.ofNat 32 c) 4 (P + k) 1) :
+    ∃ n1, Steps n n1 ∧ AcbK B n0 n1 ∧ St n1.mem AC n1 0x1932 (reg n1) ∧
+      (∀ x, AcbOut acbS B x → n1.mem x = n.mem x) ∧
+      memLoad32 n1.mem (acSlot B 0x30) = (n.mem (P + 4)).zeroExtend 32 ∧
+      memLoad32 n1.mem (acSlot B 0x18) = (n.mem (P + 6)).zeroExtend 32 ∧
+      memLoad32 n1.mem (acSlot B 0x14) = (n.mem (P + 7)).zeroExtend 32 ∧
+      memLoad32 n1.mem (acSlot B 0x1C) = (n.mem (P + 1)).zeroExtend 32 ∧
+      memLoad32 n1.mem (acSlot B 0x2C) = (n.mem (P + 2)).zeroExtend 32 ∧
+      memLoad32 n1.mem (acSlot B 0x28) = (n.mem (P + 3)).zeroExtend 32 ∧
+      reg n1 19 = (n.mem (P + 5)).zeroExtend 32 ∧ reg n1 9 = (n.mem (P + 0)).zeroExtend 32 ∧
+      ∀ x : Fin 32, x.val ∉ [9, 10, 11, 19] → reg n1 x = reg n x := by
+  have F := G.Y.fr
+  have hz := s.zero
+  have rsp : reg n sp = B + BitVec.ofNat 32 0x3A50 := K.sp
+  have rb : ∀ (M : Word → BitVec 8) (c : Nat) (u k : Word), c + 4 ≤ 0x5A70 → k.toNat < 8 →
+      memStore32 M (B + BitVec.ofNat 32 c) u (P + k) = M (P + k) := fun M c u k hc hk =>
+    memStore32_get_sep (hP k hk c hc)
+  obtain ⟨n1, c1, u1⟩ := s.block acbB (G.code K) acbB_end (by
+    simp only [BlockOk, BInstr.ok, BInstr.run, acbB]; simp +decide only [upd, ↓reduceIte, true_and, and_true]
+    rw [rsp]
+    simp (disch := decide) only [Dq.frame_lit, BitVec.reduceToNat, Nat.reduceAdd]
+    repeat' apply And.intro
+    acb_ok)
+  have m1 := u1.mem
+  simp only [runBlock, BInstr.run, acbB] at m1; simp +decide only [upd, ↓reduceIte] at m1
+  rw [rsp, ra0] at m1
+  simp (disch := decide) only [Dq.frame_lit, BitVec.reduceToNat, Nat.reduceAdd, rb] at m1
+  have g : ∀ q, reg n1 q = (runBlock acbB (n.mem, reg n)).2 q := fun q => by rw [u1.regs]
+  have rk : ∀ x : Fin 32, x.val ∉ [9, 10, 11, 19] → reg n1 x = reg n x := fun x hx => by
+    rw [g, runBlock_reg _ _ _ x hz (by simp only [acbB]; revert hx; revert x; decide)]
+  have fr : ∀ x, AcbOut acbS B x → n1.mem x = n.mem x := fun x hx => by
+    rw [m1, memStore32_get_sep (acb_sep hx (p := (0x3A78, 0xC)) (c := 14968) (l := 4) (by decide) (by decide)
+        (by decide)),
+      memStore32_get_sep (acb_sep hx (p := (0x3A78, 0xC)) (c := 14972) (l := 4) (by decide) (by decide)
+        (by decide)),
+      memStore32_get_sep (acb_sep hx (p := (0x3A64, 0xC)) (c := 14956) (l := 4) (by decide) (by decide)
+        (by decide)),
+      memStore32_get_sep (acb_sep hx (p := (0x3A64, 0xC)) (c := 14948) (l := 4) (by decide) (by decide)
+        (by decide)),
+      memStore32_get_sep (acb_sep hx (p := (0x3A64, 0xC)) (c := 14952) (l := 4) (by decide) (by decide)
+        (by decide)),
+      memStore32_get_sep (acb_sep hx (p := (0x3A78, 0xC)) (c := 14976) (l := 4) (by decide) (by decide)
+        (by decide))]
+  have K1 : AcbK B n0 n1 := ⟨by rw [rk sp (by decide)]; exact K.sp, by rw [rk 3 (by decide)]; exact K.gp,
+    by rw [rk 4 (by decide)]; exact K.tp, fun x hx => (fr x (acb_mono (by decide) hx)).trans (K.keep x hx)⟩
+  refine ⟨n1, c1, K1, ⟨u1.pc, rfl, fun _ => rfl⟩, fr, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, rk⟩
+  all_goals first
+    | (rw [m1]; simp (disch := decide) only [acSlot, Nat.reduceAdd, acb_lst, memLoad32_store32_same]; done)
+    | (rw [g]; simp only [runBlock, BInstr.run, acbB]; simp +decide only [upd, ↓reduceIte]; rw [rsp, ra0]
+       simp (disch := decide) only [Dq.frame_lit, BitVec.reduceToNat, Nat.reduceAdd, rb])
+
 end C3.RV32.Ac
