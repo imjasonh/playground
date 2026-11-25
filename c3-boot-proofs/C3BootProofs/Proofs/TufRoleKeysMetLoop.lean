@@ -287,6 +287,8 @@ theorem rm_314 (E : RmBase M0 M1 s F R MP SP ML SL g0) {es : List RkEntry} {cs :
 
 theorem rm_geN : ∀ n, n ≤ 8 → branchTaken .bgeu (BitVec.ofNat 32 n) (BitVec.ofNat 32 n) = true := by decide
 
+theorem rm_sltuN : ∀ n, n ≤ 8 → aluEval .sltu (BitVec.ofNat 32 n) (BitVec.ofNat 32 n) = 0 := by decide
+
 theorem rm_thr {lo hi : Word} {c : Nat} (hc : c ≤ 8)
     (h : aluEval .and (aluEval .xor (aluEval .sltu (BitVec.ofNat 32 c) lo) 0xFFFFFFFF) (aluEval .sltu hi 1) ≠ 0) :
     hi.toNat * 2 ^ 32 + lo.toNat ≤ c := by
@@ -326,7 +328,10 @@ theorem rm_exit (E : RmBase M0 M1 s F R MP SP ML SL g0) {t : Nat} {es : List RkE
   refine WP.aluImm rkm_at_366 ?_; wn
   refine WP.alu rkm_at_36a ?_; wn
   refine rm_epi (by rsimp; exact hsp) (E.saved hO) E.hsp0 E.hret (by have := E.halF; omega) E.hz0
-    (by keepz E.hz0) (E.agree hO) fun _ h26 => ?_
+    (by keepz E.hz0) (E.agree hO) (fun _ h26 => ?_)
+    fun h => absurd (by
+      have h0 : aluEval .add (0 : Word) (BitVec.ofNat 32 es.length) = BitVec.ofNat 32 es.length := BitVec.zero_add _
+      (try rsimp); rw [h23, h20, show g x0 = 0 from hz, h0]; exact rm_sltuN _ hn8) h
   refine rm_sound hS ?_
   (try rsimp at h26)
   rw [hsp, h19] at h26
