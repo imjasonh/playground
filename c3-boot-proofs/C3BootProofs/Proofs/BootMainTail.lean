@@ -193,6 +193,67 @@ theorem bmt_mask (c p b : Nat) (hc : c < 4) (hp : p ≤ 1) (hb : b = 1 ∨ b = 2
   have hp' : p = 0 ∨ p = 1 := by omega
   rcases hc' with rfl | rfl | rfl | rfl <;> rcases hp' with rfl | rfl <;> rcases hb with rfl | rfl <;> decide
 
+set_option maxRecDepth 8000 in
+/-- The low byte of a word, as a number. -/
+theorem bmt_lo (x : Word) : x &&& 0xFF = BitVec.ofNat 32 (x.toNat % 256) := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_and, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := x.toNat % 256)
+    (Nat.lt_trans (Nat.mod_lt _ (by decide)) (by decide))]
+  show x.toNat &&& 255 = x.toNat % 256
+  have h1 : x.toNat &&& 255 < 2 ^ 8 := Nat.and_lt_two_pow _ (by decide : 255 < 2 ^ 8)
+  rw [← Nat.mod_eq_of_lt h1, Nat.and_mod_two_pow]
+  have k : ∀ y, y < 256 → y &&& 255 % 2 ^ 8 = y := by decide
+  exact k _ (Nat.mod_lt _ (by decide))
+
+theorem bmt_lo_eq {x : Word} {v : Nat} (hv : v < 256) (h : x &&& 0xFF = BitVec.ofNat 32 v) :
+    x.toNat % 256 = v := by
+  rw [bmt_lo] at h
+  have := congrArg BitVec.toNat h
+  rwa [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (Nat.lt_trans (Nat.mod_lt _ (by decide)) (by decide)),
+    Nat.mod_eq_of_lt (Nat.lt_trans hv (by decide))] at this
+
+theorem bmt_mod_add (x y : Word) : (x + y).toNat % 256 = (x.toNat % 256 + y.toNat % 256) % 256 := by
+  rw [BitVec.toNat_add, Nat.mod_mod_of_dvd _ (by decide : 256 ∣ 2 ^ 32), Nat.add_mod]
+
+/-- Adding a small constant to a word whose low byte is `v` gives low byte `v + k`. -/
+theorem bmt_addlo {x : Word} {v k : Nat} (hvk : v + k < 256)
+    (h : x &&& 0xFF = BitVec.ofNat 32 v) : (x + BitVec.ofNat 32 k) &&& 0xFF = BitVec.ofNat 32 (v + k) := by
+  have hk : k < 256 := Nat.lt_of_le_of_lt (Nat.le_add_left k v) hvk
+  have e := bmt_lo_eq (Nat.lt_of_le_of_lt (Nat.le_add_right v k) hvk) h
+  rw [bmt_lo, bmt_mod_add, e, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := k) (Nat.lt_trans hk (by decide)),
+    Nat.mod_eq_of_lt (a := k) hk, Nat.mod_eq_of_lt hvk]
+
+set_option maxRecDepth 8000 in
+theorem bmt_sublo {x : Word} {v : Nat} (hv : v ≤ 2)
+    (h : x &&& 0xFF = BitVec.ofNat 32 v) : (BitVec.ofNat 32 2 - x) &&& 0xFF = BitVec.ofNat 32 (2 - v) := by
+  have e := bmt_lo_eq (Nat.lt_of_le_of_lt hv (by decide)) h
+  have hs := bmt_mod_add (BitVec.ofNat 32 2 - x) x
+  rw [BitVec.sub_add_cancel, e] at hs
+  have k : ∀ w, w < 256 → ∀ v, v ≤ 2 → (2 : Word).toNat % 256 = (w + v) % 256 → w = 2 - v := by decide
+  rw [bmt_lo, k _ (Nat.mod_lt _ (by decide)) v hv hs]
+
+theorem bmt_xorlo {x : Word} {v : Nat} (hv : v ≤ 1) (h : x &&& 0xFF = BitVec.ofNat 32 v) :
+    (x ^^^ 1) &&& 0xFF = BitVec.ofNat 32 (1 - v) := by
+  have e := bmt_lo_eq (Nat.lt_of_le_of_lt hv (by decide)) h
+  rw [bmt_lo, BitVec.toNat_xor, show (1 : Word).toNat = 1 from rfl,
+    show (256 : Nat) = 2 ^ 8 from rfl, Nat.xor_mod_two_pow, show (2 : Nat) ^ 8 = 256 from rfl, e]
+  have k : ∀ v, v ≤ 1 → BitVec.ofNat 32 (v ^^^ 1 % 256) = BitVec.ofNat 32 (1 - v) := by decide
+  exact k v hv
+
+theorem bmt_and1 {x : Word} {v : Nat} (hv : v ≤ 1) (h : x &&& 0xFF = BitVec.ofNat 32 v) :
+    aluEval .and x 1 = BitVec.ofNat 32 v := by
+  show x &&& 1 = _
+  rw [show (1 : Word) = 0xFF &&& 1 from rfl, ← BitVec.and_assoc, h]
+  have k : ∀ v, v ≤ 1 → BitVec.ofNat 32 v &&& 1 = BitVec.ofNat 32 v := by decide
+  exact k v hv
+
+/-- Masking `y &&& x` to a byte reads only the low byte of `x`. -/
+theorem bmt_low_and (y x : Word) {v : Nat} (hv : v ≤ 2) (h : x &&& 0xFF = BitVec.ofNat 32 v) :
+    aluEval .and (aluEval .and y x) 0xFF = aluEval .and (aluEval .and y (BitVec.ofNat 32 v)) 0xFF := by
+  show (y &&& x) &&& 0xFF = (y &&& BitVec.ofNat 32 v) &&& 0xFF
+  have k : ∀ v, v ≤ 2 → BitVec.ofNat 32 v &&& 0xFF = BitVec.ofNat 32 v := by decide
+  rw [BitVec.and_assoc, h, BitVec.and_assoc, k v hv]
+
 theorem bmt_mask_and (m v : Word) (cf : Bool) (hm : m = if cf = true then 0xFFFFFFFF else 0) :
     aluEval .and m v = if cf = true then v else 0 := by
   subst hm; cases cf
@@ -321,7 +382,7 @@ theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
     (hD : (bmDecision flash pinned policy M0).outcome = .boot slot target)
     (hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t))
     (hAcc : AccOk flash (BitVec.ofNat 32 (bmSlotNum slot)) mf n.mem (F + BitVec.ofNat 32 0xB9AD))
-    (h9 : reg n 9 = BitVec.ofNat 32 (bmSlotNum slot))
+    (h9 : reg n 9 &&& 0xFF = BitVec.ofNat 32 (bmSlotNum slot))
     (h19 : reg n 19 = BitVec.ofNat 32 target) (htg : target ≤ 16)
     (h18 : reg n 18 = BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset))
     (h23 : reg n 23 = btPop (memLoad32 M0 efuseRd)) :
@@ -410,7 +471,7 @@ theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
   have t4 : St n4.mem BM n4 0x37A (reg n4) := ⟨u4.pc, rfl, fun _ => rfl⟩
   have a0_4 : reg n4 a0 = BitVec.ofNat 32 (bmSlotNum slot) := by
     rw [r4]; simp +decide only [runBlock, BInstr.run, bmB37, upd, ↓reduceIte]
-    rw [k3' 9 (.inl rfl), h9]; cases slot <;> rfl
+    rw [k3' 9 (.inl rfl)]; exact bmt_and1 (by cases slot <;> decide) h9
   have a3_4 : reg n4 a3 = BitVec.ofNat 32 target := by
     rw [r4]; simp +decide only [runBlock, BInstr.run, bmB37, upd, ↓reduceIte]
     rw [k3' 19 (.inr (.inr (.inl rfl))), h19]; exact bmt_lowbyte htg

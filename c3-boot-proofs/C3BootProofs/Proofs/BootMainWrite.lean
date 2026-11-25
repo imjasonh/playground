@@ -5,7 +5,7 @@ import C3BootProofs.Proofs.BootMainRecord
 # `boot_main`'s calls to `write_state`
 
 `boot_main` calls its second closure, `write_state`, with the copy to
-replace and the 8-byte state at `F + 0xB9A8`. `bmw_call` runs one such call
+replace and an 8-byte state in its frame. `bmw_call` runs one such call
 with `bootWrite_correct`: when the state there is the record that
 `decideBoot` writes, the ROM's write gets exactly that record, which is what
 `BmHyp` requires of it.
@@ -24,21 +24,21 @@ def BmwValid (M : Word → BitVec 8) (st : Word) : Prop :=
 
 set_option maxHeartbeats 8000000 in
 set_option maxRecDepth 20000 in
-/-- A call at `off` from `boot_main` to `write_state(copy, F + 0xB9A8)`,
-where `copy` is the copy that `bootstate::read` returned and the state at
-`F + 0xB9A8` is the record that `decideBoot` writes. It returns to `off + 8`
+/-- A call at `off` from `boot_main` to `write_state(copy, F + j)`, where
+`copy` is the copy that `bootstate::read` returned and the state at `F + j`
+is the record that `decideBoot` writes. It returns to `off + 8`
 with the registers in `romKeep` and the memory outside its stack as they
 were. -/
 theorem bmw_call {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
     (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
-    {n : Machine} {F : Word} {off : Nat} {imm o : Word} {w : State}
+    {n : Machine} {F : Word} {off j : Nat} {imm o : Word} {w : State}
     (s : St n.mem BM n off (reg n)) (hsp : reg n sp = F) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
-    (ha0 : reg n a0 = bmCopy (bmRecs flash).2) (ha1 : reg n a1 = F + BitVec.ofNat 32 0xB9A8)
+    (hj : j + 8 ≤ 0xBE80) (hj4 : j % 4 = 0) (ha0 : reg n a0 = bmCopy (bmRecs flash).2) (ha1 : reg n a1 = F + BitVec.ofNat 32 j)
     (hW : (bmDecision flash pinned policy M0).write = some w)
-    (hst : bmrSt n.mem (F + BitVec.ofNat 32 0xB9A8) = w) (hv : BmwValid n.mem (F + BitVec.ofNat 32 0xB9A8))
+    (hst : bmrSt n.mem (F + BitVec.ofNat 32 j) = w) (hv : BmwValid n.mem (F + BitVec.ofNat 32 j))
     (h1 : fetchRel bootMainCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel bootMainCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : BM + BitVec.ofNat 32 off + imm + o = BW)
@@ -69,8 +69,8 @@ theorem bmw_call {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
       version := hK1.codeIn C C.bw.version (.inl (by decide)) }
   have hS : (F - BitVec.ofNat 32 (0x90 + romStack)).toNat = F.toNat - (0x90 + romStack) := by
     rw [BitVec.toNat_sub, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := 0x90 + romStack) (by omega)]; omega
-  have hst8 : (F + BitVec.ofNat 32 0xB9A8).toNat = F.toNat + 0xB9A8 := by
-    rw [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := 0xB9A8) (by decide),
+  have hst8 : (F + BitVec.ofNat 32 j).toNat = F.toNat + j := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := j) (by omega),
       Nat.mod_eq_of_lt (by omega)]
   obtain ⟨hv7, hv6, hv45⟩ := hv
   have hmag : Sep (F - BitVec.ofNat 32 (0x90 + romStack)) (0x90 + romStack) (BitVec.ofNat 32 bsMagicAddress) 4 :=
@@ -80,7 +80,7 @@ theorem bmw_call {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
     (sep_of_le (by rw [hS, show (BitVec.ofNat 32 bsVersionAddress).toNat = 0x3fcc46b6 from rfl]; omega)
       (by rw [hS]; omega)).symm
   obtain ⟨n2, c2, pc2, keep2, mem2⟩ := bootWrite_correct n1 (copy := bmCopy (bmRecs flash).2)
-    (st := F + BitVec.ofNat 32 0xB9A8) BW1 (C.rom.hi (hK1.hiOf C) C.hrb (by have := C.hrl; omega)) C.hrb
+    (st := F + BitVec.ofNat 32 j) BW1 (C.rom.hi (hK1.hiOf C) C.hrb (by have := C.hrl; omega)) C.hrb
     (by have := C.hrl; omega) pc1 (by rw [r1 _ (by decide), ha0]) (by rw [r1 _ (by decide), ha1])
     (by rw [regs1]; simp +decide only [upd, ↓reduceIte]) (even_clear _ he8)
     (by rw [sp1]; omega) hrs hrs4 (by rw [sp1]; omega) (by rw [sp1]; omega)
@@ -90,7 +90,7 @@ theorem bmw_call {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
     X.unlock
     (fun mm hcm hpm hpre hsm => X.erase mm hcm hpm hpre hsm)
     (fun mm hcm hpm ⟨e0, e2, e3⟩ hsm => X.write mm hcm hpm ⟨e0, e2, w, hW, by
-      rw [List.map_congr_left (g := fun i => (bwRec n1.mem (F + BitVec.ofNat 32 0xB9A8) i).toNat)
+      rw [List.map_congr_left (g := fun i => (bwRec n1.mem (F + BitVec.ofNat 32 j) i).toNat)
         fun i hi => by rw [e3 i (List.mem_range.mp hi)]]
       rw [mem1] at ⊢
       rw [bmr_enc n.mem _ hv7 hv6 hv45, hst]⟩ hsm)

@@ -62,7 +62,7 @@ theorem bmp_first {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
     (hAcc : AccOk flash (BitVec.ofNat 32 (bmSlotNum slot)) mf n.mem (F + BitVec.ofNat 32 0xBBF0))
     (hlw : memLoad32 n.mem (F + BitVec.ofNat 32 0xBD10) =
       BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset))
-    (h8 : reg n 8 = BitVec.ofNat 32 (bmSlotNum slot)) (h19 : reg n 19 = BitVec.ofNat 32 (c + 256 * p))
+    (h8 : reg n 8 &&& 0xFF = BitVec.ofNat 32 (bmSlotNum slot)) (h19 : reg n 19 = BitVec.ofNat 32 (c + 256 * p))
     (h20 : reg n 20 = F + BitVec.ofNat 32 0xB9A8) (h26 : reg n 26 = BitVec.ofNat 32 sv)
     (h23 : reg n 23 = btPop (memLoad32 M0 efuseRd)) :
     BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
@@ -82,8 +82,8 @@ theorem bmp_first {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
   have t1 : St n1.mem BM n1 0x2DA (reg n1) := ⟨u1.pc, rfl, fun _ => rfl⟩
   have a0_1 : reg n1 a0 = if (c &&& slot.bit != 0) = true then BitVec.ofNat 32 sv else 0 := by
     rw [r1]; simp +decide only [runBlock, BInstr.run, bmB29, upd, ↓reduceIte]
-    rw [h19, h8, h26, show aluEval .add (BitVec.ofNat 32 (bmSlotNum slot)) 1 = BitVec.ofNat 32 slot.bit by
-      cases slot <;> rfl]
+    rw [h19, h26, bmt_low_and _ _ (v := slot.bit) (by cases slot <;> decide)
+      (by have := bmt_addlo (k := 1) (by cases slot <;> decide) h8; cases slot <;> exact this)]
     exact bmt_mask_and _ _ _ (bmt_mask c p slot.bit hc4 hp (by cases slot <;> decide))
   have s3_1 : reg n1 19 = reg n 23 := by
     rw [r1]; simp +decide only [runBlock, BInstr.run, bmB29, upd, ↓reduceIte]; (try rw [s.zero]); exact BitVec.zero_add _
@@ -178,7 +178,8 @@ theorem bmp_other {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
     (hsvb : n.mem (F + BitVec.ofNat 32 0xBE48) = BitVec.ofNat 8 sv)
     (hlw : memLoad32 n.mem (F + BitVec.ofNat 32 0xBE40) =
       BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset))
-    (h8 : reg n 8 = BitVec.ofNat 32 (bmSlotNum slot.other)) (h9 : reg n 9 = BitVec.ofNat 32 (bmSlotNum slot))
+    (h8 : reg n 8 &&& 0xFF = BitVec.ofNat 32 (bmSlotNum slot.other))
+    (h9 : reg n 9 &&& 0xFF = BitVec.ofNat 32 (bmSlotNum slot))
     (h19 : reg n 19 = BitVec.ofNat 32 (c + 256 * p)) (h20 : reg n 20 = F + BitVec.ofNat 32 0xB9A8)
     (h23 : reg n 23 = btPop (memLoad32 M0 efuseRd)) :
     BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
@@ -198,9 +199,9 @@ theorem bmp_other {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
   have t1 : St n1.mem BM n1 0x322 (reg n1) := ⟨u1.pc, rfl, fun _ => rfl⟩
   have a0_1 : reg n1 a0 = if (c &&& slot.bit != 0) = true then BitVec.ofNat 32 sv else 0 := by
     rw [r1]; simp +decide only [runBlock, BInstr.run, bmB33, upd, ↓reduceIte]
-    rw [h19, h8, h20, BitVec.add_assoc, show BitVec.ofNat 32 0xB9A8 + 0x4A0 = BitVec.ofNat 32 0xBE48 from rfl,
-      hsvb, bmp_zext hsv, show aluEval .sub (aluEval .add (reg n x0) 2) (BitVec.ofNat 32 (bmSlotNum slot.other)) =
-        BitVec.ofNat 32 slot.bit by rw [s.zero]; cases slot <;> rfl]
+    rw [h19, h20, BitVec.add_assoc, show BitVec.ofNat 32 0xB9A8 + 0x4A0 = BitVec.ofNat 32 0xBE48 from rfl,
+      hsvb, bmp_zext hsv, bmt_low_and (BitVec.ofNat 32 (c + 256 * p)) _ (v := slot.bit) (by cases slot <;> decide)
+        (by rw [s.zero]; have := bmt_sublo (by cases slot <;> decide) h8; cases slot <;> exact this)]
     rw [bmt_mask_and _ _ _ (bmt_mask c p slot.bit hc4 hp (by cases slot <;> decide))]
     exact bmp_andff _ hsv
   have s3_1 : reg n1 19 = reg n 23 := by
