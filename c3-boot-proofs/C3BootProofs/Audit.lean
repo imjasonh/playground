@@ -10450,6 +10450,15 @@ end C3
 /-- info: 'C3.RV32.Ac.acs_roots' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acs_roots
 
+/-- info: 'C3.RV32.Ac.acs_fold_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_fold_bytes
+
+/-- info: 'C3.RV32.Ac.acs_src' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_src
+
+/-- info: 'C3.RV32.Ac.acs_pin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_pin
+
 /-- info: 'C3.RV32.Ac.acs_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acs_spec
 
