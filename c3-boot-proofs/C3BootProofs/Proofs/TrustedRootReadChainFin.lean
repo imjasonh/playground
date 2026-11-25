@@ -33,6 +33,12 @@ theorem rc_ld2 {M M' : Word → BitVec 8} {b b' : Word}
     show b + 3 = b + BitVec.ofNat 32 3 from rfl, h 3 (by decide)]
   rfl
 
+/-- `Sep` decided by its bounded quantifiers. -/
+@[instance_reducible] def rcSepDec (a : Word) (n : Nat) (b : Word) (k : Nat) : Decidable (Sep a n b k) :=
+  inferInstanceAs (Decidable (∀ i, i < n → ∀ j, j < k → a + BitVec.ofNat 32 i ≠ b + BitVec.ofNat 32 j))
+
+attribute [local instance] rcSepDec
+
 section
 variable {M0 : Word → BitVec 8} {G F out fr fp p : Word} {fl n : Nat} {g0 : Fin 32 → Word}
 
@@ -43,7 +49,6 @@ theorem RcCtx.exitS (X : RcCtx M0 G F out fr fp fl p n g0) {M Mf : Word → BitV
     (hO : ∀ x, Sep x 1 out 0x40 → Sep (G + BitVec.ofNat 32 0x5B0) 16 x 1 → Mf x = M x)
     (hr : RcOut Mf out fr fp fl r) :
     WP trustedRootReadChainCode TRC (trPost (rcMem M0 G out fr fp fl r) g0) Mf 0x48C f := by
-  classical
   refine X.exit (M := fun x => if Sep x 1 out 0x40 then Mf x else M x) hR
     (hI.step X (c := 0x5B0) (l := 16) (by decide) fun x hs _ _ => ?_) (fun x hx => by simp only [hx, ↓reduceIte]) hr
   by_cases h : Sep x 1 out 0x40

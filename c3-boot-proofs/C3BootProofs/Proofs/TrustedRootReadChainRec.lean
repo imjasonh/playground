@@ -297,7 +297,7 @@ theorem RcCtx.pRecCopy (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
       exact kTop _ _ (hInv _ (by rc_r hR1) (by rc_w hW1) (by trsimp; rw [hR1.2.1]; rfl)
         (by trsimp; rw [hR1.2.1]; rfl) (by trsimp; rw [hR1.2.1]; rfl) (by trsimp <;> decide)
         (by trsimp; rw [hR1.2.1]; exact e22)) hne
-    · have h0 : k - 1 = 0 := Classical.byContradiction fun hne => by
+    · have h0 : k - 1 = 0 := Decidable.byContradiction fun hne => by
         revert hf; trsimp; rw [hR1.2.1]
         show branchTaken .bne (memLoad32 m4.mem (F + 32) + 4294967295) 0 = false → False
         rw [e22, rck_bneT (rc_k0 hk.2 hne)]; decide

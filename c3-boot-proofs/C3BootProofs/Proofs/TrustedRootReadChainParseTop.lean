@@ -208,7 +208,7 @@ theorem RcCtx.pOuter (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
     refine X.e504 (herr (some 1) ?_) (by rc_r hR) hI4 (fun b hb => ?_)
     · simp only [rcParse, hE]; rw [ite_eq_left hz]
     · cases hb; trsimp
-  replace hz : L.length - (c.header + c.len) = 0 := by omega
+  replace hz : L.length - (c.header + c.len) = 0 := Decidable.of_not_not hz
   refine WP.branch trc_at_186 (fun ht => absurd ht (by trsimp; rw [hz]; decide)) (fun _ => ?_); wn
   have hsel0 : rcParse L B = rcBody L B (rcIn (0, L.length) c) := by
     simp only [rcParse, hE]; rw [ite_eq_right (by omega)]
@@ -276,7 +276,7 @@ theorem RcCtx.pOuter (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
     · simp only [rcBody, hE1, hE2, hE3]; rw [ite_eq_left hc]
     · cases hv; exact (congrArg m7.mem (add_ofNat_assoc F 0xE0 4)).symm.trans hBo.2
   have hc : bt.len ≠ 0 ∧ (rcView L (rcAdv (rcAdv (rcIn (0, L.length) c) tbs) a)).getD bt.header 0 = 0 :=
-    Classical.byContradiction hc'
+    Decidable.byContradiction hc'
   simp only [RcBitsOut] at hBo
   rw [ite_eq_left hc] at hBo
   obtain ⟨b0, -, hra7, hbb⟩ := hBo
@@ -297,7 +297,7 @@ theorem RcCtx.pOuter (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
     refine X.e504 (herr (some 1) (hsel0.trans ?_)) (by rc_r hR) hI7 (fun v hv => ?_)
     · simp only [rcBody, hE1, hE2, hE3]; rw [ite_eq_right (fun h => h hc), ite_eq_left hz2]
     · cases hv; trsimp
-  replace hz2 : (rcAdv (rcAdv (rcAdv (rcIn (0, L.length) c) tbs) a) bt).2 = 0 := by omega
+  replace hz2 : (rcAdv (rcAdv (rcAdv (rcIn (0, L.length) c) tbs) a) bt).2 = 0 := Decidable.of_not_not hz2
   refine WP.branch trc_at_1cc (fun ht => absurd ht (by trsimp; rw [hR.2.1, hAC, hz2]; decide))
     (fun _ => ?_); wn
   have hsel : rcParse L B = rcTbs L B (rcIn (rcIn (0, L.length) c) tbs) := hsel0.trans (by

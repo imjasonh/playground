@@ -118,7 +118,7 @@ theorem RcFL.ld {F : Word} {M M' : Word → BitVec 8} (h : RcFL F M M') {c : Nat
 
 theorem RcFL.first {F : Word} {M M' : Word → BitVec 8} {c : Option RcCert} (h : RcFL F M M')
     (hF : RcFirst M (F + BitVec.ofNat 32 0x30) c) : RcFirst M' (F + BitVec.ofNat 32 0x30) c :=
-  hF.copy fun k _ hk => by rw [add_ofNat_assoc]; exact h.ld (by omega)
+  hF.copy fun k _ hk => by rw [add_ofNat_assoc]; exact h.ld ⟨by omega, by omega⟩
 
 section
 variable {M0 : Word → BitVec 8} {G F out fr fp p : Word} {fl n : Nat} {g0 : Fin 32 → Word}

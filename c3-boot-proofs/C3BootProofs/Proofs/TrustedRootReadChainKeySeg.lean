@@ -114,7 +114,7 @@ theorem rck_sepG {M : Word → BitVec 8} {G B : Word} {L : Bytes} (hL : RcL M G 
   rwa [add_ofNat_zero] at this
 
 theorem rck_andT (x : Word) : x &&& ((0 : Word) + 0xFFFFFFFF) = x := by
-  rw [show (0 : Word) + 0xFFFFFFFF = BitVec.allOnes 32 from by decide, BitVec.and_allOnes]
+  rw [show (0 : Word) + 0xFFFFFFFF = 0xFFFFFFFF from rfl]; exact and_ones x
 
 theorem rck_andF (x : Word) : x &&& ((1 : Word) + 0xFFFFFFFF) = 0 := by
   rw [show (1 : Word) + 0xFFFFFFFF = 0#32 from by decide, BitVec.and_zero]; rfl
@@ -213,7 +213,7 @@ theorem RcCtx.keyBits (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
         refine WP.branch trc_at_44e (fun _ => ?_) (fun hf => absurd hf (by
           trsimp; rw [hR.2.1, e4', ev_add, rck_bneT (rck_m61 h61 (by omega))]; decide)); wn
         exact k _ _ (by rc_r hR) hI RcKB.refl (by rc_k hK) (by trsimp <;> exact rck_z0 hR.1)
-      replace h61 : bt.len - 1 = 0x61 := by omega
+      replace h61 : bt.len - 1 = 0x61 := Decidable.of_not_not h61
       refine WP.branch trc_at_44e (fun ht => absurd ht (by
         trsimp; rw [hR.2.1, e4', h61]; decide)) (fun _ => ?_); wn
       refine WP.lw trc_at_452 (by (try trsimp); rw [hR.2.1]; exact X.fal (c := 0x6C) (by decide)) ?_; wn
@@ -225,7 +225,7 @@ theorem RcCtx.keyBits (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
         refine WP.branch trc_at_454 (fun _ => ?_) (fun hf => absurd hf (by
           trsimp; rw [hR.2.1, e6c, rck_bneT (rck_nz hz (by omega))]; decide)); wn
         exact k _ _ (by rc_r hR) hI RcKB.refl (by rc_k hK) (by trsimp <;> exact rck_z0 hR.1)
-      replace hz : b.2 - (bt.header + bt.len) = 0 := by omega
+      replace hz : b.2 - (bt.header + bt.len) = 0 := Decidable.of_not_not hz
       refine WP.branch trc_at_454 (fun ht => absurd ht (by
         trsimp; rw [hR.2.1, e6c, hz]; decide)) (fun _ => ?_); wn
       have hlen : bt.len = 0x62 := by omega
@@ -247,7 +247,7 @@ theorem RcCtx.keyBits (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
           simp only [branchTaken, bne_eq_false_iff_eq]
           exact fun e => h4 ((rck_ze (by decide)).mp e))); wn
         exact X.key306 (by rc_r hR) hI (by rc_k hK) k
-      replace h4 : (M (B + BitVec.ofNat 32 (b.1 + bt.header + 1) + 0)).toNat = 4 := by omega
+      replace h4 : (M (B + BitVec.ofNat 32 (b.1 + bt.header + 1) + 0)).toNat = 4 := Decidable.of_not_not h4
       have hv : rcKeyB L B b = if rcFsOk (rcView L (b.1 + bt.header + 1, 0x61)) then
           B + BitVec.ofNat 32 (b.1 + bt.header + 1) else 0 := by
         unfold rcKeyB; rw [hE]; dsimp only
@@ -493,7 +493,10 @@ theorem RcCtx.keyAlg (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
     refine WP.lbu trc_at_3ea ?_; wn
     refine WP.aluImm trc_at_3ee ?_; wn
     by_cases htag : u.tag ≠ 6
-    · have hc : rcCurveOk L (some (q, u)) = false := by simp [rcCurveOk, htag]
+    · have hc : rcCurveOk L (some (q, u)) = false := by
+        show (u.tag == 6 && _) = false
+        rw [beq_false_of_ne htag]
+        rfl
       rw [hc] at k
       refine WP.branch trc_at_3f0 (fun _ => ?_) (fun hf => absurd hf (by
         trsimp; rw [hR.2.1, e18, show (6 : Word) = BitVec.ofNat 32 6 from rfl]
@@ -502,9 +505,11 @@ theorem RcCtx.keyAlg (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
         rwa [BitVec.toNat_ofNat, Nat.mod_eq_of_lt htl] at this)); wn
       exact X.keyOid (c := false) (by rc_r hR) hI3 (by rc_k (hK.mono (by decide))) h8 hC hL3 hr3
         (by trsimp; exact e0') (by trsimp; rw [hR.2.1]; exact e4') hoo (by trsimp <;> rfl) (k.mono hKB)
-    replace htag : u.tag = 6 := by omega
+    replace htag : u.tag = 6 := Decidable.of_not_not htag
     have hc : rcCurveOk L (some (q, u)) = (rcView L (q + u.header, u.len) == oidSecp384r1) := by
-      simp [rcCurveOk, htag]
+      show (u.tag == 6 && _) = _
+      rw [htag]
+      rfl
     rw [hc] at k
     refine WP.branch trc_at_3f0 (fun ht => absurd ht (by
       trsimp; rw [hR.2.1, e18, htag]; decide)) (fun _ => ?_); wn
@@ -527,8 +532,8 @@ theorem RcCtx.keyAlg (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
       (by trsimp; exact e0') (by trsimp; rw [hR.2.1]; exact e4') hoo ?_ (k.mono (hKB.trans hK4.kb))
     trsimp; rw [hres]
     by_cases heq : rcView L (q + u.header, u.len) = oidSecp384r1
-    · simp [heq]; decide
-    · simp [heq]; decide
+    · simp only [beq_iff_eq.mpr heq, heq, ↓reduceIte]; decide
+    · simp only [beq_false_of_ne heq, heq, ↓reduceIte]; decide
 
 /-- From 0x2E0: `p384_key` on the reader at `F + 0xD0`, up to the join at
 0x308 with the key's address, or 0, in `a1`. -/
@@ -620,7 +625,7 @@ theorem RcCtx.keySeq (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
       trsimp; rw [dC', rck_beqF (rck_nz hz (by omega))]; decide)) (fun _ => ?_); wn
     exact X.key306 (by rc_r hR) hI4 (by rc_k hK) (k.mono (hK2.trans hKS).kb)
   rw [ite_eq_right hz] at k
-  replace hz : r.2 - (t.header + t.len) = 0 := by omega
+  replace hz : r.2 - (t.header + t.len) = 0 := Decidable.of_not_not hz
   refine WP.branch trc_at_304 (fun _ => ?_) (fun hf => absurd hf (by
     trsimp; rw [dC', hz]; decide)); wn
   exact X.keyAlg (by rc_r hR) hI4 (by rc_k hK) ((hL.keep hK2).keep hKS) hr4 (k.mono (hK2.trans hKS).kb)

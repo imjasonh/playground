@@ -437,7 +437,7 @@ theorem RcCtx.pTimes (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
       trsimp; rw [hR.2.1, hCC, rck_bneT (rck_nz hz (by omega))]; decide)); wn
     refine X.e502 (herr (some 1) ?_) (by rc_r hR) hI7
     simp only [rcpValid, hE, rcTimes, hN, hN2]; rw [ite_eq_left hz]
-  replace hz : r2.length = 0 := by omega
+  replace hz : r2.length = 0 := Decidable.of_not_not hz
   refine WP.branch trc_at_298 (fun ht => absurd ht (by
     trsimp; rw [hR.2.1, hCC, hz]; decide)) (fun _ => ?_); wn
   refine WP.lw trc_at_29c (by trsimp; rw [hR.2.1]; exact X.fal (c := 0xE8) (by decide)) ?_; wn
