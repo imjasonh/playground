@@ -1,0 +1,256 @@
+import C3BootProofs.Proofs.TrustedRootReadChainFrame
+
+/-!
+# `p384_key` inside `read_chain`
+
+`parse_cert` reads the subject public key with `p384_key`, which the
+compiler inlined at 0x2E0 to 0x47E of `read_chain`. Every path through it
+reaches 0x308 with the key's address or 0 in `a1`, the value `rcKey`
+gives. The frame's words at `F + 0x10` and above and the registers in
+`rcKL` are as they were at 0x2E0.
+-/
+
+namespace C3.RV32
+
+open C3.Image C3.Json C3.RV32.Dq C3.RV32.P3
+
+set_option maxRecDepth 20000
+
+/-- The bit-string part of `rcKey`, from the reader `b` after the
+algorithm. -/
+def rcKeyB (L : Bytes) (p : Word) (b : RcRd) : Word :=
+  match derElement 3 (rcView L b) with
+  | .error _ => 0
+  | .ok bt =>
+    if ¬(bt.len ≠ 0 ∧ (rcView L b).getD bt.header 0 = 0) then 0
+    else if bt.len - 1 ≠ 0x61 then 0
+    else if b.2 - (bt.header + bt.len) ≠ 0 then 0
+    else if rcFsOk (rcView L (b.1 + bt.header + 1, 0x61)) then p + BitVec.ofNat 32 (b.1 + bt.header + 1)
+    else 0
+
+/-- The algorithm part of `rcKey`, from the reader `r` over the key's
+contents. -/
+def rcKeyA (L : Bytes) (p : Word) (r : RcRd) : Word :=
+  match derElement 0x30 (rcView L r) with
+  | .error _ => 0
+  | .ok a =>
+    match rcAlg L r with
+    | .error _ => 0
+    | .ok ((oo, ol), par) =>
+      if rcCurveOk L par = false then 0
+      else if rcView L (oo, ol) ≠ oidEcPublicKey then 0
+      else rcKeyB L p (rcAdv r a)
+
+theorem rcKey_eq (L : Bytes) (p : Word) (r : RcRd) :
+    rcKey L p r = match derElement 0x30 (rcView L r) with
+      | .error _ => 0
+      | .ok s => if r.2 - (s.header + s.len) ≠ 0 then 0 else rcKeyA L p (rcIn r s) := rfl
+
+/-- The registers that the inlined `p384_key` keeps. -/
+abbrev rcKL : List Nat := [8, 9, 18, 19, 20, 21, 22, 23, 24, 27]
+
+/-- What follows the inlined `p384_key`: the block at 0x308, entered with
+the key `v` in `a1`, the registers of `rcKL` as in `w`, and memory that
+changed from `M` only below `F + 0x10` and in the scratch area. -/
+def RcKeyK (M0 : Word → BitVec 8) (G F out fr fp : Word) (fl : Nat) (g0 w : Fin 32 → Word) (Q : Post)
+    (M : Word → BitVec 8) (v : Word) : Prop :=
+  ∀ (M' : Word → BitVec 8) (f' : Fin 32 → Word), RcRegs F out fr g0 f' → RcMemInv M0 G F fr fp fl g0 M' →
+    RcKB G 0x10 M M' → RcK rcKL w f' → f' a1 = v → WP trustedRootReadChainCode TRC Q M' 0x308 f'
+
+theorem RcKeyK.mono {M0 : Word → BitVec 8} {G F out fr fp : Word} {fl : Nat} {g0 w : Fin 32 → Word}
+    {Q : Post} {M M1 : Word → BitVec 8} {v : Word} (k : RcKeyK M0 G F out fr fp fl g0 w Q M v)
+    (h : RcKB G 0x10 M M1) : RcKeyK M0 G F out fr fp fl g0 w Q M1 v :=
+  fun M' f' a b c d e => k M' f' a b (h.trans c) d e
+
+/-- Proves `RcRegs` of a register file that `upd` and `clob` build from one
+that `h` covers. -/
+macro "rc_r " h:term : tactic => `(tactic| (
+  repeat (first
+    | refine RcRegs.clob ?_
+    | refine RcRegs.set ?_ (by decide))
+  exact $h))
+
+theorem rck_beqT : branchTaken .beq (0 : Word) 0 = true := rfl
+theorem rck_bneF : branchTaken .bne (0 : Word) 0 = false := rfl
+
+theorem rck_beqF {x : Word} (h : x ≠ 0) : branchTaken .beq x 0 = false := by
+  simp only [branchTaken, beq_eq_false_iff_ne]; exact h
+
+theorem rck_bneT {x : Word} (h : x ≠ 0) : branchTaken .bne x 0 = true := by
+  simp only [branchTaken, bne_iff_ne, ne_eq]; exact h
+
+theorem rck_pne {M : Word → BitVec 8} {G B : Word} {L : Bytes} (hL : RcL M G B L) {i : Nat}
+    (hi : i ≤ L.length) : B + BitVec.ofNat 32 i ≠ 0 := fun e => by
+  have := hL.w hi; have := hL.pos; rw [e] at *; simp at *; omega
+
+theorem rck_nz {x : Nat} (h : x ≠ 0) (hx : x < 2 ^ 32) : BitVec.ofNat 32 x ≠ 0 := fun e => by
+  have := congrArg BitVec.toNat e; simp only [BitVec.toNat_ofNat] at this
+  rw [show (0 : Word).toNat = 0 from rfl] at this; omega
+
+theorem rck_m61 {x : Nat} (h : x ≠ 0x61) (hx : x < 2 ^ 32) : BitVec.ofNat 32 x + 0xFFFFFF9F ≠ 0 := fun e => by
+  have h2 : BitVec.ofNat 32 x = 0x61 := by
+    have := congrArg (· + (0x61 : Word)) e
+    rwa [BitVec.add_assoc, show (0xFFFFFF9F : Word) + 0x61 = 0 from by decide,
+      show BitVec.ofNat 32 x + (0 : Word) = BitVec.ofNat 32 x from BitVec.add_zero _,
+      show (0 : Word) + 0x61 = 0x61 from rfl] at this
+  have := congrArg BitVec.toNat h2
+  rw [BitVec.toNat_ofNat, show (0x61 : Word).toNat = 0x61 from rfl] at this; omega
+
+theorem rck_e61 : BitVec.ofNat 32 0x61 + 0xFFFFFF9F = (0 : Word) := by decide
+
+theorem rck_z0 {f : Fin 32 → Word} (h : f 0 = 0) : aluEval .add (f 0) 0 = 0 := by rw [h]; rfl
+
+theorem rck_ze {v : BitVec 8} {c : Nat} (hc : c < 256) : v.zeroExtend 32 = BitVec.ofNat 32 c ↔ v.toNat = c := by
+  constructor
+  · intro e; have := congrArg BitVec.toNat e
+    simp only [BitVec.toNat_setWidth, BitVec.toNat_ofNat] at this
+    have := v.isLt; omega
+  · intro e; apply BitVec.eq_of_toNat_eq
+    simp only [BitVec.toNat_setWidth, BitVec.toNat_ofNat]; have := v.isLt; omega
+
+theorem rck_sepG {M : Word → BitVec 8} {G B : Word} {L : Bytes} (hL : RcL M G B L) {i l : Nat}
+    (h : i + l ≤ L.length + 14) : Sep (B + BitVec.ofNat 32 i) l G 0x5C0 := by
+  have := (hL.sep.sub (c := i) (l := l) h).subR (c := 0) (l := 0x5C0) (by decide)
+  rwa [add_ofNat_zero] at this
+
+theorem rck_andT (x : Word) : x &&& ((0 : Word) + 0xFFFFFFFF) = x := by
+  rw [show (0 : Word) + 0xFFFFFFFF = BitVec.allOnes 32 from by decide, BitVec.and_allOnes]
+
+theorem rck_andF (x : Word) : x &&& ((1 : Word) + 0xFFFFFFFF) = 0 := by
+  rw [show (1 : Word) + 0xFFFFFFFF = 0#32 from by decide, BitVec.and_zero]; rfl
+
+section
+variable {M0 : Word → BitVec 8} {G F out fr fp p : Word} {fl n : Nat} {g0 : Fin 32 → Word}
+
+/-- 0x306 sets `a1` to 0 and goes on to 0x308. -/
+theorem RcCtx.key306 (_X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec 8} {f w : Fin 32 → Word}
+    {Q : Post} (hR : RcRegs F out fr g0 f) (hI : RcMemInv M0 G F fr fp fl g0 M) (hK : RcK rcKL w f)
+    (k : RcKeyK M0 G F out fr fp fl g0 w Q M 0) : WP trustedRootReadChainCode TRC Q M 0x306 f := by
+  refine WP.aluImm trc_at_306 ?_
+  exact k _ _ (by rc_r hR) hI RcKB.refl (by rc_k hK) (by trsimp <;> exact rck_z0 hR.1)
+
+/-- From 0x440, after `Der::bit_string`: the bit string's checks and
+`p384_from_sec1`. -/
+theorem RcCtx.keyBits (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec 8} {f w : Fin 32 → Word}
+    {Q : Post} {B : Word} {L : Bytes} {b : RcRd}
+    (hR : RcRegs F out fr g0 f) (hI : RcMemInv M0 G F fr fp fl g0 M) (hK : RcK rcKL w f) (hL : RcL M G B L)
+    (hB : RcBitsOut M (F + BitVec.ofNat 32 0xE0) (F + BitVec.ofNat 32 0x60) B L b (rcElem L 3 b))
+    (hb : b.1 + b.2 ≤ L.length)
+    (k : RcKeyK M0 G F out fr fp fl g0 w Q M (rcKeyB L B b)) : WP trustedRootReadChainCode TRC Q M 0x440 f := by
+  have hw := hL.hw
+  refine WP.lw trc_at_440 (by (try trsimp); rw [hR.2.1]; exact X.fal (c := 0xE0) (by decide)) ?_; wn
+  refine WP.aluImm trc_at_442 ?_; wn
+  rcases hE : derElement 3 (rcView L b) with e | bt
+  · simp only [rcElem, hE] at hB
+    have hv : rcKeyB L B b = 0 := by simp only [rcKeyB, hE]
+    rw [hv] at k
+    refine WP.branch trc_at_444 (fun _ => ?_) (fun hf => absurd hf (by
+      trsimp; rw [hR.2.1, show F + 0xE0 = F + BitVec.ofNat 32 0xE0 from rfl, hB.1]; decide)); wn
+    exact k _ _ (by rc_r hR) hI RcKB.refl (by rc_k hK) (by trsimp <;> exact rck_z0 hR.1)
+  · have hbd := derElement_bound hE
+    rw [rcd_view_len hb] at hbd
+    simp only [rcElem, hE] at hB
+    by_cases hc : bt.len ≠ 0 ∧ (rcView L b).getD bt.header 0 = 0
+    · simp only [RcBitsOut] at hB
+      rw [ite_eq_left hc] at hB
+      obtain ⟨e0, e4, eR, -⟩ := hB
+      have e0' : memLoad32 M (F + 0xE0) = B + BitVec.ofNat 32 (b.1 + bt.header + 1) := e0
+      have e4' : memLoad32 M (F + 0xE4) = BitVec.ofNat 32 (bt.len - 1) := by
+        rw [show F + (0xE4 : Word) = F + BitVec.ofNat 32 0xE0 + 4 from (add_ofNat_assoc F 0xE0 4).symm]; exact e4
+      have e6c : memLoad32 M (F + 0x6C) = BitVec.ofNat 32 (b.2 - (bt.header + bt.len)) := by
+        rw [show F + (0x6C : Word) = F + BitVec.ofNat 32 0x60 + 0xC from (add_ofNat_assoc F 0x60 0xC).symm]
+        exact eR.2.1
+      refine WP.branch trc_at_444 (fun ht => absurd ht (by
+        trsimp; rw [hR.2.1, e0', rck_beqF (rck_pne hL (by omega))]; decide)) (fun _ => ?_); wn
+      refine WP.lw trc_at_448 (by (try trsimp); rw [hR.2.1]; exact X.fal (c := 0xE4) (by decide)) ?_; wn
+      refine WP.aluImm trc_at_44a ?_; wn
+      by_cases h61 : bt.len - 1 ≠ 0x61
+      · have hv : rcKeyB L B b = 0 := by
+          unfold rcKeyB; rw [hE]; dsimp only
+          rw [ite_eq_right (fun h => h hc), ite_eq_left h61]
+        rw [hv] at k
+        refine WP.branch trc_at_44e (fun _ => ?_) (fun hf => absurd hf (by
+          trsimp; rw [hR.2.1, e4', ev_add, rck_bneT (rck_m61 h61 (by omega))]; decide)); wn
+        exact k _ _ (by rc_r hR) hI RcKB.refl (by rc_k hK) (by trsimp <;> exact rck_z0 hR.1)
+      replace h61 : bt.len - 1 = 0x61 := by omega
+      refine WP.branch trc_at_44e (fun ht => absurd ht (by
+        trsimp; rw [hR.2.1, e4', h61]; decide)) (fun _ => ?_); wn
+      refine WP.lw trc_at_452 (by (try trsimp); rw [hR.2.1]; exact X.fal (c := 0x6C) (by decide)) ?_; wn
+      by_cases hz : b.2 - (bt.header + bt.len) ≠ 0
+      · have hv : rcKeyB L B b = 0 := by
+          unfold rcKeyB; rw [hE]; dsimp only
+          rw [ite_eq_right (fun h => h hc), ite_eq_right (fun h => h h61), ite_eq_left hz]
+        rw [hv] at k
+        refine WP.branch trc_at_454 (fun _ => ?_) (fun hf => absurd hf (by
+          trsimp; rw [hR.2.1, e6c, rck_bneT (rck_nz hz (by omega))]; decide)); wn
+        exact k _ _ (by rc_r hR) hI RcKB.refl (by rc_k hK) (by trsimp <;> exact rck_z0 hR.1)
+      replace hz : b.2 - (bt.header + bt.len) = 0 := by omega
+      refine WP.branch trc_at_454 (fun ht => absurd ht (by
+        trsimp; rw [hR.2.1, e6c, hz]; decide)) (fun _ => ?_); wn
+      have hlen : bt.len = 0x62 := by omega
+      have hview : memBytes M (B + BitVec.ofNat 32 (b.1 + bt.header + 1)) 0x61 =
+          rcView L (b.1 + bt.header + 1, 0x61) := hL.view2 (by omega)
+      have hg0 : (rcView L (b.1 + bt.header + 1, 0x61)).getD 0 0 =
+          (M (B + BitVec.ofNat 32 (b.1 + bt.header + 1) + 0)).toNat := by
+        rw [← hview]; exact memBytes_getD (by decide)
+      refine WP.lbu trc_at_458 ?_; wn
+      refine WP.aluImm trc_at_45c ?_; wn
+      by_cases h4 : (M (B + BitVec.ofNat 32 (b.1 + bt.header + 1) + 0)).toNat ≠ 4
+      · have hv : rcKeyB L B b = 0 := by
+          unfold rcKeyB; rw [hE]; dsimp only
+          rw [ite_eq_right (fun h => h hc), ite_eq_right (fun h => h h61), ite_eq_right (fun h => h hz),
+            ite_eq_right (fun h => h4 (hg0 ▸ h.1))]
+        rw [hv] at k
+        refine WP.branch trc_at_45e (fun _ => ?_) (fun hf => absurd hf (by
+          trsimp; rw [hR.2.1, e0', show (4 : Word) = BitVec.ofNat 32 4 from rfl]
+          simp only [branchTaken, bne_eq_false_iff_eq]
+          exact fun e => h4 ((rck_ze (by decide)).mp e))); wn
+        exact X.key306 (by rc_r hR) hI (by rc_k hK) k
+      replace h4 : (M (B + BitVec.ofNat 32 (b.1 + bt.header + 1) + 0)).toNat = 4 := by omega
+      have hv : rcKeyB L B b = if rcFsOk (rcView L (b.1 + bt.header + 1, 0x61)) then
+          B + BitVec.ofNat 32 (b.1 + bt.header + 1) else 0 := by
+        unfold rcKeyB; rw [hE]; dsimp only
+        rw [ite_eq_right (fun h => h hc), ite_eq_right (fun h => h h61), ite_eq_right (fun h => h hz)]
+      rw [hv] at k
+      refine WP.branch trc_at_45e (fun ht => absurd ht (by
+        trsimp; rw [hR.2.1, e0', show (4 : Word) = BitVec.ofNat 32 4 from rfl, (rck_ze (by decide)).mpr h4]
+        decide)) (fun _ => ?_); wn
+      refine WP.aluImm trc_at_462 ?_; wn
+      refine WP.alu trc_at_464 ?_; wn
+      refine WP.sw trc_at_466 (by trsimp; rw [hR.2.1]; exact X.fal (c := 4) (by decide))
+        (by trsimp; rw [hR.2.1]; exact X.flo (c := 4) (k := 4) (by decide)) ?_; wn
+      rw [hR.2.1, e0']
+      have hKB3 : RcKB G 0x10 M (memStore32 M (F + 4) (B + BitVec.ofNat 32 (b.1 + bt.header + 1))) :=
+        X.stB (c := 4) (k := 4) (by decide) (X.sw32 M 4 _)
+      have hI3 : RcMemInv M0 G F fr fp fl g0 (memStore32 M (F + 4) (B + BitVec.ofNat 32 (b.1 + bt.header + 1))) :=
+        X.stI hI (c := 4) (k := 4) (by decide) (X.sw32 M 4 _)
+      have hL3 := hL.kb hKB3 (by decide)
+      refine X.callFs (off := 0x468) (oc := 0xE0) (inp := B + BitVec.ofNat 32 (b.1 + bt.header + 1))
+        trc_at_468 trc_at_46c (by decide) (by decide) (by rc_r hR) hI3 (by decide)
+        (by trsimp; rfl) (by trsimp) (rck_sepG hL (by omega)) (by rw [hL.w (by omega)]; omega)
+        (fun m2 hK2 _ hI2 hres => ?_)
+      rw [hL3.view2 (by omega)] at hres
+      have h4m : memLoad32 m2.mem (F + 4) = B + BitVec.ofNat 32 (b.1 + bt.header + 1) :=
+        (X.keepLd hK2 (c := 4) (by decide)).trans (memLoad32_store32_same _ _ _)
+      refine WP.lw trc_at_470 (by trsimp; rw [hR.2.1]; exact X.fal (c := 0xE0) (by decide)) ?_; wn
+      refine WP.aluImm trc_at_472 ?_; wn
+      refine WP.lw trc_at_474 (by trsimp; rw [hR.2.1]; exact X.fal (c := 4) (by decide)) ?_; wn
+      refine WP.alu trc_at_476 ?_; wn
+      refine WP.jal trc_at_478 (by decide) ?_; wn
+      refine k _ _ (by rc_r hR) hI2 (hKB3.trans hK2.kb) (by rc_k hK) ?_
+      trsimp
+      rw [hR.2.1, h4m, show F + (0xE0 : Word) = F + BitVec.ofNat 32 0xE0 from rfl, hres]
+      by_cases hfs : rcFsOk (rcView L (b.1 + bt.header + 1, 0x61))
+      · rw [ite_eq_left hfs, ite_eq_left hfs]; exact rck_andT _
+      · rw [ite_eq_right hfs, ite_eq_right hfs]; exact rck_andF _
+    · simp only [RcBitsOut] at hB
+      rw [ite_eq_right hc] at hB
+      have hv : rcKeyB L B b = 0 := by simp only [rcKeyB, hE, hc, not_false_eq_true, ite_true]
+      rw [hv] at k
+      refine WP.branch trc_at_444 (fun _ => ?_) (fun hf => absurd hf (by
+        trsimp; rw [hR.2.1, show F + 0xE0 = F + BitVec.ofNat 32 0xE0 from rfl, hB.1]; decide)); wn
+      exact k _ _ (by rc_r hR) hI RcKB.refl (by rc_k hK) (by trsimp <;> exact rck_z0 hR.1)
+
+end
+
+end C3.RV32
