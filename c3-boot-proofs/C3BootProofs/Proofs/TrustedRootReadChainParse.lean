@@ -436,7 +436,7 @@ theorem RcCtx.pTimes (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
   · refine WP.branch trc_at_298 (fun _ => ?_) (fun hf => absurd hf (by
       trsimp; rw [hR.2.1, hCC, rck_bneT (rck_nz hz (by omega))]; decide)); wn
     refine X.e502 (herr (some 1) ?_) (by rc_r hR) hI7
-    simp only [rcpValid, hE, rcTimes, hN, hN2]; rw [if_pos hz]
+    simp only [rcpValid, hE, rcTimes, hN, hN2]; rw [ite_eq_left hz]
   replace hz : r2.length = 0 := by omega
   refine WP.branch trc_at_298 (fun ht => absurd ht (by
     trsimp; rw [hR.2.1, hCC, hz]; decide)) (fun _ => ?_); wn
@@ -449,7 +449,7 @@ theorem RcCtx.pTimes (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
   rw [hR.2.1, l8', lC']
   have hKB7 : RcKB G 0x24 M m7.mem := ((hK4.kb.trans hK5.kb).trans hS6).trans hK7.kb
   have hsel : rcpValid L B sr ir t = rcSubj L B sr ir nb na (rcAdv t v) := by
-    simp only [rcpValid, hE, rcTimes, hN, hN2]; rw [if_neg (by omega)]
+    simp only [rcpValid, hE, rcTimes, hN, hN2]; rw [ite_eq_right (by omega)]
   refine X.pSubj (by rc_r hR) hI7 (by rc_k hK) (hL6.keep hK7)
     (X.frRd hF7 hadv6 (by decide) (by decide) (by decide) (by decide) (by decide)) (by trsimp; exact h20)
     (by trsimp; exact h22) ((X.keepLd hK7 (c := 0x18) (by decide)).trans (memLoad32_store32_same _ _ _))
@@ -461,6 +461,119 @@ theorem RcCtx.pTimes (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec
       ((rcf_ld32o (B := F) (c := 0x20) (d := 0x18) (Or.inr (by decide)) (by decide) (by decide)).trans
         ((X.keepLd hK5 (c := 0x20) (by decide)).trans ((X.keepLd hK4 (c := 0x20) (by decide)).trans hm20))))
     hs (fun c hc => (hok c (hsel.trans hc)).mono hKB7) (fun e he => herr e (hsel.trans he))
+
+/-- From 0x1F0: the serial number, signature algorithm, and issuer, then the
+validity at 0x23C. The loop's counter in `s6` moves to `F + 0x20`. -/
+theorem RcCtx.pSerial (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec 8} {f w : Fin 32 → Word}
+    {B : Word} {L : Bytes} {t : RcRd} {kc : Word}
+    {r : Except (Option Nat) (RcCert × RcSt)}
+    (hR : RcRegs F out fr g0 f) (hI : RcMemInv M0 G F fr fp fl g0 M) (hK : RcK [19, 21, 24, 27] w f)
+    (hL : RcL M G B L) (hr : RcRdAt M (F + BitVec.ofNat 32 0xB0) B L t)
+    (h22 : f 22 = kc) (h23 : f 23 = F + BitVec.ofNat 32 0xE5)
+    (hok : ∀ c, rcSerial L B t = .ok c →
+      RcCertK M0 G F out fr fp fl g0 w (trPost (rcMem M0 G out fr fp fl r) g0) M kc c)
+    (herr : ∀ e, rcSerial L B t = .error e → r = .error e) :
+    WP trustedRootReadChainCode TRC (trPost (rcMem M0 G out fr fp fl r) g0) M 0x1F0 f := by
+  have hw := hL.hw
+  have hr2 := hr.2.2
+  refine WP.aluImm trc_at_1f0 ?_; wn
+  refine WP.aluImm trc_at_1f2 ?_; wn
+  refine WP.aluImm trc_at_1f4 ?_; wn
+  refine X.callElem (off := 0x1F6) (oc := 0xE0) (dc := 0xB0) (tag := 2) trc_at_1f6 trc_at_1fa (by decide)
+    (by decide) hI (by decide) (by decide) (by decide) (by trsimp; rw [hR.2.1]; rfl) (by trsimp; rw [hR.2.1]; rfl)
+    (by trsimp) (by decide) hL hr (fun m2 hK2 _ hI2 hT => ?_)
+  refine WP.lw trc_at_1fe (by trsimp; rw [hR.2.1]; exact X.fal (c := 0xE0) (by decide)) ?_; wn
+  rcases hE : rcElem L 2 t with e | sv
+  · rw [hE] at hT
+    refine WP.branch trc_at_200 (fun _ => ?_) (fun hf => absurd hf (by
+      trsimp; rw [hR.2.1, show F + 0xE0 = F + BitVec.ofNat 32 0xE0 from rfl, hT.1]; decide)); wn
+    exact X.e4d2 (herr e (by simp only [rcSerial, hE])) (by rc_r hR) hI2 (rcp_e4 hT.2)
+  rw [hE] at hT
+  obtain ⟨e0, -, e8, eC, hra, hb⟩ := hT
+  have e0' : memLoad32 m2.mem (F + 0xE0) = B + BitVec.ofNat 32 (t.1 + sv.header) := e0
+  have e8' : memLoad32 m2.mem (F + 232) = B + BitVec.ofNat 32 t.1 :=
+    (congrArg (memLoad32 m2.mem) (add_ofNat_assoc F 0xE0 8)).symm.trans e8
+  have eC' : memLoad32 m2.mem (F + 236) = BitVec.ofNat 32 (sv.header + sv.len) :=
+    (congrArg (memLoad32 m2.mem) (add_ofNat_assoc F 0xE0 0xC)).symm.trans eC
+  refine WP.branch trc_at_200 (fun ht => absurd ht (by
+    trsimp; rw [hR.2.1, e0', rck_beqF (rck_pne hL (by omega))]; decide)) (fun _ => ?_); wn
+  refine WP.sw trc_at_204 (by trsimp; rw [hR.2.1]; exact X.fal (c := 0x20) (by decide))
+    (by trsimp; rw [hR.2.1]; exact X.flo (c := 0x20) (k := 4) (by decide)) ?_; wn
+  refine WP.lw trc_at_206 (by trsimp; rw [hR.2.1]; exact X.fal (c := 0xE8) (by decide)) ?_; wn
+  refine WP.lw trc_at_208 (by trsimp; rw [hR.2.1]; exact X.fal (c := 0xEC) (by decide)) ?_; wn
+  have l8 : ∀ a, memLoad32 (memStore32 m2.mem (F + 32) a) (F + 232) = B + BitVec.ofNat 32 t.1 := fun _ =>
+    (rcf_ld32o (B := F) (c := 0xE8) (d := 0x20) (Or.inr (by decide)) (by decide) (by decide)).trans e8'
+  have lC : ∀ a, memLoad32 (memStore32 m2.mem (F + 32) a) (F + 236) = BitVec.ofNat 32 (sv.header + sv.len) :=
+    fun _ => (rcf_ld32o (B := F) (c := 0xEC) (d := 0x20) (Or.inr (by decide)) (by decide) (by decide)).trans eC'
+  rw [hR.2.1, h22, l8, lC]
+  have hS3 : RcKB G 0x24 m2.mem (memStore32 m2.mem (F + 32) kc) :=
+    X.stB (c := 0x20) (k := 4) (by decide) (X.sw32 _ 0x20 _)
+  have hI3 : RcMemInv M0 G F fr fp fl g0 (memStore32 m2.mem (F + 32) kc) :=
+    X.stI hI2 (c := 0x20) (k := 4) (by decide) (X.sw32 _ 0x20 _)
+  have hr3 := rcp_rdSt (d := 0x20) (v := kc) hra (by decide) (by decide) (by decide)
+  have hL3 := (hL.keep hK2).kb hS3 (by decide)
+  have hm3 : memLoad32 (memStore32 m2.mem (F + 32) kc) (F + BitVec.ofNat 32 0x20) = kc :=
+    memLoad32_store32_same _ _ _
+  have hra2 := hra.2.2
+  refine WP.aluImm trc_at_20a ?_; wn
+  refine WP.aluImm trc_at_20c ?_; wn
+  refine WP.aluImm trc_at_20e ?_; wn
+  refine X.callElem (off := 0x212) (oc := 0xE0) (dc := 0xB0) (tag := 0x30) trc_at_212 trc_at_216 (by decide)
+    (by decide) hI3 (by decide) (by decide) (by decide) (by trsimp; rw [hR.2.1]; rfl) (by trsimp; rw [hR.2.1]; rfl)
+    (by trsimp) (by decide) hL3 hr3 (fun m4 hK4 _ hI4 hT4 => ?_)
+  refine WP.lw trc_at_21a (by trsimp; rw [hR.2.1]; exact X.fal (c := 0xE0) (by decide)) ?_; wn
+  rcases hE2 : rcElem L 0x30 (rcAdv t sv) with e | a
+  · rw [hE2] at hT4
+    refine WP.branch trc_at_21c (fun _ => ?_) (fun hf => absurd hf (by
+      trsimp; rw [hR.2.1, show F + 0xE0 = F + BitVec.ofNat 32 0xE0 from rfl, hT4.1]; decide)); wn
+    exact X.e4d2 (herr e (by simp only [rcSerial, hE, hE2])) (by rc_r hR) hI4 (rcp_e4 hT4.2)
+  rw [hE2] at hT4
+  obtain ⟨f0, -, -, -, hra4, hb4⟩ := hT4
+  have f0' : memLoad32 m4.mem (F + 0xE0) = B + BitVec.ofNat 32 ((rcAdv t sv).1 + a.header) := f0
+  refine WP.branch trc_at_21c (fun ht => absurd ht (by
+    trsimp; rw [hR.2.1, f0', rck_beqF (rck_pne hL (by simp only [rcAdv] at hb4 hra2 ⊢; omega))]; decide))
+    (fun _ => ?_); wn
+  have hra42 := hra4.2.2
+  refine WP.aluImm trc_at_220 ?_; wn
+  refine WP.aluImm trc_at_222 ?_; wn
+  refine WP.aluImm trc_at_224 ?_; wn
+  refine X.callElem (off := 0x228) (oc := 0xE0) (dc := 0xB0) (tag := 0x30) trc_at_228 trc_at_22c (by decide)
+    (by decide) hI4 (by decide) (by decide) (by decide) (by trsimp; rw [hR.2.1]; rfl) (by trsimp; rw [hR.2.1]; rfl)
+    (by trsimp) (by decide) (hL3.keep hK4) hra4 (fun m5 hK5 _ hI5 hT5 => ?_)
+  refine WP.lw trc_at_230 (by trsimp; rw [hR.2.1]; exact X.fal (c := 0xE0) (by decide)) ?_; wn
+  rcases hE3 : rcElem L 0x30 (rcAdv (rcAdv t sv) a) with e | iv
+  · rw [hE3] at hT5
+    refine WP.branch trc_at_232 (fun _ => ?_) (fun hf => absurd hf (by
+      trsimp; rw [hR.2.1, show F + 0xE0 = F + BitVec.ofNat 32 0xE0 from rfl, hT5.1]; decide)); wn
+    exact X.e4d2 (herr e (by simp only [rcSerial, hE, hE2, hE3])) (by rc_r hR) hI5 (rcp_e4 hT5.2)
+  rw [hE3] at hT5
+  obtain ⟨g0', -, g8, gC, hra5, hb5⟩ := hT5
+  have g0'' : memLoad32 m5.mem (F + 0xE0) = B + BitVec.ofNat 32 ((rcAdv (rcAdv t sv) a).1 + iv.header) := g0'
+  have g8' : memLoad32 m5.mem (F + 232) = B + BitVec.ofNat 32 (rcAdv (rcAdv t sv) a).1 :=
+    (congrArg (memLoad32 m5.mem) (add_ofNat_assoc F 0xE0 8)).symm.trans g8
+  have gC' : memLoad32 m5.mem (F + 236) = BitVec.ofNat 32 (iv.header + iv.len) :=
+    (congrArg (memLoad32 m5.mem) (add_ofNat_assoc F 0xE0 0xC)).symm.trans gC
+  refine WP.branch trc_at_232 (fun ht => absurd ht (by
+    trsimp; rw [hR.2.1, g0'', rck_beqF (rck_pne hL (by simp only [rcAdv] at hb5 hra42 ⊢; omega))]; decide))
+    (fun _ => ?_); wn
+  refine WP.lw trc_at_236 (by trsimp; rw [hR.2.1]; exact X.fal (c := 0xE8) (by decide)) ?_; wn
+  refine WP.lw trc_at_238 (by trsimp; rw [hR.2.1]; exact X.fal (c := 0xEC) (by decide)) ?_; wn
+  refine WP.sw trc_at_23a (by trsimp; rw [hR.2.1]; exact X.fal (c := 0x1C) (by decide))
+    (by trsimp; rw [hR.2.1]; exact X.flo (c := 0x1C) (k := 4) (by decide)) ?_; wn
+  rw [hR.2.1, g8', gC']
+  have hS6 : RcKB G 0x24 m5.mem (memStore32 m5.mem (F + 28) (BitVec.ofNat 32 (iv.header + iv.len))) :=
+    X.stB (c := 0x1C) (k := 4) (by decide) (X.sw32 _ 0x1C _)
+  have hKB : RcKB G 0x24 M (memStore32 m5.mem (F + 28) (BitVec.ofNat 32 (iv.header + iv.len))) :=
+    (((hK2.kb.trans hS3).trans hK4.kb).trans hK5.kb).trans hS6
+  have hsel : rcSerial L B t = rcpValid L B (rcRaw t sv) (rcRaw (rcAdv (rcAdv t sv) a) iv)
+      (rcAdv (rcAdv (rcAdv t sv) a) iv) := by
+    simp only [rcSerial, hE, hE2, hE3]; rfl
+  exact X.pTimes (by rc_r hR) (X.stI hI5 (c := 0x1C) (k := 4) (by decide) (X.sw32 _ 0x1C _)) (by rc_k hK)
+    (((hL3.keep hK4).keep hK5).kb hS6 (by decide)) (rcp_rdSt (d := 0x1C) hra5 (by decide) (by decide) (by decide))
+    (by trsimp; rfl) (by trsimp; rfl) (by trsimp; rfl) (memLoad32_store32_same _ _ _) (by trsimp; exact h23)
+    ((rcf_ld32o (B := F) (c := 0x20) (d := 0x1C) (Or.inr (by decide)) (by decide) (by decide)).trans
+      ((X.keepLd hK5 (c := 0x20) (by decide)).trans ((X.keepLd hK4 (c := 0x20) (by decide)).trans hm3)))
+    (by simp only [rcRaw]; omega) (fun c hc => (hok c (hsel.trans hc)).mono hKB) (fun e he => herr e (hsel.trans he))
 
 end
 
