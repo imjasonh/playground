@@ -1,0 +1,26 @@
+name = "mcu_lab_proofs"
+defaultTargets = ["Rv32imc", "Crc32Rom", "Crc32Table", "AesRom", "MemRom", "MzCrc32Rom", "CryptoRom", "MinizRom"]
+
+[[lean_lib]]
+name = "Rv32imc"
+
+[[lean_lib]]
+name = "Crc32Rom"
+
+[[lean_lib]]
+name = "Crc32Table"
+
+[[lean_lib]]
+name = "AesRom"
+
+[[lean_lib]]
+name = "MemRom"
+
+[[lean_lib]]
+name = "MzCrc32Rom"
+
+[[lean_lib]]
+name = "CryptoRom"
+
+[[lean_lib]]
+name = "MinizRom"

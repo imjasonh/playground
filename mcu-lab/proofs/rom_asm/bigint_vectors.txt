@@ -1,0 +1,32 @@
+# Silicon-verified differential test vectors for ESP32-C3 ROM `ets_bigint_modexp`
+# Verified on real ESP32-C3 (rev v0.4) over USB-C: all 3 vectors returned rc1=0, rc2=0, match=true.
+# Precondition discovered & verified on silicon: `m < 2^(32*words - 1)` (MSB of `m` in `words`-word
+# representation must be 0; otherwise `len_words` must be padded by 1 word).
+# `m_dash = (-m[0]^{-1}) mod 2^32`, `rb = (2^(32*words))^2 mod m`, little-endian 32-bit word arrays.
+
+# Vector 1: 64-bit (words = 2)
+words = 2
+m_dash = 0xafa42b4b
+x  = [0x62b5a134, 0x10ab07bd]
+y  = [0x46685257, 0x1f589dc8]
+m  = [0xa3b1799d, 0x4e4018bf]
+rb = [0x2a9d0195, 0x1c19e16d]
+z  = [0xbc71bde4, 0x178a9d6d]
+
+# Vector 2: 128-bit (words = 4)
+words = 4
+m_dash = 0x42631ae1
+x  = [0xad3c2d6d, 0xbd9c66b3, 0xe465e150, 0x45ce921a]
+y  = [0x16419f82, 0x972a8469, 0x6c031199, 0x04117479]
+m  = [0x392456df, 0x23b8c1e9, 0xbc8960a9, 0x4d1e8fd3]
+rb = [0x11087b5f, 0x6cc67516, 0x832b83e8, 0x40636292]
+z  = [0x20ecab27, 0xeca46594, 0x94497208, 0x118d0fb4]
+
+# Vector 3: 256-bit (words = 8)
+words = 8
+m_dash = 0x5b5a2b71
+x  = [0x32e70629, 0xb74d0fb1, 0xa65ed389, 0xb38a088c, 0x8b8148f6, 0x6b65a6a4, 0x386ecbe0, 0x397fae95]
+y  = [0x96da1dac, 0x47378190, 0xcf36d58b, 0xde8a774b, 0x01a9e71f, 0xc241330b, 0xce4a2bbd, 0x146fb762]
+m  = [0x07a0ca6f, 0x17fc695a, 0x37f8a88b, 0x3b8faa18, 0x815ef6d1, 0x9a1de644, 0x06cb0fb3, 0x47d6e0d3]
+rb = [0x9d63c939, 0x905cec7b, 0x8045e150, 0xc6af113b, 0x6445174c, 0xb046db11, 0xa8e3d313, 0x43e4e7bb]
+z  = [0xed15ac7b, 0xb9776eee, 0x862bf052, 0x6a757000, 0xb2378ab7, 0x8016d8fc, 0x9b209757, 0x0ca43682]
