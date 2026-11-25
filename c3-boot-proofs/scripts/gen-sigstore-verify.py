@@ -1605,7 +1605,7 @@ class Gen:
         k = self.k = self.k + 1
         self.call_head(k, off, "sv_edF", f"(oc := 0x{oc:X}) (len := {ln}) (L := {L}) (M0 := M0)",
                        [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
-        self.emit(f"    F E{k-1} EE0 RS hiv fR{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    FW E{k-1} EE0 RS hiv fR{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
         self.emit(f"    g{k-1}_10 g{k-1}_11 {ha2} {self.reg_is(k - 1, 13, oc)} (by decide) {hsig} {pk_in} {msg_in} {hlen}")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
@@ -7645,66 +7645,65 @@ def stage_cm(kind):
 
 
 def stage_csx():
-    """From the signature loop's head at 0x2D6E, with no lines left, to 0x2F5A:
+    """From the signature loop's head at 0x1642, with no lines left, to 0x17F8:
     a line signed the checkpoint with the log's key."""
     g = Gen("Csx")
     g.generic_alu = True
-    params = cs_start(g) + ["(hrem0 : w5c = 0)", "(EE0 : EvEnv M0)", "(RS : SvRoSep B)",
+    params = cs_start(g) + ["(hrem0 : w50 = 0)", "(EE0 : EvEnv M0)", "(RS : SvRoSep B)",
                             "(hiv : (s5Hv M0 (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)",
-                            "(pk_in : SvIn B w34 32)", "(msg_in : SvIn B w24 w20.toNat)", "(hlen : w20.toNat < 2 ^ 31)"]
-    g.load(0x2D6E, "lw")
-    g.block(0x2D70, 0x2D72)
-    g.store(0x2D72, "sw")
-    g.load(0x2D74, "lw")
-    g.branch(0x2D76, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hrem0")
-    g.load(0x2F24, "lw")
+                            "(pk_in : SvIn B kp 32)", "(msg_in : SvIn B ckp bl.toNat)", "(hlen : bl.toNat < 2 ^ 31)"]
+    g.load(0x1642, "lw")
+    g.block(0x1644, 0x1646)
+    g.store(0x1646, "sw")
+    g.load(0x1648, "lw")
+    g.branch(0x164A, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hrem0")
+    g.load(0x17C8, "lw")
     fl = lean_val(g.regs[10])
 
     def none(sub):
-        sub.branch(0x2F26, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hfound)")
-        sub.block(0x2FF8, 0x2FFA)
-        sub.jump(0x2FFA)
-        sub.fail(sub.fail_proof(("prop", "hfound")))
+        sub.branch(0x17CA, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hfound)")
+        sub.block(0x187C, 0x187E)
+        sub.jump(0x187E)
+        sub.fail(sub.fail_proof(("prop", "hfound")), "sv_fail_1882")
     g.prop_check(f"{fl} ≠ 0", "hfound", none)
-    g.branch(0x2F26, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hfound")
-    g.block(0x2F28, 0x2F38)
-    g.mc(0x2F38, 0x421, 0x1480, 0x3F)
+    g.branch(0x17CA, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hfound")
+    g.block(0x17CC, 0x17D6)
+    g.mc(0x17D6, 0x421, 0x1FC, 0x3F)
     k = g.k
-    w10 = f"memLoad32 n0.mem ({fa(0x10)})"
-    g.emit(f"  have w{k}_10 : memLoad32 n{k}.mem ({fa(0x10)}) = {w10} := keep_kk{k}.w32 (by decide) (by decide)")
-    g.words[0x10] = ("U", w10)
-    g.load(0x2F40, "lw")
-    g.store(0x2F42, "sb")
+    w14 = f"memLoad32 n0.mem ({fa(0x14)})"
+    g.emit(f"  have w{k}_14 : memLoad32 n{k}.mem ({fa(0x14)}) = {w14} := keep_kk{k}.w32 (by decide) (by decide)")
+    g.words[0x14] = ("U", w14)
+    g.load(0x17DE, "lw")
+    g.store(0x17E0, "sb")
     k2 = g.k
     g.emit(f"  have b{k2}_420 : n{k2}.mem ({fa(0x420)}) = BitVec.ofNat 8 (sg.getD 0 0) := by")
-    g.emit(f"    rw [b{k2}_420, (ldb n0.mem ({fa(0x10)})).1]; exact b0_10")
+    g.emit(f"    rw [b{k2}_420, (ldb n0.mem ({fa(0x14)})).1]; exact b0_14")
     g.bytes[0x420] = "BitVec.ofNat 8 (sg.getD 0 0)"
-    g.words.pop(0x10)
-    g.block(0x2F46, 0x2F4A)
-    g.load(0x2F4A, "lw")
-    g.load(0x2F4C, "lw")
-    g.load(0x2F4E, "lw")
+    g.words.pop(0x14)
+    g.block(0x17E4, 0x17E8)
+    g.load(0x17E8, "lw")
+    g.load(0x17EA, "lw")
+    g.load(0x17EC, "lw")
     k = g.k
     g.pinned.add(f"hs{k}")
     g.emit(f"  have hs{k} := sig_join (b{k}_420.trans (zext_lo8 _).symm) q{k}_421")
-    ke = g.ed(0x2F50, 0x420, "w34", "w24", "(w20).toNat", "sg", f"hs{k}", "pk_in", "msg_in", "hlen",
+    ke = g.ed(0x17EE, 0x420, "kp", "ckp", "(bl).toNat", "sg", f"hs{k}", "pk_in", "msg_in", "hlen",
               f"(by rw [g{g.k}_12, ofNat_toNat_self])")
-    ev = "evSpec (sigMem M0 (B + 0x21A0 + BitVec.ofNat 32 0x420) sg) w34 (B + 0x21A0 + BitVec.ofNat 32 0x420) w24 (w20).toNat = true"
+    ev = "evSpec (sigMem M0 (B + 0x21A0 + BitVec.ofNat 32 0x420) sg) kp (B + 0x21A0 + BitVec.ofNat 32 0x420) ckp (bl).toNat = true"
 
     def bad(sub):
         sub.set_a0(ke, 0, "ite_eq_right hev")
-        sub.branch(0x2F58, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
-        sub.block(0x2FFE, 0x3000)
-        sub.jump(0x3000)
-        sub.fail(sub.fail_proof(("prop", "hev")))
+        sub.branch(0x17F6, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.block(0x1880, 0x1882)
+        sub.fail(sub.fail_proof(("prop", "hev")), "sv_fail_1882")
     g.prop_check(ev, "hev", bad)
     g.set_a0(ke, 1, "ite_eq_left hev")
-    g.branch(0x2F58, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    stmt, proof = finish(g, 0x2F5A, sorted(set(CL_KEEP_REGS)), set(g.words), {0x10})
+    g.branch(0x17F6, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    stmt, proof = finish(g, 0x17F8, sorted(set(CL_KEEP_REGS)), set(g.words), set())
     info = {"name": "sv_csx", "title": "the checkpoint's signature",
-            "doc": "From the signature loop's head at 0x2D6E, with nothing left, to 0x2F5A: a line signed by the log "
+            "doc": "From the signature loop's head at 0x1642, with nothing left, to 0x17F8: a line signed by the log "
             "was found, and `ed25519_verify` accepts its signature over the checkpoint's body with the log's key.",
-            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS, "start": 0x2D6E,
+            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS, "start": 0x1642,
             "import": "C3BootProofs.Proofs.SvCs"}
     return g, info
 
