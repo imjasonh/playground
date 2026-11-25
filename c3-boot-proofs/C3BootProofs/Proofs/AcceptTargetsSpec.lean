@@ -76,6 +76,14 @@ theorem act_objGet {c : Bool} {v : Bytes} {j : Json} {key : Bytes} {p l : Nat} (
       rw [hf] at h; cases h
       exact ⟨j', rfl, hd.2⟩
 
+/-- `l == l` on byte lists, without `List`'s `LawfulBEq` instance, which
+needs `Classical.choice`. -/
+theorem act_lbeq : ∀ l : List Nat, (l == l) = true
+  | [] => rfl
+  | a :: l => by
+    show (a == a && l == l) = true
+    rw [act_lbeq l, Bool.and_true]; exact decide_eq_true rfl
+
 /-- **`actFinish` from the models.** With `targets.json`'s `signed` value at
 `S`, the entry at `E`, and the results of the lookups as the compiled code
 gets them, `actFinish` accepts. -/
@@ -108,7 +116,8 @@ theorem act_finish {root : TufRoot} {parts : TufParts} {re te gp gl sp sl p1 l1 
   have hstr : j5.asStr = some body := by rw [← tl_strBody hv5, h7]
   unfold actFinish
   simp only [hre, hmd, hmet md hmd, hex, hj1, hj2, hj3, hj4, hj5, hn, hstr, hv, hb, Option.bind_eq_bind,
-    Option.bind_some, require, beq_self_eq_true, Bool.and_self, ite_true]
+    Option.bind_some]
+  rw [show (parts.trustedRoot.length == parts.trustedRoot.length) = true from decide_eq_true rfl, act_lbeq]
   rfl
 
 end C3.Json
