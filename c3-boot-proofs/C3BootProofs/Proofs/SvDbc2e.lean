@@ -84,6 +84,7 @@ theorem sv_dbc2e {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur s
         reg n' (27 : Fin 32) = tbl ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = f2c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = rest ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
@@ -396,6 +397,6 @@ theorem sv_dbc2e {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur s
   have w5_388 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x388) = cp := by rw [m5]; exact w4_388
   have w5_38c : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x38C) = cl := by rw [m5]; exact w4_38c
   clear w4_50 w4_38c w4_388 w4_15c w4_158 w4_154 w4_150 w4_a4 w4_a0 w4_9c w4_98 w4_94 w4_90 w4_8c w4_88 w4_84 w4_80 w4_7c w4_78 w4_74 w4_70 w4_6c w4_68 w4_64 w4_60 w4_5c w4_58 w4_54 w4_30 w4_2c g4_27 g4_25 g4_24 g4_23 g4_22 g4_21 g4_20 g4_19 g4_18 g4_10 g4_9 g4_4 g4_3 g4_2 V4 E4 fR4 t4 rg4 W4 K4 fr4 s4 d4
-  exact .inr ⟨n5, t5, s5, E5, V5, fR5, g5_2, g5_3, g5_4, g5_9, g5_18, g5_19, g5_20, g5_21, g5_22, g5_23, g5_24, g5_25, g5_27, w5_2c, w5_30, w5_54, w5_58, w5_5c, w5_60, w5_64, w5_68, w5_6c, w5_70, w5_74, w5_78, w5_7c, w5_80, w5_84, w5_88, w5_8c, w5_90, w5_94, w5_98, w5_9c, w5_a0, w5_a4, w5_150, w5_154, w5_158, w5_15c, keep_kk5.mono (by decide)⟩
+  exact .inr ⟨n5, t5, s5, E5, V5, fR5, g5_2, g5_3, g5_4, g5_9, g5_18, g5_19, g5_20, g5_21, g5_22, g5_23, g5_24, g5_25, g5_27, w5_2c, w5_30, w5_50, w5_54, w5_58, w5_5c, w5_60, w5_64, w5_68, w5_6c, w5_70, w5_74, w5_78, w5_7c, w5_80, w5_84, w5_88, w5_8c, w5_90, w5_94, w5_98, w5_9c, w5_a0, w5_a4, w5_150, w5_154, w5_158, w5_15c, keep_kk5.mono (by decide)⟩
 
 end C3.RV32.Sv

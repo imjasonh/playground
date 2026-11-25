@@ -227,6 +227,7 @@ theorem sv_dp1 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
         reg n' (27 : Fin 32) = tbl ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = f2c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = rest ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
@@ -6500,6 +6501,6 @@ theorem sv_dp1 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
   have w72_42c : memLoad32 n72.mem (B + 0x21A0 + BitVec.ofNat 32 0x42C) = BitVec.ofNat 32 (tl56.header + tl56.len) := by rw [m72]; exact w71_42c
   have b72_430 : n72.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = BitVec.ofNat 8 tl56.tag := by rw [m72]; exact b71_430
   clear w71_50 b71_430 w71_42c w71_428 w71_424 w71_420 w71_38c w71_388 w71_384 w71_380 w71_15c w71_158 w71_154 w71_150 w71_a4 w71_a0 w71_9c w71_98 w71_94 w71_90 w71_8c w71_88 w71_84 w71_80 w71_7c w71_78 w71_74 w71_70 w71_6c w71_68 w71_64 w71_60 w71_5c w71_58 w71_54 w71_4c w71_48 w71_38 w71_34 w71_30 w71_2c g71_27 g71_26 g71_25 g71_24 g71_23 g71_22 g71_21 g71_20 g71_19 g71_18 g71_12 g71_11 g71_10 g71_9 g71_4 g71_3 g71_2 V71 E71 fR71 t71 rg71 W71 K71 fr71 s71 d71
-  exact .inr ⟨tl56, hr56, hz_60, hz_62, n72, t72, s72, E72, V72, fR72, g72_2, g72_3, g72_4, g72_9, g72_18, g72_19, g72_20, g72_21, g72_22, g72_23, g72_24, g72_25, g72_27, w72_2c, w72_30, w72_54, w72_58, w72_5c, w72_60, w72_64, w72_68, w72_6c, w72_70, w72_74, w72_78, w72_7c, w72_80, w72_84, w72_88, w72_8c, w72_90, w72_94, w72_98, w72_9c, w72_a0, w72_a4, w72_150, w72_154, w72_158, w72_15c, keep_kk72.mono (by decide)⟩
+  exact .inr ⟨tl56, hr56, hz_60, hz_62, n72, t72, s72, E72, V72, fR72, g72_2, g72_3, g72_4, g72_9, g72_18, g72_19, g72_20, g72_21, g72_22, g72_23, g72_24, g72_25, g72_27, w72_2c, w72_30, w72_50, w72_54, w72_58, w72_5c, w72_60, w72_64, w72_68, w72_6c, w72_70, w72_74, w72_78, w72_7c, w72_80, w72_84, w72_88, w72_8c, w72_90, w72_94, w72_98, w72_9c, w72_a0, w72_a4, w72_150, w72_154, w72_158, w72_15c, keep_kk72.mono (by decide)⟩
 
 end C3.RV32.Sv

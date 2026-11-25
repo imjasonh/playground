@@ -146,6 +146,7 @@ theorem sv_trx {B out bp x20 x21 x22 x23 x24 x25 dg flag p0 L0 cp rem sip sil : 
         reg n' (25 : Fin 32) = (BitVec.ofNat 8 ((sr25).getD 0 0)).zeroExtend 32 ∧
         reg n' (26 : Fin 32) = x26 ∧
         reg n' (27 : Fin 32) = x27 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x64) = dg ∧
         (∀ j, j < 47 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x380 + j)) = BitVec.ofNat 8 ((sr25).getD (1 + j) 0)) ∧
         (∀ j, j < 48 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x3AF + j)) = BitVec.ofNat 8 ((ss25).getD j 0)) ∧
         (∀ j, j < 48 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x421 + j)) = BitVec.ofNat 8 ((sr25).getD j 0)) ∧
@@ -2957,6 +2958,6 @@ theorem sv_trx {B out bp x20 x21 x22 x23 x24 x25 dg flag p0 L0 cp rem sip sil : 
   have q32_421 : ∀ j, j < 48 → n32.mem (B + 0x21A0 + BitVec.ofNat 32 (0x421 + j)) = BitVec.ofNat 8 ((sr25).getD j 0) := fun j hj => by rw [m32]; exact q31_421 j hj
   have q32_451 : ∀ j, j < 48 → n32.mem (B + 0x21A0 + BitVec.ofNat 32 (0x451 + j)) = BitVec.ofNat 8 ((ss25).getD j 0) := fun j hj => by rw [m32]; exact q31_451 j hj
   clear q31_451 q31_421 q31_3af q31_380 b31_421 b31_420 w31_404 w31_400 w31_37c w31_378 w31_268 w31_264 w31_260 w31_25c w31_7c w31_64 g31_10 g31_27 g31_26 g31_25 g31_24 g31_23 g31_22 g31_21 g31_20 g31_19 g31_18 g31_9 g31_8 g31_4 g31_3 g31_2 V31 E31 fR31 t31 fr31 m31 s31 u31 d31
-  exact .inr ⟨hfl, op9, ol9, hr9, te9, hte9, hoid, vp20, vl20, hr20, te20, ht20, sr25, ss25, hr25, hsi0, n32, t32, s32, E32, V32, fR32, g32_2, g32_3, g32_4, g32_18, g32_19, g32_20, g32_21, g32_22, g32_23, g32_24, g32_25, g32_26, g32_27, q32_380, q32_3af, q32_421, q32_451, keep_kk32.mono (by decide)⟩
+  exact .inr ⟨hfl, op9, ol9, hr9, te9, hte9, hoid, vp20, vl20, hr20, te20, ht20, sr25, ss25, hr25, hsi0, n32, t32, s32, E32, V32, fR32, g32_2, g32_3, g32_4, g32_18, g32_19, g32_20, g32_21, g32_22, g32_23, g32_24, g32_25, g32_26, g32_27, w32_64, q32_380, q32_3af, q32_421, q32_451, keep_kk32.mono (by decide)⟩
 
 end C3.RV32.Sv

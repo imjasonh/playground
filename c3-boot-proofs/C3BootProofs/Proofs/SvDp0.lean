@@ -226,6 +226,7 @@ theorem sv_dp0 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
         reg n' (27 : Fin 32) = tbl ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = f2c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = rest ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
@@ -5621,6 +5622,6 @@ theorem sv_dp0 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
   have w59_42c : memLoad32 n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x42C) = BitVec.ofNat 32 (tl43.header + tl43.len) := by rw [m59]; exact w58_42c
   have b59_430 : n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = BitVec.ofNat 8 tl43.tag := by rw [m59]; exact b58_430
   clear w58_50 b58_430 w58_42c w58_428 w58_424 w58_420 w58_38c w58_388 w58_384 w58_380 w58_15c w58_158 w58_154 w58_150 w58_a4 w58_a0 w58_9c w58_98 w58_94 w58_90 w58_8c w58_88 w58_84 w58_80 w58_7c w58_78 w58_74 w58_70 w58_6c w58_68 w58_64 w58_60 w58_5c w58_58 w58_54 w58_4c w58_48 w58_38 w58_34 w58_30 w58_2c g58_27 g58_26 g58_25 g58_24 g58_23 g58_22 g58_21 g58_20 g58_19 g58_18 g58_12 g58_11 g58_10 g58_9 g58_4 g58_3 g58_2 V58 E58 fR58 t58 rg58 W58 K58 fr58 s58 d58
-  exact .inr ⟨tl43, hr43, hz_47, hz_49, n59, t59, s59, E59, V59, fR59, g59_2, g59_3, g59_4, g59_9, g59_18, g59_19, g59_20, g59_21, g59_22, g59_23, g59_24, g59_25, g59_27, w59_2c, w59_30, w59_54, w59_58, w59_5c, w59_60, w59_64, w59_68, w59_6c, w59_70, w59_74, w59_78, w59_7c, w59_80, w59_84, w59_88, w59_8c, w59_90, w59_94, w59_98, w59_9c, w59_a0, w59_a4, w59_150, w59_154, w59_158, w59_15c, keep_kk59.mono (by decide)⟩
+  exact .inr ⟨tl43, hr43, hz_47, hz_49, n59, t59, s59, E59, V59, fR59, g59_2, g59_3, g59_4, g59_9, g59_18, g59_19, g59_20, g59_21, g59_22, g59_23, g59_24, g59_25, g59_27, w59_2c, w59_30, w59_50, w59_54, w59_58, w59_5c, w59_60, w59_64, w59_68, w59_6c, w59_70, w59_74, w59_78, w59_7c, w59_80, w59_84, w59_88, w59_8c, w59_90, w59_94, w59_98, w59_9c, w59_a0, w59_a4, w59_150, w59_154, w59_158, w59_15c, keep_kk59.mono (by decide)⟩
 
 end C3.RV32.Sv

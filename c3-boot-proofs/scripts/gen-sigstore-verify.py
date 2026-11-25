@@ -4079,7 +4079,7 @@ def d_policy_loop(g, upto):
 
 
 D_KEEP_REGS = LOOP_REGS
-D_KEEP_WORDS = LOOP_KEEP | {0x158, 0x15C}
+D_KEEP_WORDS = LOOP_KEEP | {0x50, 0x158, 0x15C}
 D_BINDERS = LOOP_BINDERS.replace(" : Word}", " op ol vp vl rest : Word}")
 
 
@@ -7373,7 +7373,7 @@ def stage_cg(kpad):
     whose first `=` is at position `kpad` (4: none): the group decodes."""
     g = Gen(f"Cg{kpad}")
     g.generic_alu = True
-    params = cs_start(g, CG_REGS, CG_WORDS)
+    params = cs_start(g, CG_REGS, {**CG_WORDS, 0x2C: "w2c"})
     params += ["(hne : pg ≠ w8)", "(CK0 : SvCkCode M0)", "(pg_in : SvIn B pg 4)",
                "(pb1 : SvIn B (pg + 0x1) 1)", "(pb2 : SvIn B (pg + 0x2) 1)", "(pb3 : SvIn B (pg + 0x3) 1)"]
     g.load(0x16D4, "lw")
@@ -8676,9 +8676,9 @@ def stage_tr6():
     return g, info
 
 
-TA_BINDERS = "{B out bp x20 x21 x22 x23 x25 dg flag p0 L0 cp rem : Word} {v : Nat → Word} {n0 : Machine}"
-TA_WORDS = {0x64: "dg", 0x7C: "flag", 0x25C: "p0", 0x260: "L0", 0x264: "cp", 0x268: "rem"}
-TA_KEEP = {0x64, 0x7C, 0x25C, 0x260, 0x264, 0x268}
+TA_BINDERS = "{B out bp x20 x21 x22 x23 x25 dg flag p0 L0 cp rem sip sil : Word} {v : Nat → Word} {n0 : Machine}"
+TA_WORDS = {0x64: "dg", 0x7C: "flag", 0x25C: "p0", 0x260: "L0", 0x264: "cp", 0x268: "rem", 0x378: "sip", 0x37C: "sil"}
+TA_KEEP = {0x64, 0x7C, 0x25C, 0x260, 0x264, 0x268, 0x378, 0x37C}
 T_CMS = "BitVec.ofNat 32 (img% svConstCmsAddress + 0x{:X})"
 TCT_OID = "memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstCmsAddress + 0x15)) 9"
 TMD_OID = "memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstCmsAddress + 0x1E)) 9"
@@ -8690,7 +8690,7 @@ def ta_start(g, regs=None, words=None, slices=None):
     r.update(regs or {})
     w = dict(TA_WORDS)
     w.update(words or {})
-    sl = {("cp", "rem"): "cr_in", ("p0", "L0"): "p0_in"}
+    sl = {("cp", "rem"): "cr_in", ("p0", "L0"): "p0_in", ("sip", "sil"): "si_in"}
     sl.update(slices or {})
     return start(g, r, w, sl)
 
@@ -8700,7 +8700,8 @@ def stage_tr7():
     g = Gen("Tr7")
     r = t_regs0()
     r[10] = ("U", "ap")
-    params = start(g, r, {0x424: "ap", 0x428: "al", 0x42C: "aq", 0x430: "ah"}, {("ap", "al"): "a_in"})
+    params = start(g, r, {0x424: "ap", 0x428: "al", 0x42C: "aq", 0x430: "ah", 0x378: "sip", 0x37C: "sil"},
+                   {("ap", "al"): "a_in", ("sip", "sil"): "si_in"})
     g.store(0xE7C, "sw")
     g.store(0xE7E, "sw")
     g.block(0xE80, 0xE84)
@@ -8735,7 +8736,7 @@ def stage_tr7():
             "doc": "From 0xE7C to the signed attributes loop's head at 0xEA0: the signed attributes aren't empty, "
             "no digest or content type is seen yet, and the loop's reader covers them.",
             "params": params, "stmt": stmt, "proof": proof,
-            "binders": T_BINDERS0.replace("tsp tsl", "ap al aq ah"),
+            "binders": T_BINDERS0.replace("tsp tsl", "ap al aq ah sip sil"),
             "start": 0xE7C, "import": "C3BootProofs.Proofs.SvSha2"}
     return g, info
 
@@ -8815,7 +8816,7 @@ def stage_tra():
     g.branch(0xF4E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
     g.block(0xF52, 0xF58)
     g.branch(0xF58, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    stmt, proof = finish(g, 0xF5C, T_REGS, TA_KEEP | {0x408, 0x40C}, set())
+    stmt, proof = finish(g, 0xF5C, sorted(T_REGS + [9]), TA_KEEP | {0x408, 0x40C}, set())
     info = {"name": "sv_tra", "title": "a signed attribute's type",
             "doc": "One signed attribute, from the loop head at 0xEA0 to 0xF5C: a sequence of an OID and a set "
             "with nothing after it, whose OID no earlier attribute has.",
@@ -8828,7 +8829,7 @@ def stage_trv(kind):
     """One signed attribute from 0xF5C to 0xFF8: a contentType, a messageDigest,
     or another attribute."""
     g = Gen("Trv" + kind)
-    params = ta_start(g, {9: ("U", "op"), 26: ("U", "ol"), 27: ("U", "L0")}, {0x408: "vcp", 0x40C: "vcl"},
+    params = ta_start(g, {9: ("U", "op"), 24: ("U", "x24"), 26: ("U", "ol"), 27: ("U", "L0")}, {0x408: "vcp", 0x40C: "vcl"},
                       {("vcp", "vcl"): "vc_in"})
     params += ["(oid_in : SvIn B op ol.toNat)"]
     g.slices[("op", "ol")] = "oid_in"
@@ -8930,7 +8931,7 @@ def stage_trx():
     """The signed attributes loop's exit at 0xFF8 to 0x10A4: a digest and a
     content type seen, the signature algorithm, and the signature."""
     g = Gen("Trx")
-    params = ta_start(g, {24: ("U", "x24")}, {0x378: "sip", 0x37C: "sil"}, {("sip", "sil"): "si_in"})
+    params = ta_start(g, {24: ("U", "x24")})
     params += ["(hrem : rem = 0)", "(hflag : flag = 0 ∨ flag = 1)"]
     g.load(0xFF8, "lw")
     g.branch(0xFFC, False, f"by rw [g{g.k}_24, s{g.k}.zero]; exact br_bne_f hrem")
@@ -9037,13 +9038,13 @@ def stage_trx():
     g.mc(0x1094, 0x380, 0x422, 0x5F)
     g.load(0x109C, "lw")
     t_rest(g, 0x10A0, 10, 0x7A4, "hsi0")
-    stmt, proof = finish(g, 0x10A4, T_REGS, {0x74, 0x78}, set())
+    stmt, proof = finish(g, 0x10A4, T_REGS, {0x64, 0x74, 0x78}, set())
     info = {"name": "sv_trx", "title": "the timestamp's signature algorithm",
             "doc": "The signed attributes loop's exit at 0xFF8 to 0x10A4: both a message digest and a content type "
             "were seen, the `SignerInfo`'s signature algorithm is ecdsa-with-SHA384 with no parameters, its "
             "signature is a DER ECDSA signature with 48-byte scalars, and nothing follows it.",
             "params": params, "stmt": stmt, "proof": proof,
-            "binders": TA_BINDERS.replace("x25", "x24 x25").replace("rem", "rem sip sil"),
+            "binders": TA_BINDERS.replace("x25", "x24 x25"),
             "start": 0xFF8, "import": "C3BootProofs.Proofs.SvSha2"}
     return g, info
 

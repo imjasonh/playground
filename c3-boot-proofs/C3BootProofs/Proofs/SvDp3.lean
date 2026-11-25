@@ -229,6 +229,7 @@ theorem sv_dp3 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
         reg n' (27 : Fin 32) = tbl ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = f2c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = rest ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
@@ -8258,6 +8259,6 @@ theorem sv_dp3 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
   have w98_42c : memLoad32 n98.mem (B + 0x21A0 + BitVec.ofNat 32 0x42C) = BitVec.ofNat 32 (tl82.header + tl82.len) := by rw [m98]; exact w97_42c
   have b98_430 : n98.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = BitVec.ofNat 8 tl82.tag := by rw [m98]; exact b97_430
   clear w97_50 b97_430 w97_42c w97_428 w97_424 w97_420 w97_38c w97_388 w97_384 w97_380 w97_15c w97_158 w97_154 w97_150 w97_a4 w97_a0 w97_9c w97_98 w97_94 w97_90 w97_8c w97_88 w97_84 w97_80 w97_7c w97_78 w97_74 w97_70 w97_6c w97_68 w97_64 w97_60 w97_5c w97_58 w97_54 w97_4c w97_48 w97_38 w97_34 w97_30 w97_2c g97_27 g97_26 g97_25 g97_24 g97_23 g97_22 g97_21 g97_20 g97_19 g97_18 g97_12 g97_11 g97_10 g97_9 g97_4 g97_3 g97_2 V97 E97 fR97 t97 rg97 W97 K97 fr97 s97 d97
-  exact .inr ⟨tl82, hr82, hz_86, hz_88, n98, t98, s98, E98, V98, fR98, g98_2, g98_3, g98_4, g98_9, g98_18, g98_19, g98_20, g98_21, g98_22, g98_23, g98_24, g98_25, g98_27, w98_2c, w98_30, w98_54, w98_58, w98_5c, w98_60, w98_64, w98_68, w98_6c, w98_70, w98_74, w98_78, w98_7c, w98_80, w98_84, w98_88, w98_8c, w98_90, w98_94, w98_98, w98_9c, w98_a0, w98_a4, w98_150, w98_154, w98_158, w98_15c, keep_kk98.mono (by decide)⟩
+  exact .inr ⟨tl82, hr82, hz_86, hz_88, n98, t98, s98, E98, V98, fR98, g98_2, g98_3, g98_4, g98_9, g98_18, g98_19, g98_20, g98_21, g98_22, g98_23, g98_24, g98_25, g98_27, w98_2c, w98_30, w98_50, w98_54, w98_58, w98_5c, w98_60, w98_64, w98_68, w98_6c, w98_70, w98_74, w98_78, w98_7c, w98_80, w98_84, w98_88, w98_8c, w98_90, w98_94, w98_98, w98_9c, w98_a0, w98_a4, w98_150, w98_154, w98_158, w98_15c, keep_kk98.mono (by decide)⟩
 
 end C3.RV32.Sv

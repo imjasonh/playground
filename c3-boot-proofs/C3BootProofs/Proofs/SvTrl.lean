@@ -16,7 +16,7 @@ set_option linter.unusedVariables false
 
 
 set_option maxHeartbeats 0 in
-theorem sv_trl {B out bp x20 x21 x22 x23 x24 x25 dg flag p0 L0 cp rem : Word} {v : Nat → Word} {n0 : Machine}
+theorem sv_trl {B out bp x20 x21 x22 x23 x24 x25 dg flag p0 L0 cp rem sip sil : Word} {v : Nat → Word} {n0 : Machine}
     (FW : Fr (B + 0xFFFFEC10) 0x3A50) (E0 : SvCode n0.mem) (V0 : SvSaves B n0.mem v) (hret : v 0 &&& ~~~1 = v 0)
     (hO : SvOut B out) (s0 : St n0.mem SV n0 0xFF8 (reg n0))
     (M0 : Word → BitVec 8) (fM : ∀ x, SvR B x → n0.mem x = M0 x)
@@ -37,8 +37,11 @@ theorem sv_trl {B out bp x20 x21 x22 x23 x24 x25 dg flag p0 L0 cp rem : Word} {v
     (w0_260 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) = L0)
     (w0_264 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x264) = cp)
     (w0_268 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x268) = rem)
+    (w0_378 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x378) = sip)
+    (w0_37c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x37C) = sil)
     (cr_in : SvIn B (cp) (rem).toNat)
     (p0_in : SvIn B (p0) (L0).toNat)
+    (si_in : SvIn B (sip) (sil).toNat)
     (hrem : rem ≠ 0) :
     (¬ (True) ∧ SvErrRet B out v n0) ∨
     (∃ n', Steps n0 n' ∧
@@ -65,6 +68,8 @@ theorem sv_trl {B out bp x20 x21 x22 x23 x24 x25 dg flag p0 L0 cp rem : Word} {v
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) = L0 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x264) = cp ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x268) = rem ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x378) = sip ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x37C) = sil ∧
         SvKeepL B n0.mem n'.mem []) := by
   have F := sv_frW FW
   have t0 : Steps n0 n0 := .refl n0
@@ -103,6 +108,8 @@ theorem sv_trl {B out bp x20 x21 x22 x23 x24 x25 dg flag p0 L0 cp rem : Word} {v
   have w1_260 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) = L0 := by rw [m1]; exact w0_260
   have w1_264 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x264) = cp := by rw [m1]; exact w0_264
   have w1_268 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x268) = rem := by rw [m1]; exact w0_268
+  have w1_378 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x378) = sip := by rw [m1]; exact w0_378
+  have w1_37c : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x37C) = sil := by rw [m1]; exact w0_37c
   -- 0xFFC: branch, taken
   obtain ⟨n2, d2, u2⟩ := s1.taken E1.self 0xEA0 sv_at_ffc
     (by decide) (by rw [g1_24, s1.zero]; exact br_bne_t hrem)
@@ -134,7 +141,9 @@ theorem sv_trl {B out bp x20 x21 x22 x23 x24 x25 dg flag p0 L0 cp rem : Word} {v
   have w2_260 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) = L0 := by rw [m2]; exact w1_260
   have w2_264 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x264) = cp := by rw [m2]; exact w1_264
   have w2_268 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x268) = rem := by rw [m2]; exact w1_268
-  clear w1_268 w1_264 w1_260 w1_25c w1_7c w1_64 g1_24 g1_27 g1_26 g1_25 g1_23 g1_22 g1_21 g1_20 g1_19 g1_18 g1_4 g1_3 g1_2 V1 E1 fR1 t1 fr1 m1 s1 u1 d1 g0_4 g0_3 fR0 t0
-  exact .inr ⟨n2, t2, s2, E2, V2, fR2, g2_2, g2_3, g2_4, g2_18, g2_19, g2_20, g2_21, g2_22, g2_23, g2_24, g2_25, g2_26, g2_27, w2_64, w2_7c, w2_25c, w2_260, w2_264, w2_268, keep_kk2.mono (by decide)⟩
+  have w2_378 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x378) = sip := by rw [m2]; exact w1_378
+  have w2_37c : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x37C) = sil := by rw [m2]; exact w1_37c
+  clear w1_37c w1_378 w1_268 w1_264 w1_260 w1_25c w1_7c w1_64 g1_24 g1_27 g1_26 g1_25 g1_23 g1_22 g1_21 g1_20 g1_19 g1_18 g1_4 g1_3 g1_2 V1 E1 fR1 t1 fr1 m1 s1 u1 d1 g0_4 g0_3 fR0 t0
+  exact .inr ⟨n2, t2, s2, E2, V2, fR2, g2_2, g2_3, g2_4, g2_18, g2_19, g2_20, g2_21, g2_22, g2_23, g2_24, g2_25, g2_26, g2_27, w2_64, w2_7c, w2_25c, w2_260, w2_264, w2_268, w2_378, w2_37c, keep_kk2.mono (by decide)⟩
 
 end C3.RV32.Sv

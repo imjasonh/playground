@@ -230,6 +230,7 @@ theorem sv_dp4 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
         reg n' (27 : Fin 32) = tbl ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = f2c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = rest ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
@@ -9137,6 +9138,6 @@ theorem sv_dp4 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
   have w111_42c : memLoad32 n111.mem (B + 0x21A0 + BitVec.ofNat 32 0x42C) = BitVec.ofNat 32 (tl95.header + tl95.len) := by rw [m111]; exact w110_42c
   have b111_430 : n111.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = BitVec.ofNat 8 tl95.tag := by rw [m111]; exact b110_430
   clear w110_50 b110_430 w110_42c w110_428 w110_424 w110_420 w110_38c w110_388 w110_384 w110_380 w110_15c w110_158 w110_154 w110_150 w110_a4 w110_a0 w110_9c w110_98 w110_94 w110_90 w110_8c w110_88 w110_84 w110_80 w110_7c w110_78 w110_74 w110_70 w110_6c w110_68 w110_64 w110_60 w110_5c w110_58 w110_54 w110_4c w110_48 w110_38 w110_34 w110_30 w110_2c g110_27 g110_26 g110_25 g110_24 g110_23 g110_22 g110_21 g110_20 g110_19 g110_18 g110_12 g110_11 g110_10 g110_9 g110_4 g110_3 g110_2 V110 E110 fR110 t110 rg110 W110 K110 fr110 s110 d110
-  exact .inr ⟨tl95, hr95, hz_99, hz_101, n111, t111, s111, E111, V111, fR111, g111_2, g111_3, g111_4, g111_9, g111_18, g111_19, g111_20, g111_21, g111_22, g111_23, g111_24, g111_25, g111_27, w111_2c, w111_30, w111_54, w111_58, w111_5c, w111_60, w111_64, w111_68, w111_6c, w111_70, w111_74, w111_78, w111_7c, w111_80, w111_84, w111_88, w111_8c, w111_90, w111_94, w111_98, w111_9c, w111_a0, w111_a4, w111_150, w111_154, w111_158, w111_15c, keep_kk111.mono (by decide)⟩
+  exact .inr ⟨tl95, hr95, hz_99, hz_101, n111, t111, s111, E111, V111, fR111, g111_2, g111_3, g111_4, g111_9, g111_18, g111_19, g111_20, g111_21, g111_22, g111_23, g111_24, g111_25, g111_27, w111_2c, w111_30, w111_50, w111_54, w111_58, w111_5c, w111_60, w111_64, w111_68, w111_6c, w111_70, w111_74, w111_78, w111_7c, w111_80, w111_84, w111_88, w111_8c, w111_90, w111_94, w111_98, w111_9c, w111_a0, w111_a4, w111_150, w111_154, w111_158, w111_15c, keep_kk111.mono (by decide)⟩
 
 end C3.RV32.Sv

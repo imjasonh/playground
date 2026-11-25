@@ -156,6 +156,7 @@ theorem sv_dku2 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl
         reg n' (27 : Fin 32) = tbl ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = f2c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = BitVec.ofNat 32 0x1 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = rest ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
@@ -4177,7 +4178,7 @@ theorem sv_dku2 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl
     have w22_15c : memLoad32 n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C) = rest := by rw [m22]; exact w21_15c
     have w22_38c : memLoad32 n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x38C) = vrem := by rw [m22]; exact w21_38c
     clear w21_50 w21_38c w21_15c w21_158 w21_154 w21_150 w21_a4 w21_a0 w21_9c w21_98 w21_94 w21_90 w21_8c w21_88 w21_84 w21_80 w21_7c w21_78 w21_74 w21_70 w21_6c w21_68 w21_64 w21_60 w21_5c w21_58 w21_54 w21_30 w21_2c g21_27 g21_25 g21_24 g21_23 g21_22 g21_21 g21_20 g21_19 g21_18 g21_14 g21_13 g21_12 g21_11 g21_10 g21_9 g21_4 g21_3 g21_2 V21 E21 fR21 t21 rg21 W21 K21 fr21 s21 d21
-    exact .inr ⟨h2, hz_10u, hz_12, hz_16, n22, t22, s22, E22, V22, fR22, g22_2, g22_3, g22_4, g22_9, g22_18, g22_19, g22_20, g22_21, g22_22, g22_23, g22_24, g22_25, g22_27, w22_2c, w22_30, w22_54, w22_58, w22_5c, w22_60, w22_64, w22_68, w22_6c, w22_70, w22_74, w22_78, w22_7c, w22_80, w22_84, w22_88, w22_8c, w22_90, w22_94, w22_98, w22_9c, w22_a0, w22_a4, w22_150, w22_154, w22_158, w22_15c, keep_kk22.mono (by decide)⟩
+    exact .inr ⟨h2, hz_10u, hz_12, hz_16, n22, t22, s22, E22, V22, fR22, g22_2, g22_3, g22_4, g22_9, g22_18, g22_19, g22_20, g22_21, g22_22, g22_23, g22_24, g22_25, g22_27, w22_2c, w22_30, w22_50, w22_54, w22_58, w22_5c, w22_60, w22_64, w22_68, w22_6c, w22_70, w22_74, w22_78, w22_7c, w22_80, w22_84, w22_88, w22_8c, w22_90, w22_94, w22_98, w22_9c, w22_a0, w22_a4, w22_150, w22_154, w22_158, w22_15c, keep_kk22.mono (by decide)⟩
   -- 0x542: branch, not taken
   obtain ⟨n9, d9, u9⟩ := s8.notTaken E8.self 0x546 sv_at_542
     (by decide) (by rw [g8_14, s8.zero]; exact br_beq_f (zext_ne_zero hl))
@@ -5983,6 +5984,6 @@ theorem sv_dku2 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl
   have w23_15c : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C) = rest := by rw [m23]; exact w22_15c
   have w23_38c : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x38C) = vrem := by rw [m23]; exact w22_38c
   clear w22_50 w22_38c w22_15c w22_158 w22_154 w22_150 w22_a4 w22_a0 w22_9c w22_98 w22_94 w22_90 w22_8c w22_88 w22_84 w22_80 w22_7c w22_78 w22_74 w22_70 w22_6c w22_68 w22_64 w22_60 w22_5c w22_58 w22_54 w22_30 w22_2c g22_27 g22_25 g22_24 g22_23 g22_22 g22_21 g22_20 g22_19 g22_18 g22_14 g22_13 g22_12 g22_11 g22_10 g22_9 g22_4 g22_3 g22_2 V22 E22 fR22 t22 rg22 W22 K22 fr22 s22 d22
-  exact .inr ⟨h2, hz_11u, hz_13, hz_17, n23, t23, s23, E23, V23, fR23, g23_2, g23_3, g23_4, g23_9, g23_18, g23_19, g23_20, g23_21, g23_22, g23_23, g23_24, g23_25, g23_27, w23_2c, w23_30, w23_54, w23_58, w23_5c, w23_60, w23_64, w23_68, w23_6c, w23_70, w23_74, w23_78, w23_7c, w23_80, w23_84, w23_88, w23_8c, w23_90, w23_94, w23_98, w23_9c, w23_a0, w23_a4, w23_150, w23_154, w23_158, w23_15c, keep_kk23.mono (by decide)⟩
+  exact .inr ⟨h2, hz_11u, hz_13, hz_17, n23, t23, s23, E23, V23, fR23, g23_2, g23_3, g23_4, g23_9, g23_18, g23_19, g23_20, g23_21, g23_22, g23_23, g23_24, g23_25, g23_27, w23_2c, w23_30, w23_50, w23_54, w23_58, w23_5c, w23_60, w23_64, w23_68, w23_6c, w23_70, w23_74, w23_78, w23_7c, w23_80, w23_84, w23_88, w23_8c, w23_90, w23_94, w23_98, w23_9c, w23_a0, w23_a4, w23_150, w23_154, w23_158, w23_15c, keep_kk23.mono (by decide)⟩
 
 end C3.RV32.Sv

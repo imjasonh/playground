@@ -98,6 +98,7 @@ theorem sv_deku3 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur s
         reg n' (27 : Fin 32) = tbl ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = BitVec.ofNat 32 0x1 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = rest ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
@@ -905,6 +906,6 @@ theorem sv_deku3 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur s
   have w10_388 : memLoad32 n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x388) = cp := by rw [m10]; exact w9_388
   have w10_38c : memLoad32 n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x38C) = cl := by rw [m10]; exact w9_38c
   clear w9_50 w9_38c w9_388 w9_15c w9_158 w9_154 w9_150 w9_a4 w9_a0 w9_9c w9_98 w9_94 w9_90 w9_8c w9_88 w9_84 w9_80 w9_7c w9_78 w9_74 w9_70 w9_6c w9_68 w9_64 w9_60 w9_5c w9_58 w9_54 w9_30 w9_2c g9_27 g9_26 g9_25 g9_24 g9_23 g9_22 g9_21 g9_20 g9_19 g9_18 g9_10 g9_9 g9_4 g9_3 g9_2 V9 E9 fR9 t9 rg9 W9 K9 fr9 s9 d9
-  exact .inr ⟨hz_3, n10, t10, s10, E10, V10, fR10, g10_2, g10_3, g10_4, g10_9, g10_18, g10_19, g10_20, g10_21, g10_22, g10_23, g10_24, g10_25, g10_27, w10_2c, w10_30, w10_54, w10_58, w10_5c, w10_60, w10_64, w10_68, w10_6c, w10_70, w10_74, w10_78, w10_7c, w10_80, w10_84, w10_88, w10_8c, w10_90, w10_94, w10_98, w10_9c, w10_a0, w10_a4, w10_150, w10_154, w10_158, w10_15c, keep_kk10.mono (by decide)⟩
+  exact .inr ⟨hz_3, n10, t10, s10, E10, V10, fR10, g10_2, g10_3, g10_4, g10_9, g10_18, g10_19, g10_20, g10_21, g10_22, g10_23, g10_24, g10_25, g10_27, w10_2c, w10_30, w10_50, w10_54, w10_58, w10_5c, w10_60, w10_64, w10_68, w10_6c, w10_70, w10_74, w10_78, w10_7c, w10_80, w10_84, w10_88, w10_8c, w10_90, w10_94, w10_98, w10_9c, w10_a0, w10_a4, w10_150, w10_154, w10_158, w10_15c, keep_kk10.mono (by decide)⟩
 
 end C3.RV32.Sv

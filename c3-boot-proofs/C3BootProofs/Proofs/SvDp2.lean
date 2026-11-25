@@ -228,6 +228,7 @@ theorem sv_dp2 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
         reg n' (27 : Fin 32) = tbl ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = f2c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = rest ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
@@ -7379,6 +7380,6 @@ theorem sv_dp2 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
   have w85_42c : memLoad32 n85.mem (B + 0x21A0 + BitVec.ofNat 32 0x42C) = BitVec.ofNat 32 (tl69.header + tl69.len) := by rw [m85]; exact w84_42c
   have b85_430 : n85.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = BitVec.ofNat 8 tl69.tag := by rw [m85]; exact b84_430
   clear w84_50 b84_430 w84_42c w84_428 w84_424 w84_420 w84_38c w84_388 w84_384 w84_380 w84_15c w84_158 w84_154 w84_150 w84_a4 w84_a0 w84_9c w84_98 w84_94 w84_90 w84_8c w84_88 w84_84 w84_80 w84_7c w84_78 w84_74 w84_70 w84_6c w84_68 w84_64 w84_60 w84_5c w84_58 w84_54 w84_4c w84_48 w84_38 w84_34 w84_30 w84_2c g84_27 g84_26 g84_25 g84_24 g84_23 g84_22 g84_21 g84_20 g84_19 g84_18 g84_12 g84_11 g84_10 g84_9 g84_4 g84_3 g84_2 V84 E84 fR84 t84 rg84 W84 K84 fr84 s84 d84
-  exact .inr ⟨tl69, hr69, hz_73, hz_75, n85, t85, s85, E85, V85, fR85, g85_2, g85_3, g85_4, g85_9, g85_18, g85_19, g85_20, g85_21, g85_22, g85_23, g85_24, g85_25, g85_27, w85_2c, w85_30, w85_54, w85_58, w85_5c, w85_60, w85_64, w85_68, w85_6c, w85_70, w85_74, w85_78, w85_7c, w85_80, w85_84, w85_88, w85_8c, w85_90, w85_94, w85_98, w85_9c, w85_a0, w85_a4, w85_150, w85_154, w85_158, w85_15c, keep_kk85.mono (by decide)⟩
+  exact .inr ⟨tl69, hr69, hz_73, hz_75, n85, t85, s85, E85, V85, fR85, g85_2, g85_3, g85_4, g85_9, g85_18, g85_19, g85_20, g85_21, g85_22, g85_23, g85_24, g85_25, g85_27, w85_2c, w85_30, w85_50, w85_54, w85_58, w85_5c, w85_60, w85_64, w85_68, w85_6c, w85_70, w85_74, w85_78, w85_7c, w85_80, w85_84, w85_88, w85_8c, w85_90, w85_94, w85_98, w85_9c, w85_a0, w85_a4, w85_150, w85_154, w85_158, w85_15c, keep_kk85.mono (by decide)⟩
 
 end C3.RV32.Sv

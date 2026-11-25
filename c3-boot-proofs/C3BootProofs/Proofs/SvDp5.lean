@@ -181,6 +181,7 @@ theorem sv_dp5 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
         reg n' (27 : Fin 32) = tbl ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = f2c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = rest ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
@@ -6380,6 +6381,6 @@ theorem sv_dp5 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl0
   have w92_158 : memLoad32 n92.mem (B + 0x21A0 + BitVec.ofNat 32 0x158) = cur := by rw [m92]; exact w91_158
   have w92_15c : memLoad32 n92.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C) = rest := by rw [m92]; exact w91_15c
   clear w91_50 w91_15c w91_158 w91_154 w91_150 w91_a4 w91_a0 w91_9c w91_98 w91_94 w91_90 w91_8c w91_88 w91_84 w91_80 w91_7c w91_78 w91_74 w91_70 w91_6c w91_68 w91_64 w91_60 w91_5c w91_58 w91_54 w91_4c w91_48 w91_38 w91_34 w91_30 w91_2c g91_27 g91_26 g91_25 g91_24 g91_23 g91_22 g91_21 g91_20 g91_19 g91_18 g91_11 g91_10 g91_9 g91_4 g91_3 g91_2 V91 E91 fR91 t91 rg91 W91 K91 fr91 s91 d91
-  exact .inr ⟨n92, t92, s92, E92, V92, fR92, g92_2, g92_3, g92_4, g92_9, g92_18, g92_19, g92_20, g92_21, g92_22, g92_23, g92_24, g92_25, g92_27, w92_2c, w92_30, w92_54, w92_58, w92_5c, w92_60, w92_64, w92_68, w92_6c, w92_70, w92_74, w92_78, w92_7c, w92_80, w92_84, w92_88, w92_8c, w92_90, w92_94, w92_98, w92_9c, w92_a0, w92_a4, w92_150, w92_154, w92_158, w92_15c, keep_kk92.mono (by decide)⟩
+  exact .inr ⟨n92, t92, s92, E92, V92, fR92, g92_2, g92_3, g92_4, g92_9, g92_18, g92_19, g92_20, g92_21, g92_22, g92_23, g92_24, g92_25, g92_27, w92_2c, w92_30, w92_50, w92_54, w92_58, w92_5c, w92_60, w92_64, w92_68, w92_6c, w92_70, w92_74, w92_78, w92_7c, w92_80, w92_84, w92_88, w92_8c, w92_90, w92_94, w92_98, w92_9c, w92_a0, w92_a4, w92_150, w92_154, w92_158, w92_15c, keep_kk92.mono (by decide)⟩
 
 end C3.RV32.Sv

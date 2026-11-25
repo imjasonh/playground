@@ -147,6 +147,7 @@ theorem sv_dbc2 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl
         reg n' (27 : Fin 32) = tbl ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = f2c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = rest ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
@@ -5947,6 +5948,6 @@ theorem sv_dbc2 {B out bp tbp dg rootp ll sgp kp sgl tbl f2c f30 rem p0 L cur sl
   have w20_420 : memLoad32 n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = ip10 := by rw [m20]; exact w19_420
   have w20_424 : memLoad32 n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x424) = il10 := by rw [m20]; exact w19_424
   clear w19_50 w19_424 w19_420 w19_38c w19_388 w19_15c w19_158 w19_154 w19_150 w19_a4 w19_a0 w19_9c w19_98 w19_94 w19_90 w19_8c w19_88 w19_84 w19_80 w19_7c w19_78 w19_74 w19_70 w19_6c w19_68 w19_64 w19_60 w19_5c w19_58 w19_54 w19_30 w19_2c g19_27 g19_26 g19_25 g19_24 g19_23 g19_22 g19_21 g19_20 g19_19 g19_18 g19_10 g19_9 g19_4 g19_3 g19_2 V19 E19 fR19 t19 rg19 W19 K19 fr19 s19 d19
-  exact .inr ⟨hz_5, hz_7, ip10, il10, hr10, ti10, hti10, hz_13, n20, t20, s20, E20, V20, fR20, g20_2, g20_3, g20_4, g20_9, g20_18, g20_19, g20_20, g20_21, g20_22, g20_23, g20_24, g20_25, g20_27, w20_2c, w20_30, w20_54, w20_58, w20_5c, w20_60, w20_64, w20_68, w20_6c, w20_70, w20_74, w20_78, w20_7c, w20_80, w20_84, w20_88, w20_8c, w20_90, w20_94, w20_98, w20_9c, w20_a0, w20_a4, w20_150, w20_154, w20_158, w20_15c, keep_kk20.mono (by decide)⟩
+  exact .inr ⟨hz_5, hz_7, ip10, il10, hr10, ti10, hti10, hz_13, n20, t20, s20, E20, V20, fR20, g20_2, g20_3, g20_4, g20_9, g20_18, g20_19, g20_20, g20_21, g20_22, g20_23, g20_24, g20_25, g20_27, w20_2c, w20_30, w20_50, w20_54, w20_58, w20_5c, w20_60, w20_64, w20_68, w20_6c, w20_70, w20_74, w20_78, w20_7c, w20_80, w20_84, w20_88, w20_8c, w20_90, w20_94, w20_98, w20_9c, w20_a0, w20_a4, w20_150, w20_154, w20_158, w20_15c, keep_kk20.mono (by decide)⟩
 
 end C3.RV32.Sv
