@@ -1307,10 +1307,10 @@ class Gen:
         k = self.k = self.k + 1
         self.call_head(k, off, "sv_lineF", f"(oc := 0x{oc:X}) (nl := {nl})",
                        [f"c{k}", f"s{k}", f"rk{k}", f"K{k}", f"L{k}", f"fr{k}"])
-        self.emit(f"    F E{k-1} (CK0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide)")
+        self.emit(f"    F E{k-1} (CK0.sv FW fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide)")
         self.emit(f"    {self.reg_is(k - 1, 10, oc)} g{k-1}_11 {ha2} (by decide) (by decide) {inp}")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
-        self.emit(f"  rw [nlScan_ro F fR{k-1} {inp}] at L{k}")
+        self.emit(f"  rw [nlScan_ro FW fR{k-1} {inp}] at L{k}")
         self.keep_regs(k, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
                        lambda r: f"rk{k} {rname(r)} (by decide)")
         ex = f"nlScan M0 ({p}) 0 ({nl})"
@@ -1334,9 +1334,9 @@ class Gen:
         self.emit(f"  obtain ⟨z0_{k}, z4_{k}⟩ := L{k}")
         self.frame_after(k, [(oc, 16)], {oc: ("0", f"z0_{k}")}, {oc + 4: ("(0x1A : BitVec 8)", f"z4_{k}")})
         fail_tail(self)
-        self.load_any(0x2FEA)
-        self.jump(0x2FEE)
-        self.fail(self.fail_proof(("eq", f"hr{k}")))
+        self.load_any(0x1872)
+        self.jump(0x1876)
+        self.fail(self.fail_proof(("eq", f"hr{k}")), "sv_fail_1882")
 
     def ms(self, off, c, N):
         """`memset` of `N` bytes at offset `c`."""
@@ -1505,7 +1505,7 @@ class Gen:
         k = self.k = self.k + 1
         self.call_head(k, off, "sv_b64F", f"(rc := 0x{rc:X}) (oc := 0x{oc:X}) (nl := {nl}) (L := {L})",
                        [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"Ok{k}", f"Bad{k}", f"fr{k}"])
-        self.emit(f"    F E{k-1} (CK0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    F E{k-1} (CK0.sv FW fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
         self.emit(f"    {self.reg_is(k - 1, 10, rc)} g{k-1}_11 {ha2} {self.reg_is(k - 1, 13, oc)} g{k-1}_14")
         self.emit(f"    (by decide) (by decide) (by decide) (by decide) {inp}")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
@@ -1523,7 +1523,7 @@ class Gen:
         ls = " ".join(f"(l{i} := {pt[1]})" for i, pt in enumerate(parts))
         self.call_head(k, off, "sv_sha256P4F", f"(oc := 0x{oc:X}) (pc := 0x{pc:X}) {ls}",
                        [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"D{k}", f"fr{k}"])
-        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) KS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    FW E{k-1} (S2.sv FW RS fR{k-1}) RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
         self.emit(f"    {self.reg_is(k - 1, 10, oc)} {self.reg_is(k - 1, 11, pc)} g{k-1}_12 (by decide) (by decide) (by decide)")
         self.emit("    " + " ".join(f"w{k-1}_{pc + 8 * i:x} {pt[3]}" for i, pt in enumerate(parts)))
         self.emit("    " + " ".join(pt[2] for pt in parts) + " " + " ".join(pt[4] for pt in parts))
@@ -1574,7 +1574,7 @@ class Gen:
         k = self.k = self.k + 1
         self.call_head(k, off, "sv_b64fF", f"(rc := 0x{rc:X}) (oc := 0x{oc:X}) (tc := 0x{tc:X}) (nl := {nl}) (L := {L})",
                        [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"Ok{k}", f"Bad{k}", f"fr{k}"])
-        self.emit(f"    F E{k-1} (CK0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    F E{k-1} (CK0.sv FW fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
         self.emit(f"    {self.reg_is(k - 1, 10, rc)} {self.reg_is(k - 1, 11, tc)} g{k-1}_12 {self.reg_is(k - 1, 13, oc)} g{k-1}_14")
         self.emit(f"    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
@@ -6723,8 +6723,7 @@ def stage_tst5(tag, present):
 
 TL_STRUCT = {0xA20: "w70", 0xA24: "x21", 0xA28: "w5c", 0xA2C: "w48", 0xA30: "w44", 0xA34: "w60", 0xA38: "w3c",
              0xA3C: "w78", 0xAA0: "dp", 0xAA4: "dg"}
-CK_BINDERS = ("{B out bp x21 x26 dg dp pv q ckp ckl : Word} "
-              + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+CK_BINDERS = "{B out bp x20 x21 x22 x23 x24 x25 x26 x27 pv ckp ckl : Word} {v : Nat → Word} {n0 : Machine}"
 
 
 def ck_line_tail(lw_off, reg, sw_off=None):
@@ -6737,55 +6736,59 @@ def ck_line_tail(lw_off, reg, sw_off=None):
     return tail
 
 
+def ck_fail_1878(sub, hname):
+    sub.block(0x1878, 0x187A)
+    sub.jump(0x187A)
+    sub.fail(sub.fail_proof(("prop", hname)), "sv_fail_1882")
+
+
 def stage_ck1():
-    """From 0x2B34 to 0x2BCA: the TSA's signature checked, and the
+    """From 0x142E to 0x14C2: the TSA's signature checked, and the
     checkpoint's origin, size, and root lines and the blank line after them."""
     g = Gen("Ck1")
-    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
-            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
-            22: ("U", "dp"), 23: ("S", 0xA40), 10: ("U", "pv")}
-    words = {e: f"w{e:x}" for e in TST_WORDS}
-    words.update({0x74: "q"})
-    words.update(TL_STRUCT)
-    params = start(g, regs, words, {})
+    regs = t_regs0()
+    regs[10] = ("U", "pv")
+    params = start(g, regs, {}, {})
     params += ["(CK0 : SvCkCode M0)", "(hckp : memLoad32 M0 (bp + 0x18) = ckp)",
                "(hckl : memLoad32 M0 (bp + 0x1C) = ckl)", "(ckp_in4 : SvIn B (bp + 0x18) 4)",
                "(ckl_in4 : SvIn B (bp + 0x1C) 4)", "(a_ckp : (bp + 0x18).toNat % 4 = 0)",
                "(a_ckl : (bp + 0x1C).toNat % 4 = 0)", "(ck_in : SvIn B ckp ckl.toNat)"]
 
     def bad_sig(sub):
-        sub.branch(0x2B34, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hv)")
-        sub.block(0x2C5E, 0x2C60)
-        sub.fail(sub.fail_proof(("prop", "hv")), "sv_fail_2c60")
+        sub.branch(0x142E, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hv)")
+        sub.block(0x1558, 0x155A)
+        sub.jump(0x155A)
+        sub.fail(sub.fail_proof(("prop", "hv")))
     g.prop_check("pv ≠ 0", "hv", bad_sig)
-    g.branch(0x2B34, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hv")
-    g.load_mem(0x2B38, "ckp", "hckp", "ckp_in4", "a_ckp")
-    g.load_mem(0x2B3C, "ckl", "hckl", "ckl_in4", "a_ckl")
-    g.block(0x2B40, 0x2B44)
-    g.store(0x2B44, "sw")
-    g.block(0x2B46, 0x2B48)
-    k0, ix0, p1, n1, in1 = g.line(0x2B48, 0x420, "ckp", "(ckl).toNat", "(.inl ck_in)",
-                                  f"(by rw [g{g.k}_12, ofNat_toNat_self])", ck_line_tail(0x2B50, 10, 0x2B54))
-    g.load(0x2B50, "lw")
-    g.store(0x2B54, "sw")
-    g.branch(0x2B56, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ck_in.pos_ne")
+    g.branch(0x142E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hv")
+    g.block(0x1432, 0x1434)
+    g.load_mem(0x1434, "ckp", "hckp", "ckp_in4", "a_ckp")
+    g.load_mem(0x1436, "ckl", "hckl", "ckl_in4", "a_ckl")
+    g.block(0x1438, 0x143C)
+    g.store(0x143C, "sw")
+    g.block(0x143E, 0x1440)
+    k0, ix0, p1, n1, in1 = g.line(0x1440, 0x420, "ckp", "(ckl).toNat", "(.inl ck_in)",
+                                  f"(by rw [g{g.k}_12, ofNat_toNat_self])", ck_line_tail(0x1448, 10, 0x144C))
+    g.load(0x1448, "lw")
+    g.store(0x144C, "sw")
+    g.branch(0x144E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ck_in.pos_ne")
     rest = (p1, n1, in1, k0)
-    lines = [(0x2B5A, 0x2B6A, 0x2B72, 9), (0x2B7A, 0x2B88, 0x2B90, 23), (0x2B98, 0x2BA8, 0x2BB0, 10)]
+    lines = [(0x1452, 0x1462, 0x146A, 24), (0x1472, 0x1480, 0x1488, 25), (0x1490, 0x14A0, 0x14A8, 10)]
     ks = []
     for (blk, call, lw, reg) in lines:
         p, nl, inp, kp = rest
         g.block(blk, blk + 4)
-        if blk == 0x2B5A:
-            g.load(0x2B5E, "lw")
-            g.store(0x2B60, "sw")
-            g.load(0x2B62, "lw")
-            g.load(0x2B64, "lw")
-            g.block(0x2B66, 0x2B6A)
+        if blk == 0x1452:
+            g.load(0x1456, "lw")
+            g.store(0x1458, "sw")
+            g.load(0x145A, "lw")
+            g.load(0x145C, "lw")
+            g.block(0x145E, 0x1462)
         else:
             g.load(blk + 4, "lw")
-            g.load(blk + 6 if blk == 0x2B7A else blk + 8, "lw")
-            g.load(blk + 8 if blk == 0x2B7A else blk + 0xA, "lw")
-            g.block(blk + 0xA if blk == 0x2B7A else blk + 0xC, call)
+            g.load(blk + 6 if blk == 0x1472 else blk + 8, "lw")
+            g.load(blk + 8 if blk == 0x1472 else blk + 0xA, "lw")
+            g.block(blk + 0xA if blk == 0x1472 else blk + 0xC, call)
         ha2 = f"(by rw [g{g.k}_12, sub_ofNat (Nat.succ_le_of_lt hix{kp}) (by omega)])"
         k, ix, p2, n2, in2 = g.line(call, 0x420, p, nl, inp, ha2, ck_line_tail(lw, reg))
         ks.append((k, ix, p, nl, inp))
@@ -6793,122 +6796,101 @@ def stage_ck1():
         g.branch(lw + 4, False, f"by rw [g{g.k}_{reg}, s{g.k}.zero]; exact br_beq_f {inp}.ne0")
         rest = (p2, n2, in2, k)
     k3, ix3 = ks[-1][0], ks[-1][1]
-    g.load(0x2BB8, "lw")
+    g.load(0x14B0, "lw")
 
     def not_blank(sub):
-        sub.branch(0x2BBC, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t hblank")
-        sub.block(0x2FF2, 0x2FF4)
-        sub.jump(0x2FF4)
-        sub.fail(sub.fail_proof(("prop", "hblank")))
+        sub.branch(0x14B4, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t hblank")
+        ck_fail_1878(sub, "hblank")
     g.prop_check(f"BitVec.ofNat 32 {ix3} = 0", "hblank", not_blank)
-    g.branch(0x2BBC, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f hblank")
-    g.load(0x2BC0, "lw")
-    g.store(0x2BC4, "sw")
+    g.branch(0x14B4, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f hblank")
+    g.load(0x14B8, "lw")
+    g.store(0x14BC, "sw")
     sig = lean_val(g.regs[10])
 
     def no_sig(sub):
-        sub.branch(0x2BC6, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hsig)")
-        sub.block(0x2FF2, 0x2FF4)
-        sub.jump(0x2FF4)
-        sub.fail(sub.fail_proof(("prop", "hsig")))
+        sub.branch(0x14BE, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hsig)")
+        ck_fail_1878(sub, "hsig")
     g.prop_check(f"{sig} ≠ 0", "hsig", no_sig)
-    g.branch(0x2BC6, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hsig")
+    g.branch(0x14BE, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hsig")
     keep = set(g.words) - {0x420, 0x424}
-    stmt, proof = finish(g, 0x2BCA, [2, 3, 4, 8, 9, 18, 19, 21, 22, 23, 24, 25, 26, 27], keep, set())
+    stmt, proof = finish(g, 0x14C2, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27], keep, set())
     info = {"name": "sv_ck1", "title": "the checkpoint's lines",
-            "doc": "From 0x2B34 to 0x2BCA: the TSA's signature checked, and the checkpoint splits into an origin "
+            "doc": "From 0x142E to 0x14C2: the TSA's signature checked, and the checkpoint splits into an origin "
             "line, a size line, a root line, a blank line, and a nonempty rest.",
-            "params": params, "stmt": stmt, "proof": proof, "binders": CK_BINDERS, "start": 0x2B34,
+            "params": params, "stmt": stmt, "proof": proof, "binders": CK_BINDERS, "start": 0x142E,
             "import": "C3BootProofs.Proofs.SvCkpt"}
     return g, info
 
 
-CK2_BINDERS = ("{B out bp x21 x26 dg q ckl sl sp1 rl rp sgp : Word} "
-               + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
-
-
-def ck_fail_2ff2(sub, hname):
-    sub.block(0x2FF2, 0x2FF4)
-    sub.jump(0x2FF4)
-    sub.fail(sub.fail_proof(("prop", hname)))
-
-
-def tl_struct_after_ck1():
-    """The fields of the struct at 0xA20 that still copy what `TL_STRUCT` says
-    once `sv_ck1` has rewritten the frame words and registers the others copied."""
-    return {e: nm for e, nm in TL_STRUCT.items() if e in (0xAA0, 0xAA4)}
+CK2_BINDERS = "{B out bp x20 x21 x22 x23 x26 ckl sl sp1 rl rp sgp w50 : Word} {v : Nat → Word} {n0 : Machine}"
 
 
 def ck2_start(g):
-    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
-            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
-            8: ("U", "sl"), 9: ("U", "sp1"), 22: ("U", "rl"), 23: ("U", "rp"), 25: ("U", "ckl")}
-    words = {e: f"w{e:x}" for e in TST_WORDS}
-    words.update({0x74: "q", 0x428: "sgp"})
-    words.update(tl_struct_after_ck1())
-    return start(g, regs, words, {})
+    regs = t_regs0()
+    regs.update({8: ("U", "sl"), 24: ("U", "sp1"), 27: ("U", "rl"), 25: ("U", "rp"), 9: ("U", "ckl")})
+    return start(g, regs, {0x428: "sgp", 0x50: "w50"}, {})
 
 
 def stage_ck2(lead):
-    """From 0x2BCA to the size's digit loop at 0x2C06: the signature section
+    """From 0x14C2 to the size's digit loop at 0x14FE: the signature section
     fits in the checkpoint, the size line has 1 to 20 bytes, and a size of
     more than one digit doesn't start with `0`."""
     g = Gen("Ck2" + ("b" if lead else "a"))
     g.generic_alu = True
     params = ck2_start(g)
     params += ["(sz_in : SvIn B sp1 sl.toNat)", f"(hsl : {'' if lead else '¬ '}1 < sl.toNat)"]
-    g.load(0x2BCA, "lw")
+    g.load(0x14C2, "lw")
 
     def big(sub):
-        sub.branch(0x2BCC, True, f"by rw [g{sub.k}_10, g{sub.k}_25]; exact br_bgeu_t hc1")
-        ck_fail_2ff2(sub, "hc1")
-    g.prop_check("w5c.toNat < ckl.toNat", "hc1", big)
-    g.branch(0x2BCC, False, f"by rw [g{g.k}_10, g{g.k}_25]; exact br_bgeu_f hc1")
-    g.load(0x2BD0, "lw")
-    g.block(0x2BD2, 0x2BD6)
-    g.block(0x2BD6, 0x2BD8)
-    g.store(0x2BD8, "sw")
+        sub.branch(0x14C4, True, f"by rw [g{sub.k}_10, g{sub.k}_9]; exact br_bgeu_t hc1")
+        ck_fail_1878(sub, "hc1")
+    g.prop_check("w50.toNat < ckl.toNat", "hc1", big)
+    g.branch(0x14C4, False, f"by rw [g{g.k}_10, g{g.k}_9]; exact br_bgeu_f hc1")
+    g.load(0x14C8, "lw")
+    g.block(0x14CA, 0x14CE)
+    g.block(0x14CE, 0x14D0)
+    g.store(0x14D0, "sw")
     body = lean_val(g.regs[10])
 
     def neg(sub):
-        sub.branch(0x2BDA, True, f"by rw [g{sub.k}_25, g{sub.k}_10]; exact br_bltu_t (Decidable.of_not_not hc2)")
-        ck_fail_2ff2(sub, "hc2")
+        sub.branch(0x14D2, True, f"by rw [g{sub.k}_9, g{sub.k}_10]; exact br_bltu_t (Decidable.of_not_not hc2)")
+        ck_fail_1878(sub, "hc2")
     g.prop_check(f"¬ (ckl).toNat < ({body}).toNat", "hc2", neg)
-    g.branch(0x2BDA, False, f"by rw [g{g.k}_25, g{g.k}_10]; exact br_bltu_f hc2")
-    g.block(0x2BDE, 0x2BE2)
-    g.block(0x2BE2, 0x2BE4)
+    g.branch(0x14D2, False, f"by rw [g{g.k}_9, g{g.k}_10]; exact br_bltu_f hc2")
+    g.block(0x14D6, 0x14DA)
+    g.block(0x14DA, 0x14DC)
     d = lean_val(g.regs[10])
 
     def size_len(sub):
-        sub.branch(0x2BE4, True, f"by rw [g{sub.k}_10, g{sub.k}_11]; exact br_bltu_t (Decidable.of_not_not hc3)")
-        ck_fail_2ff2(sub, "hc3")
+        sub.branch(0x14DC, True, f"by rw [g{sub.k}_10, g{sub.k}_11]; exact br_bltu_t (Decidable.of_not_not hc3)")
+        ck_fail_1878(sub, "hc3")
     g.prop_check(f"¬ ({d}).toNat < (BitVec.ofNat 32 0xFFFFFFED).toNat", "hc3", size_len)
-    g.branch(0x2BE4, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bltu_f hc3")
-    g.load(0x2BE8, "lw")
-    g.store(0x2BEC, "sw")
-    g.block(0x2BEE, 0x2BF0)
+    g.branch(0x14DC, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bltu_f hc3")
+    g.load(0x14E0, "lw")
+    g.store(0x14E4, "sw")
+    g.block(0x14E6, 0x14E8)
     if not lead:
-        g.branch(0x2BF0, True, f"by rw [g{g.k}_10, g{g.k}_8]; exact br_bgeu_t hsl")
+        g.branch(0x14E8, True, f"by rw [g{g.k}_10, g{g.k}_8]; exact br_bgeu_t hsl")
     else:
-        g.branch(0x2BF0, False, f"by rw [g{g.k}_10, g{g.k}_8]; exact br_bgeu_f hsl")
-        g.load_in(0x2BF4, "sz_in", "(by omega)")
-        g.block(0x2BF8, 0x2BFC, {10: ("(M0 sp1).zeroExtend 32 + 0xFFFFFFD0",
-                                      "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svCk2b2bf8, upd, ↓reduceIte]; rw [g{p}_10]; rfl")})
+        g.branch(0x14E8, False, f"by rw [g{g.k}_10, g{g.k}_8]; exact br_bgeu_f hsl")
+        g.load_in(0x14EC, "sz_in", "(by omega)")
+        g.block(0x14F0, 0x14F4, {10: ("(M0 sp1).zeroExtend 32 + 0xFFFFFFD0",
+                                      "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svCk2b14f0, upd, ↓reduceIte]; rw [g{p}_10]; rfl")})
 
         def zero(sub):
-            sub.branch(0x2BFC, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t ((digit0_iff _).mpr (Decidable.of_not_not hlead))")
-            ck_fail_2ff2(sub, "hlead")
+            sub.branch(0x14F4, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t ((digit0_iff _).mpr (Decidable.of_not_not hlead))")
+            ck_fail_1878(sub, "hlead")
         g.prop_check("M0 sp1 ≠ 0x30", "hlead", zero)
-        g.branch(0x2BFC, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f fun e => hlead ((digit0_iff _).mp e)")
-    g.store(0x2C00, "sw")
-    g.store(0x2C02, "sw")
-    g.block(0x2C04, 0x2C06)
-    stmt, proof = finish(g, 0x2C06, [2, 3, 4, 8, 9, 10, 18, 19, 21, 22, 23, 24, 25, 26, 27], set(g.words), set())
+        g.branch(0x14F4, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f fun e => hlead ((digit0_iff _).mp e)")
+    g.store(0x14F8, "sw")
+    g.store(0x14FA, "sw")
+    g.block(0x14FC, 0x14FE)
+    stmt, proof = finish(g, 0x14FE, [2, 3, 4, 8, 9, 10, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27], set(g.words), set())
     info = {"name": "sv_ck2" + ("b" if lead else "a"), "title": "the checkpoint's size line" + (", leading digit" if lead else ""),
-            "doc": "From 0x2BCA to the size's digit loop at 0x2C06: the signature section is shorter than the "
+            "doc": "From 0x14C2 to the size's digit loop at 0x14FE: the signature section is shorter than the "
             "checkpoint, the size line has 1 to 20 bytes" + (", and its first byte isn't `0`." if lead else
             ", and it has one byte."),
-            "params": params, "stmt": stmt, "proof": proof, "binders": CK2_BINDERS, "start": 0x2BCA,
+            "params": params, "stmt": stmt, "proof": proof, "binders": CK2_BINDERS, "start": 0x14C2,
             "import": "C3BootProofs.Proofs.SvCkpt"}
     return g, info
 

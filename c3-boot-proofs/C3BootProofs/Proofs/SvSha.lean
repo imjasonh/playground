@@ -174,9 +174,6 @@ theorem sv_s5bF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
   exact f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega))
     (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
 
-theorem sv_sp50 (B : Word) : B + 0x21A0 + 0xFFFFFFB0 = B + BitVec.ofNat 32 0x2150 := by
-  rw [BitVec.add_assoc]; rfl
-
 set_option maxHeartbeats 8000000 in
 /-- **A call to `zeroArray48` or `zeroArray64`** (`N` is 48 or 64, `fr` the
 callee's frame size) at offset `c` of the frame. -/

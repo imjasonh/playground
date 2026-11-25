@@ -444,3 +444,7 @@ import C3BootProofs.Proofs.SvTlhit
 import C3BootProofs.Proofs.SvTlend
 import C3BootProofs.Proofs.SvTsig
 import C3BootProofs.Proofs.SvTpv
+import C3BootProofs.Proofs.SvCkpt
+import C3BootProofs.Proofs.SvCk1
+import C3BootProofs.Proofs.SvCk2a
+import C3BootProofs.Proofs.SvCk2b
