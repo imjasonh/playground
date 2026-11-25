@@ -40,6 +40,11 @@
       "requires": ["epd75"],
       "firmware_id_file": "src/grayscale/mod.rs",
       "firmware_id_const": "GRAYSCALE_FIRMWARE_ID"
+    },
+    "photo": {
+      "requires": ["epd75"],
+      "firmware_id_file": "src/photo.rs",
+      "firmware_id_const": "PHOTO_FIRMWARE_ID"
     }
   }
 }
