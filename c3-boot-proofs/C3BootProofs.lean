@@ -245,6 +245,7 @@ import C3BootProofs.Proofs.IncrementLimb
 import C3BootProofs.Proofs.NonAdjacentForm
 import C3BootProofs.Proofs.FeCondNeg
 import C3BootProofs.Proofs.Panic
+import C3BootProofs.Proofs.HaltCode
 import C3BootProofs.Proofs.Select
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.UpdateFg12
@@ -645,6 +646,7 @@ import C3BootProofs.Proofs.LoadedImage
 import C3BootProofs.Proofs.ResetLoaded
 import C3BootProofs.Proofs.PanicFree
 import C3BootProofs.Proofs.PanicFreeTargets
+import C3BootProofs.Proofs.ResetPI
 import C3BootProofs.Proofs.SramAlias
 import C3BootProofs.Proofs.AcceptExtractTlogStage
 import C3BootProofs.Proofs.JsonWp

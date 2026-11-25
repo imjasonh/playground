@@ -135,12 +135,12 @@ bytes and tries the preferred slot. -/
 theorem bmq_none {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0x180 (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     {st : State} (hst : (bmRecs flash).1 = st) (hv : BmdValid st) (htr : st.trial = none)
     (P : BmqPre flash M0 F st (reg n)) (h24 : reg n 24 = BitVec.ofNat 32 st.generation + 1) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   have hhi := C.hhi; have hlo := C.hlo
   have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
@@ -185,13 +185,13 @@ the plan's bytes and tries the trial's slot. -/
 theorem bmq_live {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0x1E2 (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     {st : State} (hst : (bmRecs flash).1 = st) (hv : BmdValid st) {t : Trial} (htr : st.trial = some t)
     (hb : 0 < t.bootsLeft)
     (P : BmqPre flash M0 F st (reg n)) (h24 : reg n 24 = BitVec.ofNat 32 st.generation + 1) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   have hhi := C.hhi; have hlo := C.hlo
   have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
@@ -312,13 +312,13 @@ tries the preferred slot. -/
 theorem bmq_exp {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0x198 (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     {st : State} (hst : (bmRecs flash).1 = st) (hv : BmdValid st) {t : Trial} (htr : st.trial = some t)
     (hb : t.bootsLeft = 0)
     (P : BmqPre flash M0 F st (reg n)) (h24 : reg n 24 = BitVec.ofNat 32 st.generation + 1) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   have hhi := C.hhi; have hlo := C.hlo; have h16 := C.hsp
   have hF16 : F.toNat % 16 = 0 := by
@@ -472,12 +472,12 @@ first slot. It jumps only into a slot that `decideBoot` boots, or halts. -/
 theorem bmq_plan {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0x174 (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     {st : State} (hst : (bmRecs flash).1 = st) (hv : BmdValid st)
     (P : BmqPre flash M0 F st (reg n)) (h24 : reg n 24 = BitVec.ofNat 32 st.generation) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
   obtain ⟨n1, c1, u1⟩ := s.block bmB15 hc bmB15_end ⟨trivial, trivial, trivial, trivial⟩

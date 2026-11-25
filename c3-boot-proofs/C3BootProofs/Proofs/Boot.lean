@@ -213,7 +213,8 @@ set_option maxRecDepth 20000 in
 application, with memory `M0` there, the header at `acc` in register 23,
 the image's flash offset in register 20, and the slot in the frame at
 `top - 0x3C`: it jumps to the entry point with the slot in `a0`, with the
-memory outside its stack as `bootMem` says, or panics. -/
+memory outside its stack as `bootMem` says, or halts with code 0xE2 when a
+flash read fails. -/
 theorem bt_body {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Word} {romCode : List Nat}
     {M0 : Word → BitVec 8} {top acc imgf slot : Word}
     (C : BtCtx M0 top acc imgf R romStack romBase romCode) (hROM : RomRead flash R romBase romCode)
@@ -225,7 +226,7 @@ theorem bt_body {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Word} {
     (w23 : reg n5 23 = acc) (w20 : reg n5 20 = imgf) (hslot : memLoad32 M0 (top + 0xFFFFFFC0 + 4) = slot) :
     (∃ m', Steps n5 m' ∧ m'.pc = memLoad32 M0 (acc + 0x100) &&& ~~~1 ∧ reg m' a0 = slot ∧
       ∀ x, Sep (top - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) x 1 →
-        m'.mem x = bootMem flash M0 acc imgf x) ∨ Panics n5 := by
+        m'.mem x = bootMem flash M0 acc imgf x) ∨ HaltsWith n5 0xE2 := by
   have hKv : btK R romStack = 0x40 + 16 + R + romStack := rfl
   have hspl := C.hspl; have hsph := C.hsph; have h16 := C.hsp; have hR4 := C.hR
   rw [hKv] at hspl; unfold dramEnd at hsph
@@ -359,7 +360,7 @@ theorem bt_body {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Word} {
   have stageE2 : (∃ n10, Steps n9 n10 ∧ St n10.mem BT n10 0x1E2 (reg n10) ∧ BtHi M0 n10.mem ∧
       (∀ x, Sep Ss (btK R romStack) x 1 → n10.mem x = ramLoad flash M0 acc imgf N x) ∧
       memLoad32 n10.mem (top + 0xFFFFFFC0 + 4) = slot ∧
-      ∀ r, romKeep r = true → r ≠ 8 → r ≠ 9 → reg n10 r = reg n9 r) ∨ Panics n9 := by
+      ∀ r, romKeep r = true → r ≠ 8 → r ≠ 9 → reg n10 r = reg n9 r) ∨ HaltsWith n9 0xE2 := by
     by_cases hN0 : N = 0
     · obtain ⟨n10, d10, u10⟩ := t9.taken hc5 0x1E2 bt_at_1b4 (by decide) (by
         show (reg n9 8 == reg n9 x0) = true; rw [z8, t9.zero, hN0]; rfl)
@@ -388,9 +389,9 @@ theorem bt_body {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Word} {
         exact memLoad32_congr fun j hj => by
           rw [show top + 0xFFFFFFC0 + 4 + BitVec.ofNat 32 j = top + 0xFFFFFFC0 + BitVec.ofNat 32 (4 + j) from
             add_ofNat_assoc _ 4 j, fr' _ (by omega), u10.mem]
-      · exact Or.inr (Panics.of_steps (.single d10) hp)
+      · exact Or.inr (HaltsWith.of_steps (.single d10) hp)
   have pre9 : Steps n5 n9 := .cons d6 (c7.trans (c8.trans c9))
-  refine stageE2.elim (fun h => ?_) fun hp => Or.inr (Panics.of_steps pre9 hp)
+  refine stageE2.elim (fun h => ?_) fun hp => Or.inr (HaltsWith.of_steps pre9 hp)
   obtain ⟨n10, c10, t10, hH10, o10, fr10, k10⟩ := h
   have q10 : ∀ r, r = sp ∨ r = 18 ∨ r = 20 ∨ r = 22 ∨ r = 23 → reg n10 r = reg n9 r := fun r hr => by
     rcases hr with rfl | rfl | rfl | rfl | rfl <;> exact k10 _ (by decide) (by decide) (by decide)
@@ -590,8 +591,10 @@ says. At the jump the eFuse level word is its value at entry with some
 bits set, and the level `btPop` counts from it is at least `target`, or
 the caller's `level` is at least `target` and the word is unchanged. The
 eFuse controller is assumed to meet `EfuseCtl` (`BtCtx.epr`). Or it
-panics. -/
-theorem boot_correct {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Word} {romCode : List Nat}
+halts deliberately: with code 0xE1 when the level read back stays below
+`target` after the raise loop's tries, or 0xE2 when a flash read of the
+image fails. -/
+theorem boot_correct_halt {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Word} {romCode : List Nat}
     (m : Machine) {slot acc imgf target level : Word}
     (C : BtCtx m.mem (reg m sp) acc imgf R romStack romBase romCode) (hROM : RomRead flash R romBase romCode)
     (hpc : m.pc = BT) (ha0 : reg m a0 = slot) (ha1 : reg m a1 = acc) (ha2 : reg m a2 = imgf)
@@ -606,7 +609,7 @@ theorem boot_correct {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Wo
       (∃ X, memLoad32 m'.mem efuseRd = memLoad32 m.mem efuseRd ||| X) ∧
       ∀ x, Sep (reg m sp - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) x 1 →
         (x.toNat < 0x60000000 ∨ 0x600C4000 ≤ x.toNat) → m'.mem x = bootMem flash m.mem acc imgf x) ∨
-      Panics m := by
+      HaltsDeliberately m := by
   obtain ⟨top, htop⟩ : ∃ top, reg m sp = top := ⟨_, rfl⟩
   rw [htop] at C ⊢
   obtain ⟨M0, hM0⟩ : ∃ M0, m.mem = M0 := ⟨_, rfl⟩
@@ -717,7 +720,7 @@ theorem boot_correct {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Wo
       ((btPop (memLoad32 n4.mem efuseRd)).ult target = false ∨
         (level.ult target = false ∧ memLoad32 n4.mem efuseRd = memLoad32 M0 efuseRd)) ∧
       (∃ X, memLoad32 n4.mem efuseRd = memLoad32 M0 efuseRd ||| X) ∧
-      reg n4 sp = top + 0xFFFFFFC0 ∧ reg n4 20 = imgf) ∨ Panics n3 := by
+      reg n4 sp = top + 0xFFFFFFC0 ∧ reg n4 20 = imgf) ∨ HaltsWith n3 0xE1 := by
     by_cases hl : level.ult target = true
     · obtain ⟨n4, d4, u4⟩ := t3.notTaken hc3 0x26 bt_at_22 (by decide) (by
         show (!(reg n3 a4).ult (reg n3 a3)) = false
@@ -765,7 +768,7 @@ theorem boot_correct {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Wo
           ⟨X, by rw [hX, hfd]⟩, ?_, ?_⟩
         · rw [k7 sp (by decide), k6 sp (by decide)]; exact sp5
         · rw [k7 20 (by decide), k6 20 (by decide), k45 20 (by decide) (by decide) (by decide) (by decide)]; exact v20
-      · exact Or.inr (Panics.of_steps (.cons d4 (c5.trans c6)) hp)
+      · exact Or.inr (HaltsWith.of_steps (.cons d4 (c5.trans c6)) hp)
     · obtain ⟨n4, d4, u4⟩ := t3.taken hc3 0x156 bt_at_22 (by decide) (by
         show (!(reg n3 a4).ult (reg n3 a3)) = true
         rw [q3 a4 (by decide) (by decide), q3 a3 (by decide) (by decide), ha4, ha3]
@@ -775,7 +778,7 @@ theorem boot_correct {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Wo
         fun j _ => by rw [u4.mem], fun j _ => by rw [u4.mem], Or.inr ⟨hl, by rw [u4.mem]; exact hw3⟩,
         ⟨0, by rw [u4.mem, hw3]; exact BitVec.or_zero.symm⟩, by rw [u4.regs]; exact sp3, by rw [u4.regs]; exact v20⟩
   have pre3 : Steps m n3 := .cons d1 (c2.trans c3)
-  refine stage.elim (fun h => ?_) fun hp => Or.inr (Panics.of_steps pre3 hp)
+  refine stage.elim (fun h => ?_) fun hp => Or.inr (.of_e1 (HaltsWith.of_steps pre3 hp))
   obtain ⟨n4, c4, t4, o4, fr4, fa4, hlev, hmono, sp4, w20⟩ := h
   -- the lock of the eFuse and flash registers, to 0x18C
   have hiOf : ∀ X, BtW n4.mem X → BtHi M0 X := fun X hW x h1 h2 => by
@@ -865,6 +868,26 @@ theorem boot_correct {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Wo
           rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (icacheCtrl1).toNat = 0x600C4004 from rfl]; omega),
           Or.inr (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (icacheCtrl1).toNat = 0x600C4004 from rfl]; omega)⟩)
         x ⟨hx, hw⟩).symm
-  · exact Or.inr (Panics.of_steps (pre3.trans (c4.trans (c5.trans (.cons d6 (c7.trans c8))))) hp)
+  · exact Or.inr (.of_e2 (HaltsWith.of_steps (pre3.trans (c4.trans (c5.trans (.cons d6 (c7.trans c8))))) hp))
+
+/-- `boot_correct_halt`, with its halts as `Panics`. -/
+theorem boot_correct {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Word} {romCode : List Nat}
+    (m : Machine) {slot acc imgf target level : Word}
+    (C : BtCtx m.mem (reg m sp) acc imgf R romStack romBase romCode) (hROM : RomRead flash R romBase romCode)
+    (hpc : m.pc = BT) (ha0 : reg m a0 = slot) (ha1 : reg m a1 = acc) (ha2 : reg m a2 = imgf)
+    (ha3 : reg m a3 = target) (ha4 : reg m a4 = level)
+    (log : RomFn romBase romCode 0x40000040 romStack fun _ => True)
+    (suspend : RomFn romBase romCode 0x40000524 romStack fun _ => True)
+    (invalidate : RomFn romBase romCode 0x400004D8 romStack fun _ => True)
+    (resume : RomFn romBase romCode 0x40000528 romStack fun _ => True) :
+    (∃ m', Steps m m' ∧ m'.pc = memLoad32 m.mem (acc + 0x100) &&& ~~~1 ∧ reg m' a0 = slot ∧
+      ((btPop (memLoad32 m'.mem efuseRd)).ult target = false ∨
+        (level.ult target = false ∧ memLoad32 m'.mem efuseRd = memLoad32 m.mem efuseRd)) ∧
+      (∃ X, memLoad32 m'.mem efuseRd = memLoad32 m.mem efuseRd ||| X) ∧
+      ∀ x, Sep (reg m sp - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) x 1 →
+        (x.toNat < 0x60000000 ∨ 0x600C4000 ≤ x.toNat) → m'.mem x = bootMem flash m.mem acc imgf x) ∨
+      Panics m :=
+  (boot_correct_halt m C hROM hpc ha0 ha1 ha2 ha3 ha4 log suspend invalidate resume).imp_right
+    HaltsDeliberately.panics
 
 end C3.RV32.Cur

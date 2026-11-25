@@ -127,6 +127,36 @@ def Closure0Contract (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romC
           AccOk flash slot mf m'.mem res)) ∨
     Panics m
 
+/-- `Closure0Contract` with its panic only when `Q` holds. `Q := True` is
+`Closure0Contract` (`Closure0Contract.q`), and `Q := ¬ InvBounds` is the
+first closure's contract in `PanicFreeTargets.lean`. -/
+def Closure0ContractQ (Q : Prop) (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romCode : List Nat)
+    (pinned : Bytes) (policy : Policy) (stack : Nat) (E : (Word → BitVec 8) → Prop) : Prop :=
+  RomRead flash R romBase romCode →
+  ∀ (m : Machine) (res bufs slot level : Word),
+    CodeIn m.mem (BitVec.ofNat 32 bootMainClosure0Address) bootMainClosure0Code → E m.mem →
+    m.pc = BitVec.ofNat 32 bootMainClosure0Address → stack ≤ (reg m sp).toNat →
+    reg m a0 = res → reg m a1 = level → reg m a2 = bufs → reg m a3 = slot → slot.toNat < 2 →
+    C0Args stack (reg m sp) res bufs level (reg m ra) →
+    Sep res 0x12C bufs 0xB954 → Sep res 0x12C (reg m sp - BitVec.ofNat 32 stack) stack →
+    Sep bufs 0xB954 (reg m sp - BitVec.ofNat 32 stack) stack →
+    (∃ m', Steps m m' ∧ m'.pc = reg m ra &&& ~~~1 ∧ (∀ q, romKeep q = true → reg m' q = reg m q) ∧
+      (∀ x, Sep (reg m sp - BitVec.ofNat 32 stack) stack x 1 → Sep res 0x12C x 1 →
+        Sep bufs 0xB954 x 1 → m'.mem x = m.mem x) ∧
+      (m'.mem (res + 0xC) = 0xFF ∨
+        ∃ mf sv t, bmcAccept flash pinned policy level.toNat slot = some (mf, sv, t) ∧
+          m'.mem (res + 0xC) ≠ 0xFF ∧ m'.mem (res + 0x128) = BitVec.ofNat 8 sv ∧
+          memLoad32 m'.mem (res + 0x120) = BitVec.ofNat 32 (bmcBase slot + mf.image.offset) ∧
+          AccOk flash slot mf m'.mem res)) ∨
+    (Q ∧ Panics m)
+
+theorem Closure0Contract.q {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {romCode : List Nat}
+    {pinned : Bytes} {policy : Policy} {stack : Nat} {E : (Word → BitVec 8) → Prop}
+    (h : Closure0Contract flash R romBase romCode pinned policy stack E) :
+    Closure0ContractQ True flash R romBase romCode pinned policy stack E :=
+  fun hr m res bufs slot level h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 =>
+    (h hr m res bufs slot level h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13).imp_right fun hp => ⟨trivial, hp⟩
+
 /-! ## From `AccOk` to `boot`'s needs -/
 
 theorem bmc_segs_len : ∀ (n : Nat) (b : Bytes) (ss : List Segment), readSegments n b = some ss → ss.length = n

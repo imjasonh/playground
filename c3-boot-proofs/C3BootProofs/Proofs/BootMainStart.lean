@@ -171,7 +171,7 @@ address `A` into the buffer at `F + d`. -/
 theorem bms_frd {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} {off d A : Nat} {imm o : Word} (s : St n.mem BM n off (reg n))
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     (hF : F.toNat + 0xBE80 = top.toNat)
@@ -286,21 +286,25 @@ theorem bms_bsd {M0 : Word → BitVec 8} {top : Word} {R romStack stack0 : Nat} 
 
 set_option maxHeartbeats 8000000 in
 set_option maxRecDepth 20000 in
-/-- At 0xD2, after a failed flash read, `boot_main` halts. -/
+/-- At 0xD2, after a failed flash read, `boot_main` halts with code 0xE4. -/
 theorem bms_halt {M0 : Word → BitVec 8} {top : Word} {R romStack stack0 : Nat} {romBase : Word}
     {romCode : List Nat} (C : BmEnv M0 top R romStack stack0 romBase romCode) {n : Machine} {F : Word}
     {g : Fin 32 → Word} (s : St n.mem BM n 0xD2 g)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
-    (hsp : g sp = F) (hF : F.toNat + 0xBE80 = top.toNat) : Panics n := by
+    (hsp : g sp = F) (hF : F.toNat + 0xBE80 = top.toNat) : HaltsWith n 0xE4 := by
   have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
   obtain ⟨n1, d1, u1⟩ := s.aluImm hc bm_at_d2 (off' := 0xD6) (by decide)
   obtain ⟨n2, c2, pc2, mem2, regs2⟩ := u1.self.callRa (cb := haltBase) hc bm_at_d6 bm_at_da
     (by decide) (by decide)
   have sp2 : reg n2 sp = F := by
     rw [regs2, updz u1.self.zero (by decide), u1.regs, updz s.zero (by decide), hsp]
+  have a02 : reg n2 a0 = 0xE4 := by
+    rw [regs2, updz u1.self.zero (by decide), u1.regs]; simp +decide only [upd_app, ↓reduceIte]
+    rw [s.zero]; rfl
   have hP : PanicCode n.mem := bmt_panic C.panic (hK.hiOf C)
-  exact Panics.of_steps (.cons d1 c2) (halt_panics n2 (by rw [mem2]; exact hP) pc2
-    (by rw [sp2]; exact bmd_room C hF))
+  have hh := halt_haltCode n2 (by rw [mem2]; exact hP) pc2 (by rw [sp2]; exact bmd_room C hF)
+  rw [a02] at hh
+  exact hh.of_steps (.cons d1 c2)
 
 /-! ## From 0x64 to 0xB4 -/
 
@@ -319,11 +323,11 @@ decodes each, and goes on at 0xB4. -/
 theorem bms_reads {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0x64 (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     (hsp : reg n sp = F) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   obtain ⟨hFl, hFh⟩ := bms_Fbig C hF
   have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
@@ -346,7 +350,7 @@ theorem bms_reads {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
   · obtain ⟨n3, e3, t3⟩ := t2.taken hc2 0xD2 bm_at_76 (by decide)
       (by show (reg n2 a0 == reg n2 0) = true; rw [z2, t2.zero]; rfl)
     rw [← t3.mem] at K2
-    exact BmEnd.pre (c1.trans (c2.trans (.single e3))) (.inr (bms_halt C ⟨t3.pc, rfl, t3.regs⟩ K2 sp2 hF))
+    exact BmEnd.pre (c1.trans (c2.trans (.single e3))) (.inr (.inl (.of_e4 (bms_halt C ⟨t3.pc, rfl, t3.regs⟩ K2 sp2 hF))))
   obtain ⟨n3, e3, t3⟩ := t2.notTaken hc2 0x78 bm_at_76 (by decide)
     (by show (reg n2 a0 == reg n2 0) = false; rw [o2, t2.zero]; rfl)
   have t3' : St n3.mem BM n3 0x78 (reg n3) := ⟨t3.pc, rfl, fun _ => rfl⟩
@@ -375,7 +379,7 @@ theorem bms_reads {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
       (by show (reg n5 a0 == reg n5 0) = true; rw [z5, t5.zero]; rfl)
     rw [← t6.mem] at K5
     exact BmEnd.pre (c1.trans (c2.trans (.cons e3 (c4.trans (c5.trans (.single e6))))))
-      (.inr (bms_halt C ⟨t6.pc, rfl, t6.regs⟩ K5 sp5 hF))
+      (.inr (.inl (.of_e4 (bms_halt C ⟨t6.pc, rfl, t6.regs⟩ K5 sp5 hF))))
   obtain ⟨n6, e6, t6⟩ := t5.notTaken hc5 0x8C bm_at_8a (by decide)
     (by show (reg n5 a0 == reg n5 0) = false; rw [o5, t5.zero]; rfl)
   have t6' : St n6.mem BM n6 0x8C (reg n6) := ⟨t6.pc, rfl, fun _ => rfl⟩
@@ -528,9 +532,9 @@ logs, records the flash size, and clears the two read buffers. -/
 theorem bms_entry {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     (m : Machine) (hm : m.mem = M0) (hpc : m.pc = BM) (hsp : reg m sp = top) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) m := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) m := by
   have C := X.env
   have hlo := C.hlo
   have hhi := C.hhi
@@ -645,6 +649,39 @@ theorem bms_entry {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
 
 /-! ## The headline theorem -/
 
+/-- `bootMain_correct`, with `boot_main`'s halts: it halts with a
+deliberate code, panics only when the first closure's contract allows it
+(`Q`), or jumps into the slot that `decideBoot` boots. -/
+theorem bootMain_correct_q {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy}
+    {M0 : Word → BitVec 8} {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
+    {E : (Word → BitVec 8) → Prop}
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    (m : Machine) (hm : m.mem = M0) (hpc : m.pc = BM) (hsp : reg m sp = top) :
+    (HaltsDeliberately m ∨ (Q ∧ Panics m)) ∨ ∃ m', Steps m m' ∧
+      ∃ (check : Slot → Option Nat) (slot : Slot) (target : Nat) (mf : Manifest) (sv t : Nat) (h : ImageHeader)
+        (Mb : Word → BitVec 8),
+        (∀ s l, check s = some l →
+          ∃ mf t, bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum s)) = some (mf, l, t)) ∧
+        (decideBoot (bmRecs flash).1 (bmLevel M0) check).outcome = .boot slot target ∧
+        bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t) ∧
+        decodeImageHeader (bmcImage flash (BitVec.ofNat 32 (bmSlotNum slot)) mf) mf.image.length = some h ∧
+        target ≤ level (Fuses.ofNat (((memLoad32 m'.mem efuseRd).toNat >>> 14) % 65536)) ∧
+        (∃ X, memLoad32 m'.mem efuseRd = memLoad32 M0 efuseRd ||| X) ∧
+        m'.pc = BitVec.ofNat 32 h.entryPoint &&& ~~~1 ∧
+        reg m' a0 = BitVec.ofNat 32 (bmSlotNum slot) ∧
+        BmKeep M0 Mb (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) ∧
+        HdrAt Mb (bmAcc top) h ∧
+        ∀ x, Sep (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) x 1 →
+          (x.toNat < 0x60000000 ∨ 0x600C4000 ≤ x.toNat) →
+          m'.mem x = bootMem flash Mb (bmAcc top)
+            (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x := by
+  rcases bms_entry X m hm hpc hsp with ⟨m', hs, hj⟩ | hp
+  · unfold BmJump at hj
+    obtain ⟨c, slot, target, mf, sv, t, h, Mb, hc, hD, hA, hd, hl, rest⟩ := hj
+    rw [bmLevel, BootLevel.btPop_level] at hl
+    exact .inr ⟨m', hs, c, slot, target, mf, sv, t, h, Mb, hc, hD, hA, hd, hl, rest⟩
+  · exact .inl hp
+
 /-- **`boot_main` boots only what `decideBoot` boots.** Started at its
 entry with the stack pointer at `top`, in memory `M0` and flash `flash` that
 meet `BmHyp`, `boot_main` panics or halts, or it jumps to the entry point of
@@ -686,12 +723,7 @@ theorem bootMain_correct {flash : Nat → BitVec 8} {pinned : Bytes} {policy : P
         ∀ x, Sep (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) x 1 →
           (x.toNat < 0x60000000 ∨ 0x600C4000 ≤ x.toNat) →
           m'.mem x = bootMem flash Mb (bmAcc top)
-            (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x := by
-  rcases bms_entry X m hm hpc hsp with ⟨m', hs, hj⟩ | hp
-  · unfold BmJump at hj
-    obtain ⟨c, slot, target, mf, sv, t, h, Mb, hc, hD, hA, hd, hl, rest⟩ := hj
-    rw [bmLevel, BootLevel.btPop_level] at hl
-    exact .inr ⟨m', hs, c, slot, target, mf, sv, t, h, Mb, hc, hD, hA, hd, hl, rest⟩
-  · exact .inl hp
+            (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x :=
+  (bootMain_correct_q X.q m hm hpc hsp).imp_left fun h => h.elim HaltsDeliberately.panics And.right
 
 end C3.RV32.Cur

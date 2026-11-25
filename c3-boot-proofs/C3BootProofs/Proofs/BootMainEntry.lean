@@ -130,11 +130,11 @@ counts the eFuse level, logs it, clears the `Buffers`, and goes on at
 theorem bme_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0x116 (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     {st : State} (hst : (bmRecs flash).1 = st) (hv : BmdValid st) (P : BmePre flash F st (reg n)) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   have hhi := C.hhi; have hlo := C.hlo
   have hKv : bmK R romStack stack0 = 0xBE80 + 0x150 + R + romStack + stack0 := rfl
@@ -275,12 +275,12 @@ and goes on at 0x116. -/
 theorem bme_c1 {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0xEC (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     {st : State} (hrec : bmRecs flash = (st, some .b)) (hcp : BmeCopy n.mem (F + BitVec.ofNat 32 0x50) (some st))
     (h20 : reg n 20 = F + BitVec.ofNat 32 0xB9A8) (hsp : reg n sp = F) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   obtain ⟨hg, hw, _, hv⟩ := hcp
   have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
@@ -329,13 +329,13 @@ and goes on at 0x116. -/
 theorem bme_c0 {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0x100 (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     {st : State} (hrec : bmRecs flash = (st, some .a))
     (hcp : BmeCopy n.mem (F + BitVec.ofNat 32 0xB9A8) (some st))
     (h20 : reg n 20 = F + BitVec.ofNat 32 0xB9A8) (hsp : reg n sp = F) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   obtain ⟨hg, hw, _, hv⟩ := hcp
   have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
@@ -380,12 +380,12 @@ state and goes on at 0x116. -/
 theorem bme_def {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0xC6 (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     (hrec : bmRecs flash = (State.default, none)) (h9 : reg n 9 = 2)
     (h20 : reg n 20 = F + BitVec.ofNat 32 0xB9A8) (hsp : reg n sp = F) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
   obtain ⟨n1, c1, u1⟩ := s.block bmB8 hc bmB8_end ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -430,13 +430,13 @@ set_option maxRecDepth 20000 in
 theorem bme_sel {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0xB4 (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     (hc0 : BmeCopy n.mem (F + BitVec.ofNat 32 0xB9A8) (decodeRecord (bmcFlash flash 0x28000 32)))
     (hc1 : BmeCopy n.mem (F + BitVec.ofNat 32 0x50) (decodeRecord (bmcFlash flash 0x29000 32)))
     (h20 : reg n 20 = F + BitVec.ofNat 32 0xB9A8) (hsp : reg n sp = F) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
   obtain ⟨n1, c1, u1⟩ := s.block bmB7 hc bmB7_end ⟨trivial, trivial, trivial, trivial⟩

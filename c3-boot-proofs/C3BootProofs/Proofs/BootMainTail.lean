@@ -86,6 +86,20 @@ structure BmHyp (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (M
   c0 : Closure0Contract flash R romBase romCode pinned policy stack0 E
   hE : ∀ M, BmKeep M0 M (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) → E M
 
+/-- `BmHyp` with the first closure's contract `Closure0ContractQ Q`: the
+closure panics only when `Q` holds. `BmHyp.q` gives it for `Q := True`. -/
+structure BmHypQ (Q : Prop) (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (M0 : Word → BitVec 8)
+    (top : Word) (R romStack stack0 : Nat) (romBase : Word) (romCode : List Nat)
+    (E : (Word → BitVec 8) → Prop) : Prop extends BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E
+    where
+  cq : Closure0ContractQ Q flash R romBase romCode pinned policy stack0 E
+
+theorem BmHyp.q {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8} {top : Word}
+    {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat} {E : (Word → BitVec 8) → Prop}
+    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E) :
+    BmHypQ True flash pinned policy M0 top R romStack stack0 romBase romCode E :=
+  ⟨X, X.c0.q⟩
+
 /-- Where `boot_main` keeps the `Accepted` bytes that it passes to `boot`. -/
 def bmAcc (top : Word) : Word := top - 0x3B0
 
@@ -111,13 +125,22 @@ def BmJump (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (M0 : W
       m'.mem x = bootMem flash Mb (bmAcc top)
         (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x
 
-/-- From `n`, the machine reaches a state that `J` holds of, or panics. -/
-def BmEnd (J : Machine → Prop) (n : Machine) : Prop := (∃ m', Steps n m' ∧ J m') ∨ Panics n
+/-- From `n`, the machine reaches a state that `J` holds of, or halts with a
+deliberate code, or panics, and then `Q` holds. -/
+def BmEnd (Q : Prop) (J : Machine → Prop) (n : Machine) : Prop :=
+  (∃ m', Steps n m' ∧ J m') ∨ HaltsDeliberately n ∨ (Q ∧ Panics n)
 
-theorem BmEnd.pre {J : Machine → Prop} {n n' : Machine} (h : Steps n n') (e : BmEnd J n') : BmEnd J n := by
-  rcases e with ⟨m', h', hj⟩ | hp
+theorem BmEnd.pre {Q : Prop} {J : Machine → Prop} {n n' : Machine} (h : Steps n n') (e : BmEnd Q J n') :
+    BmEnd Q J n := by
+  rcases e with ⟨m', h', hj⟩ | hd | ⟨hq, hp⟩
   · exact .inl ⟨m', h.trans h', hj⟩
-  · exact .inr (Panics.of_steps h hp)
+  · exact .inr (.inl (hd.of_steps h))
+  · exact .inr (.inr ⟨hq, Panics.of_steps h hp⟩)
+
+/-- A panic, under `Q`, after `h`. -/
+theorem BmEnd.panic {Q : Prop} {J : Machine → Prop} {n n' : Machine} (h : Steps n n') (e : Q ∧ Panics n') :
+    BmEnd Q J n :=
+  .inr (.inr ⟨e.1, Panics.of_steps h e.2⟩)
 
 /-! ## Helpers -/
 
@@ -397,7 +420,7 @@ jumps into the slot or panics. -/
 theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0x348 (reg n)) (hsp : reg n sp = F)
     (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
@@ -409,7 +432,7 @@ theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
     (h19 : reg n 19 = BitVec.ofNat 32 target) (htg : target ≤ 16)
     (h18 : reg n 18 = BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset))
     (h23 : reg n 23 = btPop (memLoad32 M0 efuseRd)) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   have hlo := C.hlo; have hhi := C.hhi; have h16 := C.hsp; have hR4 := C.hR
   have hKv : bmK R romStack stack0 = 0xBE80 + 0x150 + R + romStack + stack0 := rfl
@@ -551,7 +574,7 @@ theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
               obtain ⟨d1, d2, d3⟩ := hram j hj hk
               exact ⟨d1, by omega, sep_of_le (by rw [eF _ (by decide)]; omega) (by rw [eF _ (by decide)]; omega),
                 sep_of_le (by rw [hSb, hbK]; omega) (by rw [hSb]; omega), d3⟩ }
-  rcases boot_correct (flash := flash) n5 BC X.rom pc5 (by rw [r5 _ (by decide), a0_4])
+  rcases boot_correct_halt (flash := flash) n5 BC X.rom pc5 (by rw [r5 _ (by decide), a0_4])
       (by rw [r5 _ (by decide), a1_4]) (by rw [r5 _ (by decide), a2_4]) (by rw [r5 _ (by decide), a3_4])
       (by rw [r5 _ (by decide), a4_4]) X.log X.suspend X.invalidate X.resume with
     ⟨m', c6, pc6, a06, lev6, ⟨X6, hX6⟩, mem6⟩ | hp
@@ -578,6 +601,6 @@ theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
         rw [sp5]
         exact bmt_sep_in hx (by rw [hSb, BitVec.toNat_sub, BitVec.toNat_ofNat, hKv, hbK]; omega)
           (by rw [hSb, BitVec.toNat_sub, BitVec.toNat_ofNat, hKv, hbK]; omega)) hp
-  · exact .inr (Panics.of_steps (c1.trans (c2.trans (c3.trans (c4.trans c5)))) hp)
+  · exact .inr (.inl (.of_steps (c1.trans (c2.trans (c3.trans (c4.trans c5)))) hp))
 
 end C3.RV32.Cur
