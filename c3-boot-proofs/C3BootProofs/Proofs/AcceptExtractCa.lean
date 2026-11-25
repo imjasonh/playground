@@ -172,7 +172,7 @@ set_option maxHeartbeats 4000000 in
 /-- `read_chain` on the `l` bytes at `p` of the document, with the result
 at `sp + 0x1320` and `keys`'s free part, `fl` bytes from `fp`, in the
 slice at `sp + 0x1FDC`. -/
-theorem aceca_rc (hrc : AcaRcErr) {X : AceCtx} (O : X.Ok) {Q : Post} {M : Word → BitVec 8}
+theorem aceca_rc (hrc : AcetsRcErr) {X : AceCtx} (O : X.Ok) {Q : Post} {M : Word → BitVec 8}
     {f : Fin 32 → Word} {fp p : Word} {l fl : Nat} (hfl : fl = X.Bf.toNat + 0xB840 - fp.toNat)
     (hfp1 : X.Bf.toNat + 0x6800 ≤ fp.toNat) (hfp2 : fp.toNat ≤ X.Bf.toNat + 0xB840)
     (hsp : f sp = X.B + 0x3A50) (h0 : f a0 = acSlot X.B 0x1320) (h1 : f a1 = p)
@@ -210,7 +210,7 @@ theorem aceca_rc (hrc : AcaRcErr) {X : AceCtx} (O : X.Ok) {Q : Post} {M : Word �
       ∀ e, readChainPos M p l fp fl = .error e → (m2.mem (acSlot X.B 0x1320 + 4)).toNat < 0x27)
     ac_at_dca ac_at_dce (by decide) (fun m1 hpc1 hmem1 hreg1 hbe => ?_) (fun m2 hP hcd => ?_)
     (fun m2 hP => k m2 hP.1 hP.2)
-  · unfold AcaRcErr at hrc
+  · unfold AcetsRcErr at hrc
     obtain ⟨m', hs, hpc', hsp', hk, hR, hE⟩ := hrc m1 (sp0 := X.B + 0x3A50) (out := acSlot X.B 0x1320)
       (p := p) (fr := acSlot X.B 0x1FDC) (fp := fp) (n := l) (fl := fl)
       (retAddr := AC + BitVec.ofNat 32 (0xDCA + 8)) (by rw [hmem1]; exact hc) hpc1
@@ -583,7 +583,7 @@ theorem aceca_erSlot {X : AceCtx} (O : X.Ok) {M M2 : Word → BitVec 8}
 
 set_option maxHeartbeats 8000000 in
 /-- One pass of the loop from 0xD8C. -/
-theorem aceca_pass (hrc : AcaRcErr) {X : AceCtx} (O : X.Ok) {n0 : Machine} {fp : Word} {jr : Json}
+theorem aceca_pass (hrc : AcetsRcErr) {X : AceCtx} (O : X.Ok) {n0 : Machine} {fp : Word} {jr : Json}
     {rest : List Json} {fs : List FulcioKey} (A : AceAt X n0 0xD8C fp) (I : AceCaInv X n0 fp jr rest fs) :
     WP bootMainClosure0Code AC (acaQ X (acaP X jr) (acaL X jr rest)) n0.mem 0xD8C (reg n0) := by
   have F := O.lay.fr
@@ -732,8 +732,8 @@ theorem aceca_pass (hrc : AcaRcErr) {X : AceCtx} (O : X.Ok) {n0 : Machine} {fp :
 /-! ## The loop -/
 
 /-- **The certificate-authority loop, 0xD8C to 0xEBA.** Given the error
-bound on `read_chain` that `AcaRcErr` states. -/
-theorem ace_ca (hrc : AcaRcErr) : AceCaStage := by
+bound on `read_chain` that `AcetsRcErr` states. -/
+theorem ace_ca (hrc : AcetsRcErr) : AceCaStage := by
   intro X O n fp jr rest fs A I
   induction rest generalizing n fp fs with
   | nil =>

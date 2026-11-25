@@ -272,6 +272,7 @@ import C3BootProofs.Proofs.ResetPath
 import C3BootProofs.Proofs.Reset
 import C3BootProofs.Proofs.AcceptExtractDup
 import C3BootProofs.Proofs.AcceptExtractTsa
+import C3BootProofs.Proofs.AcceptExtractCa
 
 /-!
 # Audit
@@ -10474,3 +10475,30 @@ end C3
 
 /-- info: 'C3.RV32.Ac.acets_back' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acets_back
+
+/-- info: 'C3.RV32.Ac.ace_ca' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_ca
+
+/-- info: 'C3.RV32.Ac.aceca_pass' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_pass
+
+/-- info: 'C3.RV32.Ac.aceca_dd2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_dd2
+
+/-- info: 'C3.RV32.Ac.aceca_e12' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_e12
+
+/-- info: 'C3.RV32.Ac.aceca_back' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_back
+
+/-- info: 'C3.RV32.Ac.aceca_rc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_rc
+
+/-- info: 'C3.RV32.Ac.aceca_e2e' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_e2e
+
+/-- info: 'C3.RV32.Ac.aceca_e40' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_e40
+
+/-- info: 'C3.RV32.Ac.aceca_e7a' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aceca_e7a

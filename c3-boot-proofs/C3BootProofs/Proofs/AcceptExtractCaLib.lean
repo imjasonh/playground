@@ -1,6 +1,7 @@
 import C3BootProofs.Proofs.AcceptExtractHead
 import C3BootProofs.Proofs.AcceptExtractSeq
 import C3BootProofs.Proofs.TrustedRootLiftChain
+import C3BootProofs.Proofs.AcceptExtractTsa
 
 /-!
 # Tools for the certificate-authority loop, and its tail
@@ -22,30 +23,6 @@ open C3 C3.Image C3.RV32.P3 C3.RV32.Sv C3.Json
 set_option maxRecDepth 100000
 
 local notation "MCS" => (BitVec.ofNat 32 memcpyStubAddress : Word)
-
-/-- `trustedRootReadChain_correct`, and one more fact about `Err`: the
-error byte at `out + 4` is below 0x27, the bound that the closure's exit
-at 0x7D6 logs. `RcOut` names that byte only for the errors whose code the
-model fixes, so the loop's proof takes this as a hypothesis. -/
-def AcaRcErr : Prop :=
-  ∀ (m : Machine) {sp0 out p fr fp retAddr : Word} {n fl : Nat},
-    RcCode m.mem → m.pc = TRC → reg m a0 = out → reg m a1 = p → reg m a2 = BitVec.ofNat 32 n →
-    reg m a3 = fr → reg m ra = retAddr → retAddr &&& ~~~1 = retAddr → reg m sp = sp0 →
-    sp0.toNat % 16 = 0 → 0x740 ≤ sp0.toNat → sp0.toNat ≤ 0x40000000 →
-    P3.Fr (sp0 + 0xFFFFF8C0 + BitVec.ofNat 32 0x1A0) 0x420 → Sep (sp0 + 0xFFFFF8C0) 0x740 TVF_RO 0x1400 →
-    out.toNat % 4 = 0 → out.toNat + 0x40 ≤ 0x40000000 → Sep out 0x40 (sp0 + 0xFFFFF8C0) 0x740 →
-    Sep out 0x40 fr 8 → Sep out 0x40 fp fl →
-    fr.toNat % 4 = 0 → fr.toNat + 8 ≤ 0x40000000 → Sep fr 8 (sp0 + 0xFFFFF8C0) 0x740 →
-    Sep fr 8 TVF_RO 0x1400 → Sep fr 8 fp fl →
-    fp.toNat + fl + 14 ≤ 0x40000000 → fp.toNat ≠ 0 → Sep fp (fl + 14) (sp0 + 0xFFFFF8C0) 0x740 →
-    Sep fp fl TVF_RO 0x1400 →
-    memLoad32 m.mem fr = fp → memLoad32 m.mem (fr + 4) = BitVec.ofNat 32 fl →
-    p.toNat + n + 4 ≤ 0x40000000 → p.toNat ≠ 0 → Sep p (n + 4) (sp0 + 0xFFFFF8C0) 0x740 →
-    Sep p n fr 8 → Sep p n fp fl →
-    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-      (∀ q : Fin 32, q.val ∈ trSaved → reg m' q = reg m q) ∧
-      rcMem m.mem (sp0 + 0xFFFFF8C0) out fr fp fl (readChainPos m.mem p n fp fl) m'.mem ∧
-      ∀ e, readChainPos m.mem p n fp fl = .error e → (m'.mem (out + 4)).toNat < 0x27
 
 /-! ## The ranges a pass writes -/
 
