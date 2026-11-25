@@ -183,8 +183,14 @@ impl DrivePlanner {
                 }
                 *cell = level | if white_ward { WHITE_WARD } else { 0 };
 
-                old_byte = (old_byte << 2) | if white_ward { 0b11 } else { 0 };
-                new_byte = (new_byte << 2) | if white_ward != drive { 0b11 } else { 0 };
+                // UC8179 with DDX[1:0]=01 (VCOM_DATA_INTERVAL=0x31) encodes 1=W, 0=K:
+                //   (1, 0) = WK (0x23) -> push black
+                //   (0, 1) = KW (0x22) -> push white
+                //   (1, 1) = WW, (0, 0) = KK -> hold
+                let old_bit = !white_ward;
+                let new_bit = old_bit != drive;
+                old_byte = (old_byte << 2) | if old_bit { 0b11 } else { 0 };
+                new_byte = (new_byte << 2) | if new_bit { 0b11 } else { 0 };
                 if x % 4 == 3 {
                     old_row[x / 4] = old_byte;
                     new_row[x / 4] = new_byte;
@@ -220,7 +226,7 @@ impl DrivePlanner {
             let mut byte = 0u8;
             for dx in 0..4 {
                 byte = (byte << 2)
-                    | if row[base + dx] & WHITE_WARD != 0 {
+                    | if row[base + dx] & WHITE_WARD == 0 {
                         0b11
                     } else {
                         0
@@ -297,7 +303,9 @@ impl DrivePlanner {
                 }
                 *cell = level | if white_ward { WHITE_WARD } else { 0 };
 
-                new_byte = (new_byte << 2) | if white_ward != drive { 0b11 } else { 0 };
+                let old_bit = !white_ward;
+                let new_bit = old_bit != drive;
+                new_byte = (new_byte << 2) | if new_bit { 0b11 } else { 0 };
                 if x % 4 == 3 {
                     new_row[x / 4] = new_byte;
                 }
@@ -313,9 +321,10 @@ impl DrivePlanner {
 mod tests {
     use super::*;
 
-    /// Applies planes the way the custom tables do: a pixel whose old and
-    /// new bits differ moves toward black when its old bit is 0 (`WK`) and
-    /// toward white when it is 1 (`KW`).
+    /// Applies planes the way the UC8179 custom tables do with `DDX[1:0] = 01`
+    /// (`1` = W, `0` = K): a pixel whose old and new bits differ moves toward
+    /// black when its old bit is 1 (`WK` = `(1, 0)`) and toward white when its
+    /// old bit is 0 (`KW` = `(0, 1)`).
     struct Controller {
         old: Vec<u8>,
         net: Vec<i32>,
@@ -339,7 +348,7 @@ mod tests {
                 let bit = |plane: &[u8]| plane[i / 8] & (0x80 >> (i % 8)) != 0;
                 let (o, n) = (bit(&self.old), bit(new));
                 if o != n {
-                    *net += if o { -1 } else { 1 };
+                    *net += if o { 1 } else { -1 };
                 }
             }
         }
