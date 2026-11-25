@@ -2169,7 +2169,7 @@ theorem sv_cg1 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b33_14 : n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = BitVec.ofNat 8 (sg.getD 0 0) := by rw [m33]; exact b32_14
     have q33_1fc : ∀ j, j < 63 → n33.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m33]; exact q32_1fc j hj
     clear q32_1fc b32_14 w32_400 w32_50 w32_48 w32_44 w32_38 w32_34 w32_30 w32_2c w32_28 w32_24 w32_18 w32_10 w32_c w32_8 w32_4 g32_25 g32_27 g32_26 g32_24 g32_23 g32_22 g32_21 g32_20 g32_19 g32_18 g32_14 g32_13 g32_12 g32_11 g32_10 g32_9 g32_8 g32_4 g32_3 g32_2 V32 E32 fR32 t32 fr32 rb32 s32 m32 u32 c32
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hlast h0'), sv_fail_1882 F E33 s33 t33 (fun x hx => (fR33 x hx).trans (fM x hx).symm) V33 hret g33_2 g33_18 hO g33_3 g33_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hlast h0'), sv_fail_1882 F E33 s33 t33 (fun x hx => (fR33 x hx).trans (fM x hx).symm) V33 hret g33_2 g33_18 hO g33_3 g33_4 (by rw [g33_25]; sv_code)⟩
   -- 0x1716: branch, not taken
   obtain ⟨n31, d31, u31⟩ := s30.notTaken E30.self 0x171A sv_at_1716
     (by decide) (by rw [g30_21, g30_10]; exact br_bne_f hlast)
@@ -2612,7 +2612,7 @@ theorem sv_cg1 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b38_420 : n38.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := by rw [m38]; exact b37_420
     have q38_1fc : ∀ j, j < 63 → n38.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m38]; exact q37_1fc j hj
     clear q37_1fc b37_420 b37_14 w37_400 w37_50 w37_48 w37_44 w37_38 w37_34 w37_30 w37_2c w37_28 w37_24 w37_18 w37_10 w37_c w37_8 w37_4 g37_25 g37_27 g37_26 g37_24 g37_23 g37_22 g37_21 g37_20 g37_19 g37_18 g37_11 g37_10 g37_9 g37_8 g37_4 g37_3 g37_2 V37 E37 fR37 t37 fr37 rb37 s37 m37 u37 c37
-    exact .inl ⟨(fun ⟨h0', bq33', h1', _⟩ => by rw [hr33] at h1'; cases h1'), sv_fail_1882 F E38 s38 t38 (fun x hx => (fR38 x hx).trans (fM x hx).symm) V38 hret g38_2 g38_18 hO g38_3 g38_4⟩
+    exact .inl ⟨(fun ⟨h0', bq33', h1', _⟩ => by rw [hr33] at h1'; cases h1'), sv_fail_1882 F E38 s38 t38 (fun x hx => (fR38 x hx).trans (fM x hx).symm) V38 hret g38_2 g38_18 hO g38_3 g38_4 (by rw [g38_25]; sv_code)⟩
   by_cases hl3 : bq33.length ≤ 3
   rotate_left
   · have z33 := Bad33 fun b h => by rw [hr33] at h; cases h; omega
@@ -2899,7 +2899,7 @@ theorem sv_cg1 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b38_420 : n38.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := by rw [m38]; exact b37_420
     have q38_1fc : ∀ j, j < 63 → n38.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m38]; exact q37_1fc j hj
     clear q37_1fc b37_420 b37_14 w37_400 w37_50 w37_48 w37_44 w37_38 w37_34 w37_30 w37_2c w37_28 w37_24 w37_18 w37_10 w37_c w37_8 w37_4 g37_25 g37_27 g37_26 g37_24 g37_23 g37_22 g37_21 g37_20 g37_19 g37_18 g37_11 g37_10 g37_9 g37_8 g37_4 g37_3 g37_2 V37 E37 fR37 t37 fr37 rb37 s37 m37 u37 c37
-    exact .inl ⟨(fun ⟨h0', bq33', h1', h2', _⟩ => by rw [hr33] at h1'; cases h1'; exact hl3 h2'), sv_fail_1882 F E38 s38 t38 (fun x hx => (fR38 x hx).trans (fM x hx).symm) V38 hret g38_2 g38_18 hO g38_3 g38_4⟩
+    exact .inl ⟨(fun ⟨h0', bq33', h1', h2', _⟩ => by rw [hr33] at h1'; cases h1'; exact hl3 h2'), sv_fail_1882 F E38 s38 t38 (fun x hx => (fR38 x hx).trans (fM x hx).symm) V38 hret g38_2 g38_18 hO g38_3 g38_4 (by rw [g38_25]; sv_code)⟩
   have z33 := Ok33 bq33 hr33 hl3
   have keep_kk33 : SvKeepL B n0.mem n33.mem [(0x4, 0x4), (0x400, 0x4), (0x420, 0x8), (0x370, 0x3)] := keep_kk32.trans K33
   clear keep_kk32

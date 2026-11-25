@@ -154,6 +154,7 @@ theorem sv_seg_leaf {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Ma
   obtain ⟨r1_2, hx1⟩ := hx1
   obtain ⟨r1_3, hx1⟩ := hx1
   obtain ⟨r1_4, hx1⟩ := hx1
+  obtain ⟨r1_8, hx1⟩ := hx1
   obtain ⟨r1_a0, hx1⟩ := hx1
   obtain ⟨r1_a1, hx1⟩ := hx1
   obtain ⟨r1_a2, hx1⟩ := hx1
@@ -183,7 +184,7 @@ theorem sv_seg_leaf {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Ma
   obtain ⟨b1_376, hx1⟩ := hx1
   obtain ⟨b1_377, hx1⟩ := hx1
   have K1_L := hx1
-  rcases sv_l2 FW E1 V1 hret hO s1 M0 fR1 r1_2 r1_a0 r1_a1 r1_a2 r1_18 r1_19 r1_20 r1_21 r1_22 r1_26 w1_378 w1_37c (((lc_in).content x1_0).ofNatLen) with ⟨-, e⟩ | hx2
+  rcases sv_l2 FW E1 V1 hret hO s1 M0 fR1 r1_2 r1_8 r1_a0 r1_a1 r1_a2 r1_18 r1_19 r1_20 r1_21 r1_22 r1_26 w1_378 w1_37c (((lc_in).content x1_0).ofNatLen) with ⟨-, e⟩ | hx2
   · exact .inl (SvErrRet.pre (c1) (by rw [r1_3]) (by rw [r1_4])
       (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)
   obtain ⟨tl1_2, hx2⟩ := hx2
@@ -232,7 +233,7 @@ theorem sv_seg_leaf {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Ma
   obtain ⟨w2_284, hx2⟩ := hx2
   obtain ⟨w2_288, hx2⟩ := hx2
   have K2_L := hx2
-  rcases sv_l3 FW E2 V2 hret hO s2 M0 fR2 r2_2 r2_9 r2_a0 r2_a1 r2_18 r2_19 r2_20 r2_21 r2_22 r2_23 r2_25 r2_26 r2_27 w2_78 w2_7c w2_284 w2_288 ((((((lc_in).content x1_0).ofNatLen).content x2_0).ofNatLen).restW (opt_ok_elem x2_5)) with ⟨-, e⟩ | hx3
+  rcases sv_l3 FW E2 V2 hret hO s2 M0 fR2 r2_2 r2_8 r2_9 r2_a0 r2_a1 r2_18 r2_19 r2_20 r2_21 r2_22 r2_23 r2_25 r2_26 r2_27 w2_78 w2_7c w2_284 w2_288 ((((((lc_in).content x1_0).ofNatLen).content x2_0).ofNatLen).restW (opt_ok_elem x2_5)) with ⟨-, e⟩ | hx3
   · exact .inl (SvErrRet.pre (c1.trans (c2)) (by rw [r2_3, r1_3]) (by rw [r2_4, r1_4])
       (fun x hx => (fR2 x hx).trans (fM x hx).symm) e)
   obtain ⟨tl1_3, hx3⟩ := hx3
@@ -256,6 +257,7 @@ theorem sv_seg_leaf {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Ma
   obtain ⟨r3_2, hx3⟩ := hx3
   obtain ⟨r3_3, hx3⟩ := hx3
   obtain ⟨r3_4, hx3⟩ := hx3
+  obtain ⟨r3_8, hx3⟩ := hx3
   obtain ⟨r3_9, hx3⟩ := hx3
   obtain ⟨r3_18, hx3⟩ := hx3
   obtain ⟨r3_19, hx3⟩ := hx3

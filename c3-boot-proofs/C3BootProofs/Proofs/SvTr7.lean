@@ -1098,7 +1098,7 @@ theorem sv_tr7 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 ap al aq ah sip sil : W
     have w22_42c : memLoad32 n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x42C) = aq := by rw [m22]; exact w21_42c
     have w22_430 : memLoad32 n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x430) = ah := by rw [m22]; exact w21_430
     clear w21_430 w21_42c w21_428 w21_424 w21_37c w21_378 w21_268 w21_264 w21_260 w21_25c w21_7c w21_64 w21_50 w21_44 g21_8 g21_27 g21_26 g21_25 g21_24 g21_23 g21_22 g21_21 g21_20 g21_19 g21_18 g21_12 g21_11 g21_10 g21_4 g21_3 g21_2 V21 E21 fR21 t21 fr21 rb21 s21 m21 u21 c21
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hne h0'), sv_fail F E22 s22 t22 (fun x hx => (fR22 x hx).trans (fM x hx).symm) V22 hret g22_2 g22_18 hO g22_3 g22_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hne h0'), sv_fail F E22 s22 t22 (fun x hx => (fR22 x hx).trans (fM x hx).symm) V22 hret g22_2 g22_18 hO g22_3 g22_4 (by rw [g22_8]; sv_code)⟩
   -- 0xE9C: branch, not taken
   obtain ⟨n15, d15, u15⟩ := s14.notTaken E14.self 0xEA0 sv_at_e9c
     (by decide) (by rw [g14_24, s14.zero]; exact br_beq_f hne)

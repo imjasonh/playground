@@ -56,10 +56,6 @@ theorem AcsImg.keep {X : AcsCtx} {mf : Manifest} {header : ImageHeader} {M M' : 
     rw [List.mem_range] at hj
     rw [acf_slot_add, h _ (.inr ⟨by omega, by omega⟩)]
 
-/-- The exit at 0x7D6 with a code of 0x27 or more returns `None`. -/
-def AcsFinishBad : Prop :=
-  ∀ (X : AcsCtx), X.Ok → ∀ n, AcFinishInv X.B X.Bf X.g X.t X.v X.M0 n → AcFinishBad X.B X.r n → X.End n
-
 theorem acs_lo8 (b : BitVec 8) : (b.zeroExtend 32).extractLsb' 0 8 = b := by
   apply BitVec.eq_of_toNat_eq
   simp only [BitVec.extractLsb'_toNat, BitVec.toNat_setWidth, Nat.shiftRight_zero]
@@ -118,7 +114,7 @@ theorem acs_good {X : AcsCtx} {n : Machine} {M' : Word → BitVec 8} {mf : Manif
 
 /-- **From 0x1A46**, with what the earlier stages leave: the closure panics
 or returns with `AcsRes`. -/
-theorem acs_fin (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest}
+theorem acs_fin {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest}
     {header : ImageHeader} {parts : TufParts} {ver ex ex' : Nat} {root : SigstoreRoot} {b : Bundle}
     (I : AcInv X.B X.Bf X.g X.t X.v X.M0 n) (P : AcFinishPre X.B X.r b root ex' n) (hle : ex' ≤ ex)
     (A : AcsImg X mf header n.mem (reg n (21 : Fin 32)) (reg n (25 : Fin 32)) (reg n (27 : Fin 32)))
@@ -133,7 +129,7 @@ theorem acs_fin (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf 
   rcases h with h | ⟨FI, h⟩ | ⟨pc, sp', sv, r3, r4, R⟩
   · exact .inl ⟨n', s, h⟩
   · exact acs_end_pre s (by rw [FI.gp, I.gp]) (by rw [FI.tp, I.tp])
-      (h.elim (ok.failW FI) (hFx X ok n' FI))
+      (ok.failW FI h)
   · refine .inr ⟨n', s, pc, sp', sv, by rw [r3, I.gp], by rw [r4, I.tp], fun x h1 h2 h3 => ?_,
       .inr (acs_good A hp hv hx hb hle R)⟩
     obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, fr⟩ := R

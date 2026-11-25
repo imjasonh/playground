@@ -65,7 +65,7 @@ theorem acs_aceU64_le {M : Word → BitVec 8} {a : Word} {x : Nat} (h0 : memLoad
   unfold aceU64; rw [h0, h1]; simp only [BitVec.toNat_ofNat]; omega
 
 /-- **From 0x836**: the closure panics or returns with `AcsRes`. -/
-theorem acs_tgt (hT : AcTargetsStage) (hE : AcExtractStage) (hFx : AcsFinishBad)
+theorem acs_tgt (hT : AcTargetsStage) (hE : AcExtractStage)
     {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest} {header : ImageHeader} {parts : TufParts}
     {root : TufRoot} {re : Nat} (S : AcsAt836 X mf header parts root re n) : X.End n := by
   have E := ok.envsAt S.inv
@@ -86,7 +86,7 @@ theorem acs_tgt (hT : AcTargetsStage) (hE : AcExtractStage) (hFx : AcsFinishBad)
     acs_aceU64_le w20 (by rw [show acSlot X.B 0x20 + 4 = acSlot X.B 0x24 from acf_slot_add X.B 0x20 4]; exact w24)
   have l28 : aceU64 n'.mem (acSlot X.B 0x28) ≤ re :=
     acs_aceU64_le w28 (by rw [show acSlot X.B 0x28 + 4 = acSlot X.B 0x2C from acf_slot_add X.B 0x28 4]; exact w2C)
-  exact acs_ext hE hFx ok (D := X.Bf + 0x4000) (ver := root.version)
+  exact acs_ext hE ok (D := X.Bf + 0x4000) (ver := root.version)
     { st := ⟨hpc, rfl, fun _ => rfl⟩
       inv := I'
       img := A

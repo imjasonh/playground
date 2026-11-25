@@ -508,7 +508,7 @@ theorem sv_csx {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b9_14 : n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = BitVec.ofNat 8 (sg.getD 0 0) := by rw [m9]; exact b8_14
     have q9_1fc : ∀ j, j < 63 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m9]; exact q8_1fc j hj
     clear q8_1fc b8_14 w8_50 w8_48 w8_44 w8_38 w8_34 w8_30 w8_2c w8_28 w8_24 w8_18 g8_25 g8_27 g8_26 g8_24 g8_23 g8_22 g8_21 g8_20 g8_19 g8_18 g8_10 g8_4 g8_3 g8_2 V8 E8 fR8 t8 fr8 rb8 s8 m8 u8 c8
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hfound h0'), sv_fail_1882 F E9 s9 t9 (fun x hx => (fR9 x hx).trans (fM x hx).symm) V9 hret g9_2 g9_18 hO g9_3 g9_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hfound h0'), sv_fail_1882 F E9 s9 t9 (fun x hx => (fR9 x hx).trans (fM x hx).symm) V9 hret g9_2 g9_18 hO g9_3 g9_4 (by rw [g9_25]; sv_code)⟩
   -- 0x17CA: branch, not taken
   obtain ⟨n7, d7, u7⟩ := s6.notTaken E6.self 0x17CC sv_at_17ca
     (by decide) (by rw [g6_10, s6.zero]; exact br_beq_f hfound)
@@ -1074,7 +1074,7 @@ theorem sv_csx {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have q18_1fc : ∀ j, j < 63 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m18]; exact q17_1fc j hj
     have q18_421 : ∀ j, j < 63 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x421 + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m18]; exact q17_421 j hj
     clear q17_421 q17_1fc b17_420 b17_14 w17_50 w17_48 w17_44 w17_38 w17_34 w17_30 w17_2c w17_28 w17_24 w17_18 g17_27 g17_26 g17_25 g17_24 g17_23 g17_22 g17_21 g17_20 g17_19 g17_18 g17_10 g17_4 g17_3 g17_2 V17 E17 fR17 t17 fr17 m17 s17 u17 d17 g16_10
-    exact .inl ⟨(fun ⟨h0', h1', _⟩ => by exact hev h1'), sv_fail_1882 F E18 s18 t18 (fun x hx => (fR18 x hx).trans (fM x hx).symm) V18 hret g18_2 g18_18 hO g18_3 g18_4⟩
+    exact .inl ⟨(fun ⟨h0', h1', _⟩ => by exact hev h1'), sv_fail_1882 F E18 s18 t18 (fun x hx => (fR18 x hx).trans (fM x hx).symm) V18 hret g18_2 g18_18 hO g18_3 g18_4 (by rw [g18_25]; sv_code)⟩
   have g16_10 : reg n16 a0 = BitVec.ofNat 32 1 := by rw [a0_16, ite_eq_left hev]; rfl
   -- 0x17F6: branch, not taken
   obtain ⟨n17, d17, u17⟩ := s16.notTaken E16.self 0x17F8 sv_at_17f6

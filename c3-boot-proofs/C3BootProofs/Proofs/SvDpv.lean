@@ -2097,7 +2097,9 @@ theorem sv_dpv {B out bp x20 x21 x22 x24 x26 q pv sgp sgl e0p e0l e1p e1l e2p e2
   obtain ⟨r43, hr43⟩ : ∃ r, ecdsaSigOf 32 M0 (sgp) (sgl.toNat) = r := ⟨_, rfl⟩
   rcases r43 with eb43 | ⟨sr43, ss43⟩
   · rw [hr43] at R43
-    obtain ⟨y0_43, -⟩ := R43
+    obtain ⟨y0_43, y1_43⟩ := R43
+    obtain ⟨ec_43, ey_43, hz_c43⟩ : ∃ b : BitVec 8, n43.mem (B + 0x21A0 + BitVec.ofNat 32 0x171) = b ∧ b.toNat < 0x27 :=
+      ⟨_, y1_43, by sv_eb hr43⟩
     have keep_kk43 : SvKeepL B n0.mem n43.mem [(0x70, 0x4), (0x68, 0x4), (0x170, 0x41)] := keep_kk42.trans K43
     clear keep_kk42
     have w43_30 : memLoad32 n43.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = w30 := (K43.w32 (by decide) (by decide)).trans w42_30
@@ -2112,6 +2114,7 @@ theorem sv_dpv {B out bp x20 x21 x22 x24 x26 q pv sgp sgl e0p e0l e1p e1l e2p e2
     have w43_68 : memLoad32 n43.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = sgl := (K43.w32 (by decide) (by decide)).trans w42_68
     have w43_70 : memLoad32 n43.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = sgp := (K43.w32 (by decide) (by decide)).trans w42_70
     have b43_170 : n43.mem (B + 0x21A0 + BitVec.ofNat 32 0x170) = (1 : BitVec 8) := y0_43
+    have b43_171 : n43.mem (B + 0x21A0 + BitVec.ofNat 32 0x171) = ec_43 := ey_43
     clear w42_68 w42_70 w42_50 w42_4c w42_48 w42_44 w42_40 w42_3c w42_38 w42_34 w42_30 g42_26 g42_24 g42_23 g42_22 g42_21 g42_20 g42_19 g42_18 g42_12 g42_11 g42_10 g42_4 g42_3 g42_2 V42 E42 fR42 t42 rg42 W42 K42 fr42 s42 d42
     -- 0xA06: lbu
     obtain ⟨n44, d44, u44⟩ := s43.lbu E43.self sv_at_a06 (off' := 0xA0A) (by decide)
@@ -2150,7 +2153,8 @@ theorem sv_dpv {B out bp x20 x21 x22 x24 x26 q pv sgp sgl e0p e0l e1p e1l e2p e2
     have w44_68 : memLoad32 n44.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = sgl := by rw [m44]; exact w43_68
     have w44_70 : memLoad32 n44.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = sgp := by rw [m44]; exact w43_70
     have b44_170 : n44.mem (B + 0x21A0 + BitVec.ofNat 32 0x170) = (1 : BitVec 8) := by rw [m44]; exact b43_170
-    clear b43_170 w43_70 w43_68 w43_50 w43_4c w43_48 w43_44 w43_40 w43_3c w43_38 w43_34 w43_30 y0_43
+    have b44_171 : n44.mem (B + 0x21A0 + BitVec.ofNat 32 0x171) = ec_43 := by rw [m44]; exact b43_171
+    clear b43_171 b43_170 w43_70 w43_68 w43_50 w43_4c w43_48 w43_44 w43_40 w43_3c w43_38 w43_34 w43_30 ey_43 y1_43 y0_43
     -- 0xA0A: lbu
     obtain ⟨n45, d45, u45⟩ := s44.lbu E44.self sv_at_a0a (off' := 0xA0E) (by decide)
     have s45 : St n45.mem SV n45 0xA0E (reg n45) := ⟨u45.pc, rfl, fun _ => rfl⟩
@@ -2172,6 +2176,9 @@ theorem sv_dpv {B out bp x20 x21 x22 x24 x26 q pv sgp sgl e0p e0l e1p e1l e2p e2
     have g45_23 : reg n45 (23 : Fin 32) = q := by rw [u45.regs, upd_ne (by decide) (by decide), g44_23]
     have g45_24 : reg n45 (24 : Fin 32) = x24 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_24]
     have g45_26 : reg n45 (26 : Fin 32) = x26 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_26]
+    have g45_8 : reg n45 (8 : Fin 32) = (ec_43).zeroExtend 32 := by
+      rw [u45.regs]; simp +decide only [upd, ↓reduceIte]
+      rw [g44_2, show B + 0x21A0 + 0x171 = B + 0x21A0 + BitVec.ofNat 32 0x171 by sv_addr, b44_171]
     have keep_kk45 : SvKeepL B n0.mem n45.mem [(0x70, 0x4), (0x68, 0x4), (0x170, 0x41)] := by rw [m45]; exact keep_kk44
     clear keep_kk44
     have w45_30 : memLoad32 n45.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = w30 := by rw [m45]; exact w44_30
@@ -2186,7 +2193,8 @@ theorem sv_dpv {B out bp x20 x21 x22 x24 x26 q pv sgp sgl e0p e0l e1p e1l e2p e2
     have w45_68 : memLoad32 n45.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = sgl := by rw [m45]; exact w44_68
     have w45_70 : memLoad32 n45.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = sgp := by rw [m45]; exact w44_70
     have b45_170 : n45.mem (B + 0x21A0 + BitVec.ofNat 32 0x170) = (1 : BitVec 8) := by rw [m45]; exact b44_170
-    clear b44_170 w44_70 w44_68 w44_50 w44_4c w44_48 w44_44 w44_40 w44_3c w44_38 w44_34 w44_30 g44_10 g44_26 g44_24 g44_23 g44_22 g44_21 g44_20 g44_19 g44_18 g44_4 g44_3 g44_2 V44 E44 fR44 t44 fr44 m44 s44 u44 d44
+    have b45_171 : n45.mem (B + 0x21A0 + BitVec.ofNat 32 0x171) = ec_43 := by rw [m45]; exact b44_171
+    clear b44_171 b44_170 w44_70 w44_68 w44_50 w44_4c w44_48 w44_44 w44_40 w44_3c w44_38 w44_34 w44_30 g44_10 g44_26 g44_24 g44_23 g44_22 g44_21 g44_20 g44_19 g44_18 g44_4 g44_3 g44_2 V44 E44 fR44 t44 fr44 m44 s44 u44 d44
     -- 0xA0E: branch, taken
     obtain ⟨n46, d46, u46⟩ := s45.taken E45.self 0x7A4 sv_at_a0e
       (by decide) (by rw [g45_10, s45.zero]; decide)
@@ -2200,6 +2208,7 @@ theorem sv_dpv {B out bp x20 x21 x22 x24 x26 q pv sgp sgl e0p e0l e1p e1l e2p e2
     have g46_2 : reg n46 sp = B + 0x21A0 := by rw [u46.regs, g45_2]
     have g46_3 : reg n46 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [u46.regs, g45_3]
     have g46_4 : reg n46 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [u46.regs, g45_4]
+    have g46_8 : reg n46 (8 : Fin 32) = (ec_43).zeroExtend 32 := by rw [u46.regs, g45_8]
     have g46_10 : reg n46 a0 = ((1 : BitVec 8)).zeroExtend 32 := by rw [u46.regs, g45_10]
     have g46_18 : reg n46 (18 : Fin 32) = out := by rw [u46.regs, g45_18]
     have g46_19 : reg n46 (19 : Fin 32) = bp := by rw [u46.regs, g45_19]
@@ -2223,8 +2232,9 @@ theorem sv_dpv {B out bp x20 x21 x22 x24 x26 q pv sgp sgl e0p e0l e1p e1l e2p e2
     have w46_68 : memLoad32 n46.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = sgl := by rw [m46]; exact w45_68
     have w46_70 : memLoad32 n46.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = sgp := by rw [m46]; exact w45_70
     have b46_170 : n46.mem (B + 0x21A0 + BitVec.ofNat 32 0x170) = (1 : BitVec 8) := by rw [m46]; exact b45_170
-    clear b45_170 w45_70 w45_68 w45_50 w45_4c w45_48 w45_44 w45_40 w45_3c w45_38 w45_34 w45_30 g45_26 g45_24 g45_23 g45_22 g45_21 g45_20 g45_19 g45_18 g45_10 g45_4 g45_3 g45_2 V45 E45 fR45 t45 fr45 m45 s45 u45 d45
-    exact .inl ⟨(fun ⟨h0', h1', h2', h3', h4', h5', sr43', ss43', h6', _⟩ => by rw [hr43] at h6'; cases h6'), sv_fail F E46 s46 t46 (fun x hx => (fR46 x hx).trans (fM x hx).symm) V46 hret g46_2 g46_18 hO g46_3 g46_4⟩
+    have b46_171 : n46.mem (B + 0x21A0 + BitVec.ofNat 32 0x171) = ec_43 := by rw [m46]; exact b45_171
+    clear b45_171 b45_170 w45_70 w45_68 w45_50 w45_4c w45_48 w45_44 w45_40 w45_3c w45_38 w45_34 w45_30 g45_8 g45_26 g45_24 g45_23 g45_22 g45_21 g45_20 g45_19 g45_18 g45_10 g45_4 g45_3 g45_2 V45 E45 fR45 t45 fr45 m45 s45 u45 d45
+    exact .inl ⟨(fun ⟨h0', h1', h2', h3', h4', h5', sr43', ss43', h6', _⟩ => by rw [hr43] at h6'; cases h6'), sv_fail F E46 s46 t46 (fun x hx => (fR46 x hx).trans (fM x hx).symm) V46 hret g46_2 g46_18 hO g46_3 g46_4 (by rw [g46_8]; sv_code)⟩
   rw [hr43] at R43
   obtain ⟨y0_43, yr_43, ys_43⟩ := R43
   have q43_171 : ∀ j, j < 32 → n43.mem (B + 0x21A0 + BitVec.ofNat 32 (0x171 + j)) = BitVec.ofNat 8 ((sr43).getD j 0) := fun j hj => by rw [show 0x171 + j = 0x170 + 1 + j by omega]; exact yr_43 j hj

@@ -363,6 +363,7 @@ import C3BootProofs.Proofs.Sha384FnCall
 import C3BootProofs.Proofs.Sha384Fn
 import C3BootProofs.Proofs.SvCalls
 import C3BootProofs.Proofs.SvLib2
+import C3BootProofs.Proofs.SvErrBound
 import C3BootProofs.Proofs.SvDer
 import C3BootProofs.Proofs.SvDer2
 import C3BootProofs.Proofs.SvDer3

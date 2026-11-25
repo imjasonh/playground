@@ -485,7 +485,7 @@ theorem sv_win0n {B out bp x20 x21 x22 x23 x24 x25 x26 x27 w3c w54 w58 w5c w60 w
     have w9_390 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x390) = k90 := by rw [m9]; exact w8_390
     have w9_394 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x394) = k94 := by rw [m9]; exact w8_394
     clear w8_394 w8_390 w8_38c w8_388 w8_7c w8_78 w8_60 w8_5c w8_58 w8_54 w8_3c g8_20 g8_27 g8_26 g8_25 g8_24 g8_23 g8_22 g8_21 g8_19 g8_18 g8_11 g8_10 g8_4 g8_3 g8_2 V8 E8 fR8 t8 fr8 rb8 s8 m8 u8 c8
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hwin h0'), sv_fail_1ab8 F E9 s9 t9 (fun x hx => (fR9 x hx).trans (fM x hx).symm) V9 hret g9_2 g9_18 hO g9_3 g9_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hwin h0'), sv_fail_1ab8 F E9 s9 t9 (fun x hx => (fR9 x hx).trans (fM x hx).symm) V9 hret g9_2 g9_18 hO g9_3 g9_4 (by rw [g9_20]; sv_code)⟩
   -- 0x19E8: branch, not taken
   obtain ⟨n9, d9, u9⟩ := s8.notTaken E8.self 0x19EA sv_at_19e8
     (by decide) (by rw [g8_10, s8.zero]; exact br_bne_f hwin)

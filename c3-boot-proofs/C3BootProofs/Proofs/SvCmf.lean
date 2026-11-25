@@ -2089,7 +2089,7 @@ theorem sv_cmf {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have q35_1fc : ∀ j, j < 63 → n35.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (bs.getD (5 + j) 0) := fun j hj => by rw [m35]; exact q34_1fc j hj
     have q35_420 : ∀ j, j < 68 → n35.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = BitVec.ofNat 8 (bs.getD j 0) := fun j hj => by rw [m35]; exact q34_420 j hj
     clear q34_420 q34_1fc b34_424 b34_400 w34_420 w34_404 w34_50 w34_48 w34_44 w34_38 w34_34 w34_30 w34_2c w34_28 w34_24 w34_18 w34_14 w34_10 w34_c w34_8 g34_25 g34_27 g34_26 g34_24 g34_23 g34_22 g34_21 g34_20 g34_19 g34_18 g34_10 g34_9 g34_8 g34_4 g34_3 g34_2 V34 E34 fR34 t34 fr34 rb34 s34 m34 u34 c34
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hdup h0'), sv_fail_1882 F E35 s35 t35 (fun x hx => (fR35 x hx).trans (fM x hx).symm) V35 hret g35_2 g35_18 hO g35_3 g35_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hdup h0'), sv_fail_1882 F E35 s35 t35 (fun x hx => (fR35 x hx).trans (fM x hx).symm) V35 hret g35_2 g35_18 hO g35_3 g35_4 (by rw [g35_25]; sv_code)⟩
   -- 0x17C0: branch, not taken
   obtain ⟨n33, d33, u33⟩ := s32.notTaken E32.self 0x17C2 sv_at_17c0
     (by decide) (by rw [g32_10, s32.zero]; exact br_bne_f hdup)

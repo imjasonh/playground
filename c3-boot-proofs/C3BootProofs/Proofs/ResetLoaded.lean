@@ -10,8 +10,7 @@ about the memory `M0` at reset (`RstCode M0`, and `BmHyp`'s `BmEnv`).
 This file derives all of them from `Loaded M0`, which says that `M0` holds
 the pinned image's pieces at their link addresses, so that
 `reset_correct_loaded` assumes only `Loaded M0`, the eFuse controller's
-contract, the ROM (`RomHyp`), how much stack the ROM routines use, and the
-two facts about the first closure that `acs_contract` still assumes.
+contract, the ROM (`RomHyp`), and how much stack the ROM routines use.
 -/
 
 namespace C3.RV32.Cur
@@ -164,16 +163,14 @@ What the theorem assumes:
   `efuse_program_run`.
 * `rom`: the ROM's code, flash reads, and routines, and its flash-chip
   pointer (`RomHyp`).
-* `hFx`: the fact about the first closure's error path that `acs_contract`
-  assumes.
 * `hlo`: the `bmK R romStack 0x5C10` bytes of stack below 0x3FCDC700 that
   `boot_main`, the ROM, and the first closure use stay above the image's
   read-only data, which ends below 0x3FCC8000.
 
 The pinned root and the policy are the image's, `acPinnedRootData` and
 `imagePolicy`. The conclusion is `reset_correct`'s. -/
-theorem reset_correct_loaded (hFx : Ac.AcsFinishBad) {flash : Nat → BitVec 8}
-    {M0 : Word → BitVec 8} {R romStack : Nat} {romBase : Word} {romCode : List Nat} (L : Loaded M0)
+theorem reset_correct_loaded {flash : Nat → BitVec 8} {M0 : Word → BitVec 8} {R romStack : Nat} {romBase : Word}
+    {romCode : List Nat} (L : Loaded M0)
     (ctl : EfuseCtl efuseProgramRunCode) (rom : RomHyp flash acPinnedRootData Ac.imagePolicy M0 R romStack romBase romCode)
     (hlo : 0x3FCC8000 + bmK R romStack 0x5C10 ≤ 0x3FCDC700)
     (m : Machine) (hm : m.mem = M0) (hpc : m.pc = RST) :
@@ -198,7 +195,7 @@ theorem reset_correct_loaded (hFx : Ac.AcsFinishBad) {flash : Nat → BitVec 8}
             (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x :=
   reset_correct (loaded_rstCode L)
     (loaded_bmHyp L ctl rom
-      (Ac.acs_contract hFx rom.log (by unfold bmK at hlo; omega) (by unfold bmK at hlo; omega) rom.hR rom.hrb
+      (Ac.acs_contract rom.log (by unfold bmK at hlo; omega) (by unfold bmK at hlo; omega) rom.hR rom.hrb
         (by have := rom.hrl; omega))
       (fun _ hK => Ac.acl_acsE (loaded_resetMem L) (reset_codeIn rom.code rom.hrb rom.hrl) rom.hrb
         (by have := rom.hrl; omega) fun x hx => hK x (rl_stackSep hlo hx) (rl_ptrSep rom hx))

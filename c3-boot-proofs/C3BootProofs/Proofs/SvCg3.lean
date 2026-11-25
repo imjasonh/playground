@@ -2905,7 +2905,7 @@ theorem sv_cg3 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b45_14 : n45.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = BitVec.ofNat 8 (sg.getD 0 0) := by rw [m45]; exact b44_14
     have q45_1fc : ∀ j, j < 63 → n45.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m45]; exact q44_1fc j hj
     clear q44_1fc b44_14 w44_400 w44_50 w44_48 w44_44 w44_38 w44_34 w44_30 w44_2c w44_28 w44_24 w44_18 w44_10 w44_c w44_8 w44_4 g44_25 g44_27 g44_26 g44_24 g44_23 g44_22 g44_21 g44_20 g44_19 g44_18 g44_14 g44_13 g44_12 g44_11 g44_10 g44_9 g44_8 g44_4 g44_3 g44_2 V44 E44 fR44 t44 fr44 rb44 s44 m44 u44 c44
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hlast h0'), sv_fail_1882 F E45 s45 t45 (fun x hx => (fR45 x hx).trans (fM x hx).symm) V45 hret g45_2 g45_18 hO g45_3 g45_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hlast h0'), sv_fail_1882 F E45 s45 t45 (fun x hx => (fR45 x hx).trans (fM x hx).symm) V45 hret g45_2 g45_18 hO g45_3 g45_4 (by rw [g45_25]; sv_code)⟩
   -- 0x1716: branch, not taken
   obtain ⟨n43, d43, u43⟩ := s42.notTaken E42.self 0x171A sv_at_1716
     (by decide) (by rw [g42_21, g42_10]; exact br_bne_f hlast)
@@ -3348,7 +3348,7 @@ theorem sv_cg3 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b50_420 : n50.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := by rw [m50]; exact b49_420
     have q50_1fc : ∀ j, j < 63 → n50.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m50]; exact q49_1fc j hj
     clear q49_1fc b49_420 b49_14 w49_400 w49_50 w49_48 w49_44 w49_38 w49_34 w49_30 w49_2c w49_28 w49_24 w49_18 w49_10 w49_c w49_8 w49_4 g49_25 g49_27 g49_26 g49_24 g49_23 g49_22 g49_21 g49_20 g49_19 g49_18 g49_11 g49_10 g49_9 g49_8 g49_4 g49_3 g49_2 V49 E49 fR49 t49 fr49 rb49 s49 m49 u49 c49
-    exact .inl ⟨(fun ⟨h0', bq45', h1', _⟩ => by rw [hr45] at h1'; cases h1'), sv_fail_1882 F E50 s50 t50 (fun x hx => (fR50 x hx).trans (fM x hx).symm) V50 hret g50_2 g50_18 hO g50_3 g50_4⟩
+    exact .inl ⟨(fun ⟨h0', bq45', h1', _⟩ => by rw [hr45] at h1'; cases h1'), sv_fail_1882 F E50 s50 t50 (fun x hx => (fR50 x hx).trans (fM x hx).symm) V50 hret g50_2 g50_18 hO g50_3 g50_4 (by rw [g50_25]; sv_code)⟩
   by_cases hl3 : bq45.length ≤ 3
   rotate_left
   · have z45 := Bad45 fun b h => by rw [hr45] at h; cases h; omega
@@ -3635,7 +3635,7 @@ theorem sv_cg3 {B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
     have b50_420 : n50.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (1 : BitVec 8) := by rw [m50]; exact b49_420
     have q50_1fc : ∀ j, j < 63 → n50.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => by rw [m50]; exact q49_1fc j hj
     clear q49_1fc b49_420 b49_14 w49_400 w49_50 w49_48 w49_44 w49_38 w49_34 w49_30 w49_2c w49_28 w49_24 w49_18 w49_10 w49_c w49_8 w49_4 g49_25 g49_27 g49_26 g49_24 g49_23 g49_22 g49_21 g49_20 g49_19 g49_18 g49_11 g49_10 g49_9 g49_8 g49_4 g49_3 g49_2 V49 E49 fR49 t49 fr49 rb49 s49 m49 u49 c49
-    exact .inl ⟨(fun ⟨h0', bq45', h1', h2', _⟩ => by rw [hr45] at h1'; cases h1'; exact hl3 h2'), sv_fail_1882 F E50 s50 t50 (fun x hx => (fR50 x hx).trans (fM x hx).symm) V50 hret g50_2 g50_18 hO g50_3 g50_4⟩
+    exact .inl ⟨(fun ⟨h0', bq45', h1', h2', _⟩ => by rw [hr45] at h1'; cases h1'; exact hl3 h2'), sv_fail_1882 F E50 s50 t50 (fun x hx => (fR50 x hx).trans (fM x hx).symm) V50 hret g50_2 g50_18 hO g50_3 g50_4 (by rw [g50_25]; sv_code)⟩
   have z45 := Ok45 bq45 hr45 hl3
   have keep_kk45 : SvKeepL B n0.mem n45.mem [(0x4, 0x4), (0x400, 0x4), (0x420, 0x8), (0x370, 0x3)] := keep_kk44.trans K45
   clear keep_kk44

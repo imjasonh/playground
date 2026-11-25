@@ -249,6 +249,7 @@ import C3BootProofs.Proofs.AcceptStages
 import C3BootProofs.Proofs.AcceptImageSpec
 import C3BootProofs.Proofs.AcceptImage
 import C3BootProofs.Proofs.AcceptFinish
+import C3BootProofs.Proofs.SvErrBound
 import C3BootProofs.Proofs.BootMainRecord
 import C3BootProofs.Proofs.BootMainContract
 import C3BootProofs.Proofs.BootMainSpec
@@ -9027,6 +9028,30 @@ end C3
 
 /-- info: 'C3.RV32.Sv.sv_verify_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Sv.sv_verify_spec
+
+/-- info: 'C3.RV32.Sv.derErrByte_lt' does not depend on any axioms -/
+#guard_msgs in #print axioms C3.RV32.Sv.derErrByte_lt
+
+/-- info: 'C3.RV32.Sv.derScalarOf_err_lt' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Sv.derScalarOf_err_lt
+
+/-- info: 'C3.RV32.Sv.ecdsaSigOf_err_lt' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Sv.ecdsaSigOf_err_lt
+
+/-- info: 'C3.RV32.Sv.derAlgOf_err_lt' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Sv.derAlgOf_err_lt
+
+/-- info: 'C3.RV32.Sv.isSha256Of_err_lt' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Sv.isSha256Of_err_lt
+
+/-- info: 'C3.RV32.Sv.listsOidLoop_err_lt' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Sv.listsOidLoop_err_lt
+
+/-- info: 'C3.RV32.Sv.listsOidOf_err_lt' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Sv.listsOidOf_err_lt
+
+/-- info: 'C3.RV32.Sv.derIntIsOf_err_lt' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Sv.derIntIsOf_err_lt
 
 /-- info: 'C3.RV32.tufIndexDocSpec_ok' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufIndexDocSpec_ok

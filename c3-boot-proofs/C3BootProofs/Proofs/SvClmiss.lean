@@ -308,7 +308,7 @@ theorem sv_clmiss {B out bp x20 x21 x22 x23 x24 x25 x26 x27 c q op ol w48 w44 : 
     have w6_48 : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x48) = w48 := by rw [m6]; exact w5_48
     have w6_4c : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x4C) = q := by rw [m6]; exact w5_4c
     clear w5_40 w5_4c w5_48 w5_44 g5_27 g5_26 g5_25 g5_24 g5_23 g5_22 g5_21 g5_20 g5_19 g5_18 g5_10 g5_8 g5_4 g5_3 g5_2 V5 E5 fR5 t5 rg5 W5 K5 fr5 s5 d5
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hz_5 h0'), sv_fail_1882 F E6 s6 t6 (fun x hx => (fR6 x hx).trans (fM x hx).symm) V6 hret g6_2 g6_18 hO g6_3 g6_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hz_5 h0'), sv_fail_1882 F E6 s6 t6 (fun x hx => (fR6 x hx).trans (fM x hx).symm) V6 hret g6_2 g6_18 hO g6_3 g6_4 (by rw [g6_25]; sv_code)⟩
   -- 0x15CC: branch, not taken
   obtain ⟨n6, d6, u6⟩ := s5.notTaken E5.self 0x15D0 sv_at_15cc
     (by decide) (by rw [g5_10, s5.zero]; exact br_beq_f hz_5)

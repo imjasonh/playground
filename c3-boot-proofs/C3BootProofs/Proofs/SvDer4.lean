@@ -108,7 +108,8 @@ theorem sv_rtF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm
       (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
       SvKeepL B M n'.mem [(oc, 16), (dc + 8, 8)] ∧
       (∀ t r, readTime (memBytes M rp rl) = some (t, r) → RtOkW n'.mem M B oc dc rp rl t r) ∧
-      (readTime (memBytes M rp rl) = none → n'.mem (B + 0x21A0 + BitVec.ofNat 32 oc) = 1) ∧
+      (readTime (memBytes M rp rl) = none → n'.mem (B + 0x21A0 + BitVec.ofNat 32 oc) = 1 ∧
+        (n'.mem (B + 0x21A0 + BitVec.ofNat 32 (oc + 1))).toNat < 0x27) ∧
       (∀ x, SvR B x → n'.mem x = M x) := by
   have hFl := F.lo; have hFh := F.hi; have hFa := F.al
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
@@ -141,7 +142,12 @@ theorem sv_rtF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm
     rwa [sv_lo B 0x60 (by decide)] at this
   refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, sp2,
     fun q hq => by rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)],
-    fun e he hL => ?_, fun t r h => ?_, fun h => (Er h).1, fun x hx => f2 x (hfS x hx) (svR_hi hx ho2) (svR_hi hx (by omega))⟩
+    fun e he hL => ?_, fun t r h => ?_,
+    fun h => ⟨(Er h).1, by
+      rw [← add_ofNat_assoc]
+      refine Nat.lt_of_le_of_lt (Nat.le_of_eq (congrArg BitVec.toNat (Er h).2)) ?_
+      rw [BitVec.toNat_ofNat]; exact Nat.lt_of_le_of_lt (Nat.mod_le _ _) (xrt_errLt _)⟩,
+    fun x hx => f2 x (hfS x hx) (svR_hi hx ho2) (svR_hi hx (by omega))⟩
   · have h1 := hL _ (List.mem_cons_self ..)
     have h2 := hL _ (List.mem_cons_of_mem _ (List.mem_singleton_self _))
     simp only at h1 h2

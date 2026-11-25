@@ -544,7 +544,7 @@ theorem sv_tt4o {B out bp x20 x21 x22 x23 x24 x25 x26 x27 rp rl : Word} {v : Nat
     have keep_kk12 : SvKeepL B n0.mem n12.mem [(0x264, 0x8)] := by rw [m12]; exact keep_kk11
     clear keep_kk11
     clear g11_10 g11_27 g11_26 g11_25 g11_24 g11_23 g11_22 g11_21 g11_20 g11_19 g11_18 g11_8 g11_4 g11_3 g11_2 V11 E11 fR11 t11 fr11 rb11 s11 m11 u11 c11
-    exact .inl ⟨(fun ⟨h0', _⟩ => by rw [hr8] at h0'; cases h0'), sv_fail F E12 s12 t12 (fun x hx => (fR12 x hx).trans (fM x hx).symm) V12 hret g12_2 g12_18 hO g12_3 g12_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by rw [hr8] at h0'; cases h0'), sv_fail F E12 s12 t12 (fun x hx => (fR12 x hx).trans (fM x hx).symm) V12 hret g12_2 g12_18 hO g12_3 g12_4 (by rw [g12_8]; sv_code)⟩
   have g8_10 : reg n8 a0 = BitVec.ofNat 32 0xFFFFFFFF := by rw [a0_8, hr8]; rfl
   obtain ⟨tb8, htb8⟩ := bool_ok_elem hr8
   obtain ⟨d8_8, d12_8⟩ := A8 tb8 htb8

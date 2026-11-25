@@ -367,6 +367,11 @@ theorem readTimeErr_tlvOk {b : Nat} {L : Bytes} {t : DerTlv} (hb : b = 0x17 ∨ 
     (h : derTlv (b :: L) = .ok t) : readTimeErr (b :: L) = 0x19 := by
   simp only [readTimeErr, if_pos hb, h]
 
+theorem xrt_errLt (L : Bytes) : readTimeErr L < 0x27 := by
+  unfold readTimeErr
+  repeat' split
+  all_goals first | decide | (rename_i e _; cases e <;> decide)
+
 theorem xrt_ofNat8 (b : BitVec 8) : BitVec.ofNat 8 b.toNat = b :=
   BitVec.eq_of_toNat_eq (by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt b.isLt])
 
