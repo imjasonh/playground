@@ -295,7 +295,7 @@ theorem acetl_t11be (O : X.Ok) (A : AceAt X n0 0xEBA fp0) (I : AceTlogInv X n0 f
   refine WP.aluImm ac_at_11c8 ?_; wn
   refine WP.alu ac_at_11ca ?_; wn
   refine WP.lw ac_at_11cc (by rsimp; rw [R.rsp, e30]; exact ace_al4 F (by decide) (by decide)) ?_; wn
-  refine WP.acetlField O (o := 0x244) (a := 0x3C94) (b := 0x3C9C) (kq := 0x3FCC47F7) (kl := 0x14) (by decide)
+  refine WP.acetlField O (o := 0x244) (a := 0x3C94) (b := 0x3C9C) (kq := (img% roWindowAddress + 0x7F7)) (kl := 0x14) (by decide)
     (by decide) (by decide) (by decide) ac_at_11ce ac_at_11d2 (by decide) (by decide) E hd hobj E.kTsas
     (by decide) (by decide) (by rsimp; exact R.rsp)
     (by rsimp; rw [R.rsp]; simp only [ev_add, acSlot]; bv_omega)
