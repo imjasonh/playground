@@ -10503,6 +10503,9 @@ end C3
 /-- info: 'C3.RV32.Ac.acs_image' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acs_image
 
+/-- info: 'C3.RV32.Ac.acs_front' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_front
+
 /-- info: 'C3.RV32.Ac.acs_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acs_spec
 

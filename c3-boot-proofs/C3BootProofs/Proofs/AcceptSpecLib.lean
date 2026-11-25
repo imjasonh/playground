@@ -222,6 +222,8 @@ theorem layout : AceLayout X.B X.Bf where
     (by have := ok.bfhi; omega)
   ro := (sep_of_le (by simp only [BitVec.toNat_ofNat, roWindowAddress, roWindowSize]; have := ok.blo; omega)
     (by have := ok.bhi; omega)).symm
+  roBuf := (sep_of_le (by simp only [BitVec.toNat_ofNat, roWindowAddress, roWindowSize]; have := ok.bflo; omega)
+    (by have := ok.bfhi; omega)).symm
 
 /-- The frame and the 0x1A0 bytes below it are apart from the read-only window. -/
 theorem wro : Sep (X.B + 0xFFFFFE60) 0x5C10 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize) :=
