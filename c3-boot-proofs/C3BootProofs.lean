@@ -744,4 +744,5 @@ import C3BootProofs.Proofs.AcceptSpecRoots
 import C3BootProofs.Proofs.AcceptSpecPin
 import C3BootProofs.Proofs.AcceptSpecDocs
 import C3BootProofs.Proofs.AcceptSpecIdx
+import C3BootProofs.Proofs.AcceptSpecImg
 import C3BootProofs.Proofs.AcceptSpec

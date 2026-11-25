@@ -9327,6 +9327,12 @@ end C3
 
 /-- info: 'C3.RV32.Ac.acImage_stage' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acImage_stage
+
+/-- info: 'C3.RV32.Ac.acs_imgW_cnt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_imgW_cnt
+
+/-- info: 'C3.RV32.Ac.acs_st2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_st2
 /-- info: 'C3.RV32.Ac.acf_seg_cmp' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acf_seg_cmp
 
@@ -10492,6 +10498,9 @@ end C3
 
 /-- info: 'C3.RV32.Ac.acs_index' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acs_index
+
+/-- info: 'C3.RV32.Ac.acs_image' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_image
 
 /-- info: 'C3.RV32.Ac.acs_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acs_spec
