@@ -623,6 +623,18 @@ import C3BootProofs.Proofs.AcceptExtractTail
 import C3BootProofs.Proofs.AcceptExtractErr
 import C3BootProofs.Proofs.AcceptExtractHeadLib
 import C3BootProofs.Proofs.AcceptExtractHead
+import C3BootProofs.Proofs.AcceptBundleLib
+import C3BootProofs.Proofs.AcceptBundleCall
+import C3BootProofs.Proofs.AcceptBundleSteps
+import C3BootProofs.Proofs.AcceptBundleSegs
+import C3BootProofs.Proofs.AcceptBundle
+import C3BootProofs.Proofs.ResetPath
+import C3BootProofs.Proofs.Reset
+import C3BootProofs.Proofs.AcceptExtractDupLib
+import C3BootProofs.Proofs.AcceptExtractDupN
+import C3BootProofs.Proofs.AcceptExtractDupK
+import C3BootProofs.Proofs.AcceptExtractDup
+import C3BootProofs.Proofs.AcceptExtractTsa
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
@@ -682,6 +694,7 @@ import C3BootProofs.Proofs.TufRoleKeysMetLoop
 import C3BootProofs.Proofs.TufRoleKeysMet
 import C3BootProofs.Proofs.TufRoleKeysBytes
 import C3BootProofs.Proofs.TufRoleKeysMetSpec
+import C3BootProofs.Proofs.TufRoleKeysMetResult
 import C3BootProofs.Proofs.TrustedRootDecode
 import C3BootProofs.Proofs.TrustedRootValidFor
 import C3BootProofs.Proofs.TrustedRootReadChainAt

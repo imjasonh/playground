@@ -18,10 +18,29 @@ section
 variable {romBase : Word} {romCode : List Nat} {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8}
   {Q : Post} {M M' M'' : Word → BitVec 8} {off : Nat} {f : Fin 32 → Word}
 
+/-- `RoleKeys::met` as `ActMetSpec` describes it, from `tufRoleKeysMet_ret`
+and `tlmr_thresholdMet`: `RoleKeys::met` returns 0 or 1 in `a0`, so bit 0
+of `a0` clear is `Ok`. -/
+theorem act_metSpec : ActMetSpec := by
+  intro m retAddr s R A MP SP ML SL t md dj sj role es hpc ha0 ha1 hsp hra hret hal hlo hhi hds hro hc halR hRw hSR
+    hMw hML hSM hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hrk hR hw hB hmsg hsj hps
+  obtain ⟨m', st, q⟩ := tufRoleKeysMet_ret m hpc ha0 ha1 hsp hra hret hal hlo hhi hds hro hc halR hRw hSR hMw hML
+    hSM hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hR hw
+  refine ⟨m', st, ?_⟩
+  rcases q with h | ⟨hp, hM, hr, hS, h01, hE⟩
+  · exact .inl h
+  refine .inr ⟨hp, hM, hr, fun h0 h1 => ?_, fun h0 => hE fun e => h0 (by rw [e]; rfl)⟩
+  have e0 : reg m' a0 = 0 := by
+    rcases h01 with e | e
+    · exact e
+    · rw [e] at h0; exact absurd h0 (by decide)
+  have S := hS e0 fun e => h1 (by rw [e]; rfl)
+  rw [hmsg] at S
+  exact tlmr_thresholdMet hrk hB (metLookup_spec hsj hps) S
+
 /-- A call to `RoleKeys::met(rk, meta)` from the closure, with `rk` at
-`sp + 0x1870` and `meta` at `sp + 0x1860`, for `RoleKeys::met` as
-`ActMetSpec` describes it. -/
-theorem act_met (hMet : ActMetSpec) (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
+`sp + 0x1870` and `meta` at `sp + 0x1860`. -/
+theorem act_met (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
     {hi lo MP SP : Word} {ML SL tt : Nat} {md : Meta} {dj sj : Json} {role : Bytes}
     {es : List (Bytes × Option TufKey)}
     (h1 : fetchRel bootMainClosure0Code off = some (.auipc ra hi, 4))
@@ -37,7 +56,7 @@ theorem act_met (hMet : ActMetSpec) (X : ActX romBase romCode B Bf M0) (hI : Act
     (hA8 : memLoad32 M (B + BitVec.ofNat 32 0x52B0 + BitVec.ofNat 32 8) = SP)
     (hAC : memLoad32 M (B + BitVec.ofNat 32 0x52B0 + BitVec.ofNat 32 12) = BitVec.ofNat 32 SL)
     (hrk : roleKeys dj role = some (tt, es)) (hR : RkAt M (B + BitVec.ofNat 32 0x52C0) tt (es.map C3.Json.rkTag))
-    (hw : RkWf (es.map C3.Json.rkTag)) (hmsg : memBytes M MP ML = encode md.signed)
+    (hw : RkWf (es.map C3.Json.rkTag)) (hB : RkBytes es) (hmsg : memBytes M MP ML = encode md.signed)
     (hsj : JVal true (memBytes M SP SL) sj) (hps : (sj.asArr >>= List.mapM sigPair) = some md.sigs)
     (k : ∀ m2 : Machine, (∀ x, Sep x 1 (B + BitVec.ofNat 32 0x130) 0x3920 → m2.mem x = M x) →
       (reg m2 a0 &&& 1 = 0 → reg m2 a1 &&& 1 ≠ 0 → thresholdMet md dj role = some true) →
@@ -59,7 +78,7 @@ theorem act_met (hMet : ActMetSpec) (X : ActX romBase romCode B Bf M0) (hI : Act
   have := F.lo
   have := F.hi
   have := F.al
-  obtain ⟨m2, st, h⟩ := hMet m1 (retAddr := AC + BitVec.ofNat 32 (off + 8)) (s := B + BitVec.ofNat 32 0x130)
+  obtain ⟨m2, st, h⟩ := act_metSpec m1 (retAddr := AC + BitVec.ofNat 32 (off + 8)) (s := B + BitVec.ofNat 32 0x130)
     hpc1 (by rw [hreg1]; rsimp; exact h0) (by rw [hreg1]; rsimp; exact ha1)
     (by rw [hreg1]; rsimp; rw [hI.rsp, add_ofNat_assoc]; rfl) (by rw [hreg1]; rsimp)
     (even_clear _ (even_at AC hb _ hev)) (by rw [hlo]; omega) (by rw [hlo]; omega) (by rw [hlo]; omega)
@@ -69,7 +88,7 @@ theorem act_met (hMet : ActMetSpec) (X : ActX romBase romCode B Bf M0) (hI : Act
     (X.al (by decide) (by decide)) (X.low (by decide)) (X.ss (by decide) (by decide) (Or.inl (by decide)))
     hMw hML hSM hS0 hSw hSL hSS (X.al (by decide) (by decide)) (X.ss (by decide) (by decide) (Or.inl (by decide)))
     (by rw [hmem1]; exact hA0) (by rw [hmem1]; exact hA4) (by rw [hmem1]; exact hA8) (by rw [hmem1]; exact hAC)
-    hrk (by rw [hmem1]; exact hR) hw (by rw [hmem1]; exact hmsg) (by rw [hmem1]; exact hsj) hps
+    hrk (by rw [hmem1]; exact hR) hw hB (by rw [hmem1]; exact hmsg) (by rw [hmem1]; exact hsj) hps
   rcases h with hh | ⟨pc2, hfr, hrg, hok, herr⟩
   · exact .inl ⟨m2, st, hh⟩
   · exact .inr ⟨m2, st, pc2, ⟨fun x hx => by rw [hfr x hx, hmem1], hok, herr⟩, hrg⟩
@@ -137,7 +156,7 @@ theorem act_sepw {a b y : Word} {n m k : Nat} (h : Sep a n b m) (h1 : b.toNat �
 /-- **From 0x89A**: copy `parse_metadata`'s result for `targets.json` from
 `sp + 0x1870` to `sp + 0x1860`, copy the root's `RoleKeys` for `targets` to
 `sp + 0x1870`, and check the threshold of signatures, then `act_93a`. -/
-theorem act_89a (hMet : ActMetSpec) {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R romBase romCode)
+theorem act_89a {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R romBase romCode)
     (hR4 : R % 4 = 0) (hR : R ≤ 0x3A50 - 0x180)
     (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
     (hr : memLoad32 M (acSlot B 0x40) = r) {pinned : Bytes} {parts : TufParts} {root : TufRoot} {re : Nat}
@@ -156,6 +175,7 @@ theorem act_89a (hMet : ActMetSpec) {flash : Nat → BitVec 8} {R : Nat} (hROM :
     (hsj : JVal true (memBytes M SP SL) sj) (hps : (sj.asArr >>= List.mapM sigPair) = some md.sigs)
     (hrk : roleKeys root.md.signed (ascii!"targets") = some (tt, es))
     (hRk : RkAt M (B + BitVec.ofNat 32 0x4820) tt (es.map C3.Json.rkTag)) (hw : RkWf (es.map C3.Json.rkTag))
+    (hB : RkBytes es)
     (hspec : thresholdMet md root.md.signed (ascii!"targets") = some true → ∀ te, expiresModel dS = .ok te →
       ∀ p1 l1 p2 l2 p3 l3 val p4 l4 p5 l5 body, objField dS (ascii!"targets") = .ok (p1, l1) →
       objGet (slice dS p1 l1) (ascii!"trusted_root.json") = .ok (some (p2, l2)) →
@@ -303,14 +323,14 @@ theorem act_89a (hMet : ActMetSpec) {flash : Nat → BitVec 8} {R : Nat} (hROM :
   refine WP.lui ac_at_91c ?_; wn
   refine WP.aluImm ac_at_91e ?_; wn
   refine WP.alu ac_at_922 ?_; wn
-  refine act_met (MP := S) (ML := sl) (SP := SP) (SL := SL) (md := md) (sj := sj) hMet X
+  refine act_met (MP := S) (ML := sl) (SP := SP) (SL := SL) (md := md) (sj := sj) X
     (hI7.regs (by act_r) (by act_r) (by act_r)) ac_at_924 ac_at_928 (by decide) (by decide)
     (fun m h m' e1 e2 e3 => .inl (by show rmH _ _ _; rw [e1, e2, e3]; exact h))
     (by act_r; rw [BitVec.add_comm]; exact act_spc hI.rsp _ _ rfl)
     (by act_r; rw [BitVec.add_comm]; exact act_spc hI.rsp _ _ rfl)
     (by omega) (by omega) (hW 0 (by decide)) ?_ (by omega) (by omega)
     (act_sepw (X.sB.sub (c := 0x130) (l := 0x3920) (by decide)) (by omega) (by omega) (by decide))
-    ?_ ?_ ?_ ?_ hrk (hRk.congr fun o ho => rk7 o ho) hw ?_ ?_ hps fun m8 hfr hok herr => ?_
+    ?_ ?_ ?_ ?_ hrk (hRk.congr fun o ho => rk7 o ho) hw hB ?_ ?_ hps fun m8 hfr hok herr => ?_
   rotate_right
   · have K8 : ActKp B 0x52B0 0x550 M m8.mem := fun x a b =>
       (hfr x (a.subR (c := 0x130) (l := 0x3920) (by decide))).trans (K7 x a b)

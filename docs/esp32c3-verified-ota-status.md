@@ -198,8 +198,12 @@ constants as `P256Consts`. They combine:
 - `Models/P256Barrett*.lean` prove the compiled Barrett reduction modulo
   `n`. `gen-p256-barrett.py` writes the carry-chain identities.
 
-`_start` and the clock and watchdog `setup` that runs before `boot_main`
-aren't among the extracted functions, so they are trusted.
+`_start`, `setup`, `watchdog_arm`, and `clock_run_160`, which run before
+`boot_main`, are extracted to `Image/BootloaderReset.lean`, and CI diffs
+them against the pinned image. `rst_path` (`Proofs/ResetPath`) proves that
+they reach `boot_main` with the stack pointer at 0x3FCDC700. The model
+treats the watchdog and clock registers as memory, so what those writes do
+to the device is outside the theorems.
 
 ## What was proved by Nov 16, in detail
 
@@ -230,9 +234,9 @@ Phases are the plan's. The coverage figures in this section are from Nov 16; the
 | Machine code that `boot_main` can reach | Share of its 28,513 instructions in proved functions | 54.6% |
 | Functions that decide acceptance | `boot_main` is proved against `decideBoot`, assuming its first closure's contract (`Closure0Contract`). `sigstore::verify`, `p384_verify_prehash`, and `ed25519_verify` aren't proved yet | 1 of 4 |
 | Crypto specifications proved to be the signature schemes (phase 7) | Not started | 0% |
-| Headline theorem: from reset, only firmware that passes every check boots | `bootMain_correct` proves it from `boot_main`'s entry, assuming `Closure0Contract` and the ROM routines' contracts. Not yet from reset (`_start` and `setup`) | Partly |
+| Headline theorem: from reset, only firmware that passes every check boots | `reset_correct` proves it from the ROM's jump to `_start`, assuming `Closure0Contract`, the ROM routines' contracts, and the eFuse controller's contract `EfuseCtl` | Partly |
 
-End to end, no theorem yet covers a boot from reset, so the Lean-verified share of the whole chain is 0%. At the function level, 54.6 percent of the machine code `boot_main` can reach is proved, and 61.4 percent of what `sigstore::verify` can reach.
+End to end, `reset_correct` covers a boot from reset but assumes `Closure0Contract`, which holds the signature checks, so the Lean-verified share of the whole chain is still 0%. At the function level, 54.6 percent of the machine code `boot_main` can reach is proved, and 61.4 percent of what `sigstore::verify` can reach.
 
 | Phase | State | Done | Left |
 | --- | --- | --- | --- |
@@ -296,11 +300,13 @@ The specification follows c3-verify's version 2 manifest, whose third part is th
 
 Six functions changed shape: `manifest_parse`, `generalized_time`, `sigstore::verify`, `boot`, `boot_main`'s first closure, and `boot_main`. All but `boot_main` and its first closure, which accepts a slot, are proved again. `sigstore::verify` is proved by `sv_verify`, `sv_verify_at`, and `sv_verify_spec`, which describe the new code and the 0x428-byte `TrustRoot`.
 
-`boot` (680 bytes at 0x403b699e) is proved by `boot_correct` in `Proofs/Boot`. From entry, called with the slot, the accepted header, the image's flash offset, the target security level, and the level the caller read, `boot` either panics or jumps to the header's entry point with the slot in `a0`. Memory outside its stack and the eFuse and flash registers is then what `bootMem` says: the header's RAM segments loaded from flash and its other segments mapped through the MMU. The level it reaches is at least the target, as the caller's level or the eFuse field shows. On the way it raises the eFuse security level: `rs_raise` (`Proofs/BootRaise`) proves the raise loop, which halts unless the level that `btPop` reads reaches the target, and `btPop_level` (`Proofs/BootLevel`) shows that `btPop` computes `level` from `Spec/Level` on the eFuse word's 16 level bits. `Audit` checks that each of these depends only on `propext` and `Quot.sound`. `Pending.lean` and `AuditPending.lean` are deleted.
+`boot` (680 bytes at 0x403b699e) is proved by `boot_correct` in `Proofs/Boot`. From entry, called with the slot, the accepted header, the image's flash offset, the target security level, and the level the caller read, `boot` either panics or jumps to the header's entry point with the slot in `a0`. Memory outside its stack and the eFuse and flash registers is then what `bootMem` says: the header's RAM segments loaded from flash and its other segments mapped through the MMU. The eFuse level word at the jump is its value at entry with some bits set, and the level it shows is at least the target. On the way it raises the eFuse security level: `rs_raise` (`Proofs/BootRaise`) proves the raise loop, which burns until the level that `btPop` reads back reaches the target and halts after three failed tries at one bit. The eFuse controller is a named hypothesis, `EfuseCtl` (`Proofs/BootSpec`), in the style of the ROM routines' `RomFn` contracts: each call to `efuse_program_run` returns, keeps the saved registers, writes only the controller's registers, and leaves the level word at its old value with some bits set. `eprAt_of_code` shows that the pinned image's `efuse_program_run` meets it when the controller's registers are plain memory, and `btPop_level` (`Proofs/BootLevel`) shows that `btPop` computes `level` from `Spec/Level` on the eFuse word's 16 level bits. `Audit` checks that each of these depends only on `propext` and `Quot.sound`. `Pending.lean` and `AuditPending.lean` are deleted.
 
 `boot_main` (898 bytes at 0x403b6df6) is proved against `decideBoot` by `bootMain_correct` in `Proofs/BootMainStart`, and its first closure isn't proved yet. `Closure0Contract` (`Proofs/BootMainContract`) states what `boot_main`'s proof assumes of the closure's call: it returns with the result `None` when `acceptTufSlot` rejects the slot, and otherwise with the image's flash address and security version and, in the `Accepted` part, the header that `decodeImageHeader` decodes from the slot's image (`AccOk`), or it panics. `BmHyp` (`Proofs/BootMainTail`) collects that contract, the code and stack layout, and the ROM routines' contracts.
 
-From its entry with the stack pointer at `top`, `bootMain_correct` shows that `boot_main` panics or halts, or jumps to the entry point of a slot that `decideBoot` boots at level `target`, given the boot-state records in flash, the eFuse level at entry, and the slots that `acceptTufSlot` accepts at that level. At the jump, `a0` holds the slot and memory outside the stack and the peripheral registers is what `boot` loads (`bootMem`). `BmHyp` lets the ROM's flash-write routine run only with the record that `decideBoot` writes, at the copy that `bootstate::read` didn't return. The model's eFuse read register doesn't change when fuses are burned, so a path that has to raise the level ends in a panic, and the theorem's jumps have `target` at most the entry level. The proof runs through `bms_entry` (the prologue), `bms_reads` (both records read and decoded), `bme_sel` (the record choice), and `bmq_plan` (the closures, `boot`, and the record write).
+From its entry with the stack pointer at `top`, `bootMain_correct` shows that `boot_main` panics or halts, or jumps to the entry point of a slot that `decideBoot` boots at level `target`, given the boot-state records in flash, the eFuse level at entry, and the slots that `acceptTufSlot` accepts at that level. At the jump, `a0` holds the slot and memory outside the stack and the peripheral registers is what `boot` loads (`bootMem`). `BmHyp` lets the ROM's flash-write routine run only with the record that `decideBoot` writes, at the copy that `bootstate::read` didn't return. At the jump, `target` is at most the eFuse level then, `Spec/Level`'s `level` of the `SECURE_VERSION` field read back, and the eFuse level word is its value at entry with some bits set. A path that raises the level jumps only after the level read back reaches `target`. The proof runs through `bms_entry` (the prologue), `bms_reads` (both records read and decoded), `bme_sel` (the record choice), and `bmq_plan` (the closures, `boot`, and the record write).
+
+`reset_correct` (`Proofs/Reset`) states the same end from the reset vector: from the ROM's jump to `_start` with memory `M0` and any register values, the bootloader halts or jumps to a slot that `decideBoot` boots at the eFuse level at reset. It assumes that the ROM loaded the reset path's code (`RstCode`) and that the memory at `boot_main`'s entry meets `BmHyp`. Device writes on the reset path are memory writes, a watchdog reset restarts the ROM and ends the run, and the eFuse controller meets `EfuseCtl`.
 
 `p256VerifyPrehash_correct` proves `p256_verify_prehash`: on a call with the
 public key, the digest, and the signature's `r` and `s` outside the stack, it
@@ -315,7 +321,7 @@ module builds them again, and `Audit` checks that `p256_model_closed`,
 
 1. Phase 5, next: the seven unproved functions left in `sigstore::verify`'s reach, 9,590 instructions: `ed25519_verify` (started; 1,400 of its 2,099 instructions are an inlined `Scalar::reduce`, which needs a generator like `montgomery_mul`'s), `p384_verify_prehash`, `from_sec1_bytes` and point decompression for P-256 and P-384, and `sigstore::verify` itself; then `boot_main`. Then `update`, `finalize`, and `sha256` on top of `kcCompress_correct`, the parsers, and the Merkle check.
 1. Phase 7: prove that `ptAddSpec` is the P-256 group law in projective coordinates, so `pointAdd_correct` says the compiled code adds points.
-1. Phase 4: state the ROM functions, eFuse reads, and the SRAM alias as contracts and obligations, matching the `boot-sim` hooks the lockstep test checks.
+1. Phase 4: state the SRAM alias as an obligation. The ROM functions and the eFuse controller are contracts (`RomFn`, `EfuseCtl`).
 1. Phase 3: regenerate the specification and proofs for the TUF cutover: manifest version 2, `tuf_slot::accept_slot` with the streamed TUF part, and the new `TrustRoot` layout.
 1. On hardware **(hardware)**: flash the burns-off bootloader and a signed demo, then run the update, fallback, and trial scenarios.
 

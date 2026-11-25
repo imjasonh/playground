@@ -15,9 +15,12 @@ and the manifest's fields, and returns.
 
 `sigstore::verify` writes up to 0x1A0 bytes below the closure's frame, so the
 stage keeps memory as it was outside the frame and those bytes
-(`AcFinishInv`), not outside the frame alone (`AcInv`). `SvErrRet` says
-nothing about the error's code, so an `Err` whose code is 0x27 or more
-reaches 0x7D6 outside `AcFail` (`AcFinishBad`).
+(`AcFinishInv`, which is `AcInvW`), not outside the frame alone (`AcInv`).
+`SvErrRet` says nothing about the error's code, so an `Err` whose code is
+0x27 or more reaches 0x7D6 outside `AcFail` (`AcFinishBad`). The code at
+0x7D6 has no case for such a code: it checks only that the code is at least
+0x20 before it indexes the 7-entry jump table at `acRejectTableAddress`, so
+a larger code jumps to whatever word follows the table.
 -/
 
 namespace C3.RV32.Ac
@@ -77,13 +80,10 @@ structure AcFinishPre (B r : Word) (bundle : Bundle) (root : SigstoreRoot) (expi
   ral : r.toNat % 4 = 0
   rlo : r.toNat + 0x12C ≤ 0x40000000
 
-/-- `AcInv`, with memory kept outside the frame and the 0x1A0 bytes below it. -/
-structure AcFinishInv (B Bf g t : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (n : Machine) : Prop where
-  sp : reg n sp = B + 0x3A50
-  gp : reg n (3 : Fin 32) = g
-  tp : reg n (4 : Fin 32) = t
-  saves : ∀ k, k < 13 → memLoad32 n.mem (B + BitVec.ofNat 32 (0x5A6C - 4 * k)) = v k
-  out : ∀ x, Sep x 1 (B + 0xFFFFFE60) 0x5C10 → Sep x 1 Bf acBufLen → n.mem x = M0 x
+/-- `AcInv`, with memory kept outside the frame and the 0x1A0 bytes below it:
+`AcInvW`, so `ac_exit_wide` takes the stage's exits. -/
+abbrev AcFinishInv (B Bf g t : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (n : Machine) : Prop :=
+  AcInvW B Bf g t v M0 n
 
 /-- The exit at 0x7D6 with a code of 0x27 or more. -/
 def AcFinishBad (B r : Word) (n : Machine) : Prop :=
@@ -118,7 +118,9 @@ def AcFinishPost (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8)
       reg n' (3 : Fin 32) = g ∧ reg n' (4 : Fin 32) = t ∧
       AcFinishRes B Bf r M0 bundle root expiry n0 n'.mem))
 
-/-- **The last stage**, from 0x1A46 to the return. -/
+/-- **The last stage**, from 0x1A46 to the return. The closure's real stack
+requirement is 0x5C10 bytes below the frame's top `B + 0x5A70`, not 0x5A70,
+because `sigstore::verify` writes 0x1A0 bytes below `B`. -/
 def AcFinishStage : Prop :=
   ∀ (n : Machine) (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (bundle : Bundle)
     (root : SigstoreRoot) (expiry : Nat),
