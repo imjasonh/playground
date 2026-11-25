@@ -58,6 +58,25 @@ jobs:
           # The audit root is a module prefix, not a namespace.
           axiom-audit-root: C3BootProofs
 
+      # lean-action restores .lake from the cache, and lake build never deletes
+      # the outputs of a module whose source is gone. leanchecker replays every
+      # module it finds under C3BootProofs, so a stale .olean from a deleted
+      # module fails it. This also keeps them out of the cache saved after the job.
+      - name: Remove the build outputs of deleted modules
+        working-directory: c3-boot-proofs
+        run: |
+          python3 - <<'EOF'
+          import pathlib
+          for top in (pathlib.Path(".lake/build/lib/lean"), pathlib.Path(".lake/build/ir")):
+              for f in sorted(top.glob("C3BootProofs/**/*")):
+                  if not f.is_file():
+                      continue
+                  mod = f.parent.relative_to(top) / f.name.split(".")[0]
+                  if not mod.with_suffix(".lean").exists():
+                      print(f"removing {f}")
+                      f.unlink()
+          EOF
+
       # leanchecker replays each module in its own task, and each task imports
       # that module's whole dependency closure. Since the project passed about
       # 1,000 modules, even two tasks at once run the 16 GB runner out of
