@@ -10924,3 +10924,6 @@ end C3
 
 /-- info: 'C3.RV32.Cur.reset_correct_loaded_pi' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.reset_correct_loaded_pi
+
+/-- info: 'C3.RV32.Cur.reset_correct_loaded_np' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_correct_loaded_np

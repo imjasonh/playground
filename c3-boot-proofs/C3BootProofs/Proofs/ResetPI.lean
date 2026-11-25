@@ -12,7 +12,9 @@ which `Closure0ContractPI` allows only when an inversion bound fails.
 
 `reset_correct_loaded_pi` proves `ResetCorrectLoadedPI` from
 `AcsContractPI`, the refined form of the first closure's contract
-`Ac.acs_contract`, with that theorem's hypotheses.
+`Ac.acs_contract`, with that theorem's hypotheses. `Ac.acs_contract_pi`
+proves that contract, so `reset_correct_loaded_np` states the headline
+without panics, under the inversion bounds.
 -/
 
 namespace C3.RV32.Cur
@@ -47,5 +49,13 @@ theorem reset_correct_loaded_pi (hacs : AcsContractPI) : ResetCorrectLoadedPI :=
       (by have := rom.hrl; omega) fun x hx => hK x (rl_stackSep hlo hx) (rl_ptrSep rom hx))
     hlo
   exact reset_correct_q (Q := ¬ InvBounds) (loaded_rstCode L) ⟨X, c0⟩ m hm hpc
+
+/-- **The panic-free headline.** From reset, with `reset_correct_loaded`'s
+hypotheses and the inversion bounds `InvBounds`, the bootloader halts at a
+`halt` call with a deliberate code, or boots a slot that `decideBoot` boots
+with a sound slot check. -/
+theorem reset_correct_loaded_np : ResetCorrectLoadedNP :=
+  resetCorrectLoaded_np_of_pi
+    (reset_correct_loaded_pi fun log hrs hR hR4 rb rl => Ac.acs_contract_pi log hrs hR hR4 rb rl)
 
 end C3.RV32.Cur
