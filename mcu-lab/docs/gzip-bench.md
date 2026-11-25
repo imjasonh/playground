@@ -49,7 +49,7 @@ make flash-gzip-bench-xiao PORT=/dev/cu.usbmodem1101         # XIAO ESP32-C3 (16
 
 ## 2. XIAO ESP32-C3 (160 MHz RISC-V, `miniz_oxide`)
 
-ESP32-C3 has no Mask-ROM `tinfl`/`tdefl` and tops out at **160 MHz** in hardware, but its single-cycle RV32IMC pipeline runs Flash-XIP `miniz_oxide` at **~1.74× higher IPC** than Xtensa LX6 running `miniz_oxide`.
+ESP32-C3 tops out at **160 MHz** in hardware, and its single-cycle RV32IMC pipeline runs Flash-XIP `miniz_oxide` at **~1.74× higher IPC** than Xtensa LX6 running `miniz_oxide`. ESP32-C3 *does* also include Mask-ROM `tinfl_decompress` / `tdefl_compress` / `mz_crc32` (`esp32c3_rev3_rom.elf`), which measures **8.05 MB/s** (`8,055,063` B/s, `verified=4/4`) aggregate inflate throughput across the 4 corpora at 160 MHz.
 
 ### Throughput @ 160 MHz
 
