@@ -269,6 +269,7 @@ import C3BootProofs.Proofs.AcceptExtractHead
 import C3BootProofs.Proofs.AcceptBundle
 import C3BootProofs.Proofs.ResetPath
 import C3BootProofs.Proofs.Reset
+import C3BootProofs.Proofs.AcceptSpec
 
 /-!
 # Audit
@@ -10399,3 +10400,39 @@ end C3
 
 /-- info: 'C3.RV32.Cur.reset_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.reset_correct
+
+/-- info: 'C3.acs_parts_le' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.acs_parts_le
+
+/-- info: 'C3.acs_expires_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.acs_expires_lt
+
+/-- info: 'C3.RV32.Ac.acs_accept' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_accept
+
+/-- info: 'C3.RV32.Ac.acs_hdr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_hdr
+
+/-- info: 'C3.RV32.Ac.AcsCtx.Ok.failW' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcsCtx.Ok.failW
+
+/-- info: 'C3.RV32.Ac.acs_fin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_fin
+
+/-- info: 'C3.RV32.Ac.acs_bun' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_bun
+
+/-- info: 'C3.RV32.Ac.acs_ext' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_ext
+
+/-- info: 'C3.RV32.Ac.acs_tgt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_tgt
+
+/-- info: 'C3.RV32.Ac.acs_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_spec
+
+/-- info: 'C3.RV32.Ac.acs_contract' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_contract
+
+/-- info: 'C3.RV32.Cur.bmc_pop_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmc_pop_lt
