@@ -641,6 +641,7 @@ import C3BootProofs.Proofs.Loaded
 import C3BootProofs.Proofs.LoadedImage
 import C3BootProofs.Proofs.ResetLoaded
 import C3BootProofs.Proofs.SramAlias
+import C3BootProofs.Proofs.AcceptExtractTlogStage
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
