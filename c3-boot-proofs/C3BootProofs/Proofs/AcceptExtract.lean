@@ -6,6 +6,7 @@ import C3BootProofs.Proofs.JsonParse
 import C3BootProofs.Proofs.SmallFns
 import C3BootProofs.Proofs.Arr32Eq
 import C3BootProofs.Proofs.CtAssign
+import C3BootProofs.Models.Ed25519Model
 
 /-!
 # `boot_main`'s first closure: the extract stage
@@ -180,6 +181,7 @@ structure AcExtractEnv (M : Word → BitVec 8) : Prop where
   kValidFor : memBytes M (img% acValidForKeyAddress) 8 = ascii!"validFor"
   kStart : memBytes M tvfStartKey 5 = ascii!"start"
   kEnd : memBytes M tvfEndKey 3 = ascii!"end"
+  edI : EdM.EdImage M
 
 /-! ## The stage -/
 

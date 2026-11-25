@@ -276,6 +276,7 @@ import C3BootProofs.Proofs.AcceptExtractTsa
 import C3BootProofs.Proofs.AcceptExtractCa
 import C3BootProofs.Proofs.ResetLoaded
 import C3BootProofs.Proofs.SramAlias
+import C3BootProofs.Proofs.AcceptExtractTlogStage
 
 /-!
 # Audit
@@ -10654,3 +10655,27 @@ end C3
 
 /-- info: 'C3.RV32.aliasOk_regions' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.aliasOk_regions
+
+/-- info: 'C3.RV32.Ac.acetl_tlog_stage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_tlog_stage
+
+/-- info: 'C3.RV32.Ac.acetl_pass' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_pass
+
+/-- info: 'C3.RV32.Ac.acetl_tEF2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_tEF2
+
+/-- info: 'C3.RV32.Ac.acetl_tF9E' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_tF9E
+
+/-- info: 'C3.RV32.Ac.acetl_skip' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_skip
+
+/-- info: 'C3.RV32.Ac.acetl_close' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_close
+
+/-- info: 'C3.RV32.Ac.acetl_end' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_end
+
+/-- info: 'C3.RV32.Ac.acetl_pre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acetl_pre
