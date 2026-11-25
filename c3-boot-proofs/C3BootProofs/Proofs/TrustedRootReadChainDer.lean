@@ -16,12 +16,14 @@ open C3.Image C3.Json
 
 set_option maxRecDepth 20000
 
-/-- The certificate bytes `L` at `b`, apart from the stack region. -/
+/-- The certificate bytes `L` at `b`, apart from the stack region.
+`time::read_time` may read up to 14 bytes past a reader's end, so the 14
+bytes after `L` are apart from the stack region too. -/
 structure RcL (M : Word → BitVec 8) (G b : Word) (L : Bytes) : Prop where
   bytes : memBytes M b L.length = L
-  sep : Sep b L.length G 0x740
+  sep : Sep b (L.length + 14) G 0x740
   pos : 0 < b.toNat
-  hw : b.toNat + L.length ≤ 0x40000000
+  hw : b.toNat + L.length + 14 ≤ 0x40000000
 
 /-- The DER reader at `d` reads the bytes of the reader `r` over the bytes
 `L` at `b`. -/
@@ -32,8 +34,8 @@ def RcRdAt (M : Word → BitVec 8) (d b : Word) (L : Bytes) (r : RcRd) : Prop :=
 theorem RcL.keep {M M' : Word → BitVec 8} {G b : Word} {L : Bytes} (h : RcL M G b L) (hK : RcKeep G M M') :
     RcL M' G b L :=
   ⟨(memBytes_congr fun j hj =>
-      hK _ (rc_g0' ((h.sep.shift hj).symm.sub (c := 0) (l := 0x5C0) (by omega)))
-        ((h.sep.shift hj).symm.sub (c := 0x620) (l := 0xEC) (by omega))).trans h.bytes,
+      hK _ (rc_g0' ((h.sep.shift (by omega : j < L.length + 14)).symm.sub (c := 0) (l := 0x5C0) (by omega)))
+        ((h.sep.shift (by omega : j < L.length + 14)).symm.sub (c := 0x620) (l := 0xEC) (by omega))).trans h.bytes,
     h.sep, h.pos, h.hw⟩
 
 theorem RcL.w {M : Word → BitVec 8} {G b : Word} {L : Bytes} (h : RcL M G b L) {i : Nat} (hi : i ≤ L.length) :
@@ -582,6 +584,80 @@ theorem RcCtx.callOpt (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
       (by rw [eF, X.f8, X.fG]; exact X.gsep (Or.inl (by omega)) (by decide) (by omega))
       (by rw [X.fG]; exact X.gsep (Or.inl (by omega)) (by decide) (by omega))
       (by rw [X.f8, X.fG]; exact X.gsep (Or.inl (by omega)) (by decide) (by omega)) hm2
+
+end
+
+
+/-- `time::read_time`'s result at `o` for the reader `r` at `d`: the time
+and the reader over the bytes it leaves. -/
+def RcTimeOut (M : Word → BitVec 8) (o d b : Word) (L : Bytes) (r : RcRd) : Option (Nat × Bytes) → Prop
+  | none => M o = 1
+  | some (t, r1) => t < 2 ^ 64 ∧ M o = 0 ∧ memLoad32 M (o + 8) = BitVec.ofNat 32 (t % 2 ^ 32) ∧
+      memLoad32 M (o + 0xC) = BitVec.ofNat 32 (t / 2 ^ 32) ∧ r1.length ≤ r.2 ∧
+      RcRdAt M d b L (r.1 + (r.2 - r1.length), r1.length)
+
+theorem rcd_time_saved : ∀ q : Fin 32, q.val ∈ trSaved →
+    q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] := by decide
+
+section
+variable {M0 : Word → BitVec 8} {G F out fr fp p : Word} {fl n : Nat} {g0 : Fin 32 → Word}
+
+/-- The call of `time::read_time` at `off` with the result at `F + oc` and
+the reader at `F + dc`. -/
+theorem RcCtx.callTime (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word}
+    {Q : Post} {off oc dc : Nat} {hi lo b : Word} {L : Bytes} {r : RcRd}
+    (h1 : fetchRel trustedRootReadChainCode off = some (.auipc ra hi, 4))
+    (h2 : fetchRel trustedRootReadChainCode (off + 4) = some (.jalr ra ra lo, 4))
+    (htgt : (TRC + BitVec.ofNat 32 off + hi + lo) &&& ~~~1 = XRT)
+    (hev : (TRC + BitVec.ofNat 32 (off + 8)) &&& ~~~1 = TRC + BitVec.ofNat 32 (off + 8))
+    (hR : RcRegs F out fr g0 f) (hI : RcMemInv M0 G F fr fp fl g0 M)
+    (hoc : 0x60 ≤ oc ∧ oc + 16 ≤ 0x14C ∧ oc % 4 = 0) (hdc : 0x60 ≤ dc ∧ dc + 16 ≤ 0x14C ∧ dc % 4 = 0)
+    (hod : oc + 16 ≤ dc + 8 ∨ dc + 16 ≤ oc)
+    (ha0 : f a0 = F + BitVec.ofNat 32 oc) (ha1 : f a1 = F + BitVec.ofNat 32 dc)
+    (hL : RcL M G b L) (hr : RcRdAt M (F + BitVec.ofNat 32 dc) b L r)
+    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcMemInv M0 G F fr fp fl g0 m2.mem →
+      RcTimeOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r (readTime (rcView L r)) →
+      WP trustedRootReadChainCode TRC Q m2.mem (off + 8) (clob (upd f ra (TRC + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
+    WP trustedRootReadChainCode TRC Q M off f := by
+  have gw := X.gw
+  have hw := hL.hw
+  have hr2 := hr.2.2
+  have eR : F + 0xFFFFFFA0 = G + BitVec.ofNat 32 0x560 := X.fneg (k := 0x60) (by decide) (by decide)
+  refine X.callK (P := fun m2 => RcTimeOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r
+      (readTime (rcView L r)))
+    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hI' hP)
+  have C := X.codeAt hI
+  rw [← hmem1] at C hL
+  have hr1 : RcRdAt m1.mem (F + BitVec.ofNat 32 dc) b L r := by rw [hmem1]; exact hr
+  have hV : memBytes m1.mem (b + BitVec.ofNat 32 r.1) r.2 = rcView L r := by
+    have := hr1.view hL; rwa [hr1.len hL, hr1.1] at this
+  have hsp1 : reg m1 sp = F := by rw [hreg1]; trsimp; exact hR.2.1
+  have hfn := X.fn
+  obtain ⟨m2, c2, pc2, hsp2, hk2, hsome, hnone, hm2⟩ := x509ReadTime_correct m1 (sp0 := F)
+    (out := F + BitVec.ofNat 32 oc) (d := F + BitVec.ofNat 32 dc) (rp := b + BitVec.ofNat 32 r.1) (rl := r.2)
+    (retAddr := TRC + BitVec.ofNat 32 (off + 8))
+    C.xrt C.tlv C.gnt C.tvf.dt C.tvf.td C.tvf.td4 C.tvf.aad hpc1 (by rw [hreg1]; trsimp; exact ha0)
+    (by rw [hreg1]; trsimp; exact ha1) (by rw [hreg1]; trsimp) hev hsp1 X.fa4 (by omega) (by omega)
+    (by rw [X.fG, X.gc (by omega)]; omega) (X.fal hoc.2.2) (by rw [X.fG, X.gc (by omega)]; omega) (X.fal hdc.2.2)
+    hr1.1 hr1.2.1 (by rw [hL.w (by omega)]; omega) (by rw [hL.w (by omega)]; have := hL.pos; omega)
+    (by rw [eR, X.fG]; exact X.gsep (Or.inr (by omega)) (by omega) (by decide))
+    (by rw [eR, X.f8, X.fG]; exact X.gsep (Or.inr (by omega)) (by omega) (by decide))
+    (by rw [X.f8, X.fG, X.fG]; exact X.gsep (by omega) (by omega) (by omega))
+    (by rw [eR]; exact (hL.sep.sub (c := r.1) (l := r.2 + 14) (by omega)).subR (by decide))
+    (by rw [X.f8, X.fG]; exact (hL.sep.sub (c := r.1) (l := r.2) (by omega)).subR (by omega))
+  refine ⟨m2, c2, pc2, ⟨fun x xa xb => ?_, ?_⟩, by rw [hsp2, hsp1], fun q hq => hk2 q (rcd_time_saved q hq)⟩
+  · rw [hm2 x (by rw [eR]; exact rc_gin (rc_g0 xa) (by decide) (by decide))
+      (by rw [X.fG]; exact rc_gin xb (by omega) (by omega))
+      (by rw [X.f8, X.fG]; exact rc_gin xb (by omega) (by omega)), hmem1]
+  · rw [← hV]
+    rcases hT : readTime (memBytes m1.mem (b + BitVec.ofNat 32 r.1) r.2) with _ | ⟨t, r1⟩
+    · exact hnone hT
+    · obtain ⟨h64, h0, h8, hC, j, hj, hd8, hdC, hr1'⟩ := hsome t r1 hT
+      have hl : r1.length = r.2 - j := by rw [hr1', memBytes_length]
+      refine ⟨h64, h0, h8, hC, by omega, ?_, ?_, ?_⟩
+      · rw [hd8, hl, show r.2 - (r.2 - j) = j by omega, add_ofNat_assoc]
+      · rw [hdC, hl]
+      · show _ + _ ≤ _; omega
 
 end
 
