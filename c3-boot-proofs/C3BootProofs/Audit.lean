@@ -207,6 +207,7 @@ import C3BootProofs.Proofs.TufPemSpki
 import C3BootProofs.Proofs.TufParseMetadataHead
 import C3BootProofs.Proofs.TufParseRoot
 import C3BootProofs.Proofs.TufRoleKeysRead
+import C3BootProofs.Proofs.TufRoleKeysMetSpec
 import C3BootProofs.Proofs.TrustedRootDecode
 import C3BootProofs.Proofs.TrustedRootValidFor
 import C3BootProofs.Proofs.TrustedRootReadChainAt
@@ -9066,6 +9067,12 @@ end C3
 
 /-- info: 'C3.RV32.tufRoleKeysRead_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufRoleKeysRead_correct
+
+/-- info: 'C3.RV32.tufRoleKeysMet_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_correct
+
+/-- info: 'C3.RV32.tufRoleKeysMet_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_spec
 
 /-- info: 'C3.RV32.trustedRootDecode_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.trustedRootDecode_correct

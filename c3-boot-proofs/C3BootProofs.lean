@@ -419,6 +419,8 @@ import C3BootProofs.Proofs.TufRoleKeysMetEnv
 import C3BootProofs.Proofs.TufRoleKeysMetSig
 import C3BootProofs.Proofs.TufRoleKeysMetVer
 import C3BootProofs.Proofs.TufRoleKeysMetLoop
+import C3BootProofs.Proofs.TufRoleKeysMet
+import C3BootProofs.Proofs.TufRoleKeysMetSpec
 import C3BootProofs.Proofs.TrustedRootDecode
 import C3BootProofs.Proofs.TrustedRootValidFor
 import C3BootProofs.Proofs.TrustedRootReadChainAt

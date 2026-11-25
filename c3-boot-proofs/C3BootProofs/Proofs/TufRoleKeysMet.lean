@@ -163,6 +163,43 @@ theorem rm_wp (hg0 : g0 a0 = R) (hg1 : g0 a1 = A) (hsp : g0 sp = s + BitVec.ofNa
   · rw [rm_ld F (c := 0xC) (d := 0x24) (by decide) (by decide) (by decide), rm_ld F (c := 0x18) (d := 0x24) (by decide) (by decide) (by decide), rm_ld F (c := 0x20) (d := 0x24) (by decide) (by decide) (by decide)]; exact memLoad32_store32_same _ _ _
   · exact memLoad32_store32_same _ _ _
 
+
+/-- `RoleKeys::met` from its entry, with the `RoleKeys` at `R` in `a0`
+holding the threshold `t` and the listed keys `es`, and in `a1` the
+address `A` of the 16 bytes that give the message (`ML` bytes at `MP`)
+and the signatures array (`SL` bytes at `SP`). Its stack is the 0x3920
+bytes below `sp`, and the code and the constants that it and its callees
+read lie outside the stack. It halts in a panic, or it returns to `ra`
+with memory outside the stack as before and every register outside
+`jClob` as before. When it returns `Ok(true)`, at least `t` distinct
+listed keys have a key ID whose first signature in the array checks over
+the message. -/
+theorem tufRoleKeysMet_correct (m : Machine) {retAddr s R A MP SP : Word} {ML SL t : Nat} {es : List RkEntry}
+    (hpc : m.pc = TRM) (ha0 : reg m a0 = R) (ha1 : reg m a1 = A) (hsp : reg m sp = s + BitVec.ofNat 32 0x3920)
+    (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hal : s.toNat % 16 = 0)
+    (hlo : 0x3FC80000 ≤ s.toNat) (hhi : s.toNat + 0x3920 ≤ 0x3FCE0000)
+    (hds : Sep s 0x3920 (BitVec.ofNat 32 (img% dataWindowAddress)) (img% dataWindowSize))
+    (hro : Sep s 0x3920 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize))
+    (hc : ∀ M : Word → BitVec 8, (∀ x, Sep x 1 s 0x3920 → M x = m.mem x) → RmCode M)
+    (halR : R.toNat % 4 = 0) (hRw : R.toNat + 0x540 ≤ 0x40000000) (hSR : Sep s 0x3920 R 0x540)
+    (hMw : MP.toNat + ML ≤ 0x40000000) (hML : ML < 2 ^ 31) (hSM : Sep s 0x3920 MP ML)
+    (hS0 : SP.toNat ≠ 0) (hSw : SP.toNat + SL ≤ 0x40000000) (hSL : SL < 2 ^ 31) (hSS : Sep s 0x3920 SP SL)
+    (halA : A.toNat % 4 = 0) (hSA : Sep s 0x3920 A 16) (hA0 : memLoad32 m.mem A = MP)
+    (hA4 : memLoad32 m.mem (A + BitVec.ofNat 32 4) = BitVec.ofNat 32 ML)
+    (hA8 : memLoad32 m.mem (A + BitVec.ofNat 32 8) = SP)
+    (hAC : memLoad32 m.mem (A + BitVec.ofNat 32 12) = BitVec.ofNat 32 SL) (hR : RkAt m.mem R t es) (hw : RkWf es) :
+    ∃ m', Steps m m' ∧
+      (rmH m'.pc m'.mem (reg m') ∨
+        (m'.pc = retAddr ∧ (∀ x, Sep x 1 s 0x3920 → m'.mem x = m.mem x) ∧ (∀ r, r ∉ jClob → reg m' r = reg m r) ∧
+          (reg m' a0 = 0 → reg m' a1 ≠ 0 →
+            MetSound (memBytes m.mem SP SL) (memBytes m.mem MP ML) t (es.map nbE)))) := by
+  obtain ⟨m', st, q⟩ := WP.run (rm_wp ha0 ha1 hsp (by rw [hra]; exact hret) hal hlo hhi hds hro hc halR hRw hSR hMw
+    hML hSM hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hR hw) (by decide) (hc _ fun _ _ => rfl).a.self hpc
+  refine ⟨m', st, ?_⟩
+  rcases q with h | ⟨⟨hp, hM, hr⟩, hS⟩
+  · exact .inl h
+  · exact .inr ⟨hp.trans hra, hM, hr, hS⟩
+
 end
 
 end C3.RV32
