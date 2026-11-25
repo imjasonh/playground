@@ -269,4 +269,147 @@ theorem acx_h2 {P : AcxP} (K : AcxK P) {n : Machine} (S : AcxS1 P n) : AcxTo P n
     by rw [t4.regs, g3, runBlock_reg _ _ _ _ t2.zero (by decide), kk2 _ (by decide), s101],
     S.hL, S.hL8, b0, b1, b2, b3⟩
 
+theorem acx_b8 (x : BitVec 8) : x.toNat < 256 := x.isLt
+
+/-- From 0x334 or 0x356: the `u16`'s error bit. -/
+def acxH6 : List BInstr := [.aluImm .and a1 a0 0x1]
+
+theorem acxH6_end : blockEnd bootMainClosure0Code 0x334 acxH6 = some 0x338 := by decide
+
+theorem acxH6_end' : blockEnd bootMainClosure0Code 0x356 acxH6 = some 0x35A := by decide
+
+/-- From 0x33E: the version, and the version this code reads. -/
+def acxH7 : List BInstr := [.aluImm .srl a0 a0 0x10, .aluImm .add a1 x0 0x2]
+
+theorem acxH7_end : blockEnd bootMainClosure0Code 0x33E acxH7 = some 0x342 := by decide
+
+/-- From 0x43C: error 3, a version other than 2. -/
+def acxV3 : List BInstr := [.aluImm .add a0 x0 0x3]
+
+theorem acxV3_end : blockEnd bootMainClosure0Code 0x43C acxV3 = some 0x43E := by decide
+
+/-- From 0x35C: the count of roots, and the most this code takes. -/
+def acxH8 : List BInstr := [.aluImm .srl (18 : Fin 32) a0 0x10, .aluImm .add a0 x0 0x40]
+
+theorem acxH8_end : blockEnd bootMainClosure0Code 0x35C acxH8 = some 0x364 := by decide
+
+/-- From 0x368: set up the call that clears the index's buffer. -/
+def acxH9 : List BInstr :=
+  [.lui a0 0x2000, .aluImm .add a0 a0 0xFFFFFDC8, .alu .add a0 a0 sp, .aluImm .add a2 x0 0x108,
+   .aluImm .add a1 x0 0x0]
+
+theorem acxH9_end : blockEnd bootMainClosure0Code 0x368 acxH9 = some 0x376 := by decide
+
+/-- The state at 0x376: the header is good, and `s2` holds the count of
+roots. -/
+structure AcxS2 (P : AcxP) (n : Machine) : Prop where
+  st : St n.mem AC n 0x376 (reg n)
+  c : AcxC P n
+  a0 : reg n a0 = P.B + BitVec.ofNat 32 0x5818
+  a1 : reg n a1 = 0
+  a2 : reg n a2 = 0x108
+  s10 : reg n (26 : Fin 32) = P.B + BitVec.ofNat 32 0x4D60
+  hc : (reg n (18 : Fin 32)).toNat ≤ 64
+  hL : (reg P.n0 (23 : Fin 32)).toNat ≤ 0x60000
+  hL8 : 8 ≤ (reg P.n0 (23 : Fin 32)).toNat
+  f0 : (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 0)).toNat = 0x43
+  f1 : (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 1)).toNat = 0x33
+  f2 : (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 2)).toNat = 0x54
+  f3 : (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 3)).toNat = 0x55
+  fv : (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 4)).toNat +
+    256 * (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 5)).toNat = 2
+  fc : (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 6)).toNat +
+    256 * (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 7)).toNat = (reg n (18 : Fin 32)).toNat
+
+set_option maxHeartbeats 4000000 in
+/-- From 0x324 to 0x376: check the version and the count of roots. -/
+theorem acx_h3 {P : AcxP} (K : AcxK P) {n : Machine} (S : AcxM1 P n) : AcxTo P n (AcxS2 P) := by
+  have A := S.c
+  obtain ⟨n1, c1, t1, A1, kk1, R1, a01⟩ := acx_u16step K A (ob := 0x324) (q := 4) (by decide) S.st S.rd
+    acxH4_end ac_at_32c ac_at_330 (by decide) (by decide)
+  obtain ⟨n2, c2, t2, A2, m2, g2⟩ := acx_blk K A1 t1 acxH6 acxH6_end ⟨trivial, trivial⟩ rfl (by decide)
+  have a12 : reg n2 a1 = 0 := by
+    rw [g2]; simp +decide only [runBlock, BInstr.run, acxH6, upd, ↓reduceIte]; rw [a01]; exact u16_lo _ _
+  obtain ⟨n3, e3, t3⟩ := t2.taken (A2.code K) 0x33E ac_at_338 (by decide) (acx_beq_t (by rw [a12, t2.zero]))
+  have A3 := A2.st t3
+  obtain ⟨n4, c4, t4, A4, m4, g4⟩ := acx_blk K A3 (acx_st t3) acxH7 acxH7_end ⟨trivial, trivial, trivial⟩ rfl
+    (by decide)
+  have a04 : reg n4 a0 = BitVec.ofNat 32 ((P.flash ((reg P.n0 (24 : Fin 32)).toNat + 4)).toNat +
+      256 * (P.flash ((reg P.n0 (24 : Fin 32)).toNat + (4 + 1))).toNat) := by
+    rw [g4]; simp +decide only [runBlock, BInstr.run, acxH7, upd, ↓reduceIte]
+    rw [t3.regs, g2, runBlock_reg _ _ _ a0 t1.zero (by decide), a01, acx_u16v]
+  have a14 : reg n4 a1 = 2 := by
+    rw [g4]; simp +decide only [runBlock, BInstr.run, acxH7, upd, ↓reduceIte, aluEval]
+  have C4 := A4.code K
+  have hb4 := acx_b8 (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 4))
+  have hb5 := acx_b8 (P.flash ((reg P.n0 (24 : Fin 32)).toNat + (4 + 1)))
+  by_cases hv : (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 4)).toNat +
+      256 * (P.flash ((reg P.n0 (24 : Fin 32)).toNat + (4 + 1))).toNat = 2
+  case neg =>
+    obtain ⟨n5, e5, t5⟩ := t4.taken C4 0x43C ac_at_342 (by decide)
+      (acx_bne_t (by rw [a04, a14]; exact (acx_ofNat_ne (c := 2) (by omega) (by decide) hv : _ ≠ (2 : Word))))
+    have A5 := A4.st t5
+    obtain ⟨n6, c6, t6, A6, m6, g6⟩ := acx_blk K A5 (acx_st t5) acxV3 acxV3_end ⟨trivial, trivial⟩ rfl
+      (by decide)
+    obtain ⟨n7, e7, t7⟩ := t6.jump (A6.code K) ac_at_43e (off' := 0x434) (by decide) (by rw [t6.pc]; decide)
+    refine AcxTo.pre (c1.trans (c2.trans ((Steps.single e3).trans (c4.trans ((Steps.single e5).trans
+      (c6.trans (.single e7))))))) (acx_exit K (A6.st t7) (acx_st t7) (c := 3) ?_ (.inl (by decide)))
+    rw [t7.regs, g6]; simp +decide only [runBlock, BInstr.run, acxV3, upd, ↓reduceIte, aluEval]
+    rw [t5.regs, t4.zero]; rfl
+  obtain ⟨n5, e5, t5⟩ := t4.notTaken C4 0x346 ac_at_342 (by decide)
+    (acx_bne_f (by rw [a04, a14, hv]; rfl))
+  have A5 := A4.st t5
+  have R5 : AcxRd P n5.mem 6 := by rw [t5.mem, m4, t3.mem, m2]; exact R1
+  obtain ⟨n6, c6, t6, A6, kk6, R6, a06⟩ := acx_u16step K A5 (ob := 0x346) (q := 6) (by decide) (acx_st t5) R5
+    acxH4_end' ac_at_34e ac_at_352 (by decide) (by decide)
+  obtain ⟨n7, c7, t7, A7, m7, g7⟩ := acx_blk K A6 t6 acxH6 acxH6_end' ⟨trivial, trivial⟩ rfl (by decide)
+  have a17 : reg n7 a1 = 0 := by
+    rw [g7]; simp +decide only [runBlock, BInstr.run, acxH6, upd, ↓reduceIte]; rw [a06]; exact u16_lo _ _
+  obtain ⟨n8, e8, t8⟩ := t7.notTaken (A7.code K) 0x35C ac_at_35a (by decide)
+    (acx_bne_f (by rw [a17, t7.zero]))
+  have A8 := A7.st t8
+  obtain ⟨n9, c9, t9, A9, m9, g9⟩ := acx_blk K A8 (acx_st t8) acxH8 acxH8_end ⟨trivial, trivial, trivial⟩ rfl
+    (by decide)
+  have hb6 := acx_b8 (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 6))
+  have hb7 := acx_b8 (P.flash ((reg P.n0 (24 : Fin 32)).toNat + (6 + 1)))
+  have s29 : reg n9 (18 : Fin 32) = BitVec.ofNat 32 ((P.flash ((reg P.n0 (24 : Fin 32)).toNat + 6)).toNat +
+      256 * (P.flash ((reg P.n0 (24 : Fin 32)).toNat + (6 + 1))).toNat) := by
+    rw [g9]; simp +decide only [runBlock, BInstr.run, acxH8, upd, ↓reduceIte]
+    rw [t8.regs, g7, runBlock_reg _ _ _ a0 t6.zero (by decide), a06, acx_u16v]
+  have a09 : reg n9 a0 = 0x40 := by
+    rw [g9]; simp +decide only [runBlock, BInstr.run, acxH8, upd, ↓reduceIte, aluEval]
+  have hc32 := acx_toNat_ofNat (v := (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 6)).toNat +
+      256 * (P.flash ((reg P.n0 (24 : Fin 32)).toNat + (6 + 1))).toNat) (by omega)
+  have C9 := A9.code K
+  by_cases hc : (P.flash ((reg P.n0 (24 : Fin 32)).toNat + 6)).toNat +
+      256 * (P.flash ((reg P.n0 (24 : Fin 32)).toNat + (6 + 1))).toNat ≤ 64
+  case neg =>
+    obtain ⟨n10, e10, t10⟩ := t9.taken C9 0x2AE ac_at_364 (by decide)
+      (acx_bltu_t (by rw [a09, s29, hc32]; show 64 < _; omega))
+    exact AcxTo.pre (c1.trans (c2.trans ((Steps.single e3).trans (c4.trans ((Steps.single e5).trans
+      (c6.trans (c7.trans ((Steps.single e8).trans (c9.trans (.single e10)))))))))) (acx_e5 K (A9.st t10) (acx_st t10))
+  obtain ⟨n10, e10, t10⟩ := t9.notTaken C9 0x368 ac_at_364 (by decide)
+    (acx_bltu_f (by rw [a09, s29, hc32]; exact hc))
+  have A10 := A9.st t10
+  have rsp := A10.rsp K
+  obtain ⟨n11, c11, t11, A11, m11, g11⟩ := acx_blk K A10 (acx_st t10) acxH9 acxH9_end
+    ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩ rfl (by decide)
+  refine AcxTo.done ?_ |> AcxTo.pre (c1.trans (c2.trans ((Steps.single e3).trans (c4.trans ((Steps.single e5).trans
+      (c6.trans (c7.trans ((Steps.single e8).trans (c9.trans ((Steps.single e10).trans c11))))))))))
+  have z10 := (acx_st t10).zero
+  have s2e : reg n11 (18 : Fin 32) = reg n9 (18 : Fin 32) := by
+    rw [g11, runBlock_reg _ _ _ _ z10 (by decide), t10.regs]
+  have s10e : reg n11 (26 : Fin 32) = P.B + BitVec.ofNat 32 0x4D60 := by
+    rw [g11, runBlock_reg _ _ _ _ z10 (by decide), t10.regs, g9, runBlock_reg _ _ _ _ (acx_st t8).zero (by decide),
+      t8.regs, g7, runBlock_reg _ _ _ _ t6.zero (by decide), kk6 _ (by decide), t5.regs, g4,
+      runBlock_reg _ _ _ _ (acx_st t3).zero (by decide), t3.regs, g2, runBlock_reg _ _ _ _ t1.zero (by decide),
+      kk1 _ (by decide), S.s10]
+  refine ⟨t11, A11, ?_, ?_, ?_, s10e, ?_, S.hL, S.hL8, S.f0, S.f1, S.f2, S.f3, hv, ?_⟩
+  · rw [g11]; simp +decide only [runBlock, BInstr.run, acxH9, upd, ↓reduceIte, aluEval, BitVec.reduceAdd]
+    exact acx_k' rsp _ (by decide)
+  · rw [g11]; simp +decide only [runBlock, BInstr.run, acxH9, upd, ↓reduceIte, aluEval]
+  · rw [g11]; simp +decide only [runBlock, BInstr.run, acxH9, upd, ↓reduceIte, aluEval]
+  · rw [s2e, s29, hc32]; exact hc
+  · rw [s2e, s29, hc32]
+
 end C3.RV32.Ac
