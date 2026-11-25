@@ -578,6 +578,7 @@ import C3BootProofs.Proofs.AcceptTargets
 import C3BootProofs.Proofs.AcceptTargetsLib
 import C3BootProofs.Proofs.AcceptTargetsCalls
 import C3BootProofs.Proofs.AcceptTargetsTail
+import C3BootProofs.Proofs.AcceptTargetsHex
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
