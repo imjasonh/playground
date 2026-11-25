@@ -1,9 +1,9 @@
-import C3BootProofs.Spec.Json
+import C3BootProofs.Models.JsonLinkLax
 
 /-!
-# Facts about `Spec/Json.lean` for the JSON link
+# Facts about the lax grammar for the JSON link
 
-Equations for each case of `parseValue`, `parseMembers`, and `parseElems`,
+Equations for each case of `jlxValue`, `jlxMembers`, and `jlxElems`,
 and two facts about where a parse stops: what is left over is a suffix of
 the input (`jls_suffix`), and a parse that stops inside `x ++ r` reads the
 same from `x` alone (`jls_trunc`).
@@ -19,53 +19,53 @@ set_option linter.unusedSimpArgs false
 
 /-- The members after one `"key": value`, at the bytes after the value. -/
 def jlsMTail (c : Bool) (f dep : Nat) (k : Bytes) (v : Json) : Bytes → Option (List (Bytes × Json) × Bytes)
-  | 44 :: r => (parseMembers c f dep (ws c r)).bind fun (more, r) => some ((k, v) :: more, r)
+  | 44 :: r => (jlxMembers c f dep (ws c r)).bind fun (more, r) => some ((k, v) :: more, r)
   | 125 :: r => some ([(k, v)], r)
   | _ => none
 
 /-- The items after one value, at the bytes after it. -/
 def jlsETail (c : Bool) (f dep : Nat) (v : Json) : Bytes → Option (List Json × Bytes)
-  | 44 :: r => (parseElems c f dep (ws c r)).bind fun (more, r) => some (v :: more, r)
+  | 44 :: r => (jlxElems c f dep (ws c r)).bind fun (more, r) => some (v :: more, r)
   | 93 :: r => some ([v], r)
   | _ => none
 
-theorem jls_pv_zero (c : Bool) (dep : Nat) (s : Bytes) : parseValue c 0 dep s = none := by
-  unfold parseValue; rfl
+theorem jls_pv_zero (c : Bool) (dep : Nat) (s : Bytes) : jlxValue c 0 dep s = none := by
+  unfold jlxValue; rfl
 
-theorem jls_pm_zero (c : Bool) (dep : Nat) (s : Bytes) : parseMembers c 0 dep s = none := by
-  unfold parseMembers; rfl
+theorem jls_pm_zero (c : Bool) (dep : Nat) (s : Bytes) : jlxMembers c 0 dep s = none := by
+  unfold jlxMembers; rfl
 
-theorem jls_pe_zero (c : Bool) (dep : Nat) (s : Bytes) : parseElems c 0 dep s = none := by
-  unfold parseElems; rfl
+theorem jls_pe_zero (c : Bool) (dep : Nat) (s : Bytes) : jlxElems c 0 dep s = none := by
+  unfold jlxElems; rfl
 
-theorem jls_pv_nil (c : Bool) (f dep : Nat) : parseValue c (f + 1) dep [] = none := by
-  unfold parseValue; rfl
+theorem jls_pv_nil (c : Bool) (f dep : Nat) : jlxValue c (f + 1) dep [] = none := by
+  unfold jlxValue; rfl
 
-theorem jls_pm_nil (c : Bool) (f dep : Nat) : parseMembers c (f + 1) dep [] = none := by
-  unfold parseMembers; rfl
+theorem jls_pm_nil (c : Bool) (f dep : Nat) : jlxMembers c (f + 1) dep [] = none := by
+  unfold jlxMembers; rfl
 
 theorem jls_pv_str (c : Bool) (f dep : Nat) (rest : Bytes) :
-    parseValue c (f + 1) dep (34 :: rest) = (parseString c rest).bind fun (s, r) => some (.str s, r) := by
-  unfold parseValue; rfl
+    jlxValue c (f + 1) dep (34 :: rest) = (parseString c rest).bind fun (s, r) => some (.str s, r) := by
+  unfold jlxValue; rfl
 
 theorem jls_pv_obj (c : Bool) (f dep : Nat) (rest : Bytes) :
-    parseValue c (f + 1) dep (123 :: rest) = (require (decide (dep ≥ 1))).bind fun _ =>
+    jlxValue c (f + 1) dep (123 :: rest) = (require (decide (dep ≥ 1))).bind fun _ =>
       match ws c rest with
       | 125 :: r => some (.obj [], r)
-      | r => (parseMembers c f (dep - 1) r).bind fun (ms, r) =>
+      | r => (jlxMembers c f (dep - 1) r).bind fun (ms, r) =>
           (require (keysOk c (ms.map (·.1)))).bind fun _ => some (.obj ms, r) := by
-  unfold parseValue; rfl
+  unfold jlxValue; rfl
 
 theorem jls_pv_arr (c : Bool) (f dep : Nat) (rest : Bytes) :
-    parseValue c (f + 1) dep (91 :: rest) = (require (decide (dep ≥ 1))).bind fun _ =>
+    jlxValue c (f + 1) dep (91 :: rest) = (require (decide (dep ≥ 1))).bind fun _ =>
       match ws c rest with
       | 93 :: r => some (.arr [], r)
-      | r => (parseElems c f (dep - 1) r).bind fun (items, r) => some (.arr items, r) := by
-  unfold parseValue; rfl
+      | r => (jlxElems c f (dep - 1) r).bind fun (items, r) => some (.arr items, r) := by
+  unfold jlxValue; rfl
 
 theorem jls_pv_other (c : Bool) (f dep b : Nat) (tl : Bytes) (h1 : b ≠ 123) (h2 : b ≠ 91) (h3 : b ≠ 34) :
-    parseValue c (f + 1) dep (b :: tl) = if isDigit b then parseNumber (b :: tl) else parseLiteral (b :: tl) := by
-  unfold parseValue
+    jlxValue c (f + 1) dep (b :: tl) = if isDigit b then parseNumber (b :: tl) else parseLiteral (b :: tl) := by
+  unfold jlxValue
   split
   · rename_i h; injection h with h; exact absurd h h1
   · rename_i h; injection h with h; exact absurd h h2
@@ -74,21 +74,21 @@ theorem jls_pv_other (c : Bool) (f dep b : Nat) (tl : Bytes) (h1 : b ≠ 123) (h
   · rename_i h; cases h
 
 theorem jls_pm_eq (c : Bool) (f dep : Nat) (rest : Bytes) :
-    parseMembers c (f + 1) dep (34 :: rest) = (parseString c rest).bind fun (k, r) =>
-      (readExpect [58] (ws c r)).bind fun r => (parseValue c f dep (ws c r)).bind fun (v, r) =>
+    jlxMembers c (f + 1) dep (34 :: rest) = (parseString c rest).bind fun (k, r) =>
+      (readExpect [58] (ws c r)).bind fun r => (jlxValue c f dep (ws c r)).bind fun (v, r) =>
         jlsMTail c f dep k v (ws c r) := by
-  unfold parseMembers; rfl
+  unfold jlxMembers; rfl
 
 theorem jls_pm_other (c : Bool) (f dep b : Nat) (tl : Bytes) (h : b ≠ 34) :
-    parseMembers c (f + 1) dep (b :: tl) = none := by
-  unfold parseMembers
+    jlxMembers c (f + 1) dep (b :: tl) = none := by
+  unfold jlxMembers
   split
   · rename_i h'; injection h' with h'; exact absurd h' h
   · rfl
 
 theorem jls_pe_eq (c : Bool) (f dep : Nat) (s : Bytes) :
-    parseElems c (f + 1) dep s = (parseValue c f dep s).bind fun (v, r) => jlsETail c f dep v (ws c r) := by
-  unfold parseElems; rfl
+    jlxElems c (f + 1) dep s = (jlxValue c f dep s).bind fun (v, r) => jlsETail c f dep v (ws c r) := by
+  unfold jlxElems; rfl
 
 /-! ## Scanners -/
 
@@ -314,13 +314,13 @@ theorem jls_lit_trunc {y r z : Bytes} {j : Json} (h : parseLiteral (y ++ r) = so
 
 /-! ## Inversion -/
 
-theorem jls_pv_inv {c : Bool} {f dep : Nat} {s r : Bytes} {j : Json} (h : parseValue c (f + 1) dep s = some (j, r)) :
+theorem jls_pv_inv {c : Bool} {f dep : Nat} {s r : Bytes} {j : Json} (h : jlxValue c (f + 1) dep s = some (j, r)) :
     (∃ rest, s = 123 :: rest ∧ 1 ≤ dep ∧ ((j = .obj [] ∧ ws c rest = 125 :: r) ∨
-      ∃ ms, j = .obj ms ∧ (∀ r', ws c rest ≠ 125 :: r') ∧ parseMembers c f (dep - 1) (ws c rest) = some (ms, r) ∧
+      ∃ ms, j = .obj ms ∧ (∀ r', ws c rest ≠ 125 :: r') ∧ jlxMembers c f (dep - 1) (ws c rest) = some (ms, r) ∧
         keysOk c (ms.map (·.1)) = true)) ∨
     (∃ rest, s = 91 :: rest ∧ 1 ≤ dep ∧ ((j = .arr [] ∧ ws c rest = 93 :: r) ∨
       ∃ items, j = .arr items ∧ (∀ r', ws c rest ≠ 93 :: r') ∧
-        parseElems c f (dep - 1) (ws c rest) = some (items, r))) ∨
+        jlxElems c f (dep - 1) (ws c rest) = some (items, r))) ∨
     (∃ rest st, s = 34 :: rest ∧ j = .str st ∧ parseString c rest = some (st, r)) ∨
     (∃ b tl, s = b :: tl ∧ b ≠ 123 ∧ b ≠ 91 ∧ b ≠ 34 ∧ isDigit b = true ∧ parseNumber s = some (j, r)) ∨
     (∃ b tl, s = b :: tl ∧ b ≠ 123 ∧ b ≠ 91 ∧ b ≠ 34 ∧ isDigit b = false ∧ parseLiteral s = some (j, r)) := by
@@ -369,9 +369,9 @@ theorem jls_pv_inv {c : Bool} {f dep : Nat} {s r : Bytes} {j : Json} (h : parseV
     · rw [hb] at h; exact .inr (.inr (.inr (.inl ⟨b, tl, rfl, h1, h2, h3, hb, h⟩)))
 
 theorem jls_pm_inv {c : Bool} {f dep : Nat} {s r : Bytes} {ms : List (Bytes × Json)}
-    (h : parseMembers c (f + 1) dep s = some (ms, r)) :
+    (h : jlxMembers c (f + 1) dep s = some (ms, r)) :
     ∃ rest k r1 r2 v r3, s = 34 :: rest ∧ parseString c rest = some (k, r1) ∧ readExpect [58] (ws c r1) = some r2 ∧
-      parseValue c f dep (ws c r2) = some (v, r3) ∧ jlsMTail c f dep k v (ws c r3) = some (ms, r) := by
+      jlxValue c f dep (ws c r2) = some (v, r3) ∧ jlsMTail c f dep k v (ws c r3) = some (ms, r) := by
   match s with
   | [] => rw [jls_pm_nil] at h; cases h
   | b :: tl =>
@@ -386,7 +386,7 @@ theorem jls_pm_inv {c : Bool} {f dep : Nat} {s r : Bytes} {ms : List (Bytes × J
 
 theorem jls_mt_inv {c : Bool} {f dep : Nat} {k : Bytes} {v : Json} {s r : Bytes} {ms : List (Bytes × Json)}
     (h : jlsMTail c f dep k v s = some (ms, r)) :
-    (∃ s' more, s = 44 :: s' ∧ parseMembers c f dep (ws c s') = some (more, r) ∧ ms = (k, v) :: more) ∨
+    (∃ s' more, s = 44 :: s' ∧ jlxMembers c f dep (ws c s') = some (more, r) ∧ ms = (k, v) :: more) ∨
       (s = 125 :: r ∧ ms = [(k, v)]) := by
   unfold jlsMTail at h
   split at h
@@ -401,15 +401,15 @@ theorem jls_mt_inv {c : Bool} {f dep : Nat} {k : Bytes} {v : Json} {s r : Bytes}
   · cases h
 
 theorem jls_pe_inv {c : Bool} {f dep : Nat} {s r : Bytes} {js : List Json}
-    (h : parseElems c (f + 1) dep s = some (js, r)) :
-    ∃ v r1, parseValue c f dep s = some (v, r1) ∧ jlsETail c f dep v (ws c r1) = some (js, r) := by
+    (h : jlxElems c (f + 1) dep s = some (js, r)) :
+    ∃ v r1, jlxValue c f dep s = some (v, r1) ∧ jlsETail c f dep v (ws c r1) = some (js, r) := by
   rw [jls_pe_eq] at h
   obtain ⟨⟨v, r1⟩, h1, h⟩ := Option.bind_eq_some_iff.mp h
   exact ⟨v, r1, h1, h⟩
 
 theorem jls_et_inv {c : Bool} {f dep : Nat} {v : Json} {s r : Bytes} {js : List Json}
     (h : jlsETail c f dep v s = some (js, r)) :
-    (∃ s' more, s = 44 :: s' ∧ parseElems c f dep (ws c s') = some (more, r) ∧ js = v :: more) ∨
+    (∃ s' more, s = 44 :: s' ∧ jlxElems c f dep (ws c s') = some (more, r) ∧ js = v :: more) ∨
       (s = 93 :: r ∧ js = [v]) := by
   unfold jlsETail at h
   split at h
@@ -433,9 +433,9 @@ theorem jls_sx_ne {x y : Bytes} (h : x ≠ []) : x ++ y ≠ [] := by
 
 /-- What a parse leaves over is a proper suffix of its input. -/
 theorem jls_suffix (c : Bool) : ∀ f,
-    (∀ {dep s j r}, parseValue c f dep s = some (j, r) → ∃ x, x ≠ [] ∧ s = x ++ r) ∧
-    (∀ {dep s ms r}, parseMembers c f dep s = some (ms, r) → ∃ x, x ≠ [] ∧ s = x ++ r) ∧
-    (∀ {dep s js r}, parseElems c f dep s = some (js, r) → ∃ x, x ≠ [] ∧ s = x ++ r)
+    (∀ {dep s j r}, jlxValue c f dep s = some (j, r) → ∃ x, x ≠ [] ∧ s = x ++ r) ∧
+    (∀ {dep s ms r}, jlxMembers c f dep s = some (ms, r) → ∃ x, x ≠ [] ∧ s = x ++ r) ∧
+    (∀ {dep s js r}, jlxElems c f dep s = some (js, r) → ∃ x, x ≠ [] ∧ s = x ++ r)
   | 0 => by
     refine ⟨fun h => ?_, fun h => ?_, fun h => ?_⟩
     · rw [jls_pv_zero] at h; cases h
@@ -490,14 +490,14 @@ theorem jls_suffix (c : Bool) : ∀ f,
       obtain ⟨a3, e3⟩ := e3
       exact ⟨a1 ++ (a2 ++ a3), jls_sx_ne ha1, by rw [e1, e2, e3, List.append_assoc, List.append_assoc]⟩
 
-theorem jls_pv_suf {c : Bool} {f dep : Nat} {s r : Bytes} {j : Json} (h : parseValue c f dep s = some (j, r)) :
+theorem jls_pv_suf {c : Bool} {f dep : Nat} {s r : Bytes} {j : Json} (h : jlxValue c f dep s = some (j, r)) :
     ∃ x, x ≠ [] ∧ s = x ++ r := (jls_suffix c f).1 h
 
 theorem jls_pm_suf {c : Bool} {f dep : Nat} {s r : Bytes} {ms : List (Bytes × Json)}
-    (h : parseMembers c f dep s = some (ms, r)) : ∃ x, x ≠ [] ∧ s = x ++ r := (jls_suffix c f).2.1 h
+    (h : jlxMembers c f dep s = some (ms, r)) : ∃ x, x ≠ [] ∧ s = x ++ r := (jls_suffix c f).2.1 h
 
 theorem jls_pe_suf {c : Bool} {f dep : Nat} {s r : Bytes} {js : List Json}
-    (h : parseElems c f dep s = some (js, r)) : ∃ x, x ≠ [] ∧ s = x ++ r := (jls_suffix c f).2.2 h
+    (h : jlxElems c f dep s = some (js, r)) : ∃ x, x ≠ [] ∧ s = x ++ r := (jls_suffix c f).2.2 h
 
 theorem jls_mt_suf {c : Bool} {f dep : Nat} {k : Bytes} {v : Json} {s r : Bytes} {ms : List (Bytes × Json)}
     (h : jlsMTail c f dep k v s = some (ms, r)) : ∃ x, x ≠ [] ∧ s = x ++ r := by
@@ -518,13 +518,13 @@ theorem jls_et_suf {c : Bool} {f dep : Nat} {v : Json} {s r : Bytes} {js : List 
 /-! ## Constructors -/
 
 theorem jls_pv_obj_empty_mk {c : Bool} {f dep : Nat} {rest r : Bytes} (hd : 1 ≤ dep) (hw : ws c rest = 125 :: r) :
-    parseValue c (f + 1) dep (123 :: rest) = some (.obj [], r) := by
+    jlxValue c (f + 1) dep (123 :: rest) = some (.obj [], r) := by
   rw [jls_pv_obj, hw]
   simp only [require, ge_iff_le, hd, decide_true, ↓reduceIte, Option.bind_some]
 
 theorem jls_pv_obj_mk {c : Bool} {f dep : Nat} {rest r : Bytes} {ms : List (Bytes × Json)} (hd : 1 ≤ dep)
-    (hw : ∀ r', ws c rest ≠ 125 :: r') (hm : parseMembers c f (dep - 1) (ws c rest) = some (ms, r))
-    (hk : keysOk c (ms.map (·.1)) = true) : parseValue c (f + 1) dep (123 :: rest) = some (.obj ms, r) := by
+    (hw : ∀ r', ws c rest ≠ 125 :: r') (hm : jlxMembers c f (dep - 1) (ws c rest) = some (ms, r))
+    (hk : keysOk c (ms.map (·.1)) = true) : jlxValue c (f + 1) dep (123 :: rest) = some (.obj ms, r) := by
   have hr : require (decide (dep ≥ 1)) = some () := by rw [require_eq_some]; exact decide_eq_true hd
   rw [jls_pv_obj, hr, Option.bind_some]
   revert hw hm; generalize ws c rest = w; intro hw hm
@@ -535,13 +535,13 @@ theorem jls_pv_obj_mk {c : Bool} {f dep : Nat} {rest r : Bytes} {ms : List (Byte
     rw [hk]; rfl
 
 theorem jls_pv_arr_empty_mk {c : Bool} {f dep : Nat} {rest r : Bytes} (hd : 1 ≤ dep) (hw : ws c rest = 93 :: r) :
-    parseValue c (f + 1) dep (91 :: rest) = some (.arr [], r) := by
+    jlxValue c (f + 1) dep (91 :: rest) = some (.arr [], r) := by
   rw [jls_pv_arr, hw]
   simp only [require, ge_iff_le, hd, decide_true, ↓reduceIte, Option.bind_some]
 
 theorem jls_pv_arr_mk {c : Bool} {f dep : Nat} {rest r : Bytes} {js : List Json} (hd : 1 ≤ dep)
-    (hw : ∀ r', ws c rest ≠ 93 :: r') (he : parseElems c f (dep - 1) (ws c rest) = some (js, r)) :
-    parseValue c (f + 1) dep (91 :: rest) = some (.arr js, r) := by
+    (hw : ∀ r', ws c rest ≠ 93 :: r') (he : jlxElems c f (dep - 1) (ws c rest) = some (js, r)) :
+    jlxValue c (f + 1) dep (91 :: rest) = some (.arr js, r) := by
   have hr : require (decide (dep ≥ 1)) = some () := by rw [require_eq_some]; exact decide_eq_true hd
   rw [jls_pv_arr, hr, Option.bind_some]
   revert hw he; generalize ws c rest = w; intro hw he
@@ -550,28 +550,28 @@ theorem jls_pv_arr_mk {c : Bool} {f dep : Nat} {rest r : Bytes} {js : List Json}
   · rw [he]; rfl
 
 theorem jls_pv_str_mk {c : Bool} {f dep : Nat} {rest st r : Bytes} (hs : parseString c rest = some (st, r)) :
-    parseValue c (f + 1) dep (34 :: rest) = some (.str st, r) := by
+    jlxValue c (f + 1) dep (34 :: rest) = some (.str st, r) := by
   rw [jls_pv_str, hs]; rfl
 
 theorem jls_pv_num_mk {c : Bool} {f dep b : Nat} {tl r : Bytes} {j : Json} (h1 : b ≠ 123) (h2 : b ≠ 91) (h3 : b ≠ 34)
-    (hd : isDigit b = true) (hn : parseNumber (b :: tl) = some (j, r)) : parseValue c (f + 1) dep (b :: tl) = some (j, r) := by
+    (hd : isDigit b = true) (hn : parseNumber (b :: tl) = some (j, r)) : jlxValue c (f + 1) dep (b :: tl) = some (j, r) := by
   rw [jls_pv_other c f dep b tl h1 h2 h3, hd]; exact hn
 
 theorem jls_pv_lit_mk {c : Bool} {f dep b : Nat} {tl r : Bytes} {j : Json} (h1 : b ≠ 123) (h2 : b ≠ 91) (h3 : b ≠ 34)
-    (hd : isDigit b = false) (hn : parseLiteral (b :: tl) = some (j, r)) : parseValue c (f + 1) dep (b :: tl) = some (j, r) := by
+    (hd : isDigit b = false) (hn : parseLiteral (b :: tl) = some (j, r)) : jlxValue c (f + 1) dep (b :: tl) = some (j, r) := by
   rw [jls_pv_other c f dep b tl h1 h2 h3, hd]; exact hn
 
 theorem jls_pm_mk {c : Bool} {f dep : Nat} {rest k r1 r2 r3 r : Bytes} {v : Json} {ms : List (Bytes × Json)}
     (h1 : parseString c rest = some (k, r1)) (h2 : readExpect [58] (ws c r1) = some r2)
-    (h3 : parseValue c f dep (ws c r2) = some (v, r3)) (h4 : jlsMTail c f dep k v (ws c r3) = some (ms, r)) :
-    parseMembers c (f + 1) dep (34 :: rest) = some (ms, r) := by
+    (h3 : jlxValue c f dep (ws c r2) = some (v, r3)) (h4 : jlsMTail c f dep k v (ws c r3) = some (ms, r)) :
+    jlxMembers c (f + 1) dep (34 :: rest) = some (ms, r) := by
   rw [jls_pm_eq, h1, Option.bind_some]
   simp only [h2, Option.bind_some, h3]
   exact h4
 
 theorem jls_mt_comma_mk {c : Bool} {f dep : Nat} {k : Bytes} {v : Json} {s' r : Bytes} {more : List (Bytes × Json)}
-    (h : parseMembers c f dep (ws c s') = some (more, r)) : jlsMTail c f dep k v (44 :: s') = some ((k, v) :: more, r) := by
-  show (parseMembers c f dep (ws c s')).bind _ = _
+    (h : jlxMembers c f dep (ws c s') = some (more, r)) : jlsMTail c f dep k v (44 :: s') = some ((k, v) :: more, r) := by
+  show (jlxMembers c f dep (ws c s')).bind _ = _
   rw [h]; rfl
 
 theorem jls_mt_close_mk (c : Bool) (f dep : Nat) (k : Bytes) (v : Json) (r : Bytes) :
@@ -579,13 +579,13 @@ theorem jls_mt_close_mk (c : Bool) (f dep : Nat) (k : Bytes) (v : Json) (r : Byt
   unfold jlsMTail; rfl
 
 theorem jls_pe_mk {c : Bool} {f dep : Nat} {s r1 r : Bytes} {v : Json} {js : List Json}
-    (h1 : parseValue c f dep s = some (v, r1)) (h2 : jlsETail c f dep v (ws c r1) = some (js, r)) :
-    parseElems c (f + 1) dep s = some (js, r) := by
+    (h1 : jlxValue c f dep s = some (v, r1)) (h2 : jlsETail c f dep v (ws c r1) = some (js, r)) :
+    jlxElems c (f + 1) dep s = some (js, r) := by
   rw [jls_pe_eq, h1, Option.bind_some]; exact h2
 
 theorem jls_et_comma_mk {c : Bool} {f dep : Nat} {v : Json} {s' r : Bytes} {more : List Json}
-    (h : parseElems c f dep (ws c s') = some (more, r)) : jlsETail c f dep v (44 :: s') = some (v :: more, r) := by
-  show (parseElems c f dep (ws c s')).bind _ = _
+    (h : jlxElems c f dep (ws c s') = some (more, r)) : jlsETail c f dep v (44 :: s') = some (v :: more, r) := by
+  show (jlxElems c f dep (ws c s')).bind _ = _
   rw [h]; rfl
 
 theorem jls_et_close_mk (c : Bool) (f dep : Nat) (v : Json) (r : Bytes) :
@@ -613,9 +613,9 @@ theorem jls_mid {w q t r : Bytes} (h : w = q ++ (t ++ r)) : w = (q ++ t) ++ r :=
 
 /-- A parse that stops inside `x ++ r` reads the same from `x`. -/
 theorem jls_trunc (c : Bool) (r : Bytes) : ∀ f,
-    (∀ {dep x t j}, parseValue c f dep (x ++ r) = some (j, t ++ r) → parseValue c f dep x = some (j, t)) ∧
-    (∀ {dep x t ms}, parseMembers c f dep (x ++ r) = some (ms, t ++ r) → parseMembers c f dep x = some (ms, t)) ∧
-    (∀ {dep x t js}, parseElems c f dep (x ++ r) = some (js, t ++ r) → parseElems c f dep x = some (js, t))
+    (∀ {dep x t j}, jlxValue c f dep (x ++ r) = some (j, t ++ r) → jlxValue c f dep x = some (j, t)) ∧
+    (∀ {dep x t ms}, jlxMembers c f dep (x ++ r) = some (ms, t ++ r) → jlxMembers c f dep x = some (ms, t)) ∧
+    (∀ {dep x t js}, jlxElems c f dep (x ++ r) = some (js, t ++ r) → jlxElems c f dep x = some (js, t))
   | 0 => by
     refine ⟨fun h => ?_, fun h => ?_, fun h => ?_⟩
     · rw [jls_pv_zero] at h; cases h

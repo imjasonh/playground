@@ -38,49 +38,22 @@ def JDen (c : Bool) (doc : Bytes) (a l : Nat) (j : Json) : Prop :=
 def JValUniqueStmt : Prop :=
   ∀ c v j j', JVal c v j → JVal c v j' → j = j'
 
-mutual
-/-- No object key in `j` has a byte below `0x20`. `next_member` reads a key
-with `key_end` in strict mode, which rejects those bytes, while canonical
-mode allows them in strings. So the compiled code rejects a canonical
-document such as `{"\x01":1}` that `parseJson true` accepts. -/
-def noCtlKeys : Json → Bool
-  | .obj ms => noCtlMembers ms
-  | .arr js => noCtlElems js
-  | _ => true
-
-/-- `noCtlKeys` for each member, and no byte below `0x20` in each key. -/
-def noCtlMembers : List (Bytes × Json) → Bool
-  | [] => true
-  | (k, j) :: ms => k.all (fun b => decide (0x20 ≤ b)) && noCtlKeys j && noCtlMembers ms
-
-/-- `noCtlKeys` for each item. -/
-def noCtlElems : List Json → Bool
-  | [] => true
-  | j :: js => noCtlKeys j && noCtlElems js
-end
-
-/-- A strict-mode value has no control byte in any key. -/
-def StrictNoCtlStmt : Prop :=
-  ∀ v j, JVal false v j → noCtlKeys j = true
-
 /-! ## `parse` -/
 
 /-- An `.ok` result of `parse` is the slice of the value that the spec
 parses the document to. -/
 def ParseModelOkStmt : Prop :=
   ∀ c doc a l, parseModel c doc = .ok (a, l) →
-    ∃ j, parseJson c doc = some j ∧ JDen c doc a l j ∧ noCtlKeys j = true
+    ∃ j, parseJson c doc = some j ∧ JDen c doc a l j
 
-/-- When the spec accepts a document with no control byte in a key, so does
-`parse`. -/
+/-- When the spec accepts a document, so does `parse`. -/
 def ParseJsonSomeStmt : Prop :=
-  ∀ c doc j, parseJson c doc = some j → noCtlKeys j = true →
+  ∀ c doc j, parseJson c doc = some j →
     ∃ a l, parseModel c doc = .ok (a, l) ∧ JDen c doc a l j
 
-/-- An `.error` result of `parse` means the spec rejects the document, or
-accepts it in canonical mode with a control byte in a key. -/
+/-- An `.error` result of `parse` means the spec rejects the document. -/
 def ParseModelErrorStmt : Prop :=
-  ∀ c doc e, parseModel c doc = .error e → ∀ j, parseJson c doc = some j → c = true ∧ noCtlKeys j = false
+  ∀ c doc e, parseModel c doc = .error e → parseJson c doc = none
 
 /-! ## Functions on a `Value` -/
 
@@ -88,7 +61,7 @@ def ParseModelErrorStmt : Prop :=
 object, `.ok none` when it has no member `key`, and otherwise the slice of
 the first such member's value. -/
 def ObjGetStmt : Prop :=
-  ∀ c v j key, JVal c v j → noCtlKeys j = true →
+  ∀ c v j key, JVal c v j →
     match j.asObj with
     | none => objGet v key = .error 0x21
     | some ms =>
@@ -99,7 +72,7 @@ def ObjGetStmt : Prop :=
 /-- `Value::field(key)` on a value is `Json.field key`, with the error byte
 `0x21` for `none`. -/
 def ObjFieldStmt : Prop :=
-  ∀ c v j key, JVal c v j → noCtlKeys j = true →
+  ∀ c v j key, JVal c v j →
     match j.field key with
     | none => objField v key = .error 0x21
     | some j' => ∃ vp vl, objField v key = .ok (vp, vl) ∧ JDen c v vp vl j'
@@ -139,7 +112,7 @@ def ElementsFrom (c : Bool) (v : Bytes) : Nat → List Json → Prop
 
 /-- An object's members, walked from the cursor that `curOpen 123` gives. -/
 def MembersStmt : Prop :=
-  ∀ c v ms, JVal c v (.obj ms) → noCtlMembers ms = true → MembersFrom c v (skipWs v 1) ms
+  ∀ c v ms, JVal c v (.obj ms) → MembersFrom c v (skipWs v 1) ms
 
 /-- An array's items, walked from the cursor that `curOpen 91` gives. -/
 def ElementsStmt : Prop :=
@@ -161,12 +134,12 @@ signature covers are `encode` of the signed value. -/
 def CanonEncodeStmt : Prop :=
   ∀ v j, JVal true v j → v = encode j
 
-/-! Where the compiled code and the spec differ: a control byte in a
-canonical key. -/
+/-! A control byte in a canonical key: the spec and the compiled code both
+reject it. -/
 
-#guard (parseJson true [0x7B, 0x22, 0x01, 0x22, 0x3A, 0x31, 0x7D]).isSome
+#guard (parseJson true [0x7B, 0x22, 0x01, 0x22, 0x3A, 0x31, 0x7D]).isNone
 #guard (parseModel true [0x7B, 0x22, 0x01, 0x22, 0x3A, 0x31, 0x7D]).toOption.isNone
-#guard (parseJson true [0x7B, 0x22, 0x01, 0x22, 0x3A, 0x31, 0x7D] |>.bind (Json.field [0x01])).isSome
+#guard (parseJson true [0x7B, 0x22, 0x01, 0x22, 0x3A, 0x31, 0x7D] |>.bind (Json.field [0x01])).isNone
 #guard objGet [0x7B, 0x22, 0x01, 0x22, 0x3A, 0x31, 0x7D] [0x01] matches .error _
 
 end C3.Json

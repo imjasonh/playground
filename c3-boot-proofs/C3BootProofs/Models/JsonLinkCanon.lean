@@ -1,12 +1,12 @@
 import C3BootProofs.Models.JsonLink
 import C3BootProofs.Models.JsonLinkSpec
-import C3BootProofs.Models.JsonLinkPos
+import C3BootProofs.Models.JsonLinkFilter
 
 /-!
 # Canonical values are their encoding
 
-In canonical mode, the bytes that `parseValue` reads are `encode` of the
-value it returns.
+In canonical mode, the bytes that `jlxValue` reads are `encode` of the
+value it returns, and so are the bytes of a spec value.
 -/
 
 namespace C3.Json
@@ -87,10 +87,10 @@ theorem jlc_lit {s r : Bytes} {j : Json} (h : parseLiteral s = some (j, r)) : s 
 
 /-- Canonical parses read the encoding of what they return. -/
 def jlcEnc (f : Nat) : Prop :=
-  (∀ {dep : Nat} {s r : Bytes} {j : Json}, parseValue true f dep s = some (j, r) → s = encode j ++ r) ∧
-  (∀ {dep : Nat} {s r : Bytes} {ms : List (Bytes × Json)}, parseMembers true f dep s = some (ms, r) →
+  (∀ {dep : Nat} {s r : Bytes} {j : Json}, jlxValue true f dep s = some (j, r) → s = encode j ++ r) ∧
+  (∀ {dep : Nat} {s r : Bytes} {ms : List (Bytes × Json)}, jlxMembers true f dep s = some (ms, r) →
     ms ≠ [] ∧ s = encodeMembers ms ++ 125 :: r) ∧
-  (∀ {dep : Nat} {s r : Bytes} {js : List Json}, parseElems true f dep s = some (js, r) →
+  (∀ {dep : Nat} {s r : Bytes} {js : List Json}, jlxElems true f dep s = some (js, r) →
     js ≠ [] ∧ s = encodeElems js ++ 93 :: r)
 
 theorem jlc_ws (s : Bytes) : ws true s = s := rfl
@@ -154,8 +154,10 @@ theorem jlc_all : ∀ f, jlcEnc f
       · rw [jlc_ws] at hs1; rw [hs1]
         exact ⟨List.cons_ne_nil _ _, rfl⟩
 
-theorem CanonEncode : CanonEncodeStmt := fun _ _ ⟨f, _, h⟩ => by
+theorem jlx_CanonEncode : jlxCanonEncodeStmt := fun _ _ ⟨f, _, h⟩ => by
   have := (jlc_all f).1 h
   rwa [List.append_nil] at this
+
+theorem CanonEncode : CanonEncodeStmt := fun v j h => jlx_CanonEncode v j (jlf_jval.mp h).1
 
 end C3.Json

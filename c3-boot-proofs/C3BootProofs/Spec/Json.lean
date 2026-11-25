@@ -6,7 +6,8 @@ import C3BootProofs.Spec.Formats
 The JSON profiles of `c3_verify::json`, as a grammar over a tree of values.
 
 - Strings are raw bytes between quotes, with no backslash. Strict mode also
-  rejects control bytes below `0x20`.
+  rejects control bytes below `0x20`. Canonical mode allows them in string
+  values, but object keys never contain them in either mode.
 - Numbers are natural numbers of 1 to 19 digits, with no leading zero.
 - Containers nest at most 16 deep.
 - Canonical mode allows no whitespace and needs each object's keys in
@@ -115,13 +116,14 @@ def parseValue (c : Bool) : Nat → Nat → Bytes → Option (Json × Bytes)
     | b :: _ => if isDigit b then parseNumber s else parseLiteral s
     | [] => none
 
-/-- `"key" : value` members up to and including the closing brace. -/
+/-- `"key" : value` members up to and including the closing brace. A key is
+read as a strict-mode string in both modes. -/
 def parseMembers (c : Bool) : Nat → Nat → Bytes → Option (List (Bytes × Json) × Bytes)
   | 0, _, _ => none
   | fuel + 1, depth, s =>
     match s with
     | 0x22 :: rest => do
-      let (k, r) ← parseString c rest
+      let (k, r) ← parseString false rest
       let r ← readExpect [0x3A] (ws c r)
       let (v, r) ← parseValue c fuel depth (ws c r)
       match ws c r with
@@ -220,3 +222,7 @@ open C3 in
 #guard (parseJson true (ascii!"[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]")).isNone
 open C3 in
 #guard (parseJson true (ascii!"01")).isNone
+open C3 in
+#guard (parseJson true [0x7B, 0x22, 0x01, 0x22, 0x3A, 0x31, 0x7D]).isNone
+open C3 in
+#guard (parseJson true [0x22, 0x01, 0x22]).isSome

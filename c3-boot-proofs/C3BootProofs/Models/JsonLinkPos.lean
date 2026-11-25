@@ -348,8 +348,8 @@ theorem jlp_keyEnd {c : Bool} {d : Bytes} {p : Nat} (hp : p ≤ d.length) :
   · rw [jlp_if_pos hb, jlp_if_neg hb]; rfl
 
 theorem jlp_pm_key (c : Bool) (f dep : Nat) (s : Bytes) :
-    parseMembers c (f + 1) dep s = (jlpKey c s).bind fun (k, r) =>
-      (parseValue c f dep r).bind fun (v, r3) => jlsMTail c f dep k v (ws c r3) := by
+    jlxMembers c (f + 1) dep s = (jlpKey c s).bind fun (k, r) =>
+      (jlxValue c f dep r).bind fun (v, r3) => jlsMTail c f dep k v (ws c r3) := by
   cases s with
   | nil => rw [jls_pm_nil, jlp_key_nil]; rfl
   | cons b rest =>

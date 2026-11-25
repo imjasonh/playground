@@ -3,9 +3,9 @@ import C3BootProofs.Models.JsonLinkKeys
 /-!
 # Steps of `parseLoop` and `closeLoop`
 
-One pass of `parseLoop` reads the value at `pos` the way `parseValue` reads
+One pass of `parseLoop` reads the value at `pos` the way `jlxValue` reads
 its first byte, and `closeLoop` on a pushed container reads what follows a
-member or an item the way `parseMembers` and `parseElems` do.
+member or an item the way `jlxMembers` and `jlxElems` do.
 -/
 
 namespace C3.Json
