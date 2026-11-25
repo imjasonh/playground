@@ -247,6 +247,7 @@ import C3BootProofs.Proofs.BootMainRecord
 import C3BootProofs.Proofs.BootMainContract
 import C3BootProofs.Proofs.BootMainSpec
 import C3BootProofs.Proofs.BootMainTail
+import C3BootProofs.Proofs.BootMainPick
 
 /-!
 # Audit
@@ -9278,3 +9279,24 @@ end C3
 
 /-- info: 'C3.RV32.Cur.bmt_tail' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bmt_tail
+
+/-- info: 'C3.RV32.Cur.bmt_burn' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_burn
+
+/-- info: 'C3.RV32.Cur.bmt_mask' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_mask
+
+/-- info: 'C3.RV32.Cur.bmt_copy' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_copy
+
+/-- info: 'C3.RV32.Cur.bmt_max' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_max
+
+/-- info: 'C3.RV32.Cur.bmt_acc_move' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_acc_move
+
+/-- info: 'C3.RV32.Cur.bmp_first' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmp_first
+
+/-- info: 'C3.RV32.Cur.bmp_other' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmp_other

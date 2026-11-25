@@ -307,8 +307,8 @@ theorem bmt_copy {M0 : Word → BitVec 8} {top : Word} {R romStack stack0 : Nat}
 set_option maxHeartbeats 16000000 in
 set_option maxRecDepth 20000 in
 /-- **`boot_main` from 0x348.** With the frame at `F`, the chosen slot's
-`Accepted` bytes at `F + 0xB9AD`, the slot in `s1`, the target in `s3`, the image's flash address in `s2`, and the entry level
-in `s7`, `boot_main` copies the bytes to `bmAcc top` and calls `boot`, which
+`Accepted` bytes at `F + 0xB9AD`, the slot in `s1`, the target in `s3`, the
+image's flash address in `s2`, and the entry level in `s7`, `boot_main` copies the bytes to `bmAcc top` and calls `boot`, which
 jumps into the slot or panics. -/
 theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
