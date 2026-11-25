@@ -173,7 +173,36 @@ read lie outside the stack. It halts in a panic, or it returns to `ra`
 with memory outside the stack as before and every register outside
 `jClob` as before. When it returns `Ok(true)`, at least `t` distinct
 listed keys have a key ID whose first signature in the array checks over
-the message. -/
+the message. It returns 0 (`Ok`) or 1 (`Err`) in `a0`, and in an `Err` the
+low byte of `a1` is an error code below 0x27. -/
+theorem tufRoleKeysMet_ret (m : Machine) {retAddr s R A MP SP : Word} {ML SL t : Nat} {es : List RkEntry}
+    (hpc : m.pc = TRM) (ha0 : reg m a0 = R) (ha1 : reg m a1 = A) (hsp : reg m sp = s + BitVec.ofNat 32 0x3920)
+    (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hal : s.toNat % 16 = 0)
+    (hlo : 0x3FC80000 ≤ s.toNat) (hhi : s.toNat + 0x3920 ≤ 0x3FCE0000)
+    (hds : Sep s 0x3920 (BitVec.ofNat 32 (img% dataWindowAddress)) (img% dataWindowSize))
+    (hro : Sep s 0x3920 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize))
+    (hc : ∀ M : Word → BitVec 8, (∀ x, Sep x 1 s 0x3920 → M x = m.mem x) → RmCode M)
+    (halR : R.toNat % 4 = 0) (hRw : R.toNat + 0x540 ≤ 0x40000000) (hSR : Sep s 0x3920 R 0x540)
+    (hMw : MP.toNat + ML ≤ 0x40000000) (hML : ML < 2 ^ 31) (hSM : Sep s 0x3920 MP ML)
+    (hS0 : SP.toNat ≠ 0) (hSw : SP.toNat + SL ≤ 0x40000000) (hSL : SL < 2 ^ 31) (hSS : Sep s 0x3920 SP SL)
+    (halA : A.toNat % 4 = 0) (hSA : Sep s 0x3920 A 16) (hA0 : memLoad32 m.mem A = MP)
+    (hA4 : memLoad32 m.mem (A + BitVec.ofNat 32 4) = BitVec.ofNat 32 ML)
+    (hA8 : memLoad32 m.mem (A + BitVec.ofNat 32 8) = SP)
+    (hAC : memLoad32 m.mem (A + BitVec.ofNat 32 12) = BitVec.ofNat 32 SL) (hR : RkAt m.mem R t es) (hw : RkWf es) :
+    ∃ m', Steps m m' ∧
+      (rmH m'.pc m'.mem (reg m') ∨
+        (m'.pc = retAddr ∧ (∀ x, Sep x 1 s 0x3920 → m'.mem x = m.mem x) ∧ (∀ r, r ∉ jClob → reg m' r = reg m r) ∧
+          (reg m' a0 = 0 → reg m' a1 ≠ 0 →
+            MetSound (memBytes m.mem SP SL) (memBytes m.mem MP ML) t (es.map nbE)) ∧
+          (reg m' a0 = 0 ∨ reg m' a0 = 1) ∧ (reg m' a0 ≠ 0 → (reg m' a1 &&& 0xFF).toNat < 0x27))) := by
+  obtain ⟨m', st, q⟩ := WP.run (rm_wp ha0 ha1 hsp (by rw [hra]; exact hret) hal hlo hhi hds hro hc halR hRw hSR hMw
+    hML hSM hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hR hw) (by decide) (hc _ fun _ _ => rfl).a.self hpc
+  refine ⟨m', st, ?_⟩
+  rcases q with h | ⟨⟨hp, hM, hr⟩, hS⟩
+  · exact .inl h
+  · exact .inr ⟨hp.trans hra, hM, hr, hS⟩
+
+/-- `tufRoleKeysMet_ret` without what it says of `a0` and `a1`. -/
 theorem tufRoleKeysMet_correct (m : Machine) {retAddr s R A MP SP : Word} {ML SL t : Nat} {es : List RkEntry}
     (hpc : m.pc = TRM) (ha0 : reg m a0 = R) (ha1 : reg m a1 = A) (hsp : reg m sp = s + BitVec.ofNat 32 0x3920)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hal : s.toNat % 16 = 0)
@@ -193,12 +222,9 @@ theorem tufRoleKeysMet_correct (m : Machine) {retAddr s R A MP SP : Word} {ML SL
         (m'.pc = retAddr ∧ (∀ x, Sep x 1 s 0x3920 → m'.mem x = m.mem x) ∧ (∀ r, r ∉ jClob → reg m' r = reg m r) ∧
           (reg m' a0 = 0 → reg m' a1 ≠ 0 →
             MetSound (memBytes m.mem SP SL) (memBytes m.mem MP ML) t (es.map nbE)))) := by
-  obtain ⟨m', st, q⟩ := WP.run (rm_wp ha0 ha1 hsp (by rw [hra]; exact hret) hal hlo hhi hds hro hc halR hRw hSR hMw
-    hML hSM hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hR hw) (by decide) (hc _ fun _ _ => rfl).a.self hpc
-  refine ⟨m', st, ?_⟩
-  rcases q with h | ⟨⟨hp, hM, hr⟩, hS⟩
-  · exact .inl h
-  · exact .inr ⟨hp.trans hra, hM, hr, hS⟩
+  obtain ⟨m', st, q⟩ := tufRoleKeysMet_ret m hpc ha0 ha1 hsp hra hret hal hlo hhi hds hro hc halR hRw hSR hMw hML
+    hSM hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hR hw
+  exact ⟨m', st, q.imp id fun h => ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1⟩⟩
 
 end
 
