@@ -165,8 +165,8 @@ theorem crc32Le_init_step (s0 : State) :
     ∃ s1, s0.stepInstr (.lui 13 0x3ff1d000#32) 4#32 = some s1 ∧
       s1.readReg 13 = 0x3ff1d000#32 := by
   refine ⟨_, rfl, ?_⟩
-  simp [State.stepInstr, State.readReg, State.writeReg]
-  decide
+  have h13 : (13 : Reg).val ≠ 0 := by decide
+  simp [State.stepInstr, State.readReg, State.writeReg, h13]
 
 /-- Exit path of `crc32_le` (`0x4004a2a8..0x4004a2b0`) when `x14 = x12`:
     `bne x14, x12, +10` (not taken); `xori x10, x10, -1`; `ret`. -/
