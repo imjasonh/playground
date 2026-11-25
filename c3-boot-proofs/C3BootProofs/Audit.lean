@@ -246,6 +246,7 @@ import C3BootProofs.Proofs.AcceptStages
 import C3BootProofs.Proofs.BootMainRecord
 import C3BootProofs.Proofs.BootMainContract
 import C3BootProofs.Proofs.BootMainSpec
+import C3BootProofs.Proofs.BootMainTail
 
 /-!
 # Audit
@@ -9268,3 +9269,12 @@ end C3
 
 /-- info: 'C3.RV32.Cur.bm_romcall' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bm_romcall
+
+/-- info: 'C3.RV32.Cur.BmEnd.pre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.BmEnd.pre
+
+/-- info: 'C3.RV32.Cur.bmt_hdr_move' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_hdr_move
+
+/-- info: 'C3.RV32.Cur.bmt_tail' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_tail
