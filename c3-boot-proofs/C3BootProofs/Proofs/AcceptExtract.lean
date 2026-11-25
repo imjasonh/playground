@@ -164,20 +164,20 @@ structure AcExtractEnv (M : Word → BitVec 8) : Prop where
   decode : TrDecCode M
   validFor : TvfCode M
   chain : RcCode M
-  kMedia : memBytes M 0x3FCC479A 9 = ascii!"mediaType"
-  vMedia : memBytes M 0x3FCC47A3 0x39 = aceMediaType
-  kCas : memBytes M 0x3FCC47DC 0x16 = ascii!"certificateAuthorities"
-  kTlogs : memBytes M 0x3FCC47F2 5 = ascii!"tlogs"
-  kTsas : memBytes M 0x3FCC47F7 0x14 = ascii!"timestampAuthorities"
-  kKey : memBytes M 0x3FCC480B 9 = ascii!"publicKey"
-  kDetails : memBytes M 0x3FCC4814 10 = ascii!"keyDetails"
-  vEd25519 : memBytes M 0x3FCC481E 12 = ascii!"PKIX_ED25519"
-  kRaw : memBytes M 0x3FCC4730 8 = ascii!"rawBytes"
-  vPrefix : memBytes M 0x3FCC4690 12 = ed25519SpkiPrefix
-  kUrl : memBytes M 0x3FCC482A 7 = ascii!"baseUrl"
-  vHttps : memBytes M 0x3FCC4740 8 = ascii!"https://"
-  vSlash : memBytes M 0x3FCC4831 1 = [0x2F]
-  kValidFor : memBytes M 0x3FCC4700 8 = ascii!"validFor"
+  kMedia : memBytes M (img% acMediaTypeKeyAddress) 9 = ascii!"mediaType"
+  vMedia : memBytes M (img% acMediaTypeAddress) 0x39 = aceMediaType
+  kCas : memBytes M (img% acCasKeyAddress) 0x16 = ascii!"certificateAuthorities"
+  kTlogs : memBytes M (img% acTlogsKeyAddress) 5 = ascii!"tlogs"
+  kTsas : memBytes M (img% acTsasKeyAddress) 0x14 = ascii!"timestampAuthorities"
+  kKey : memBytes M (img% acPublicKeyKeyAddress) 9 = ascii!"publicKey"
+  kDetails : memBytes M (img% acKeyDetailsKeyAddress) 10 = ascii!"keyDetails"
+  vEd25519 : memBytes M (img% acEd25519ValueAddress) 12 = ascii!"PKIX_ED25519"
+  kRaw : memBytes M (img% acRawBytesKeyAddress) 8 = ascii!"rawBytes"
+  vPrefix : memBytes M (img% acSpkiPrefixAddress) 12 = ed25519SpkiPrefix
+  kUrl : memBytes M (img% acBaseUrlKeyAddress) 7 = ascii!"baseUrl"
+  vHttps : memBytes M (img% acHttpsAddress) 8 = ascii!"https://"
+  vSlash : memBytes M (img% acSlashAddress) 1 = [0x2F]
+  kValidFor : memBytes M (img% acValidForKeyAddress) 8 = ascii!"validFor"
   kStart : memBytes M tvfStartKey 5 = ascii!"start"
   kEnd : memBytes M tvfEndKey 3 = ascii!"end"
 
@@ -190,8 +190,8 @@ structure AceLayout (B Bf : Word) : Prop where
   sep : Sep B 0x5A70 Bf acBufLen
   al : Bf.toNat % 4 = 0
   hi : Bf.toNat + acBufLen ≤ 0x40000000
-  polStack : Sep 0x3FCC4051 0x23 B 0x5A70
-  polBuf : Sep 0x3FCC4051 0x23 Bf acBufLen
+  polStack : Sep (img% acPolicyAddress) 0x23 B 0x5A70
+  polBuf : Sep (img% acPolicyAddress) 0x23 Bf acBufLen
   ro : Sep B 0x5A70 (BitVec.ofNat 32 roWindowAddress) roWindowSize
 
 /-- At 0xC12: the trusted root's document `json` at `D` in `doc`, its
@@ -236,7 +236,7 @@ def AcExtractPost (B Bf : Word) (M0 : Word → BitVec 8) (K : Machine) (json : B
   ∃ fp fs ls ts,
     (∀ pol, extractTrustedRoot json pol = some ⟨fs, ls, ts, pol⟩) ∧
     AceKeysIn Bf fp n.mem (acSlot B 0xDF3) fs ls ts ∧
-    memBytes n.mem (acSlot B 0xDD0) 0x23 = memBytes M0 0x3FCC4051 0x23 ∧
+    memBytes n.mem (acSlot B 0xDD0) 0x23 = memBytes M0 (img% acPolicyAddress) 0x23 ∧
     AceFr B Bf n fp ∧ AceKeep B Bf K n ∧ AceExpiry B K n ∧
     reg n a0 = acSlot B 0x1875 ∧ reg n a1 = acSlot B 0xDD0 ∧ reg n a2 = 0x423 ∧
     reg n ra = AC + BitVec.ofNat 32 (0x1812 + 0x15000)
