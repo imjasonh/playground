@@ -10,14 +10,6 @@ import C3BootProofs.Proofs.SvCk2
 import C3BootProofs.Proofs.SvCkdLoop
 import C3BootProofs.Proofs.SvCkptLink
 import C3BootProofs.Proofs.SvCm
-import C3BootProofs.Proofs.SvCmdl
-import C3BootProofs.Proofs.SvCmdn
-import C3BootProofs.Proofs.SvCme
-import C3BootProofs.Proofs.SvCmf
-import C3BootProofs.Proofs.SvCmk
-import C3BootProofs.Proofs.SvCmn
-import C3BootProofs.Proofs.SvCms
-import C3BootProofs.Proofs.SvCmx
 import C3BootProofs.Proofs.SvConstsLink
 import C3BootProofs.Proofs.SvCosigLink
 import C3BootProofs.Proofs.SvCosigLoop

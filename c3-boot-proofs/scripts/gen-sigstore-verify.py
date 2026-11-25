@@ -7476,43 +7476,43 @@ CM_DOC = {
     "s": "the line names the log, and its signature decodes to fewer than four bytes: the loop moves to the next line.",
     "k": "the line names the log, and its key ID isn't the log's: the loop moves to the next line.",
     "x": "the line names the log with the log's key ID, and its signature isn't 68 bytes: `sigstore::verify` fails.",
-    "f": "the line names the log with the log's key ID and a 68-byte signature, which goes to offsets 0x10 and 0x1480 "
+    "f": "the line names the log with the log's key ID and a 68-byte signature, which goes to offsets 0x14 and 0x1FC "
          "if no other line did.",
 }
 
 
+CM_BINDERS = (CS_BINDERS.replace("bl : Word}", "bl pg gi nl ns1 ni ns10 np w8 wc w10 w2c : Word}")
+              .replace("{sg : Bytes}", "{sg bs : Bytes}"))
+
+
 def stage_cm(kind):
-    """From the base64 group loop's end at 0x2E0C: the name against the
+    """From the base64 group loop's end at 0x16D4: the name against the
     checkpoint's origin, then the signature."""
     g = Gen("Cm" + kind)
     g.generic_alu = True
-    params = cg_start(g)
-    params = [q for q in params if not q.startswith("(g0_9 :")]
-    params.append("(g0_9 : reg n0 (9 : Fin 32) = c)")
+    params = cs_start(g, CG_REGS, {**CG_WORDS, 0x2C: "w2c"})
     if kind == "e":
-        params += ["(hend : pg = w8)", "(hnz : w40 = s5v)"]
-        g.load(0x2E0C, "lw")
-        g.branch(0x2E0E, True, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_beq_t hend")
-        g.load(0x2E7C, "lw")
+        params += ["(hend : pg = w8)", "(hnz : nl = ns1)"]
+        g.load(0x16D4, "lw")
+        g.branch(0x16D6, True, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_beq_t hend")
 
         def fail_e(sub):
-            sub.branch(0x2E7E, True, f"by rw [g{sub.k}_10, g{sub.k}_21]; exact br_beq_t hnz")
+            sub.branch(0x173C, True, f"by rw [g{sub.k}_8, g{sub.k}_9]; exact br_beq_t hnz")
             ck_fail_1878(sub, "hf")
         g.prop_check("False", "hf", fail_e)
-        stmt, _ = finish(g, 0x2D6E, [2], set(), set())
+        stmt, _ = finish(g, 0x1642, [2], set(), set())
         g.emit("  exact hf.elim")
         info = {"name": "sv_cme", "title": "a signature line's name and signature",
-                "doc": "From the base64 group loop's end at 0x2E0C: " + CM_DOC[kind],
-                "params": params, "stmt": stmt, "proof": "",
-                "binders": CS_BINDERS.replace("op ol : Word}", "op ol pg gi s0v s5v s7v : Word}"),
-                "start": 0x2E0C, "import": "C3BootProofs.Proofs.SvCs"}
+                "doc": "From the base64 group loop's end at 0x16D4: " + CM_DOC[kind],
+                "params": params, "stmt": stmt, "proof": "", "binders": CM_BINDERS,
+                "start": 0x16D4, "import": "C3BootProofs.Proofs.SvCs"}
         return g, info
-    params += ["(hend : pg = w8)", "(hnz : w40 ≠ s5v)", "(nm_in : SvIn B w28 c.toNat)", "(l_in : SvIn B w48 w44.toNat)"]
-    eqn = "memBytes M0 w28 c.toNat = memBytes M0 w48 w44.toNat"
+    params += ["(hend : pg = w8)", "(hnz : nl ≠ ns1)", "(nm_in : SvIn B np ni.toNat)", "(l_in : SvIn B w48 w44.toNat)"]
+    eqn = "memBytes M0 np ni.toNat = memBytes M0 w48 w44.toNat"
     params.append(f"(hnm : {'¬ ' if kind == 'n' else ''}{eqn})")
-    dec = "base64Decode (memBytes M0 s7v s0v.toNat)"
+    dec = "base64Decode (memBytes M0 w10 ns10.toNat)"
     if kind != "n":
-        params += ["(CK0 : SvCkCode M0)", "(b_in : SvIn B s7v s0v.toNat)"]
+        params += ["(CK0 : SvCkCode M0)", "(b_in : SvIn B w10 ns10.toNat)"]
     if kind == "dn":
         params.append(f"(hdec : {dec} = none)")
     elif kind not in ("n",):
@@ -7525,49 +7525,49 @@ def stage_cm(kind):
         params.append("(hsh : bs.length < 4)")
     if kind in ("k", "x", "f"):
         params.append("(h4 : 4 ≤ bs.length)")
-        params.append(f"(hk : le4 bs 0 {'≠' if kind == 'k' else '='} w14)")
+        params.append(f"(hk : le4 bs 0 {'≠' if kind == 'k' else '='} kh)")
     if kind == "x":
         params.append("(h68 : bs.length ≠ 68)")
     if kind == "f":
         params.append("(h68 : bs.length = 68)")
     fails = kind in ("dn", "dl", "x")
-    g.load(0x2E0C, "lw")
-    g.branch(0x2E0E, True, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_beq_t hend")
-    g.load(0x2E7C, "lw")
-    g.branch(0x2E7E, False, f"by rw [g{g.k}_10, g{g.k}_21]; exact br_beq_f hnz")
-    g.load(0x2E82, "lw")
-    g.block(0x2E84, 0x2E86)
-    g.load(0x2E86, "lw")
-    g.load(0x2E88, "lw")
-    ks = g.sne(0x2E8A, "w28", "c.toNat", "w48", "w44.toNat", "(.inl nm_in)", "(.inl l_in)",
+    g.load(0x16D4, "lw")
+    g.branch(0x16D6, True, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_beq_t hend")
+    g.branch(0x173C, False, f"by rw [g{g.k}_8, g{g.k}_9]; exact br_beq_f hnz")
+    g.block(0x1740, 0x1742)
+    g.block(0x1742, 0x1744)
+    g.load(0x1744, "lw")
+    g.load(0x1746, "lw")
+    ks = g.sne(0x1748, "np", "ni.toNat", "w48", "w44.toNat", "(.inl nm_in)", "(.inl l_in)",
                f"(by rw [g{g.k}_11, ofNat_toNat_self])", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
 
     def body(g):
         if kind == "n":
             g.set_a0(ks, 1, "ite_eq_right hnm")
-            g.branch(0x2E92, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-            return 0x2D6E
+            g.branch(0x1750, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            return 0x1642
         g.set_a0(ks, 0, "ite_eq_left hnm")
-        g.branch(0x2E92, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-        g.block(0x2E96, 0x2EA0)
-        g.ms(0x2EA0, 0x420, 0x60)
-        g.block(0x2EA8, 0x2EBC)
-        kb, ex = g.b64(0x2EBC, 0x1380, 0x420, "s7v", "(s0v).toNat", "(.inl b_in)",
+        g.branch(0x1750, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+        g.block(0x1754, 0x175E)
+        g.ms(0x175E, 0x420, 0x60)
+        g.block(0x1766, 0x1772)
+        g.load(0x1772, "lw")
+        g.block(0x1774, 0x1776)
+        kb, ex = g.b64(0x1776, 0x400, 0x420, "w10", "(ns10).toNat", "(.inl b_in)",
                        f"(by rw [g{g.k}_12, ofNat_toNat_self])", "0x60")
         if kind in ("dn", "dl"):
             if kind == "dn":
                 g.emit(f"  have z{kb} := Bad{kb} fun b h => by rw [hdec] at h; cases h")
             else:
                 g.emit(f"  have z{kb} := Bad{kb} fun b h => by rw [hdec] at h; cases h; exact hbig")
-            g.frame_after(kb, [(0x1380, 8), (0x420, 0x60)], {}, {0x1380: ("(1 : BitVec 8)", f"z{kb}")})
-            g.block(0x2EC4, 0x2ECC)
-            g.load(0x2ECC, "lbu")
-            g.branch(0x2ED0, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            g.frame_after(kb, [(0x400, 8), (0x420, 0x60)], {}, {0x400: ("(1 : BitVec 8)", f"z{kb}")})
+            g.load(0x177E, "lbu")
+            g.branch(0x1782, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
             return None
         g.emit(f"  obtain ⟨b0_{kb}, b4_{kb}, bm_{kb}⟩ := Ok{kb} bs hdec hle")
         g.pinned |= {f"bm_{kb}"}
-        g.frame_after(kb, [(0x1380, 8), (0x420, 0x60)], {0x1384: ("BitVec.ofNat 32 bs.length", f"b4_{kb}")},
-                      {0x1380: ("(0 : BitVec 8)", f"b0_{kb}")})
+        g.frame_after(kb, [(0x400, 8), (0x420, 0x60)], {0x404: ("BitVec.ofNat 32 bs.length", f"b4_{kb}")},
+                      {0x400: ("(0 : BitVec 8)", f"b0_{kb}")})
         if kind in ("k", "x", "f"):
             g.words[0x420] = ("U", "le4 bs 0")
             g.emit(f"  have w{kb}_420 : {g.word_stmt(kb, 0x420, ('U', 'le4 bs 0'))} := ld_digest bm_{kb} h4")
@@ -7575,76 +7575,72 @@ def stage_cm(kind):
             g.ranges[0x420] = (68, "BitVec.ofNat 8 (bs.getD j 0)")
             g.emit(f"  have q{kb}_420 : ∀ j, j < 68 → n{kb}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = BitVec.ofNat 8 (bs.getD j 0) :=")
             g.emit(f"    fun j hj => by rw [← add_ofNat_assoc]; exact memBytes_range bm_{kb} j (by omega)")
-        g.block(0x2EC4, 0x2ECC)
-        g.load(0x2ECC, "lbu")
-        g.branch(0x2ED0, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-        g.block(0x2ED4, 0x2EDC)
-        g.load(0x2EDC, "lw")
-        g.block(0x2EDE, 0x2EE2)
-        g.branch(0x2EE2, False, f"by rw [g{g.k}_11, g{g.k}_10]; exact br_bltu_f (by rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)")
-        g.block(0x2EE6, 0x2EE8)
+        g.load(0x177E, "lbu")
+        g.branch(0x1782, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+        g.load(0x1784, "lw")
+        g.block(0x1788, 0x178C)
+        g.branch(0x178C, False, f"by rw [g{g.k}_11, g{g.k}_10]; exact br_bltu_f (by rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)")
+        g.block(0x1790, 0x1792)
         if kind == "s":
-            g.branch(0x2EE8, True, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bltu_t (by rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)")
-            return 0x2D6E
-        g.branch(0x2EE8, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bltu_f (by rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)")
-        g.load(0x2EEC, "lw")
-        g.load(0x2EF0, "lw")
+            g.branch(0x1792, True, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bltu_t (by rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)")
+            return 0x1642
+        g.branch(0x1792, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bltu_f (by rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)")
+        g.load(0x1796, "lw")
+        g.load(0x179A, "lw")
         if kind == "k":
-            g.branch(0x2EF2, True, f"by rw [g{g.k}_11, g{g.k}_12]; exact br_bne_t hk")
-            return 0x2D6E
-        g.branch(0x2EF2, False, f"by rw [g{g.k}_11, g{g.k}_12]; exact br_bne_f hk")
-        g.block(0x2EF6, 0x2EFA)
+            g.branch(0x179C, True, f"by rw [g{g.k}_11, g{g.k}_12]; exact br_bne_t hk")
+            return 0x1642
+        g.branch(0x179C, False, f"by rw [g{g.k}_11, g{g.k}_12]; exact br_bne_f hk")
+        g.block(0x17A0, 0x17A4)
         if kind == "x":
-            g.branch(0x2EFA, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_t (ne68_add (by omega) h68)")
+            g.branch(0x17A4, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_t (ne68_add (by omega) h68)")
             return None
-        g.branch(0x2EFA, False, f"by rw [g{g.k}_10, s{g.k}.zero, h68]; decide")
-        g.load(0x2EFC, "lbu")
-        g.store(0x2F00, "sw")
-        g.block(0x2F02, 0x2F12)
-        g.mc(0x2F12, 0x1480, 0x425, 0x3F)
-        g.load(0x2F1A, "lw")
+        g.branch(0x17A4, False, f"by rw [g{g.k}_10, s{g.k}.zero, h68]; decide")
+        g.load(0x17A6, "lbu")
+        g.store(0x17AA, "sw")
+        g.block(0x17AC, 0x17B6)
+        g.mc(0x17B6, 0x1FC, 0x425, 0x3F)
+        g.load(0x17BE, "lw")
         dup = lean_val(g.regs[10])
 
         def again(sub):
-            sub.branch(0x2F1C, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t hdup")
+            sub.branch(0x17C0, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t hdup")
             ck_fail_1878(sub, "hdup")
         g.prop_check(f"{dup} = 0", "hdup", again)
-        g.branch(0x2F1C, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f hdup")
-        g.block(0x2F1E, 0x2F20)
-        g.store(0x2F20, "sw")
-        g.jump(0x2F22)
+        g.branch(0x17C0, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f hdup")
+        g.block(0x17C2, 0x17C4)
+        g.store(0x17C4, "sw")
+        g.jump(0x17C6)
         # The signature found is the decoded line after its key ID.
         k = g.k
         g.emit("  have hdrop : ∀ i, (bs.drop 4).getD i 0 = bs.getD (4 + i) 0 := fun i => by")
         g.emit("    simp only [List.getD_eq_getElem?_getD, List.getElem?_drop]")
-        w10 = "(BitVec.ofNat 8 ((bs.drop 4).getD 0 0)).zeroExtend 32"
-        g.emit(f"  have b{k}_10 : n{k}.mem ({fa(0x10)}) = BitVec.ofNat 8 ((bs.drop 4).getD 0 0) := by")
-        g.emit(f"    rw [← (ldb n{k}.mem ({fa(0x10)})).1, w{k}_10, hdrop, zext_lo8]")
-        g.emit(f"  have q{k}_1480 : ∀ j, j < 63 → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = "
+        g.emit(f"  have b{k}_14 : n{k}.mem ({fa(0x14)}) = BitVec.ofNat 8 ((bs.drop 4).getD 0 0) := by")
+        g.emit(f"    rw [← (ldb n{k}.mem ({fa(0x14)})).1, w{k}_14, hdrop, zext_lo8]")
+        g.emit(f"  have q{k}_1fc : ∀ j, j < 63 → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = "
                "BitVec.ofNat 8 ((bs.drop 4).getD (1 + j) 0) := fun j hj => by")
-        g.emit(f"    rw [q{k}_1480 j hj, hdrop, show 4 + (1 + j) = 5 + j by omega]")
-        g.words.pop(0x10)
-        g.bytes[0x10] = "BitVec.ofNat 8 ((bs.drop 4).getD 0 0)"
-        g.ranges[0x1480] = (63, "BitVec.ofNat 8 ((bs.drop 4).getD (1 + j) 0)")
-        return 0x2D6E
+        g.emit(f"    rw [q{k}_1fc j hj, hdrop, show 4 + (1 + j) = 5 + j by omega]")
+        g.words.pop(0x14)
+        g.bytes[0x14] = "BitVec.ofNat 8 ((bs.drop 4).getD 0 0)"
+        g.ranges[0x1FC] = (63, "BitVec.ofNat 8 ((bs.drop 4).getD (1 + j) 0)")
+        return 0x1642
 
     if fails:
         def fail_all(sub):
             body(sub)
             ck_fail_1878(sub, "hf")
         g.prop_check("False", "hf", fail_all)
-        stmt, _ = finish(g, 0x2D6E, [2], set(), set())
+        stmt, _ = finish(g, 0x1642, [2], set(), set())
         g.emit("  exact hf.elim")
         proof = ""
     else:
         end = body(g)
         keep = sorted(set(CL_KEEP_REGS))
-        stmt, proof = finish(g, end, keep, set(g.words) - {0x420, 0x424, 0x428, 0x42C}, {0x10})
+        stmt, proof = finish(g, end, keep, set(g.words) - {0x400, 0x404, 0x420, 0x424, 0x428, 0x42C}, {0x14})
     info = {"name": "sv_cm" + kind, "title": "a signature line's name and signature",
-            "doc": "From the base64 group loop's end at 0x2E0C: " + CM_DOC[kind],
-            "params": params, "stmt": stmt, "proof": proof,
-            "binders": CS_BINDERS.replace("op ol : Word}", "op ol pg gi s0v s5v s7v : Word}").replace("{rt sg : Bytes}", "{rt sg bs : Bytes}"),
-            "start": 0x2E0C, "import": "C3BootProofs.Proofs.SvCs"}
+            "doc": "From the base64 group loop's end at 0x16D4: " + CM_DOC[kind],
+            "params": params, "stmt": stmt, "proof": proof, "binders": CM_BINDERS,
+            "start": 0x16D4, "import": "C3BootProofs.Proofs.SvCs"}
     return g, info
 
 
