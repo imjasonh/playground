@@ -152,11 +152,11 @@ theorem ekuGo_nil {fuel : Nat} {found : Bool} : extKeyUsageCodeSigning.go fuel [
 an OID, that ends with no bytes left. -/
 theorem ekuGo_chain {M : Word → BitVec 8} {R : Word × Word × Word → Word × Word × Word → Prop}
     (hcs : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 = oidCodeSigning)
-    (hR : ∀ s s', R s s' → s.2.2 ≠ 0 ∧ ∃ op ol, derContent s.2.1 (derOid (memBytes M s.2.1 s.2.2.toNat)) = .ok (op, ol) ∧
-      ∃ to, derOid (memBytes M s.2.1 s.2.2.toNat) = .ok to ∧
-        s' = (s.1 ||| (if memBytes M op ol.toNat = memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then 1 else 0),
-          s.2.1 + BitVec.ofNat 32 (to.header + to.len), s.2.2 - BitVec.ofNat 32 (to.header + to.len))) :
-    ∀ k {f cp cl f' cp' : Word} {fuel : Nat}, svChain R k (f, cp, cl) (f', cp', 0) → cl.toNat ≤ fuel →
+    (hR : ∀ s s', R s s' → s.2.1 ≠ 0 ∧ ∃ op ol, derContent s.1 (derOid (memBytes M s.1 s.2.1.toNat)) = .ok (op, ol) ∧
+      ∃ to, derOid (memBytes M s.1 s.2.1.toNat) = .ok to ∧
+        s' = (s.1 + BitVec.ofNat 32 (to.header + to.len), s.2.1 - BitVec.ofNat 32 (to.header + to.len),
+          s.2.2 ||| (if memBytes M op ol.toNat = memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then 1 else 0))) :
+    ∀ k {f cp cl f' cp' : Word} {fuel : Nat}, svChain R k (cp, cl, f) (cp', 0, f') → cl.toNat ≤ fuel →
       extKeyUsageCodeSigning.go fuel (memBytes M cp cl.toNat) (decide (f &&& 1 ≠ 0)) = some (decide (f' &&& 1 ≠ 0)) := by
   intro k
   induction k with
@@ -189,13 +189,13 @@ theorem ekuGo_chain {M : Word → BitVec 8} {R : Word × Word × Word → Word �
 theorem extKeyUsageCodeSigning_code {M : Word → BitVec 8} {R : Word × Word × Word → Word × Word × Word → Prop}
     {vp vl found' cp' cl' : Word} {tl : DerTlv} {k : Nat}
     (hcs : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 = oidCodeSigning)
-    (hR : ∀ s s', R s s' → s.2.2 ≠ 0 ∧ ∃ op ol, derContent s.2.1 (derOid (memBytes M s.2.1 s.2.2.toNat)) = .ok (op, ol) ∧
-      ∃ to, derOid (memBytes M s.2.1 s.2.2.toNat) = .ok to ∧
-        s' = (s.1 ||| (if memBytes M op ol.toNat = memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then 1 else 0),
-          s.2.1 + BitVec.ofNat 32 (to.header + to.len), s.2.2 - BitVec.ofNat 32 (to.header + to.len)))
+    (hR : ∀ s s', R s s' → s.2.1 ≠ 0 ∧ ∃ op ol, derContent s.1 (derOid (memBytes M s.1 s.2.1.toNat)) = .ok (op, ol) ∧
+      ∃ to, derOid (memBytes M s.1 s.2.1.toNat) = .ok to ∧
+        s' = (s.1 + BitVec.ofNat 32 (to.header + to.len), s.2.1 - BitVec.ofNat 32 (to.header + to.len),
+          s.2.2 ||| (if memBytes M op ol.toNat = memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then 1 else 0)))
     (h0 : derElement 0x30 (memBytes M vp vl.toNat) = .ok tl)
     (h1 : vl - BitVec.ofNat 32 (tl.header + tl.len) = 0)
-    (h2 : svChain R k (BitVec.ofNat 32 0x0, vp + BitVec.ofNat 32 tl.header, BitVec.ofNat 32 tl.len) (found', cp', cl'))
+    (h2 : svChain R k (vp + BitVec.ofNat 32 tl.header, BitVec.ofNat 32 tl.len, BitVec.ofNat 32 0x0) (cp', cl', found'))
     (h3 : cl' = 0) (h4 : found' &&& BitVec.ofNat 32 0x1 ≠ 0) :
     extKeyUsageCodeSigning (memBytes M vp vl.toNat) = some true := by
   subst h3
