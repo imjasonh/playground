@@ -251,6 +251,14 @@ def State.stepInstr (s : State) (instr : Instr) (ilen : BitVec 32) : Option Stat
     some { s.writeReg rd nextPc with pc := target }
   | .unknown _ _ => none
 
+/-- Execute a sequence of `(Instr, byteLen)` pairs. -/
+def State.runInstrs (s : State) : List (Instr × BitVec 32) → Option State
+  | [] => some s
+  | (i, len) :: rest =>
+    match s.stepInstr i len with
+    | none => none
+    | some s' => s'.runInstrs rest
+
 /-- Decode an entire byte stream into a list of `(Instr, byteLen)` pairs.
     Returns `none` if any instruction is `unknown` or the stream is truncated. -/
 def decodeAll (bytes : List UInt8) (off : Nat) : Nat → Option (List (Instr × Nat))

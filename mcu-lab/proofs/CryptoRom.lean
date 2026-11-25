@@ -1,3 +1,5 @@
+import Rv32imc
+
 /-!
 Formal specifications and correctness properties for ESP32-C3 silicon ROM asymmetric crypto routines:
 - `ets_rsa_pss_verify` (`mcu-lab/proofs/rom_asm/ets_rsa_pss_verify.asm`)
@@ -163,5 +165,21 @@ theorem bigint_vec3_ok :
       (0x07a0ca6f * 0x5b5a2b71 + 1) % 2^32 = 0 ∧
       modPowFast x y m = z := by
   native_decide
+
+section MachineCodeEquiv
+
+open Esp32c3Rom.Rv32imc
+
+/-- `ets_rsa_pss_verify` / `r_ecc_is_valid_point` return-status step:
+    sets `a0` (`x10`) and returns via `ret` (`jalr x0, x1, 0`). -/
+theorem crypto_ret_step (s : State) (rc : BitVec 32) :
+    ∃ s', s.runInstrs
+      [ (.addi 10 0 rc, 4#32)
+      , (.jalr 0 1 0#32, 2#32)
+      ] = some s' ∧ s'.readReg 10 = rc := by
+  have h10 : (10 : Reg).val ≠ 0 := by decide
+  simp [State.runInstrs, State.stepInstr, State.readReg, State.writeReg, h10]
+
+end MachineCodeEquiv
 
 end Esp32c3Rom.Crypto

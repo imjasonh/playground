@@ -1,4 +1,5 @@
 import Std.Tactic.BVDecide
+import Rv32imc
 
 /-!
 Formal specification and correctness proofs for ESP32-C3 silicon ROM AES-128 helper routines
@@ -116,5 +117,41 @@ theorem aesCcmXor128Lsb_self_cancel (a b : Nat → UInt8) (len offset k : Nat) :
       (a k).toBitVec
     bv_decide
   · rfl
+
+section MachineCodeEquiv
+
+open Esp32c3Rom.Rv32imc
+
+/-- `r_aes_xor_128` loop-exit step (`0x40002bf2..0x40002bf6`):
+    when `a5 < 0` (`s.readReg 15` is negative), `bgez x15, +6` is not taken and `ret` returns. -/
+theorem aesXor128_exit_step (s : State) (neg : BitVec 32)
+    (hpc : s.pc = 0x40002bf2#32)
+    (hsle : BitVec.sle 0#32 neg = false)
+    (hx15 : s.readReg 15 = neg) :
+    ∃ s1 s2,
+      s.stepInstr (.bge 15 0 6#32) 4#32 = some s1 ∧
+      s1.stepInstr (.jalr 0 1 0#32) 2#32 = some s2 ∧
+      s2.pc = (s1.readReg 1) &&& ~~~1#32 := by
+  simp [State.stepInstr, hpc, hx15, hsle, State.readReg]
+
+/-- `r_aes_xor_128` loop-body step (`0x40002bf8..0x40002c16`):
+    reads `a[i]` (`lbu x15, 0(x15)`) and `b[i]` (`lbu x16, 0(x16)`), computes `xor`,
+    stores `sb` to `dst[i]`, decrements `x13`, and jumps back to `0x40002bec`. -/
+theorem aesXor128_body_step (s : State)
+    (hpc : s.pc = 0x40002bf8#32) :
+    ∃ s9, s.runInstrs
+      [ (.add 15 11 13, 4#32)
+      , (.add 16 12 13, 4#32)
+      , (.lbu 15 15 0#32, 4#32)
+      , (.lbu 16 16 0#32, 4#32)
+      , (.add 14 10 13, 4#32)
+      , (.addi 13 13 (-1#32), 2#32)
+      , (.xor 15 15 16, 4#32)
+      , (.sb 14 15 0#32, 4#32)
+      , (.jal 0 (-42#32), 2#32)
+      ] = some s9 ∧ s9.pc = 0x40002bec#32 := by
+  simp [State.runInstrs, State.stepInstr, hpc]
+
+end MachineCodeEquiv
 
 end Esp32c3Rom.Aes

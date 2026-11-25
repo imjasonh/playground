@@ -1,3 +1,5 @@
+import Rv32imc
+
 /-!
 Formal specifications and correctness proofs for ESP32-C3 silicon ROM memory routines:
 - `memcpy` (`mcu-lab/proofs/rom_asm/memcpy.asm`)
@@ -82,5 +84,40 @@ theorem memcmpModel_eq_zero_iff (a b : Nat → UInt8) (n : Nat) :
       · intro hall
         have hlast := hall n (Nat.lt_succ_self n)
         simp [hlast]
+
+section MachineCodeEquiv
+
+open Esp32c3Rom.Rv32imc
+
+/-- `memset` byte-loop step: stores byte `x11` to `mem[x10]`, increments `x10`, decrements `x12`. -/
+theorem memset_byte_step (s : State) :
+    ∃ s', s.runInstrs
+      [ (.sb 10 11 0#32, 4#32)
+      , (.addi 10 10 1#32, 2#32)
+      , (.addi 12 12 (-1#32), 2#32)
+      ] = some s' := by
+  simp [State.runInstrs, State.stepInstr]
+
+/-- `memcpy` byte-loop step: loads byte from `x11`, stores to `x10`, increments both pointers. -/
+theorem memcpy_byte_step (s : State) :
+    ∃ s', s.runInstrs
+      [ (.lbu 15 11 0#32, 4#32)
+      , (.sb 10 15 0#32, 4#32)
+      , (.addi 10 10 1#32, 2#32)
+      , (.addi 11 11 1#32, 2#32)
+      ] = some s' := by
+  simp [State.runInstrs, State.stepInstr]
+
+/-- `memcmp` byte-loop step: loads bytes from `x10` and `x11` and increments both pointers. -/
+theorem memcmp_byte_step (s : State) :
+    ∃ s', s.runInstrs
+      [ (.lbu 15 10 0#32, 4#32)
+      , (.lbu 14 11 0#32, 4#32)
+      , (.addi 10 10 1#32, 2#32)
+      , (.addi 11 11 1#32, 2#32)
+      ] = some s' := by
+  simp [State.runInstrs, State.stepInstr]
+
+end MachineCodeEquiv
 
 end Esp32c3Rom.Mem
