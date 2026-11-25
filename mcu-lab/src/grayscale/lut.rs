@@ -52,35 +52,51 @@ pub const VCOM_DC: u8 = 0x26;
 /// One table per `0x20`-`0x25` register, in register order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DriveLuts {
-    pub frames: u8,
+    pub black_frames: u8,
+    pub white_frames: u8,
     pub registers: [(u8, [u8; LUT_REGISTER_BYTES]); 6],
 }
 
 impl DriveLuts {
-    /// Build tables that drive for `frames` frames per refresh.
-    /// `swap_polarity` exchanges the black and white pushes, for a panel
-    /// whose plane polarity turns out opposite to GxEPD2's comments.
+    /// Build symmetric tables that drive for `frames` frames per refresh.
     pub fn new(frames: u8, swap_polarity: bool) -> Self {
-        assert!(frames > 0, "a drive step needs at least one frame");
+        Self::asymmetric(frames, frames, swap_polarity)
+    }
+
+    /// Build tables that drive black-ward steps for `black_frames` and
+    /// white-ward steps for `white_frames` per refresh. Setting
+    /// `white_frames > black_frames` compensates for e-ink panels where
+    /// black-ward drive is stronger than white-ward drive, so trails clear
+    /// cleanly back to white.
+    pub fn asymmetric(black_frames: u8, white_frames: u8, swap_polarity: bool) -> Self {
+        assert!(
+            black_frames > 0 && white_frames > 0,
+            "drive steps need at least one frame"
+        );
+        let total_frames = black_frames.max(white_frames);
         let (to_black, to_white) = if swap_polarity {
             (LEVEL_WHITE, LEVEL_BLACK)
         } else {
             (LEVEL_BLACK, LEVEL_WHITE)
         };
-        let row = |level: u8| {
+        let row = |level: u8, active_frames: u8| {
             let mut bytes = [0u8; LUT_REGISTER_BYTES];
-            bytes[..6].copy_from_slice(&[level, frames, 0, 0, 0, 1]);
+            let hold_frames = total_frames - active_frames;
+            // Phase 1 drives `level` for `active_frames`; phase 2 holds (`00`)
+            // for any remaining frames so every register has the same total length.
+            bytes[..6].copy_from_slice(&[level, active_frames, hold_frames, 0, 0, 1]);
             bytes
         };
         Self {
-            frames,
+            black_frames,
+            white_frames,
             registers: [
-                (CMD_LUT_VCOM, row(LEVEL_HOLD)),
-                (CMD_LUT_WW, row(LEVEL_HOLD)),
-                (CMD_LUT_KW, row(to_white)),
-                (CMD_LUT_WK, row(to_black)),
-                (CMD_LUT_KK, row(LEVEL_HOLD)),
-                (CMD_LUT_BD, row(LEVEL_HOLD)),
+                (CMD_LUT_VCOM, row(LEVEL_HOLD, total_frames)),
+                (CMD_LUT_WW, row(LEVEL_HOLD, total_frames)),
+                (CMD_LUT_KW, row(to_white, white_frames)),
+                (CMD_LUT_WK, row(to_black, black_frames)),
+                (CMD_LUT_KK, row(LEVEL_HOLD, total_frames)),
+                (CMD_LUT_BD, row(LEVEL_HOLD, total_frames)),
             ],
         }
     }
@@ -144,5 +160,15 @@ mod tests {
         const N2OCP: u8 = 1 << 3;
         assert_eq!(VCOM_DATA_INTERVAL[0] ^ GXEPD2_PARTIAL, N2OCP);
         assert_eq!(VCOM_DATA_INTERVAL[0] & N2OCP, 0);
+    }
+
+    #[test]
+    fn asymmetric_tables_pad_shorter_push_with_hold_frames() {
+        let luts = DriveLuts::asymmetric(2, 3, false);
+        assert_eq!(&luts.register(CMD_LUT_WK)[..6], &[0x40, 2, 1, 0, 0, 1]);
+        assert_eq!(&luts.register(CMD_LUT_KW)[..6], &[0x80, 3, 0, 0, 0, 1]);
+        for hold in [CMD_LUT_VCOM, CMD_LUT_WW, CMD_LUT_KK, CMD_LUT_BD] {
+            assert_eq!(&luts.register(hold)[..6], &[0x00, 3, 0, 0, 0, 1]);
+        }
     }
 }
