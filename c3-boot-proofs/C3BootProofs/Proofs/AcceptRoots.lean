@@ -111,7 +111,8 @@ abbrev acoTargetsName : Word := 0x3FCC4020
 /-- The code and data the stage runs and reads, in memory `M`, for the ROM's
 stack `R`: the closure, `tuf::read_doc` and its callees, `tuf::parse_root`,
 `RoleKeys::met` (and with it `RoleKeys::read`), `tuf::expires`, `memcpy`,
-and the two role names. -/
+and the two role names, with `.rodata` and the ROM's code apart from the
+stack. -/
 structure AcRootsEnv (R : Nat) (romBase : Word) (romCode : List Nat) (B Bf : Word) (M : Word → BitVec 8) :
     Prop where
   ac : CodeIn M AC bootMainClosure0Code
@@ -128,6 +129,7 @@ structure AcRootsEnv (R : Nat) (romBase : Word) (romCode : List Nat) (B Bf : Wor
   root : memBytes M acoRootName 4 = ascii!"root"
   tgts : memBytes M acoTargetsName 7 = ascii!"targets"
   ro : Sep B 0x5A70 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize)
+  rs : Sep B 0x5A70 romBase romCode.length
 
 /-- A `RoleKeys` result in the bytes `b`: an error (0xFE first, then a
 `TufError` code), or the role `role`'s keys in the root `dj`. -/
@@ -2254,6 +2256,90 @@ theorem aco_B2 (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n0
     · rw [M6, mem3, memLoad32_store32_sep (A _ 0x14 (by decide) (by decide) (by decide)),
         memLoad32_store32_sep (A _ 0x10 (by decide) (by decide) (by decide)), memLoad32_store32_same]
     · rw [M6, D3 hq2, ← tuf_memBytes_drop_take hsl, hd]; exact hJ2.2
+
+theorem aco_idxSumC {M M' : Word → BitVec 8} {idx : Word} (h : ∀ j, j < 67 → idxLen M idx j = idxLen M' idx j) :
+    ∀ f j acc, j + f ≤ 67 → idxSum M idx j acc f = idxSum M' idx j acc f
+  | 0, _, _, _ => rfl
+  | f + 1, j, acc, hf => by
+    simp only [idxSum]
+    rw [h j (by omega), aco_idxSumC h f (j + 1) (acc + idxLen M' idx j) (by omega)]
+
+theorem aco_tidC {M M' : Word → BitVec 8} {idx : Word} {i : Nat}
+    (h : ∀ j, j < 67 → idxLen M idx j = idxLen M' idx j)
+    (h108 : memLoad32 M (idx + 0x108) = memLoad32 M' (idx + 0x108)) :
+    tufIndexDocSpec M idx i = tufIndexDocSpec M' idx i := by
+  unfold tufIndexDocSpec
+  rw [h108]
+  split
+  · rfl
+  split
+  · rfl
+  rename_i h67
+  rw [aco_idxSumC h i 0 _ (by omega)]
+  rcases idxSum M' idx 0 (8 + 4 * ((memLoad32 M' (idx + 0x108)).toNat + 2)) i with _ | off
+  · rfl
+  · simp only [tidTail]; rw [h i (by omega)]
+
+/-- The index at `sp + 0x244` reads the same in memory that `AcoKeep` relates. -/
+theorem aco_tidK {B Bf : Word} {M0 M : Word → BitVec 8} (N : AcoNum B Bf) (K : AcoKeep B Bf M0 M) (i : Nat) :
+    tufIndexDocSpec M (acSlot B 0x244) i = tufIndexDocSpec M0 (acSlot B 0x244) i := by
+  apply aco_tidC
+  · intro j hj
+    unfold idxLen
+    rw [aco_so B _ _ (by omega), aco_ldK N K (.inr (.inl ⟨by omega, by omega⟩))]
+  · rw [aco_slotAdd]; exact aco_ldK N K (by decide)
+
+theorem aco_codeSep {a x : Word} {n L : Nat} (ha : a.toNat + n ≤ 0x40000000) (hx : 0x40000000 ≤ x.toNat)
+    (hl : x.toNat + L ≤ 2 ^ 32) : Sep a n x L :=
+  aco_sepN (.inl (by omega)) (by omega) hl
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 16000000 in
+/-- A call to `tuf::read_doc` from 0x598 for root `i`, with the result at
+`sp + 0x350` and the document in `doc`. -/
+theorem aco_rd (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n0) {n : Machine} {i : Nat}
+    {st pl : Word} (s : St n.mem AC n 0x598 (reg n)) (K : AcoKeep B Bf n0.mem n.mem) (KR : AcoKRA n0 n)
+    (ha0 : reg n a0 = acSlot B 0x350) (ha1 : reg n a1 = st) (ha2 : reg n a2 = pl)
+    (ha3 : reg n a3 = acSlot B 0x244) (ha4 : reg n a4 = BitVec.ofNat 32 i) (ha5 : reg n a5 = Bf + 0x4000) :
+    ∃ n', Steps n n' ∧ St n'.mem AC n' 0x5A0 (reg n') ∧ (∀ q, romKeep q = true → reg n' q = reg n q) ∧
+      TrdOut flash n'.mem (acSlot B 0x350) (Bf + 0x4000) st pl
+        (tufIndexDocSpec n.mem (acSlot B 0x244) (BitVec.ofNat 32 i).toNat) ∧
+      ∀ x, Sep x 1 B 0x3A50 → Sep x 1 (Bf + 0x4000) 0x2800 → Sep x 1 (acSlot B 0x350) 8 → n'.mem x = n.mem x := by
+  have N := C.N
+  have := N.b0; have := N.b1; have := N.b2; have := N.f0; have := N.f1; have := N.bb
+  have hR := C.hR
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa (C.code K) ac_at_598 ac_at_59c (cb := TRD) (by decide) (by decide)
+  have r1 : ∀ r, r ≠ ra → reg n1 r = reg n r := fun r h => by rw [regs1]; exact updz s.zero h
+  have K1 : AcoKeep B Bf n0.mem n1.mem := by rw [mem1]; exact K
+  have E := C.envK K1
+  have hG : (B + BitVec.ofNat 32 (0x38D0 - R)).toNat = B.toNat + (0x38D0 - R) := by
+    simp only [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+  have hGn : (B + BitVec.ofNat 32 (0x38D0 - R)).toNat + (0x180 + R) ≤ 0x40000000 := by omega
+  have sG : ∀ {x : Word} {k : Nat}, Sep B 0x3A50 x k → Sep (B + BitVec.ofNat 32 (0x38D0 - R)) (0x180 + R) x k :=
+    fun h => h.sub (c := 0x38D0 - R) (l := 0x180 + R) (by omega)
+  obtain ⟨m', c2, pc2, rg2, out2, fr2⟩ := tufReadDoc_correct C.rom n1 (base := TRD)
+    (G := B + BitVec.ofNat 32 (0x38D0 - R)) (res := acSlot B 0x350) (start := st) (plen := pl)
+    (idx := acSlot B 0x244) (iw := BitVec.ofNat 32 i) (buf := Bf + 0x4000) (retAddr := AC + BitVec.ofNat 32 (0x598 + 8))
+    E.rd E.ix E.fp E.fr (by decide) pc1
+    (by rw [r1 a0 (by decide)]; exact ha0) (by rw [r1 a1 (by decide)]; exact ha1)
+    (by rw [r1 a2 (by decide)]; exact ha2) (by rw [r1 a3 (by decide)]; exact ha3)
+    (by rw [r1 a4 (by decide)]; exact ha4) (by rw [r1 a5 (by decide)]; exact ha5)
+    (by rw [regs1]; simp [upd]) (by decide)
+    (by rw [r1 sp (by decide), C.sp KR]; apply BitVec.eq_of_toNat_eq
+        rw [show (14928 : Word) = BitVec.ofNat 32 14928 from rfl]
+        simp only [BitVec.toNat_add, BitVec.toNat_ofNat]; omega)
+    (by omega) (by aco_num) (by aco_num)
+    (aco_codeSep hGn (by decide) (by decide)) (aco_codeSep hGn (by decide) (by decide))
+    (aco_codeSep hGn (by decide) (by decide)) (aco_codeSep hGn (by decide) (by decide))
+    (aco_codeSep hGn (by decide) (by decide)) (aco_codeSep hGn (by decide) (by decide))
+    (sG (by have := E.rs.sub (c := 0) (l := 0x3A50) (by decide); rwa [add_ofNat_zero] at this))
+    (by aco_num) (by aco_num) (by aco_num)
+    (aco_codeSep (by rw [show (16384 : Word) = BitVec.ofNat 32 16384 from rfl]; simp only [BitVec.toNat_add, BitVec.toNat_ofNat]; omega) (by decide) (by decide)) (aco_codeSep (by aco_num) (by decide) (by decide))
+    (by aco_num)
+  rw [mem1] at out2 fr2
+  refine ⟨m', c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, fun q hq => ?_, out2, fun x h1 h2 h3 => ?_⟩
+  · rw [rg2 q hq, r1 q (by revert hq; revert q; decide)]
+  · exact fr2 x (sG h1.symm) h2.symm h3.symm
 
 end ctx
 
