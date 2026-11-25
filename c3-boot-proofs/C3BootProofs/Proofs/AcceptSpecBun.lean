@@ -11,15 +11,6 @@ namespace C3.RV32.Ac
 
 open C3 C3.Image C3.RV32.P3 C3.RV32.BootMainContract
 
-/-- **The bundle stage, keeping `s5`, `s9`, and `s11`**: `AcBundleStage`, and
-the stage doesn't change those registers. -/
-def AcsBundleStage : Prop :=
-  ∀ (n : Machine) (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (L : Nat),
-    CodeIn n.mem AC bootMainClosure0Code → AcBundleEnv n.mem → Fr B 0x5A70 → Sep B 0x5A70 Bf acBufLen →
-    St n.mem AC n 0x1816 (reg n) → AcInv B Bf g t v M0 n → memLoad32 n.mem (acSlot B 0x40) = r →
-    AcBundlePre B Bf L n → AcStage B Bf g t r v M0 n 0x1A46 (fun n' =>
-      AcBundlePost B Bf L n n' ∧ ∀ q : Fin 32, q.val ∈ [21, 25, 27] → reg n' q = reg n q)
-
 /-- **At 0x1816**: what the bundle and the last stage need, with `s5`, `s9`,
 and `s11` holding what the image stage left. `sp + 0x20` holds a time no
 later than the expiry `ex` that `verifyTuf` gives. -/
@@ -77,7 +68,7 @@ theorem acs_rootIn {B : Word} (F : Fr B 0x5A70) : Sv.SvIn (B + 0x13F0) (acSlot B
   exact ⟨(sep_of_le (by rw [e2, e1]; omega) (by rw [e1]; omega)).symm, by rw [e1]; omega, by rw [e1]; omega⟩
 
 /-- **From 0x1816**: the closure panics or returns with `AcsRes`. -/
-theorem acs_bun (hB : AcsBundleStage) (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {n : Machine}
+theorem acs_bun (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {n : Machine}
     {mf : Manifest} {header : ImageHeader} {parts : TufParts} {ver ex : Nat} {fs : List FulcioKey}
     {ls : List LogKey} {ts : List TsaKey} (S : AcsAt1816 X mf header parts ver ex fs ls ts n) : X.End n := by
   have E := ok.envsAt S.inv
@@ -85,7 +76,7 @@ theorem acs_bun (hB : AcsBundleStage) (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.
   have sv : Sv.SvIn (X.B + 0x13F0) X.Bf 0x4000 := by
     have h := ok.svBf.sub (c := 0) (l := 0x4000) (by decide)
     rwa [add_ofNat_zero] at h
-  refine acs_stage S.inv (hB n X.B X.Bf X.g X.t X.r X.v X.M0 mf.bundle.length E.ac E.bun ok.F ok.sB S.st S.inv
+  refine acs_stage S.inv (acBundleStage n X.B X.Bf X.g X.t X.r X.v X.M0 mf.bundle.length E.ac E.bun ok.F ok.sB S.st S.inv
     S.res ⟨S.bf, S.len, S.hL, sv, S.a0, S.a1, S.a2, S.ra⟩) (fun _ => ok.fail) fun n' I' hpc ⟨P, rk⟩ => ?_
   obtain ⟨b, hbd, hbAt⟩ := P.bundle
   rw [S.bundle] at hbd

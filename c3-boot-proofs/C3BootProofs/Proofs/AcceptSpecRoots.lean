@@ -165,7 +165,7 @@ end
 /-- **From 0x584**: the roots stage, then the targets stage and the rest,
 end the closure. -/
 theorem acs_roots (hT : AcTargetsStage) (hE : AcExtractStage)
-    (hB : AcsBundleStage) (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest}
+    (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest}
     {header : ImageHeader} {parts : TufParts} {first : TufRoot} (S : AcsAt584 X mf header parts first n) :
     X.End n := by
   refine acs_stage S.inv (acRootsStage X.flash X.R X.romBase X.romCode ok.rom n X.B X.Bf X.g X.t X.r X.v X.M0
@@ -197,7 +197,7 @@ theorem acs_roots (hT : AcTargetsStage) (hE : AcExtractStage)
     rw [KR 21 (by decide), KR 25 (by decide), KR 27 (by decide)]
     refine S.img.keep fun k hk => kx _ (acs_rootsSlot ok (.inr ?_))
     rcases hk with ⟨a, b⟩ | ⟨a, b⟩ <;> exact ⟨by omega, by omega⟩
-  exact acs_tgt hT hE hB hFx ok (root := root) (re := e)
+  exact acs_tgt hT hE hFx ok (root := root) (re := e)
     { st := st
       inv := I'
       img := A

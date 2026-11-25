@@ -19,7 +19,7 @@ theorem acb_blk {B : Word} {n0 n : Machine} {o o' : Nat} (K : AcbK B n0 n) (s : 
     (hend : blockEnd bootMainClosure0Code o is = some o')
     (hok : BlockOk AC bootMainClosure0Code.length is (n.mem, reg n))
     (hm : (runBlock is (n.mem, reg n)).1 = n.mem)
-    (hs : ∀ x ∈ is.filterMap BInstr.dst, x.val ∉ [0, 2, 3, 4]) :
+    (hs : ∀ x ∈ is.filterMap BInstr.dst, x.val ∉ [0, 2, 3, 4, 21, 25, 27]) :
     ∃ n1, Steps n n1 ∧ AcbK B n0 n1 ∧ St n1.mem AC n1 o' (reg n1) ∧ n1.mem = n.mem ∧
       (∀ x, reg n1 x = (runBlock is (n.mem, reg n)).2 x) ∧
       (∀ x, x ∉ is.filterMap BInstr.dst → reg n1 x = reg n x) := by
@@ -28,8 +28,9 @@ theorem acb_blk {B : Word} {n0 n : Machine} {o o' : Nat} (K : AcbK B n0 n) (s : 
   have r1 : ∀ x, reg n1 x = (runBlock is (n.mem, reg n)).2 x := fun x => by rw [u1.regs]
   have k1 : ∀ x, x ∉ is.filterMap BInstr.dst → reg n1 x = reg n x := fun x hx => by
     rw [r1, runBlock_reg _ _ _ x s.zero hx]
-  have aux : ∀ x : Fin 32, x.val ∉ [0, 1] ++ List.range' 5 27 → x.val ∈ [0, 2, 3, 4] := by decide
-  exact ⟨n1, c1, K.regs (l := [0, 1] ++ List.range' 5 27) m1 (fun x hx => k1 x (fun h => hs x h (aux x hx))),
+  have aux : ∀ x : Fin 32, x.val ∉ [0, 1] ++ List.range' 5 16 ++ [22, 23, 24, 26, 28, 29, 30, 31] →
+      x.val ∈ [0, 2, 3, 4, 21, 25, 27] := by decide
+  exact ⟨n1, c1, K.regs (l := [0, 1] ++ List.range' 5 16 ++ [22, 23, 24, 26, 28, 29, 30, 31]) m1 (fun x hx => k1 x (fun h => hs x h (aux x hx))),
     ⟨u1.pc, rfl, fun _ => rfl⟩, m1, r1, k1⟩
 
 set_option hygiene false in
@@ -90,12 +91,13 @@ theorem acb_f2 {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {
   rw [updz z2 (by decide), K2.sp, acb_sl B (c := 0x38) (by decide), upd_same (by decide)] at s4
   have m4 := s4.mem
   rw [← s4.mem] at s4
-  have K4 : AcbK B n0 n4 := ⟨by rw [s4.regs, updz z2 (by decide)]; exact K2.sp,
+  have K4 : AcbK B n0 n4 := ⟨⟨by rw [s4.regs, updz z2 (by decide)]; exact K2.sp,
     by rw [s4.regs, updz z2 (by decide)]; exact K2.gp, by rw [s4.regs, updz z2 (by decide)]; exact K2.tp,
     fun x hx => by
       rw [m4, memStore32_get_sep (a := acSlot B 0x38) (acb_sep hx (p := (0x3A78, 0x14)) (by decide)
         (by decide) (by decide))]
-      exact K2.keep x hx⟩
+      exact K2.keep x hx⟩, by rw [s4.regs, updz z2 (by decide)]; exact K2.s5,
+    by rw [s4.regs, updz z2 (by decide)]; exact K2.s9, by rw [s4.regs, updz z2 (by decide)]; exact K2.s11⟩
   have C4 := G.code K4
   rcases res with ⟨f0, f4⟩ | ⟨g1, g2, g3, g4, g5, g6⟩
   · obtain ⟨n5, e5, s5⟩ := s4.taken C4 0x1A66 ac_at_18d2 (by decide) (by rw [upd_same (by decide), f0]; rfl)
@@ -127,11 +129,12 @@ theorem acb_f2 {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {
     have rk : ∀ x : Fin 32, x.val ∉ [1, 6, 10, 11, 12, 13, 14, 15] → reg n7 x = reg n x := fun x hx => by
       rw [s7.regs, updz (upd_zero _ _ _) (acb_ne hx), updz z2 (acb_ne hx), rg2 x hx,
         k1 x (by simp only [acbA2]; revert hx; revert x; decide)]
-    have K7 : AcbK B n0 n7 := ⟨by rw [rk sp (by decide)]; exact K.sp, by rw [rk 3 (by decide)]; exact K.gp,
+    have K7 : AcbK B n0 n7 := ⟨⟨by rw [rk sp (by decide)]; exact K.sp, by rw [rk 3 (by decide)]; exact K.gp,
       by rw [rk 4 (by decide)]; exact K.tp, fun x hx => by
         rw [m7, memStore32_get_sep (a := acSlot B 0x34) (acb_sep hx (p := (0x3A78, 0x14)) (by decide)
           (by decide) (by decide))]
-        exact K4.keep x hx⟩
+        exact K4.keep x hx⟩,
+      by rw [rk 21 (by decide)]; exact K.s5, by rw [rk 25 (by decide)]; exact K.s9, by rw [rk 27 (by decide)]; exact K.s11⟩
     refine acb_pre c1 (acb_pre c2 (acb_pre (.cons e3 (.cons e4 (.cons e5 (.cons e6 (.cons e7 (.refl _))))))
       (acb_ret K7 ⟨⟨s7.pc, rfl, fun _ => rfl⟩, rk, ?_, ?_, g1, g2, g3, ⟨?_, ?_, ?_⟩, ?_⟩)))
     · rw [m7]; simp (disch := decide) only [acb_lsl]; rw [m4, memLoad32_store32_same, g4]
@@ -149,7 +152,7 @@ theorem acb_lws {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} 
     (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) {o o' c : Nat} {k : Word} {rd : Fin 32}
     (s : St n.mem AC n o (reg n)) (hend : blockEnd bootMainClosure0Code o [.lw rd sp k] = some o')
     (hk : (0x3A50 : Word) + k = BitVec.ofNat 32 (0x3A50 + c)) (hc : 0x3A50 + c ≤ 0x5A70) (h4 : c % 4 = 0)
-    (hrd : rd.val ∉ [0, 2, 3, 4]) :
+    (hrd : rd.val ∉ [0, 2, 3, 4, 21, 25, 27]) :
     ∃ n1, Steps n n1 ∧ AcbK B n0 n1 ∧ St n1.mem AC n1 o' (reg n1) ∧ n1.mem = n.mem ∧
       reg n1 rd = memLoad32 n.mem (acSlot B c) ∧ ∀ x, x ≠ rd → reg n1 x = reg n x := by
   have hz := s.zero
@@ -337,8 +340,9 @@ theorem acb_blkB {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8}
         (by decide)),
       memStore32_get_sep (acb_sep hx (p := (0x3A78, 0xC)) (c := 14976) (l := 4) (by decide) (by decide)
         (by decide))]
-  have K1 : AcbK B n0 n1 := ⟨by rw [rk sp (by decide)]; exact K.sp, by rw [rk 3 (by decide)]; exact K.gp,
-    by rw [rk 4 (by decide)]; exact K.tp, fun x hx => (fr x (acb_mono (by decide) hx)).trans (K.keep x hx)⟩
+  have K1 : AcbK B n0 n1 := ⟨⟨by rw [rk sp (by decide)]; exact K.sp, by rw [rk 3 (by decide)]; exact K.gp,
+    by rw [rk 4 (by decide)]; exact K.tp, fun x hx => (fr x (acb_mono (by decide) hx)).trans (K.keep x hx)⟩,
+    by rw [rk 21 (by decide)]; exact K.s5, by rw [rk 25 (by decide)]; exact K.s9, by rw [rk 27 (by decide)]; exact K.s11⟩
   refine ⟨n1, c1, K1, ⟨u1.pc, rfl, fun _ => rfl⟩, fr, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, rk⟩
   all_goals first
     | (rw [m1]; simp (disch := decide) only [acSlot, Nat.reduceAdd, acb_lst, memLoad32_store32_same]; done)
@@ -663,8 +667,9 @@ theorem acb_seg6 {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8}
     rw [m1]; simp (disch := first | assumption | decide) only [acb_fs32]
   have rk : ∀ x : Fin 32, x.val ∉ [8, 9, 10, 11, 12, 13, 14, 15, 16, 19] → reg n1 x = reg n x := fun x hx => by
     rw [g, runBlock_reg _ _ _ x hz (by simp only [acbF]; revert hx; revert x; decide)]
-  have K1 : AcbK B n0 n1 := ⟨by rw [rk sp (by decide)]; exact K.sp, by rw [rk 3 (by decide)]; exact K.gp,
-    by rw [rk 4 (by decide)]; exact K.tp, fun x hx => (fr x (acb_mono (by decide) hx)).trans (K.keep x hx)⟩
+  have K1 : AcbK B n0 n1 := ⟨⟨by rw [rk sp (by decide)]; exact K.sp, by rw [rk 3 (by decide)]; exact K.gp,
+    by rw [rk 4 (by decide)]; exact K.tp, fun x hx => (fr x (acb_mono (by decide) hx)).trans (K.keep x hx)⟩,
+    by rw [rk 21 (by decide)]; exact K.s5, by rw [rk 25 (by decide)]; exact K.s9, by rw [rk 27 (by decide)]; exact K.s11⟩
   obtain ⟨m2, c2, s2⟩ := s1.auipc (off' := 0x1A46) (G.code K1) ac_at_1a42 (by decide)
   have z1 := s1.zero
   have rk2 : ∀ x : Fin 32, x ≠ ra → reg m2 x = reg n1 x := fun x hx => by rw [s2.regs, updz z1 hx]

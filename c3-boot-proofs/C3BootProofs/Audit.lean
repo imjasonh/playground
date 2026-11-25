@@ -10179,6 +10179,9 @@ end C3
 /-- info: 'C3.RV32.Ac.acb_st32' does not depend on any axioms -/
 #guard_msgs in #print axioms C3.RV32.Ac.acb_st32
 
+/-- info: 'C3.RV32.Ac.AcbKw.kw' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcbKw.kw
+
 /-- info: 'C3.RV32.Ac.AcbK.kw' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.AcbK.kw
 
@@ -10197,8 +10200,11 @@ end C3
 /-- info: 'C3.RV32.Ac.AcbG.inv' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.AcbG.inv
 
-/-- info: 'C3.RV32.Ac.AcbG.res' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.Ac.AcbG.res
+/-- info: 'C3.RV32.Ac.AcbG.invW' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcbG.invW
+
+/-- info: 'C3.RV32.Ac.AcbG.resW' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcbG.resW
 
 /-- info: 'C3.RV32.Ac.acb_bind' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acb_bind

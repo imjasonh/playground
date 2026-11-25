@@ -40,7 +40,7 @@ theorem acs_lev {l : Word} (h : l.toNat < 256) : (l &&& 0xFF).toNat = l.toNat :=
 
 /-- **From 0x1AA**: the image stage, then the index stage and the rest, end
 the closure. -/
-theorem acs_image (hE : AcExtractStage) (hB : AcsBundleStage) (hFx : AcsFinishBad)
+theorem acs_image (hE : AcExtractStage) (hFx : AcsFinishBad)
     {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest} (S : AcsAt1AA X mf n) : X.End n := by
   have E := ok.envsAt S.inv
   refine acs_stage S.inv (acImage_stage X.flash n X.B X.Bf X.g X.t X.r X.slot X.level X.v X.M0 mf
@@ -60,7 +60,7 @@ theorem acs_image (hE : AcExtractStage) (hB : AcsBundleStage) (hFx : AcsFinishBa
     exact hkeep x h0 (h.symm.sub (by decide)) (h.symm.sub (by decide))
   have ld : ∀ k, k + 4 ≤ 0xF4 → memLoad32 n'.mem (acSlot X.B k) = memLoad32 n.mem (acSlot X.B k) :=
     fun k hk => memLoad32_congr fun j hj => by rw [acf_slot_add]; exact Kf (k + j) (by omega)
-  refine acs_index hE hB hFx ok (header := header)
+  refine acs_index hE hFx ok (header := header)
     { st := ⟨hpc, rfl, fun _ => rfl⟩
       inv := I'
       img := {
