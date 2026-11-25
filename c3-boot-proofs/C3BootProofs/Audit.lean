@@ -243,6 +243,7 @@ import C3BootProofs.Models.TufLinkKeys
 import C3BootProofs.Proofs.AcceptStages
 import C3BootProofs.Proofs.AcceptExtractTail
 import C3BootProofs.Proofs.AcceptExtractErr
+import C3BootProofs.Proofs.AcceptExtractHeadLib
 
 /-!
 # Audit
@@ -9223,3 +9224,12 @@ end C3
 
 /-- info: 'C3.Json.ace_objField' depends on axioms: [propext] -/
 #guard_msgs in #print axioms C3.Json.ace_objField
+
+/-- info: 'C3.RV32.Ac.ace_f1A6A' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_f1A6A
+
+/-- info: 'C3.RV32.Ac.ace_f1A66' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_f1A66
+
+/-- info: 'C3.RV32.Ac.ace_stage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_stage

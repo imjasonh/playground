@@ -183,8 +183,8 @@ structure AcExtractEnv (M : Word → BitVec 8) : Prop where
 
 /-! ## The stage -/
 
-/-- The stack, `Buffers`, and the policy's last 0x23 bytes, which the stage
-copies, lie apart. -/
+/-- The stack, `Buffers`, the read-only window, and the policy's last 0x23
+bytes, which the stage copies, lie apart. -/
 structure AceLayout (B Bf : Word) : Prop where
   fr : Fr B 0x5A70
   sep : Sep B 0x5A70 Bf acBufLen
@@ -192,6 +192,7 @@ structure AceLayout (B Bf : Word) : Prop where
   hi : Bf.toNat + acBufLen ≤ 0x40000000
   polStack : Sep 0x3FCC4051 0x23 B 0x5A70
   polBuf : Sep 0x3FCC4051 0x23 Bf acBufLen
+  ro : Sep B 0x5A70 (BitVec.ofNat 32 roWindowAddress) roWindowSize
 
 /-- At 0xC12: the trusted root's document `json` at `D` in `doc`, its
 length in `s8`, `sp + 0x30` holding `keys`'s address, the result pointer
