@@ -108,6 +108,19 @@ set_option maxRecDepth 100000 in
 theorem bmc_c0_range : 0x40000000 ≤ (BitVec.ofNat 32 bootMainClosure0Address).toNat ∧
     (BitVec.ofNat 32 bootMainClosure0Address).toNat + bootMainClosure0Code.length ≤ 2 ^ 32 := by decide
 
+theorem bmc_level_le : ∀ f : Fuses, level f ≤ f.length
+  | [] => Nat.le_refl 0
+  | b :: f => by
+    have := bmc_level_le f
+    cases b <;> simp only [level, List.length_cons, ite_true, ite_false, Bool.false_eq_true] <;> omega
+
+theorem bmc_pop_lt (w : Word) : (btPop w).toNat < 256 := by
+  rw [BootLevel.btPop_level]
+  have := bmc_level_le (Fuses.ofNat ((w.toNat >>> 14) % 65536))
+  have hl : (Fuses.ofNat ((w.toNat >>> 14) % 65536)).length = 16 := by
+    simp only [Fuses.ofNat, List.length_map, List.length_range, maxLevel]
+  omega
+
 set_option maxHeartbeats 8000000 in
 set_option maxRecDepth 20000 in
 /-- A call at `off` from `boot_main` to its first closure with the result
@@ -122,7 +135,7 @@ theorem bmc_call {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
     {n : Machine} {F : Word} {off k : Nat} {imm o : Word} {sl : Slot}
     (s : St n.mem BM n off (reg n)) (hsp : reg n sp = F) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
-    (hk1 : 0xB9A4 ≤ k) (hk2 : k + 0x12C ≤ 0xBE80)
+    (hk1 : 0xB9A4 ≤ k) (hk2 : k + 0x12C ≤ 0xBE80) (hk4 : k % 4 = 0)
     (ha0 : reg n a0 = F + BitVec.ofNat 32 k) (ha1 : reg n a1 = btPop (memLoad32 M0 efuseRd))
     (ha2 : reg n a2 = F + BitVec.ofNat 32 0x50) (ha3 : reg n a3 = BitVec.ofNat 32 (bmSlotNum sl))
     (h1 : fetchRel bootMainCode off = some (.auipc ra imm, 4))
@@ -164,6 +177,12 @@ theorem bmc_call {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
       (btPop (memLoad32 M0 efuseRd)) (hK1.codeIn C C.c0 (.inr bmc_c0_range)) (X.hE _ hK1) pc1
       (by rw [sp1]; omega) (by rw [r1 _ (by decide), ha0]) (by rw [r1 _ (by decide), ha1])
       (by rw [r1 _ (by decide), ha2]) (by rw [r1 _ (by decide), ha3]) (by cases sl <;> decide)
+      ⟨by rw [sp1]; have := X.env.hsp; omega, by rw [sp1]; omega, by rw [sp1]; omega,
+        by rw [eF k (by omega)]; have := X.env.hsp; omega, by rw [eF k (by omega)]; omega,
+        by rw [eF k (by omega)]; omega, by rw [eF 0x50 (by decide)]; have := X.env.hsp; omega,
+        by rw [sp1, eF 0x50 (by decide)]; omega, by rw [eF 0x50 (by decide)]; omega, bmc_pop_lt _,
+        by rw [show reg n1 ra = BM + BitVec.ofNat 32 (off + 8) by rw [regs1]; simp +decide only [upd, ↓reduceIte]]
+           exact even_clear _ he8⟩
       (sep_of_le (by rw [eF 0x50 (by decide), eF k (by omega)]; omega) (by rw [eF k (by omega)]; omega)).symm
       (by rw [sp1]; exact (sep_of_le (by rw [hS, eF k (by omega)]; omega) (by rw [eF k (by omega)]; omega)).symm)
       (by rw [sp1]; exact (sep_of_le (by rw [hS, eF 0x50 (by decide)]; omega) (by rw [eF 0x50 (by decide)]; omega)).symm)
