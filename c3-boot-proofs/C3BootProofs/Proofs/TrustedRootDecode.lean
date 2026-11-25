@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.Base64Decode
+import C3BootProofs.Proofs.JsonNextElement
 import C3BootProofs.Proofs.JsonStr
 
 /-!
