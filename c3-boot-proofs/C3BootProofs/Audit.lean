@@ -257,6 +257,7 @@ import C3BootProofs.Proofs.BootMainDecide
 import C3BootProofs.Proofs.BootMainPlan
 import C3BootProofs.Proofs.BootMainEntry
 import C3BootProofs.Proofs.BootMainStart
+import C3BootProofs.Proofs.ResetPath
 
 /-!
 # Audit
@@ -9619,3 +9620,15 @@ end C3
 
 /-- info: 'C3.RV32.Cur.bootMain_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bootMain_correct
+
+/-- info: 'C3.RV32.Cur.wdg_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.wdg_correct
+
+/-- info: 'C3.RV32.Cur.clk_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.clk_correct
+
+/-- info: 'C3.RV32.Cur.resetMem_out' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.resetMem_out
+
+/-- info: 'C3.RV32.Cur.rst_path' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.rst_path
