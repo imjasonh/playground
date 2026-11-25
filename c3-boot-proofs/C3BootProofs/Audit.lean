@@ -278,6 +278,7 @@ import C3BootProofs.Proofs.AcceptExtractDup
 import C3BootProofs.Proofs.AcceptExtractTsa
 import C3BootProofs.Proofs.AcceptExtractCa
 import C3BootProofs.Proofs.ResetLoaded
+import C3BootProofs.Proofs.PanicFree
 import C3BootProofs.Proofs.SramAlias
 import C3BootProofs.Proofs.AcceptExtractTlogStage
 
@@ -10759,3 +10760,60 @@ end C3
 
 /-- info: 'C3.RV32.Ac.acetl_pre' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acetl_pre
+
+/-- info: 'C3.RV32.PanicIf.panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.PanicIf.panics
+
+/-- info: 'C3.RV32.PanicIf.absurd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.PanicIf.absurd
+
+/-- info: 'C3.RV32.PanicIf.of_steps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.PanicIf.of_steps
+
+/-- info: 'C3.RV32.panicHaltCode_not_deliberate' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.panicHaltCode_not_deliberate
+
+/-- info: 'C3.RV32.HaltsWith.panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltsWith.panics
+
+/-- info: 'C3.RV32.HaltsWith.of_steps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltsWith.of_steps
+
+/-- info: 'C3.RV32.HaltsDeliberately.panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltsDeliberately.panics
+
+/-- info: 'C3.RV32.HaltsDeliberately.of_steps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltsDeliberately.of_steps
+
+/-- info: 'C3.RV32.HaltOut.panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltOut.panics
+
+/-- info: 'C3.RV32.HaltOut.of_steps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltOut.of_steps
+
+/-- info: 'C3.RV32.HaltOut.np' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltOut.np
+
+/-- info: 'C3.RV32.HaltOut.deliberate' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.HaltOut.deliberate
+
+/-- info: 'C3.RV32.halt_haltCode' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.halt_haltCode
+
+/-- info: 'C3.RV32.beginUnwind_haltCode' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.beginUnwind_haltCode
+
+/-- info: 'C3.RV32.P2v.p256VerifyPrehash_correct_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p256VerifyPrehash_correct_pi
+
+/-- info: 'C3.RV32.Pv.pvModel_none_inv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Pv.pvModel_none_inv
+
+/-- info: 'C3.RV32.Pv.p384VerifyPrehash_correct_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Pv.p384VerifyPrehash_correct_pi
+
+/-- info: 'C3.RV32.WP.callGenPI' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.WP.callGenPI
+
+/-- info: 'C3.RV32.Sv.sv_p2F' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Sv.sv_p2F

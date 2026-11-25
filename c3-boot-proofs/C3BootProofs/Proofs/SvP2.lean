@@ -1,6 +1,7 @@
 import C3BootProofs.Proofs.SvFail
 import C3BootProofs.Proofs.SvPv
 import C3BootProofs.Proofs.P2vP256
+import C3BootProofs.Proofs.PanicFree
 
 /-!
 # `sigstore::verify`: calling `p256_verify_prehash`
@@ -54,7 +55,8 @@ theorem _root_.C3.RV32.P2v.P2vEnv.p2v {M M0 : Word → BitVec 8} {B : Word} (F :
     codeIn_p2v F fR E.PM (by decide) (by decide), codeIn_p2v F fR E.WM (by decide) (by decide),
     E.PT.p2v F fR, E.WN.p2v F fR, E.P2C.hi hx, E.GDC.hi hx, codeIn_p2v F fR E.SC (by decide) (by decide),
     F.dataIn fR E.hid (by decide) (by decide), F.dataIn fR E.GD (by decide) (by decide),
-    F.dataIn fR E.OD (by decide) (by decide), F.dataIn fR E.AD (by decide) (by decide)⟩
+    F.dataIn fR E.OD (by decide) (by decide), F.dataIn fR E.AD (by decide) (by decide),
+    F.dataIn fR E.UD (by decide) (by decide)⟩
 
 theorem sep_join {a x : Word} {n m l k : Nat} (h1 : Sep a n x k) (h2 : Sep (a + BitVec.ofNat 32 m) l x k)
     (hm : m ≤ n) : Sep a (m + l) x k := by
@@ -98,8 +100,9 @@ theorem _root_.C3.RV32.P2v.P2vEnv.sv {M M0 : Word → BitVec 8} {B : Word} (FW :
 set_option maxHeartbeats 16000000 in
 /-- **A call to `p256_verify_prehash`** from `sigstore::verify`, on the key at
 `pk`, the digest at `dg`, and `r` and `s` at offsets `rc` and `sc` of the
-frame. It panics, returns 0, or returns 1 with `SvP256Facts`, which the
-P-256 model turns into `p256Verify`. -/
+frame. It panics only if an inversion bound fails (`PanicIf`), returns 0,
+or returns 1 with `SvP256Facts`, which the P-256 model turns into
+`p256Verify`. -/
 theorem sv_p2F {n : Machine} {B : Word} {off : Nat} {imm o pk dg : Word} {rc sc : Nat}
     (FW : Fr (B + 0xFFFFEC10) 0x3A50) (C : SvCode n.mem) (PE : P2vEnv n.mem) (RS : SvRoSep B)
     (s : St n.mem SV n off (reg n))
@@ -109,7 +112,7 @@ theorem sv_p2F {n : Machine} {B : Word} {off : Nat} {imm o pk dg : Word} {rc sc 
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = pk) (ha1 : reg n a1 = dg)
     (ha2 : reg n a2 = B + 0x21A0 + BitVec.ofNat 32 rc) (ha3 : reg n a3 = B + 0x21A0 + BitVec.ofNat 32 sc)
     (hrc : rc + 32 ≤ 0x4C0) (hsc : sc + 32 ≤ 0x4C0) (k_in : SvIn B pk 0x41) (dg_in : SvIn B dg 32) :
-    Panics n ∨
+    PanicIf n ∨
     (∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
         (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
         reg n' a0 = 0 ∧ SvKeepL B n.mem n'.mem [] ∧ (∀ x, SvR B x → n'.mem x = n.mem x)) ∨
@@ -147,12 +150,12 @@ theorem sv_p2F {n : Machine} {B : Word} {off : Nat} {imm o pk dg : Word} {rc sc 
     all_goals first
       | (rw [g3, r1 _ (by decide)]) | (rw [g4, r1 _ (by decide)])
       | (rw [sv2 _ (by decide)]; exact r1 _ (by decide))
-  rcases p256VerifyPrehash_correct n1 (by rw [mem1]; exact PE) FP pc1
+  rcases p256VerifyPrehash_correct_pi n1 (by rw [mem1]; exact PE) FP pc1
       (by rw [r1 sp (by decide), rsp, BitVec.add_assoc]; rfl)
       (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2])
       (by rw [r1 a3 (by decide), ha3]) (by rw [ra1]; exact even_clear _ hev) RP
       (sv_p2In F hrc) (sv_p2In F hsc) k_in.p2 dg_in.p2 with hp | e | ⟨hf, e⟩
-  · exact .inl (hp.of_steps c1)
+  · exact .inl (PanicIf.of_steps c1 hp)
   · exact .inr (.inl (ret e))
   · rw [mem1] at hf
     exact .inr (.inr ⟨hf, ret e⟩)
@@ -207,7 +210,7 @@ theorem sv_p2c {B out : Word} {v : Nat → Word} {n0 : Machine}
           rw [g0_2]; rfl)
       (by decide) (by decide) k_in dg_in with
     hp | ⟨n2, c2, s2, sp2, k2, a2, K2, f2⟩ | ⟨hf, n2, c2, s2, sp2, k2, a2, K2, f2⟩
-  · exact .inr (.inl (Panics.of_steps c1 hp))
+  · exact .inr (.inl (Panics.of_steps c1 hp.panics))
   · rw [m1] at K2 f2
     have E2 : SvCode n2.mem := E0.fr F f2
     obtain ⟨n3, d3, u3⟩ := s2.taken E2.self 0xE4E sv_at_a5c (by decide)

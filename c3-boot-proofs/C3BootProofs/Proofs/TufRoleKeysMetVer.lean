@@ -293,7 +293,7 @@ theorem rm_p384 (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ‚àÄ m, Halting m ‚Ü
   refine WP.alu rkm_at_28c ?_; wn
   refine WP.callPvM (B := s + BitVec.ofNat 32 0x1590) (pk := pk) (ph := F + BitVec.ofNat 32 0x18C)
     (rp := F + BitVec.ofNat 32 0x12C) (sq := F + BitVec.ofNat 32 0x15C) rkm_at_28e rkm_at_292 (by decide) (by decide)
-    hH C5.pv E.pvfr (by (try rsimp); rw [hsp]; exact E.pvF) (by (try rsimp); rw [ev0, h8])
+    (fun m _ => hH m) C5.pv E.pvfr (by (try rsimp); rw [hsp]; exact E.pvF) (by (try rsimp); rw [ev0, h8])
     (by (try rsimp); rw [ev_add, hsp]; rfl) (by (try rsimp); (try simp only [ev0]); try rfl)
     (by (try rsimp); rw [ev_add, hsp]; rfl) (by (try rsimp); rw [ev_add, hsp]; rfl)
     (by rw [E.pvlo]; exact (hpk.sub (c := 0x13F0) (l := 0x2340) (by decide)).symm) hpkw
@@ -453,7 +453,7 @@ theorem rm_p256 (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ‚àÄ m, Halting m ‚Ü
   refine WP.alu rkm_at_30a ?_; wn
   refine WP.callP2vM (B := s + BitVec.ofNat 32 0x1A0) (pk := pk) (dg := F + BitVec.ofNat 32 0x18C)
     (rp := F + BitVec.ofNat 32 0x12C) (sq := F + BitVec.ofNat 32 0x15C) rkm_at_30c rkm_at_310 (by decide) (by decide)
-    hH C5.p2v C5.p2k E.p2fr E.p2ro (by (try rsimp); rw [hsp]; exact E.p2F) (by (try rsimp); rw [ev0, h8])
+    (fun m _ => hH m) C5.p2v C5.p2k E.p2fr E.p2ro (by (try rsimp); rw [hsp]; exact E.p2F) (by (try rsimp); rw [ev0, h8])
     (by (try rsimp); rw [ev_add, hsp]; rfl) (by (try rsimp); rw [ev_add, hsp]; rfl)
     (by (try rsimp); rw [ev_add, hsp]; rfl) (hin (by decide)) (hin (by decide))
     ‚ü®by rw [E.p2lo]; have := (hpk.sub (c := 0) (l := 0x3730) (by decide)).symm; rwa [add_ofNat_zero] at this,

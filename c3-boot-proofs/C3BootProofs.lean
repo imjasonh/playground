@@ -643,6 +643,7 @@ import C3BootProofs.Proofs.AcceptExtractCa
 import C3BootProofs.Proofs.Loaded
 import C3BootProofs.Proofs.LoadedImage
 import C3BootProofs.Proofs.ResetLoaded
+import C3BootProofs.Proofs.PanicFree
 import C3BootProofs.Proofs.SramAlias
 import C3BootProofs.Proofs.AcceptExtractTlogStage
 import C3BootProofs.Proofs.JsonWp

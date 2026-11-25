@@ -15,6 +15,9 @@ returns 0 otherwise, or panics.
 It panics only when the inversion of `s` leaves `|f| ≠ 1`
 (`p256VerifyPrehash_correct_bound`), so given safegcd's divstep bound
 (`P256InvBound`) it doesn't panic (`p256VerifyPrehash_correct_np`).
+`PanicFree.lean` states the contract that callers use,
+`p256VerifyPrehash_correct_pi`, and `p256VerifyPrehash_correct` follows
+from it.
 -/
 
 namespace C3.RV32.Sv
@@ -56,6 +59,7 @@ structure P2vEnv (M : Word → BitVec 8) : Prop where
   GD : CodeIn M (BitVec.ofNat 32 (img% p256GMontAddress)) p256GMontData
   OD : CodeIn M (BitVec.ofNat 32 (img% p256MontOneAddress)) p256MontOneData
   AD : CodeIn M (BitVec.ofNat 32 (img% p256AffineIdXAddress)) p256AffineIdXData
+  UD : CodeIn M (BitVec.ofNat 32 (img% p256OneAddress)) p256OneData
 
 theorem p256_zx (b : BitVec 8) : (b.zeroExtend 32).toNat = b.toNat := by
   rw [BitVec.toNat_setWidth, Nat.mod_eq_of_lt (by have := b.isLt; omega)]
@@ -183,24 +187,6 @@ theorem p256VerifyPrehash_correct_bound (m : Machine) {B pk dg rp sq : Word}
   rw [b32_mem, b32_mem]
   exact ⟨hR, _, _, _, _, I3.ld, W3, V3, I3.vd, hSC, stm, hst, _, _, _, _, I5.ld, W5, V5, I5.vd, h6, trivial⟩
 
-/-- **`p256VerifyPrehash`**, from its entry to its return: it panics,
-returns 0, or returns 1 with `SvP256Facts` for the key at `pk`, the digest
-at `dg`, and the scalars at `rp` and `sq`. It returns with `sp`, `ra`, `s0`
-to `s11`, `gp`, and `tp` as they were, and changes no memory outside its
-frame. -/
-theorem p256VerifyPrehash_correct (m : Machine) {B pk dg rp sq : Word}
-    (E : P2vEnv m.mem) (F : Fr B 0x3590) (hpc : m.pc = P2V) (hsp : reg m sp = B + 0x3590)
-    (ha0 : reg m a0 = pk) (ha1 : reg m a1 = dg) (ha2 : reg m a2 = rp) (ha3 : reg m a3 = sq)
-    (hret : reg m ra &&& ~~~1 = reg m ra) (RS : P2vRoSep B)
-    (r_in : P2vIn B rp 32) (s_in : P2vIn B sq 32) (k_in : P2vIn B pk 0x41) (dg_in : P2vIn B dg 32) :
-    Panics m ∨ P2vRet B (fun k => reg m (savedReg k)) m 0 ∨
-    (SvP256Facts m.mem pk dg (memBytes m.mem rp 32) (memBytes m.mem sq 32) ∧
-      P2vRet B (fun k => reg m (savedReg k)) m 1) := by
-  rcases p256VerifyPrehash_correct_bound m E F hpc hsp ha0 ha1 ha2 ha3 hret RS r_in s_in k_in dg_in with
-    ⟨-, e⟩ | h
-  · exact .inl e
-  · exact .inr h
-
 /-- **`p256VerifyPrehash` without the panic**: given safegcd's divstep
 bound, it returns 0, or returns 1 with `SvP256Facts` for the key at `pk`,
 the digest at `dg`, and the scalars at `rp` and `sq`. It returns with `sp`,
@@ -211,13 +197,13 @@ theorem p256VerifyPrehash_correct_np (m : Machine) {B pk dg rp sq : Word}
     (ha0 : reg m a0 = pk) (ha1 : reg m a1 = dg) (ha2 : reg m a2 = rp) (ha3 : reg m a3 = sq)
     (hret : reg m ra &&& ~~~1 = reg m ra) (RS : P2vRoSep B)
     (r_in : P2vIn B rp 32) (s_in : P2vIn B sq 32) (k_in : P2vIn B pk 0x41) (dg_in : P2vIn B dg 32)
-    (UD : CodeIn m.mem (BitVec.ofNat 32 (img% p256OneAddress)) p256OneData) (hB : P256InvBound) :
+    (hB : P256InvBound) :
     P2vRet B (fun k => reg m (savedReg k)) m 0 ∨
     (SvP256Facts m.mem pk dg (memBytes m.mem rp 32) (memBytes m.mem sq 32) ∧
       P2vRet B (fun k => reg m (savedReg k)) m 1) := by
   rcases p256VerifyPrehash_correct_bound m E F hpc hsp ha0 ha1 ha2 ha3 hret RS r_in s_in k_in dg_in with
     ⟨h, -⟩ | h
-  · have z := code_accV UD 0 8 (by decide)
+  · have z := code_accV E.UD 0 8 (by decide)
     rw [add_ofNat_zero] at z
     exact absurd (z.trans (by decide)) (h hB)
   · exact h
