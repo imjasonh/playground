@@ -1,5 +1,6 @@
 //! Shared multi-MCU protocol, maze renderer, BLE GATT OTA, and wake profiler library.
 
+pub mod grayscale;
 pub mod gzip_bench;
 pub mod maze;
 pub mod panel;

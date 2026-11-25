@@ -647,8 +647,12 @@ final class MCULabProtocolTests: XCTestCase {
         // Switching board after staging must reset incompatible app to .base and block arming the wrong chip binary.
         controller.selectedBoard = .waveshareEPD75
         XCTAssertEqual(controller.selectedApp, .base)
-        XCTAssertEqual(MCULabBoard.waveshareEPD75.compatibleApps, [.base, .maze, .gzipBench])
+        XCTAssertEqual(MCULabBoard.waveshareEPD75.compatibleApps, [.base, .maze, .gzipBench, .grayscale])
         XCTAssertEqual(MCULabBoard.xiaoESP32C3.compatibleApps, [.base, .bench, .gzipBench])
+        XCTAssertEqual(
+            MCULabFirmwareTarget(board: .waveshareEPD75, app: .grayscale).ghcrRepo,
+            "imjasonh/playground/waveshare-epd75-grayscale"
+        )
         controller.armOTAUpdate()
         if case .failed = controller.otaPhase {
             // Expected
