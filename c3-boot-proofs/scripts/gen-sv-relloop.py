@@ -9,7 +9,7 @@ The theorem is by induction on a bound on the fuel, a length that every pass
 lowers. The loops:
 
 - `SvCosigLoop.lean`: the checkpoint's signature lines, `sv_seg_cosig` until
-  `w5c` is 0, then `sv_csx`. The state includes the signature found so far.
+  `w50` is 0, then `sv_csx`. The state includes the signature found so far.
 - `SvEkuLoop.lean`: the OIDs of an `ExtKeyUsage` value, `sv_deku2` until
   `cl` is 0, then `sv_deku3`.
 
@@ -34,13 +34,13 @@ def find(proofs, rx):
 
 
 def cosig_slice(proofs, names1):
-    nl = find(proofs, r"nlScan M0 w38 0 w5c\.toNat = some \w+")
+    nl = find(proofs, r"nlScan M0 w38 0 w50\.toNat = some \w+")
     return {'sg_in': f"(by rw [svSubOfNat_toNat (by have := (nlScan_lt _ _ _ {nl}).2; omega)]; "
                      f"exact (sg_in).nlRest {nl})"}
 
 
 def cosig_dec(proofs, names1):
-    nl = find(proofs, r"nlScan M0 w38 0 w5c\.toNat = some \w+")
+    nl = find(proofs, r"nlScan M0 w38 0 w50\.toNat = some \w+")
     ix = names1[names1.index(nl) - 1]
     return f"svRem_le1 (a := {ix} + 1) (N := N) (by omega) (by have := (nlScan_lt _ _ _ {nl}).2; omega) hN"
 
@@ -69,13 +69,13 @@ def eku_dec(proofs, names1):
 
 SIG_OF = """/-- The signature that memory holds where the signature loop keeps a found one. -/
 def svSigOf (M : Word → BitVec 8) (B : Word) : Bytes :=
-  (M (B + 0x21A0 + BitVec.ofNat 32 0x10)).toNat :: memBytes M (B + 0x21A0 + BitVec.ofNat 32 0x1480) 63
+  (M (B + 0x21A0 + BitVec.ofNat 32 0x14)).toNat :: memBytes M (B + 0x21A0 + BitVec.ofNat 32 0x1FC) 63
 
 theorem svSigOf_at (M : Word → BitVec 8) (B : Word) :
-    M (B + 0x21A0 + BitVec.ofNat 32 0x10) = BitVec.ofNat 8 ((svSigOf M B).getD 0 0) ∧
-    ∀ j, j < 63 → M (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 ((svSigOf M B).getD (1 + j) 0) := by
+    M (B + 0x21A0 + BitVec.ofNat 32 0x14) = BitVec.ofNat 8 ((svSigOf M B).getD 0 0) ∧
+    ∀ j, j < 63 → M (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 ((svSigOf M B).getD (1 + j) 0) := by
   refine ⟨BitVec.eq_of_toNat_eq ?_, fun j hj => BitVec.eq_of_toNat_eq ?_⟩
-  · show _ = (BitVec.ofNat 8 (M (B + 0x21A0 + BitVec.ofNat 32 0x10)).toNat).toNat
+  · show _ = (BitVec.ofNat 8 (M (B + 0x21A0 + BitVec.ofNat 32 0x14)).toNat).toNat
     rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (M _).isLt]
   · rw [svSigOf, Nat.add_comm 1 j, List.getD_cons_succ, List.getD_eq_getElem?_getD, memBytes,
       List.getElem?_map, List.getElem?_range hj, Option.map_some, Option.getD_some, add_ofNat_assoc,
@@ -84,10 +84,10 @@ theorem svSigOf_at (M : Word → BitVec 8) (B : Word) :
 
 LOOPS = {
     'SvCosigLoop': dict(body=('SvSegCosig', 'sv_seg_cosig'), exit=('SvCsx', 'sv_csx'), name='sv_cosigloop',
-                        step='sv_cosigStep', ok='sv_cosigloopOk', fuel='w5c', cond='hrem', xcond='hrem0',
+                        step='sv_cosigStep', ok='sv_cosigloopOk', fuel='w50', cond='hrem', xcond='hrem0',
                         slice=cosig_slice, dec=cosig_dec, title="the checkpoint's signature loop",
                       pick=dict(binder='sg', value="svSigOf n0.mem B",
-                                hyps={'b0_10': "(svSigOf_at n0.mem B).1", 'q0_1480': "(svSigOf_at n0.mem B).2"},
+                                hyps={'b0_14': "(svSigOf_at n0.mem B).1", 'q0_1fc': "(svSigOf_at n0.mem B).2"},
                                 doc="the signature that memory holds where the loop keeps a found one: before any "
                                 "line, the loop has found none, so any value does.",
                                 lemma=SIG_OF),
@@ -138,7 +138,11 @@ def main(fname, c):
                 xmap[m.group(1)] = f"{br}.toNat"
                 xconv[p] = f"({p}.trans (ofNat_toNat_self _).symm)"
     fixed_in = c.get('fixed_in', {})
-    groups_, seen = [], set(loopv) | {'n0'} | set(xmap)
+    # A register the body overwrites before it reads it is the head's own value.
+    xmap = {**L.local, **{b: subst(t, L.local) for b, t in xmap.items()}}
+    dead = {p for p, t in X.params if param_key(p) and strip_parens(subst(top_split(t, ' = ')[-1], xmap)) in L.local.values()}
+    bb = {b for names, _ in lean_binders(*BODY) for b in names}
+    groups_, seen = [], set(loopv) | {'n0'} | (set(xmap) - (bb - set(L.local)))
     for names, ty in lean_binders(*BODY) + lean_binders(*EXIT):
         new = [b for b in names if b not in seen]
         seen |= set(new)
@@ -164,7 +168,7 @@ def main(fname, c):
     ch = Chain(lambda x: None)
     _, names1, pats1, _ = ch.call(st, {p: a for (p, _), a in zip(st.params, args)})
     proofs = ch.proofs
-    ov = {'F': 'F', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
+    ov = {'FW': 'FW', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
     for p, _ in L.per:
         ov[p] = p
     ov.update({p: v[2] for p, v in fixed_in.items()})
@@ -223,7 +227,7 @@ def main(fname, c):
     O("      ∃ nk, Steps n0 nk ∧ reg nk (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg nk (4 : Fin 32) = reg n0 (4 : Fin 32) ∧")
     O(f"      SvKeepL B n0.mem nk.mem {L.kl} ∧ {OK} {fixed_names} M0 {' '.join(ps)} nk := by")
     xnamed = " ".join(f"({b} := {xmap.get(b, b)})" for b in dict.fromkeys(b for names, _ in lean_binders(*EXIT) for b in names))
-    xargs = " ".join({c['xcond']: 'h0', **xconv}.get(p, p) for p, _ in X.params)
+    xargs = " ".join({c['xcond']: 'h0', **xconv}.get(p, 'rfl' if p in dead else p) for p, _ in X.params)
     intro = f"intro {' '.join(loopv)} n0 hN {' '.join(hn)} {' '.join(per_names)} {' '.join(p for p, _ in xextra)}"
     exit_ok = (f"exact .inr ⟨0, {', '.join(loopv)}, svChain.nil, n0, .refl _, rfl, rfl, SvKeepL.refl.mono (by decide), "
                f"h0, {''.join(p + ', ' for p, _, _ in invs)}okx⟩")
@@ -251,9 +255,12 @@ def main(fname, c):
     O("")
     # The loop as a stage.
     pr = dict(zip(loopv, ps))
-    facts = []
+    facts, dropped = [], []
     for f in X.facts:
         if f.key == 'STEPS':
+            continue
+        if f.key not in ('r3', 'r4') and 'reg n0 ' in subst(f.text, xmap):
+            dropped.append(f.key)
             continue
         t = subst(subst(f.text, xmap), pr)
         if f.key in ('r3', 'r4'):
@@ -284,11 +291,12 @@ def main(fname, c):
     O("    ∃ n', Steps n0 n' ∧")
     O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
     named = " ".join(f"({b} := {b})" for n, _ in groups_ for b in n)
-    O(f"  rcases {NAME} {named} F hret hO M0 N hN {' '.join(hn)} {' '.join(per_names)} {' '.join(p for p, _ in xextra)} with e | "
+    O(f"  rcases {NAME} {named} FW hret hO M0 N hN {' '.join(hn)} {' '.join(per_names)} {' '.join(p for p, _ in xextra)} with e | "
       f"⟨k, {', '.join(ps)}, chn, nk, cs, hr3, hr4, hkl, okh⟩")
     O("  · exact .inl e")
     iv = [f"iv{j}" for j in range(len(invs))]
-    O(f"  obtain ⟨hz, {', '.join(iv + xnm + ['n1', 'cn'] + [f'f_{k}' for k, _ in facts])}⟩ := okh")
+    fnames = [f"f_{f.key}" if f.key not in dropped else "-" for f in X.facts if f.key != 'STEPS']
+    O(f"  obtain ⟨hz, {', '.join(iv + xnm + ['n1', 'cn'] + fnames)}⟩ := okh")
     terms = [{"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}")
              for k, _ in facts]
     O(f"  exact .inr ⟨k, {', '.join(ps)}, chn, hz, {', '.join(iv + xnm + ['n1', 'cs.trans cn'] + terms)}⟩")
@@ -313,7 +321,7 @@ def main(fname, c):
         out.extend(stmt)
         rest = [p for p, _ in head if p not in pick['hyps']] + per_names + [p for p, _ in xextra]
         hyps = " ".join(f"({h} := {v})" for h, v in pick['hyps'].items())
-        O(f"  rcases {NAME}_st ({b} := {pick['value']}) {hyps} {named} F hret hO M0 hN {' '.join(rest)} with e | h")
+        O(f"  rcases {NAME}_st ({b} := {pick['value']}) {hyps} {named} FW hret hO M0 hN {' '.join(rest)} with e | h")
         O("  · exact .inl e")
         O("  · exact .inr ⟨_, h⟩")
         O("")

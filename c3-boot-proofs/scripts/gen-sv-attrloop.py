@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Writes `SvAttrLoop.lean`: the timestamp's signed attributes loop of
-`sigstore::verify`, from its branch at 0x267A to the attributes' end at
-0x2704.
+`sigstore::verify`, from its branch at 0xFF8 to the attributes' end at
+0x10A4.
 
-One iteration is the segment `sv_seg_attr` (`sv_tsal`, `sv_tsaa`, then
-`sv_tsav`). It takes the next attribute off the slice (`cp`, `rem`), so
+One iteration is the segment `sv_seg_attr` (`sv_trl`, `sv_tra`, then
+`sv_trv`). It takes the next attribute off the slice (`cp`, `rem`), so
 its new state depends on what it parsed; `sv_attrStep` is that step as a
 relation, and `svChain` strings `k` of them together. The exit is
-`sv_tsax`, once `rem` is 0. The theorem is by induction on a bound on
+`sv_trx`, once `rem` is 0. The theorem is by induction on a bound on
 `rem`, which every attribute (two bytes at least) lowers. It carries one
 invariant besides the stages' hypotheses: the content-type flag is 0 or 1,
-which `sv_tsax` needs and `sv_tsav` keeps.
+which `sv_trx` needs and `sv_trv` keeps.
 
 Usage: python3 scripts/gen-sv-attrloop.py   (from c3-boot-proofs/)
 """
@@ -26,11 +26,11 @@ from svmerge import paths_of, sc_pattern, split  # noqa: E402
 from svseg import canon, strip_exists  # noqa: E402
 
 BODY = ('SvSegAttr', 'sv_seg_attr')
-EXIT = ('SvTsax', 'sv_tsax')
+EXIT = ('SvTrx', 'sv_trx')
 NAME = 'sv_attrloop'
 STEP = 'sv_attrStep'
 OK = 'sv_attrloopOk'
-TSAV = [('SvTsavct', 'sv_tsavct'), ('SvTsavmd', 'sv_tsavmd'), ('SvTsavother', 'sv_tsavother')]
+TSAV = [('SvTrvct', 'sv_trvct'), ('SvTrvmd', 'sv_trvmd'), ('SvTrvother', 'sv_trvother')]
 
 
 def success_text(sfile, sname):
@@ -46,7 +46,7 @@ def main():
     X = Stage(*EXIT)
     st, head, loopv = L.st, L.head, L.loopv
     assert loopv == ['dg', 'flag', 'cp', 'rem'], loopv
-    groups_, seen = [], set(loopv) | {'n0'}
+    groups_, seen = [], set(loopv) | {'n0'} | set(L.local)
     for names, ty in lean_binders(*BODY) + lean_binders(*EXIT):
         new = [b for b in names if b not in seen]
         seen |= set(new)
@@ -62,7 +62,7 @@ def main():
     sc = " ∧ ".join(st.sc_parts)
     new = "(" + ", ".join(L.upd[b] for b in loopv) + ")"
     rel = subst(f"{proj['rem']} ≠ 0 ∧ " + (sc + " ∧ " if sc else "") + f"s' = {new}", proj)
-    ok = success_text(*EXIT)
+    ok = subst(success_text(*EXIT), L.local)
     ok_k = re.sub(IDENT.format("n0"), "nk", subst(ok, dict(zip(loopv, ps))))
     T = "Word × Word × Word × Word"
 
@@ -75,8 +75,8 @@ def main():
                  if re.fullmatch(r"derElement 0x30 \(memBytes M0 cp rem\.toNat\) = \.ok \w+", canon(strip_exists(piece))))
     tl = re.search(r"\.ok (\w+)$", canon(strip_exists(dict(proofs)[tl_pf]))).group(1)
     tl_local = names1[names1.index(tl_pf) - 1]
-    flag_pf = next(nm for nm, piece in proofs if "tsav_w78" in piece and " ∨ " in piece)
-    ov = {'F': 'F', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
+    flag_pf = next(nm for nm, piece in proofs if "trv_w7c" in piece and " ∨ " in piece)
+    ov = {'FW': 'FW', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
     for p, _ in L.per:
         ov[p] = p
     ov['cr_in'] = f"((cr_in).restW {tl_pf})"
@@ -126,8 +126,9 @@ def main():
     O(f"    SvErrRet B out v n0 ∨ ∃ k {' '.join(ps)}, svChain ({STEP} {fixed_names} M0) k {tup} {ptup} ∧")
     O("      ∃ nk, Steps n0 nk ∧ reg nk (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg nk (4 : Fin 32) = reg n0 (4 : Fin 32) ∧")
     O(f"      SvKeepL B n0.mem nk.mem {L.kl} ∧ {OK} {fixed_names} M0 {' '.join(ps)} nk := by")
-    xnamed = " ".join(f"({b} := {b})" for names, _ in lean_binders(*EXIT) for b in names)
-    xargs = " ".join({'hrem': 'h0', 'hflag': 'hflag'}.get(p, p) for p, _ in X.params)
+    xnamed = " ".join(f"({b} := {L.local.get(b, b)})" for names, _ in lean_binders(*EXIT) for b in names)
+    dead = {p for p, t in X.params if strip_parens(t.split(' = ')[-1]) in L.local}
+    xargs = " ".join({'hrem': 'h0', 'hflag': 'hflag'}.get(p, 'rfl' if p in dead else p) for p, _ in X.params)
     intro = f"intro {' '.join(loopv)} n0 hN hflag {' '.join(hn)} {' '.join(per_names)}"
     exit_ok = (f"exact .inr ⟨0, {', '.join(loopv)}, svChain.nil, n0, .refl _, rfl, rfl, SvKeepL.refl.mono (by decide), "
                f"h0, {''.join(p + ', ' for p, _, _ in invs)}okx⟩")
@@ -151,18 +152,21 @@ def main():
     O(f"    have hdec := svRem_le (a := {tl_local}.header + {tl_local}.len) (N := N) "
       f"(by have := derElement_header {tl_pf}; omega)")
     O(f"      (by have := derElement_bound {tl_pf}; rw [memBytes_length] at this; exact this) hN")
+    ws = list(dict.fromkeys(re.findall(r"\btrv_w\w+", dict(proofs)[flag_pf])))
+    es = [f"e{j}" for j in range(len(ws))]
+    ef = es[next(j for j, w in enumerate(ws) if "w7c" in w)]
     pats = []
     paths = paths_of(split([Stage(*v) for v in TSAV], []))
     for vf, vn in TSAV:
         st_v = Stage(vf, vn)
         nm = [f"pc{i}'" for i in range(len(paths[st_v.name]))] + [f"{x}'" for x in sc_pattern(st_v)]
-        pats.append("⟨" + ", ".join(nm + ["e0", "e1", "e2", "e3"]) + "⟩")
-    w78 = next(x for x in names1 if "tsav_w78" in x)
+        pats.append("⟨" + ", ".join(nm + es) + "⟩")
+    w78 = next(x for x in names1 if "trv_w7c" in x)
     O(f"    have hflag' : {w78} = 0 ∨ {w78} = 1 := by")
     O(f"      rcases {flag_pf} with {' | '.join(pats)}")
-    O("      · exact .inr e1")
-    O("      · rw [e1]; exact hflag")
-    O("      · rw [e1]; exact hflag")
+    O(f"      · exact .inr {ef}")
+    O(f"      · rw [{ef}]; exact hflag")
+    O(f"      · rw [{ef}]; exact hflag")
     O(f"    rcases ih hdec hflag' {' '.join(ih_args)} with e | ⟨k, {', '.join(ps)}, chn, nk, cs, h3, h4, hk, okk⟩")
     O("    · exact .inl (SvErrRet.pre c1 r1_3 r1_4 (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)")
     O(f"    · exact .inr ⟨k + 1, {', '.join(ps)}, svChain.cons ⟨h0, {', '.join(names1)}, rfl⟩ chn, nk, c1.trans cs, "
@@ -170,11 +174,14 @@ def main():
     O("")
     # The loop as a stage.
     pr = dict(zip(loopv, ps))
-    facts = []
+    facts, dropped = [], []
     for f in X.facts:
         if f.key == 'STEPS':
             continue
-        t = subst(f.text, pr)
+        if f.key.startswith('r') and f.rhs is not None and strip_parens(f.rhs) in L.local:
+            dropped.append(f.key)
+            continue
+        t = subst(subst(f.text, L.local), pr)
         if f.key in ('r3', 'r4'):
             t = f"reg n' ({f.key[1]} : Fin 32) = reg n0 ({f.key[1]} : Fin 32)"
         elif f.key == 'KL':
@@ -197,14 +204,15 @@ def main():
     O("    SvErrRet B out v n0 ∨")
     O(f"    (∃ k {' '.join(ps)}, svChain ({STEP} {fixed_names} M0) k {tup} {ptup} ∧")
     O("      rem' = 0 ∧" + "".join(f" ({subst(t, pr)}) ∧" for _, t, _ in invs) +
-      ("" if not X.sc_parts else "\n      " + " ∧ ".join(subst(x, pr) for x in X.sc_parts) + " ∧"))
+      ("" if not X.sc_parts else "\n      " + " ∧ ".join(subst(subst(x, L.local), pr) for x in X.sc_parts) + " ∧"))
     O("    ∃ n', Steps n0 n' ∧")
     O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
-    O(f"  rcases {NAME} F hret hO M0 N hN hflag {' '.join(hn)} {' '.join(per_names)} with e | "
+    O(f"  rcases {NAME} FW hret hO M0 N hN hflag {' '.join(hn)} {' '.join(per_names)} with e | "
       f"⟨k, {', '.join(ps)}, chn, nk, cs, hr3, hr4, hkl, okh⟩")
     O("  · exact .inl e")
     iv = [f"iv{j}" for j in range(len(invs))]
-    O(f"  obtain ⟨hz, {', '.join(iv + xnm + ['n1', 'cn'] + [f'f_{k}' for k, _ in facts])}⟩ := okh")
+    fnames = [f"f_{f.key}" if f.key not in dropped else "-" for f in X.facts if f.key != 'STEPS']
+    O(f"  obtain ⟨hz, {', '.join(iv + xnm + ['n1', 'cn'] + fnames)}⟩ := okh")
     terms = [{"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}")
              for k, _ in facts]
     O(f"  exact .inr ⟨k, {', '.join(ps)}, chn, hz, {', '.join(iv + xnm + ['n1', 'cs.trans cn'] + terms)}⟩")

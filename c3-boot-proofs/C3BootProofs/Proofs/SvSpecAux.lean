@@ -3,6 +3,8 @@ import C3BootProofs.Proofs.SvWinLink
 import C3BootProofs.Proofs.SvCosigLink
 import C3BootProofs.Proofs.SvConstsLink
 import C3BootProofs.Image.BootloaderData6
+import C3BootProofs.Proofs.SvRk
+import C3BootProofs.Proofs.SvRoot
 
 /-!
 # Facts `sv_verify_spec` uses
@@ -227,9 +229,9 @@ theorem win_le' {M : Word → BitVec 8} {a : Word} {x t : Nat} (hU : SvU64At M a
   have := win_le h
   rwa [pair64_ofNat hU.1, pair64_halves ht] at this
 
-theorem log_addr {r q : Word} {i : Nat} (h : q = r + BitVec.ofNat 32 0x98 + BitVec.ofNat 32 (i * 0x20)) :
-    q + 0x20 = r + 0xB8 + BitVec.ofNat 32 (0x20 * i) ∧ q + 0x24 = r + 0xB8 + BitVec.ofNat 32 (0x20 * i) + 4 ∧
-      q + BitVec.ofNat 32 0x20 = r + 0xB8 + BitVec.ofNat 32 (0x20 * i) := by
+theorem log_addr {r q : Word} {i : Nat} (h : q = r + BitVec.ofNat 32 0x108 + BitVec.ofNat 32 (i * 0x20)) :
+    q + 0x20 = r + 0x128 + BitVec.ofNat 32 (0x20 * i) ∧ q + 0x24 = r + 0x128 + BitVec.ofNat 32 (0x20 * i) + 4 ∧
+      q + BitVec.ofNat 32 0x20 = r + 0x128 + BitVec.ofNat 32 (0x20 * i) := by
   subst h
   rw [Nat.mul_comm i 0x20]
   refine ⟨?_, ?_, ?_⟩ <;> bv_omega

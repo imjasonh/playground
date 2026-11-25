@@ -21,12 +21,12 @@ theorem derOidMem_eq (M : Word → BitVec 8) (out rp : Word) (r : Except DerErro
 /-- The callee environment of a reader with a 0x20-byte frame, called from
 the frame with its result at `oc` and the reader at `dc`. -/
 theorem sv_dce {M : Word → BitVec 8} {B rp rl : Word} {code : List Nat} {P e : Word} {oc dc ol : Nat}
-    (F : Fr B 0x3830) (hP : P.toNat % 2 = 0) (hE : (P + e).toNat % 2 = 0) (hc : CodeIn M P code)
+    (F : Fr B 0x2660) (hP : P.toNat % 2 = 0) (hE : (P + e).toNat % 2 = 0) (hc : CodeIn M P code)
     (hel : CodeIn M (P + e) derElementCode) (htl : CodeIn M (P + e + 0x26) derTlvCode)
     (hP1 : 0x40000000 ≤ P.toNat) (hP2 : P.toNat + code.length ≤ 2 ^ 32)
     (hE1 : 0x40000000 ≤ (P + e).toNat) (hE2 : (P + e).toNat + derElementCode.length ≤ 2 ^ 32)
     (hT1 : 0x40000000 ≤ (P + e + 0x26).toNat) (hT2 : (P + e + 0x26).toNat + derTlvCode.length ≤ 2 ^ 32)
-    (ho2 : oc + ol ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + ol ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl) (hin : SvIn B rp rl.toNat) :
     DerCallEnv M code P e (B + 0x21A0) (B + 0x21A0 + BitVec.ofNat 32 oc) (B + 0x21A0 + BitVec.ofNat 32 dc) ol := by
@@ -55,14 +55,14 @@ set_option maxHeartbeats 8000000 in
 /-- **A call to `Der::octet_string`** with the result at offset `oc` and the
 reader at offset `dc`. -/
 theorem sv_octF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derOctetStringAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc)
-    (ho2 : oc + 8 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 8 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 8 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl)
@@ -78,7 +78,7 @@ theorem sv_octF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
   have r1 := PEnv.reg1 regs1 s.zero
   have d8 := lit8 (B + 0x21A0) dc (by omega)
   have d12 := lit12 (B + 0x21A0) dc (by omega)
-  have env := sv_dce (code := derOctetStringCode) (P := BitVec.ofNat 32 derOctetStringAddress) (e := 0xFFFFF792)
+  have env := sv_dce (code := derOctetStringCode) (P := BitVec.ofNat 32 derOctetStringAddress) (e := 0xFFFFCF5A)
     (ol := 8) F (by decide) (by decide) C.derOctetString C.elem C.tlv (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) ho2 ho3 hd2 hd3 hrp hrl hin
   obtain ⟨n2, c2, pc2, sp2, k2, f2⟩ := derOctetString_correct n1 (by rw [mem1]; exact env)
@@ -93,14 +93,14 @@ set_option maxHeartbeats 8000000 in
 /-- **A call to `Der::integer`** with the result at offset `oc` and the
 reader at offset `dc`. -/
 theorem sv_intF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derIntegerAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc)
-    (ho2 : oc + 8 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 8 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 8 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl)
@@ -133,13 +133,13 @@ theorem sv_intF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
 set_option maxHeartbeats 8000000 in
 /-- **A call to `Der::boolean_true`** on the reader at offset `dc`. -/
 theorem sv_boolF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {dc : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derBooleanTrueAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 dc)
-    (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl)
     (hin : SvIn B rp rl.toNat) :
@@ -153,7 +153,7 @@ theorem sv_boolF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
   have r1 := PEnv.reg1 regs1 s.zero
   have d8 := lit8 (B + 0x21A0) dc (by omega)
   have d12 := lit12 (B + 0x21A0) dc (by omega)
-  have env := sv_dce (code := derBooleanTrueCode) (P := BitVec.ofNat 32 derBooleanTrueAddress) (e := 0xFFFFF4F2)
+  have env := sv_dce (code := derBooleanTrueCode) (P := BitVec.ofNat 32 derBooleanTrueAddress) (e := 0xFFFFCE92)
     (oc := dc) (ol := 0) F (by decide) (by decide) C.derBooleanTrue C.elem C.tlv (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by omega) hd3 hd2 hd3 hrp hrl hin
   obtain ⟨n2, c2, pc2, sp2, k2, a02, f2⟩ := derBooleanTrue_correct n1 (by rw [mem1]; exact env)
@@ -170,14 +170,14 @@ set_option maxHeartbeats 8000000 in
 /-- **A call to `Der::oid`** with the result at offset `oc` and the reader
 at offset `dc`. -/
 theorem sv_oidF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derOidAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc)
-    (ho2 : oc + 8 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 8 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 8 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl)
@@ -227,13 +227,13 @@ set_option maxHeartbeats 8000000 in
 /-- **A call to `Der::tlv`** with the result at offset `oc` and the reader
 at offset `dc`. -/
 theorem sv_tlvF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derTlvAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc) (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc)
-    (ho2 : oc + 20 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 20 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 20 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl) :
@@ -295,7 +295,7 @@ set_option maxHeartbeats 8000000 in
 /-- **A call to `der::lists_oid`**: whether the `n` bytes of extensions at
 `p` list the `ql`-byte OID at `q`. -/
 theorem sv_loF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o p q : Word} {nl ql : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 listsOidAddress)

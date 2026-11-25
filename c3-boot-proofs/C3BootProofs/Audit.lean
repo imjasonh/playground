@@ -167,6 +167,8 @@ import C3BootProofs.Image.BootloaderData5
 import C3BootProofs.Image.BootloaderData7
 import C3BootProofs.Proofs.P2vP256
 import C3BootProofs.Proofs.SvLib
+import C3BootProofs.Proofs.SvVerifyAt
+import C3BootProofs.Proofs.SvSpec
 import C3BootProofs.Models.EcdsaClosed
 import C3BootProofs.Models.Ed25519Closed
 import C3BootProofs.Proofs.TufIndex
@@ -8934,6 +8936,19 @@ end C3
 
 /-- info: 'C3.RV32.Sv.sv_err' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Sv.sv_err
+
+/-- info: 'C3.RV32.Sv.sv_verify_5c' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Sv.sv_verify_5c
+
+/-- info: 'C3.RV32.Sv.sv_verify' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Sv.sv_verify
+
+/-- info: 'C3.RV32.Sv.sv_verify_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Sv.sv_verify_at
+
+/-- info: 'C3.RV32.Sv.sv_verify_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Sv.sv_verify_spec
+
 /-- info: 'C3.RV32.tufIndexDocSpec_ok' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufIndexDocSpec_ok
 

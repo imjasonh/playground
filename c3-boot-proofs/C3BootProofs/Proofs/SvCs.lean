@@ -85,7 +85,7 @@ set_option maxHeartbeats 8000000 in
 the frame, with the result at offset `rc` and the output buffer of `L` bytes
 at offset `oc`. -/
 theorem sv_b64fF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o : Word} {rc oc tc nl L : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (CK : SvCkCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (CK : SvCkCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BDI)
@@ -93,8 +93,8 @@ theorem sv_b64fF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 rc)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 tc)
     (ha2 : reg n a2 = BitVec.ofNat 32 nl) (ha3 : reg n a3 = B + 0x21A0 + BitVec.ofNat 32 oc)
-    (ha4 : reg n a4 = BitVec.ofNat 32 L) (hr2 : rc + 8 ≤ 0x1690) (hr3 : rc % 4 = 0) (ho2 : oc + L ≤ 0x1690)
-    (ht2 : tc + nl ≤ 0x1690) (hs : rc + 8 ≤ oc ∨ oc + L ≤ rc) (hs2 : tc + nl ≤ oc ∨ oc + L ≤ tc) :
+    (ha4 : reg n a4 = BitVec.ofNat 32 L) (hr2 : rc + 8 ≤ 0x4C0) (hr3 : rc % 4 = 0) (ho2 : oc + L ≤ 0x4C0)
+    (ht2 : tc + nl ≤ 0x4C0) (hs : rc + 8 ≤ oc ∨ oc + L ≤ rc) (hs2 : tc + nl ≤ oc ∨ oc + L ≤ tc) :
     ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
       (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
       SvKeepL B M n'.mem [(rc, 8), (oc, L)] ∧

@@ -51,6 +51,7 @@ structure SvCode (M : Word → BitVec 8) : Prop where
   ecdsaSignature48 : CodeIn M (BitVec.ofNat 32 ecdsaSignature48Address) ecdsaSignature48Code
   derScalar48 : CodeIn M (BitVec.ofNat 32 derScalar48Address) derScalar48Code
   derScalar32 : CodeIn M (BitVec.ofNat 32 derScalar32Address) derScalar32Code
+  ecdsaSignature32 : CodeIn M (BitVec.ofNat 32 ecdsaSignature32Address) ecdsaSignature32Code
   zipSkipNext : CodeIn M (BitVec.ofNat 32 zipSkipNextAddress) zipSkipNextCode
   isSha256 : CodeIn M (BitVec.ofNat 32 isSha256Address) isSha256Code
   arr32Eq : CodeIn M (BitVec.ofNat 32 arr32EqAddress) arr32EqCode
@@ -86,6 +87,7 @@ theorem SvCode.hi {M M' : Word → BitVec 8} (C : SvCode M) (h : ∀ x : Word, 0
     codeHi C.ecdsaSignature48 (by decide) (by decide) h,
     codeHi C.derScalar48 (by decide) (by decide) h,
     codeHi C.derScalar32 (by decide) (by decide) h,
+    codeHi C.ecdsaSignature32 (by decide) (by decide) h,
     codeHi C.zipSkipNext (by decide) (by decide) h,
     codeHi C.isSha256 (by decide) (by decide) h,
     codeHi C.arr32Eq (by decide) (by decide) h,

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Writes `SvVerify.lean`: `sigstore::verify` from its entry to its return.
 
-`sv_pro` runs the prologue from the entry to 0x72, and `sv_verify_72` from
+`sv_pro` runs the prologue from the entry to 0x5C, and `sv_verify_5c` from
 there to the return. `sv_verify` joins them. Its statement names the entry
 machine `n`: the arguments are its registers, the saved registers are its
-`s0..s11` and `ra`, and the frame words that `sv_verify_72` reads at 0x72
+`s0..s11` and `ra`, and the frame words that `sv_verify_5c` reads at 0x5C
 are those of the memory the prologue leaves, `svProMem`.
 
 Usage: python3 scripts/gen-sv-entry.py   (from c3-boot-proofs/)
@@ -24,15 +24,15 @@ LL = "memLoad32 Me (reg n a1 + 4)"
 PM = f"svProMem Me B n ({LP}) ({LL})"
 ARGS = {'out': "reg n a0", 'bp': "reg n a1", 'rootp': "reg n a2", 'dg': "reg n a3", 'lp': LP, 'll': LL,
         'v': "(fun k => reg n (savedReg k))", 'M0': "Me"}
-# What sv_pro and the lemmas about svProMem give for sv_verify_72's start.
+# What sv_pro and the lemmas about svProMem give for sv_verify_5c's start.
 START = {
-    'F': "F", 'E0': "(E.fr F fM1)", 'V0': "(by rw [s1.mem]; exact svProMem_saves)", 's0': "(by rw [s1.mem]; exact s1)", 'M0': "Me",
+    'FW': "FW", 'E0': "(E.fr F fM1)", 'V0': "(by rw [s1.mem]; exact svProMem_saves)", 's0': "(by rw [s1.mem]; exact s1)", 'M0': "Me",
     'fM': "fM1", 'g0_2': "sp1", 'g0_10': "(ra0.trans (by rw [BitVec.add_assoc]; rfl))",
-    'g0_11': "(ra1.trans (by rw [BitVec.add_assoc]; rfl))", 'g0_18': "r18", 'g0_19': "r19", 'g0_21': "r21",
-    'g0_22': "r22", 'g0_25': "r25", 'g0_26': "r26", 'g0_27': "(r27.trans (by rw [BitVec.add_assoc]; rfl))",
-    'w0_2e0': "(by rw [s1.mem]; exact svProMem_reader.1)", 'w0_2e4': "(by rw [s1.mem]; exact svProMem_reader.2.1)",
-    'w0_2e8': "(by rw [s1.mem]; exact svProMem_reader.2.2.1)",
-    'w0_2ec': "(by rw [s1.mem]; exact svProMem_reader.2.2.2)",
+    'g0_11': "(ra1.trans (by rw [BitVec.add_assoc]; rfl))", 'g0_18': "r18", 'g0_19': "r19", 'g0_20': "r20",
+    'g0_21': "r21", 'g0_22': "r22", 'g0_26': "r26",
+    'w0_360': "(by rw [s1.mem]; exact svProMem_reader.1)", 'w0_364': "(by rw [s1.mem]; exact svProMem_reader.2.1)",
+    'w0_368': "(by rw [s1.mem]; exact svProMem_reader.2.2.1)",
+    'w0_36c': "(by rw [s1.mem]; exact svProMem_reader.2.2.2)",
 }
 
 
@@ -51,18 +51,18 @@ def names_of(part, start):
 
 def main():
     src = open(SRC).read()
-    i = src.index('theorem sv_verify_72 ')
+    i = src.index('theorem sv_verify_5c ')
     stmt = src[i:src.index(':= by\n', i)]
-    header = stmt.split('\n', 1)[0][len('theorem sv_verify_72 '):]
+    header = stmt.split('\n', 1)[0][len('theorem sv_verify_5c '):]
     binders = []
     for g in re.findall(r"\{([^}]*)\}", header):
         names, ty = g.rsplit(' : ', 1)
         binders += [(b, ty) for b in names.split()]
     hyps = []
-    for g in groups(stmt[stmt.index('(F : '):stmt.index('\n    SvErrRet B out v n0 ∨')]):
+    for g in groups(stmt[stmt.index('(FW : '):stmt.index('\n    SvErrRet B out v n0 ∨')]):
         p, t = g.split(' : ', 1)
         hyps.append((p.strip(), t.strip()))
-    # Frame binders: a word, byte, or range of the frame at 0x72 that names a binder.
+    # Frame binders: a word, byte, or range of the frame at 0x5C that names a binder.
     env = dict(ARGS)
     frame = {}
     for p, t in hyps:
@@ -82,7 +82,7 @@ def main():
             bgroups.setdefault(ty, []).append(b)
     new_binders = "{Me : Word → BitVec 8} {n : Machine} " + " ".join(
         "{" + " ".join(bs) + " : " + ty + "}" for ty, bs in bgroups.items())
-    # The conclusion: sv_verify_72's, about `n`.
+    # The conclusion: sv_verify_5c's, about `n`.
     body = stmt[stmt.index('\n    SvErrRet B out v n0 ∨') + 1:].rstrip()
     lines = body.split('\n')
     sc_lines = lines[1:]
@@ -103,7 +103,7 @@ def main():
     O("import C3BootProofs.Proofs.SvEntry")
     O("")
     O("/-!\n# `sigstore::verify` from its entry to its return\n\nWritten by `scripts/gen-sv-entry.py` from "
-      "`sv_pro` and `sv_verify_72`.\n-/")
+      "`sv_pro` and `sv_verify_5c`.\n-/")
     O("")
     O("namespace C3.RV32.Sv")
     O("")
@@ -118,20 +118,21 @@ def main():
       "digest at `a3`, and the result at `a0`, it returns `Err`, panics, or meets the success condition and "
       "returns `Ok`. -/")
     O(f"theorem sv_verify {new_binders}")
-    O("    (C : CodeIn Me SV sigstoreVerifyCode) (E : SvCode Me) (F : Fr B 0x3830) (s : St Me SV n 0 (reg n))")
-    O("    (rsp : reg n sp = B + 0x3830) (hb : (reg n a1).toNat % 4 = 0)")
-    O("    (sb : Sep (reg n a1) 8 (B + BitVec.ofNat 32 0x37FC) 0x34)")
+    O("    (C : CodeIn Me SV sigstoreVerifyCode) (E : SvCode Me) (FW : Fr (B + 0xFFFFEC10) 0x3A50)")
+    O("    (s : St Me SV n 0 (reg n)) (rsp : reg n sp = B + 0x2660) (hb : (reg n a1).toNat % 4 = 0)")
+    O("    (sb : Sep (reg n a1) 8 (B + BitVec.ofNat 32 0x262C) 0x34)")
     O("\n".join(f"    ({p} : {t})" for p, t in kept) + " :")
     O("    SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ Panics n ∨")
     O("    (" + " ∧\n      ".join(S(x) for x in parts) + " ∧")
     O(f"      {S(ok).replace('SvOkRet B out v n0', 'SvOkRet B (reg n a0) (fun k => reg n (savedReg k)) n')}) := by")
-    O("  obtain ⟨n1, c1, s1, sp1, r18, r19, r25, r22, r21, r26, r27, ra0, ra1, rk⟩ := sv_pro C F s rsp hb sb")
+    O("  have F := sv_frW FW")
+    O("  obtain ⟨n1, c1, s1, sp1, r18, r19, r21, r20, r26, r22, ra0, ra1, rk⟩ := sv_pro C F s rsp hb sb")
     O("  have fM1 : ∀ x, SvR B x → n1.mem x = Me x := fun x hx => by rw [s1.mem]; exact svProMem_out hx")
     O("  have hm : ∀ x, SvR B x → n1.mem x = n.mem x := fun x hx => by rw [fM1 x hx, s.mem]")
     args = " ".join(START.get(p) or frame.get(p) or p for p, _ in hyps)
     named = " ".join(f"({b} := {env[b]})" if b in env else f"({b} := {b})" for b, _ in binders
                      if b not in ('n0',))
-    O(f"  rcases sv_verify_72 {named} (n0 := n1) {args} with e | e | hx")
+    O(f"  rcases sv_verify_5c {named} (n0 := n1) {args} with e | e | hx")
     O("  · exact .inl (SvErrRet.pre c1 (rk _ (by decide)) (rk _ (by decide)) hm e)")
     O("  · exact .inr (.inl (Panics.of_steps c1 e))")
     for x in names:

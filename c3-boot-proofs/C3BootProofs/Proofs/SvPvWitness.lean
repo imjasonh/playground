@@ -106,27 +106,27 @@ theorem ecdsaSigOf_bytes {N : Nat} {M : Word → BitVec 8} {p : Word} {n : Nat} 
           · cases h
     · cases h
 
-/-- An address `n` bytes from `a` lies past the 0x1690 bytes from `B + 0x21A0`
+/-- An address `n` bytes from `a` lies past the 0x4C0 bytes from `B + 0x21A0`
 when the `n` bytes at `a` lie outside the stack. -/
-theorem off_of_sep {B a : Word} {n : Nat} (hs : Sep a n (B + 0xFFFFFE60) 0x39D0) :
-    ∀ i, i < n → 0x1690 ≤ (a + BitVec.ofNat 32 i - (B + 0x21A0)).toNat := by
+theorem off_of_sep {B a : Word} {n : Nat} (hs : Sep a n (B + 0xFFFFEA70) 0x3BF0) :
+    ∀ i, i < n → 0x4C0 ≤ (a + BitVec.ofNat 32 i - (B + 0x21A0)).toNat := by
   intro i hi
-  refine Nat.le_of_not_lt fun hlt => hs i hi (0x2340 + (a + BitVec.ofNat 32 i - (B + 0x21A0)).toNat) (by omega) ?_
+  refine Nat.le_of_not_lt fun hlt => hs i hi (0x3730 + (a + BitVec.ofNat 32 i - (B + 0x21A0)).toNat) (by omega) ?_
   generalize a + BitVec.ofNat 32 i = x at hlt ⊢
   bv_omega
 
 theorem isrn_off {B : Word} (RS : SvRoSep B) :
-    ∀ i, i < 48 → 0x1690 ≤ (ISRN + BitVec.ofNat 32 i - (B + 0x21A0)).toNat :=
+    ∀ i, i < 48 → 0x4C0 ≤ (ISRN + BitVec.ofNat 32 i - (B + 0x21A0)).toNat :=
   off_of_sep fun i hi j hj e => RS.symm ((img% p384OrderBeAddress - roWindowAddress) + i) (by omega) j hj (by rw [← e]; unfold ISRN; bv_omega)
 
 /-- The caller's memory with the prehash `h`, `r`, and `s` in three stack
 slots that don't overlap, at `e1`, `e2`, and `e3` from `B + 0x21A0`, is a
 memory that `SvPvAt` describes. -/
 theorem svPvAt_frame {M : Word → BitVec 8} {B pk : Word} {len e1 e2 e3 : Nat} {h sr ss : Bytes}
-    (hk : ∀ i, i < 0x61 → 0x1690 ≤ (pk + BitVec.ofNat 32 i - (B + 0x21A0)).toNat)
-    (hn : ∀ i, i < 48 → 0x1690 ≤ (ISRN + BitVec.ofNat 32 i - (B + 0x21A0)).toNat)
+    (hk : ∀ i, i < 0x61 → 0x4C0 ≤ (pk + BitVec.ofNat 32 i - (B + 0x21A0)).toNat)
+    (hn : ∀ i, i < 48 → 0x4C0 ≤ (ISRN + BitVec.ofNat 32 i - (B + 0x21A0)).toNat)
     (hl : h.length = min len 48) (hb : ∀ b ∈ h, b < 256)
-    (b1 : e1 + 48 ≤ 0x1690) (b2 : e2 + 48 ≤ 0x1690) (b3 : e3 + 48 ≤ 0x1690)
+    (b1 : e1 + 48 ≤ 0x4C0) (b2 : e2 + 48 ≤ 0x4C0) (b3 : e3 + 48 ≤ 0x4C0)
     (d12 : e1 + 48 ≤ e2 ∨ e2 + 48 ≤ e1) (d13 : e1 + 48 ≤ e3 ∨ e3 + 48 ≤ e1) (d23 : e2 + 48 ≤ e3 ∨ e3 + 48 ≤ e2) :
     ∃ M', SvPvAt M M' pk (B + 0x21A0 + BitVec.ofNat 32 e1) len h (B + 0x21A0 + BitVec.ofNat 32 e2)
       (B + 0x21A0 + BitVec.ofNat 32 e3) sr ss := by
@@ -147,7 +147,7 @@ theorem svPvAt_frame {M : Word → BitVec 8} {B pk : Word} {len e1 e2 e3 : Nat} 
     else if e3 ≤ (x - (B + 0x21A0)).toNat ∧ (x - (B + 0x21A0)).toNat < e3 + 48 then
       BitVec.ofNat 8 (ss.getD ((x - (B + 0x21A0)).toNat - e3) 0)
     else M x
-  have hout : ∀ x : Word, 0x1690 ≤ (x - (B + 0x21A0)).toNat → M' x = M x := fun x hx => by
+  have hout : ∀ x : Word, 0x4C0 ≤ (x - (B + 0x21A0)).toNat → M' x = M x := fun x hx => by
     have c1 : ¬ (e1 ≤ (x - (B + 0x21A0)).toNat ∧ (x - (B + 0x21A0)).toNat < e1 + 48) := fun ⟨_, h2⟩ => by omega
     have c2 : ¬ (e2 ≤ (x - (B + 0x21A0)).toNat ∧ (x - (B + 0x21A0)).toNat < e2 + 48) := fun ⟨_, h2⟩ => by omega
     have c3 : ¬ (e3 ≤ (x - (B + 0x21A0)).toNat ∧ (x - (B + 0x21A0)).toNat < e3 + 48) := fun ⟨_, h2⟩ => by omega

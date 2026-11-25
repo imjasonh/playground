@@ -3,10 +3,10 @@ import C3BootProofs.Proofs.SvTop
 /-!
 # `sigstore::verify` from its entry: the memory after the prologue
 
-`sv_pro` runs from the entry to 0x72 and leaves the frame as `svProMem`.
-These lemmas give what `sv_verify_72` needs of that memory: outside the
+`sv_pro` runs from the entry to 0x5C and leaves the frame as `svProMem`.
+These lemmas give what `sv_verify_5c` needs of that memory: outside the
 stack it is the entry's, it holds the saved registers, and it holds the
-`Der` reader over the leaf certificate at offset 0x2E0.
+`Der` reader over the leaf certificate at offset 0x360.
 -/
 
 namespace C3.RV32.Sv
@@ -15,22 +15,22 @@ open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv
 
 theorem svProMem_out {M : Word → BitVec 8} {B lp ll : Word} {n : Machine} {x : Word} (hx : SvR B x) :
     svProMem M B n lp ll x = M x := by
-  have hs : ∀ c, 0x1A0 + c + 4 ≤ 0x39D0 → Sep (B + BitVec.ofNat 32 c) 4 x 1 := fun c h => by
-    have := hx.sub (c := 0x1A0 + c) (l := 4) h
-    rwa [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + c) = B + BitVec.ofNat 32 c by
+  have hs : ∀ c, 0x1590 + c + 4 ≤ 0x3BF0 → Sep (B + BitVec.ofNat 32 c) 4 x 1 := fun c h => by
+    have := hx.sub (c := 0x1590 + c) (l := 4) h
+    rwa [show B + 0xFFFFEA70 + BitVec.ofNat 32 (0x1590 + c) = B + BitVec.ofNat 32 c by
       rw [BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq; simp; omega] at this
-  have ho : Sep (B + BitVec.ofNat 32 0x37FC) 0x34 x 1 := by
-    have := hx.sub (c := 0x1A0 + 0x37FC) (l := 0x34) (by decide)
-    rwa [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0x37FC) = B + BitVec.ofNat 32 0x37FC by
+  have ho : Sep (B + BitVec.ofNat 32 0x262C) 0x34 x 1 := by
+    have := hx.sub (c := 0x1590 + 0x262C) (l := 0x34) (by decide)
+    rwa [show B + 0xFFFFEA70 + BitVec.ofNat 32 (0x1590 + 0x262C) = B + BitVec.ofNat 32 0x262C by
       rw [BitVec.add_assoc]; rfl] at this
   unfold svProMem
-  rw [memStore32_get_sep (hs 0x248C (by decide)), memStore32_get_sep (hs 0x2488 (by decide)),
-    memStore32_get_sep (hs 0x2484 (by decide)), memStore32_get_sep (hs 0x2480 (by decide)), svSaves_out ho]
+  rw [memStore32_get_sep (hs 0x250C (by decide)), memStore32_get_sep (hs 0x2508 (by decide)),
+    memStore32_get_sep (hs 0x2504 (by decide)), memStore32_get_sep (hs 0x2500 (by decide)), svSaves_out ho]
 
 theorem svProMem_saves {M : Word → BitVec 8} {B lp ll : Word} {n : Machine} :
     SvSaves B (svProMem M B n lp ll) (fun k => reg n (savedReg k)) := fun k hk => by
-  have hd : (0x382C - 4 * k) % 4 = 0 := by omega
-  have hd' : 0x382C - 4 * k + 4 ≤ 0x10000 := by omega
+  have hd : (0x265C - 4 * k) % 4 = 0 := by omega
+  have hd' : 0x265C - 4 * k + 4 ≤ 0x10000 := by omega
   unfold svProMem
   rw [ld_st_sv (by decide) hd (by decide) hd', ite_eq_right (by omega), ld_st_sv (by decide) hd (by decide) hd',
     ite_eq_right (by omega), ld_st_sv (by decide) hd (by decide) hd', ite_eq_right (by omega),
@@ -38,10 +38,10 @@ theorem svProMem_saves {M : Word → BitVec 8} {B lp ll : Word} {n : Machine} :
   exact svSaves_read k hk
 
 theorem svProMem_reader {M : Word → BitVec 8} {B lp ll : Word} {n : Machine} :
-    memLoad32 (svProMem M B n lp ll) (B + 0x21A0 + BitVec.ofNat 32 0x2E0) = lp ∧
-    memLoad32 (svProMem M B n lp ll) (B + 0x21A0 + BitVec.ofNat 32 0x2E4) = ll ∧
-    memLoad32 (svProMem M B n lp ll) (B + 0x21A0 + BitVec.ofNat 32 0x2E8) = lp ∧
-    memLoad32 (svProMem M B n lp ll) (B + 0x21A0 + BitVec.ofNat 32 0x2EC) = ll := by
+    memLoad32 (svProMem M B n lp ll) (B + 0x21A0 + BitVec.ofNat 32 0x360) = lp ∧
+    memLoad32 (svProMem M B n lp ll) (B + 0x21A0 + BitVec.ofNat 32 0x364) = ll ∧
+    memLoad32 (svProMem M B n lp ll) (B + 0x21A0 + BitVec.ofNat 32 0x368) = lp ∧
+    memLoad32 (svProMem M B n lp ll) (B + 0x21A0 + BitVec.ofNat 32 0x36C) = ll := by
   have e : ∀ c, B + 0x21A0 + BitVec.ofNat 32 c = B + BitVec.ofNat 32 (0x21A0 + c) := fun c => add_ofNat_assoc B 0x21A0 c
   unfold svProMem
   refine ⟨?_, ?_, ?_, ?_⟩ <;> rw [e] <;>

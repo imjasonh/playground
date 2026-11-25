@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.SvCkpt
-import C3BootProofs.Proofs.CheckSigs
+import C3BootProofs.Proofs.EdVerifyRo
+import C3BootProofs.Proofs.Ed25519VerifyCall
 
 /-!
 # `sigstore::verify`: the checkpoint's Ed25519 signature
@@ -15,10 +16,6 @@ namespace C3.RV32.Sv
 open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv
 
 set_option maxRecDepth 20000
-
-/-- The read-only region `ed25519_verify`'s constants live in lies outside
-the frame's region. -/
-def SvRoSep (B : Word) : Prop := Sep (B + 0xFFFFFE60) 0x39D0 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize)
 
 /-- `M0` with the 64 bytes `L` at `sig`. -/
 def sigMem (M0 : Word → BitVec 8) (sig : Word) (L : Bytes) : Word → BitVec 8 :=
@@ -43,14 +40,14 @@ set_option maxHeartbeats 1000000 in
 /-- **A call to `ed25519_verify`** on the key at `pk`, the `len` bytes at
 `msg`, and the signature `L` at offset `oc` of the frame. -/
 theorem sv_edF {n : Machine} {B : Word} {off : Nat} {imm o pk msg : Word} {oc len : Nat} {L : Bytes}
-    {M0 : Word → BitVec 8} (F : Fr B 0x3830) (C : SvCode n.mem) (EE : EvEnv M0) (RS : SvRoSep B)
+    {M0 : Word → BitVec 8} (FW : Fr (B + 0xFFFFEC10) 0x3A50) (C : SvCode n.mem) (EE : EvEnv M0) (RS : SvRoSep B)
     (hiv : (s5Hv M0 (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)
     (fR : ∀ x, SvR B x → n.mem x = M0 x) (s : St n.mem SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = EV) (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = pk) (ha1 : reg n a1 = msg) (ha2 : reg n a2 = BitVec.ofNat 32 len)
-    (ha3 : reg n a3 = B + 0x21A0 + BitVec.ofNat 32 oc) (ho : oc + 64 ≤ 0x1690)
+    (ha3 : reg n a3 = B + 0x21A0 + BitVec.ofNat 32 oc) (ho : oc + 64 ≤ 0x4C0)
     (hsig : ∀ j, j < 64 → n.mem (B + 0x21A0 + BitVec.ofNat 32 (oc + j)) = BitVec.ofNat 8 (L.getD j 0))
     (pk_in : SvIn B pk 32) (msg_in : SvIn B msg len) (hlen : len < 2 ^ 31) :
     ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
@@ -58,6 +55,7 @@ theorem sv_edF {n : Machine} {B : Word} {off : Nat} {imm o pk msg : Word} {oc le
       reg n' a0 = (if evSpec (sigMem M0 (B + 0x21A0 + BitVec.ofNat 32 oc) L) pk (B + 0x21A0 + BitVec.ofNat 32 oc)
         msg len then 1 else 0) ∧
       SvKeepL B n.mem n'.mem [] ∧ (∀ x, SvR B x → n'.mem x = n.mem x) := by
+  have F := sv_frW FW
   have hFl := F.lo; have hFh := F.hi; have hFa := F.al
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
   have r1 := PEnv.reg1 regs1 s.zero
@@ -67,18 +65,20 @@ theorem sv_edF {n : Machine} {B : Word} {off : Nat} {imm o pk msg : Word} {oc le
   have eG : evG (B + BitVec.ofNat 32 0xB00) = B + BitVec.ofNat 32 0xF0 := by
     show B + BitVec.ofNat 32 0xB00 + 0xFFFFF5F0 = _; rw [BitVec.add_assoc]; rfl
   have hG : ∀ x, SvR B x → Sep (B + BitVec.ofNat 32 0xF0) 0x20B0 x 1 := fun x hx => by
-    have := hx.sub (c := 0x1A0 + 0xF0) (l := 0x20B0) (by decide)
-    rwa [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0xF0) = B + BitVec.ofNat 32 0xF0 by
-      rw [BitVec.add_assoc]; rfl] at this
+    have := hx.sub (c := 0x1590 + 0xF0) (l := 0x20B0) (by decide)
+    rwa [svW_at B 0xF0 (by decide)] at this
   have hsS : Sep (B + 0x21A0 + BitVec.ofNat 32 oc) 64 (B + BitVec.ofNat 32 0xF0) 0x20B0 := by
     rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)
   have hro : ∀ i, i < (img% roWindowSize) → SvR B (BitVec.ofNat 32 ((img% roWindowAddress) + i)) := fun i hi => by
     have := RS.symm.sub (c := i) (l := 1) (by omega)
     rw [ofNat_add_ofNat] at this; exact this.symm
   have hroS : Sep (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize) (B + BitVec.ofNat 32 0xF0) 0x20B0 := by
-    have := RS.symm.subR (c := 0x1A0 + 0xF0) (l := 0x20B0) (by decide)
-    rwa [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0xF0) = B + BitVec.ofNat 32 0xF0 by
-      rw [BitVec.add_assoc]; rfl] at this
+    have := RS.symm.subR (c := 0x1590 + 0xF0) (l := 0x20B0) (by decide)
+    rwa [svW_at B 0xF0 (by decide)] at this
+  have pkR : ∀ i, i < 32 → SvR B (pk + BitVec.ofNat 32 i) := fun i hi =>
+    (pk_in.sep.sub (c := i) (l := 1) (by omega)).symm
+  have msgR : ∀ i, i < len → SvR B (msg + BitVec.ofNat 32 i) := fun i hi =>
+    (msg_in.sep.sub (c := i) (l := 1) (by omega)).symm
   -- `n1.mem` agrees with `sigMem` on what `ed25519_verify` reads.
   have aR : ∀ x, SvR B x → Sep (B + 0x21A0 + BitVec.ofNat 32 oc) 64 x 1 →
       n1.mem x = sigMem M0 (B + 0x21A0 + BitVec.ofNat 32 oc) L x := fun x hx hs => by
@@ -87,14 +87,12 @@ theorem sv_edF {n : Machine} {B : Word} {off : Nat} {imm o pk msg : Word} {oc le
     aR _ (hro i hi) (svR_hi (hro i hi) ho)
   have hE : evSpec n1.mem pk (B + 0x21A0 + BitVec.ofNat 32 oc) msg len =
       evSpec (sigMem M0 (B + 0x21A0 + BitVec.ofNat 32 oc) L) pk (B + 0x21A0 + BitVec.ofNat 32 oc) msg len :=
-    evSpec_congr rA (fun i hi => aR _ (pk_in.r hi) (svR_hi (pk_in.r hi) ho))
+    evSpec_congr rA (fun i hi => aR _ (pkR i hi) (svR_hi (pkR i hi) ho))
       (fun i hi => by rw [mem1, sigMem_in hi, add_ofNat_assoc]; exact hsig i hi)
-      (fun i hi => aR _ (msg_in.r hi) (svR_hi (msg_in.r hi) ho))
+      (fun i hi => aR _ (msgR i hi) (svR_hi (msgR i hi) ho))
   have EE1 : EvEnv n1.mem := by
     rw [mem1]
-    refine EE.congr (fun x hx => fR x (sep_of_le (by
-      have hb : (B + 0xFFFFFE60).toNat = B.toNat - 0x1A0 := F.below 0x1A0 (by decide) (by decide)
-      rw [hb]; omega) (by have := x.isLt; omega))) (fun i hi => fR _ (hro i hi))
+    refine EE.congr (fun x hx => fR x (svR_hiMem F hx)) (fun i hi => fR _ (hro i hi))
   have ctx : EvCtx n1.mem (B + BitVec.ofNat 32 0xB00) pk (B + 0x21A0 + BitVec.ofNat 32 oc) msg len := by
     refine ⟨EE1, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hlen, ?_⟩
     · rw [F.at 0xB00 (by decide)]; omega
@@ -136,43 +134,5 @@ theorem sv_edF {n : Machine} {B : Word} {off : Nat} {imm o pk msg : Word} {oc le
   · rw [rs2 _ (BitVec.ofNat 32 0x44) (by decide), r1 _ (by decide)]
   · rw [rs2 _ (BitVec.ofNat 32 0x40) (by decide), r1 _ (by decide)]
   · rw [rs2 _ (BitVec.ofNat 32 0x3C) (by decide), r1 _ (by decide)]
-
-set_option maxHeartbeats 8000000 in
-/-- **A call to `<[u8]>::equal_same_length`** on `nl` bytes at `p` and at `q`. -/
-theorem sv_eslF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o p q : Word} {nl : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
-    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
-    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 equalSameLengthAddress)
-    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
-    (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = p) (ha1 : reg n a1 = q) (ha2 : reg n a2 = BitVec.ofNat 32 nl)
-    (hp : SvRo B p nl) (hq : SvRo B q nl) :
-    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
-      (∀ r : Fin 32, r.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' r = reg n r) ∧
-      reg n' a0 = (if memBytes M p nl = memBytes M q nl then 1 else 0) ∧
-      SvKeepL B M n'.mem [] ∧ (∀ x, SvR B x → n'.mem x = M x) := by
-  have hFl := F.lo; have hFh := F.hi; have hFa := F.al
-  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
-  have r1 := PEnv.reg1 regs1 s.zero
-  have hS : (B + (0x21A0 : Word)).toNat = B.toNat + 0x21A0 := F.at 0x21A0 (by decide)
-  have sp1 : reg n1 sp = B + 0x21A0 := by rw [r1 sp (by decide), rsp]
-  have eM : BitVec.ofNat 32 equalSameLengthAddress + 0xC912 = BitVec.ofNat 32 memcmpAddress := by decide
-  obtain ⟨n2, c2, pc2, a02, k2, f2⟩ := equalSameLength_correct n1 (base := BitVec.ofNat 32 equalSameLengthAddress)
-    (by decide) (by rw [mem1]; exact C.equalSameLength) (by rw [mem1, eM]; exact C.memcmp) pc1
-    (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2])
-    (by have := hp.fit; omega) (by rw [regs1]; simp +decide [upd]) (even_clear _ hev) (by rw [sp1, hS]; omega)
-    (by rw [sp1, sv_sp4]; exact F.sepHi (by decide) (by decide) (by decide))
-    (by rw [sp1, sv_sp4, eM]; exact F.sepHi (by decide) (by decide) (by decide))
-    (by rw [sp1, sv_sp4]; exact hp.sep F (c := 0x219C) (n := 4) (by decide))
-    (by rw [sp1, sv_sp4]; exact hq.sep F (c := 0x219C) (n := 4) (by decide))
-  rw [sp1, sv_sp4] at f2
-  rw [mem1] at a02
-  refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, by rw [k2 sp (by decide) (by decide) (by decide)
-    (by decide) (by decide), sp1], fun r hr => ?_, a02, fun e he _ => ?_, fun x hx => ?_⟩
-  · have hr' : r ≠ a0 ∧ r ≠ a1 ∧ r ≠ a2 ∧ r ≠ a3 ∧ r ≠ a4 ∧ r ≠ ra := by revert hr; revert r; decide
-    obtain ⟨q10, q11, q12, q13, q14, q1⟩ := hr'
-    rw [k2 r q10 q11 q12 q13 q14, r1 r q1]
-  · rw [f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)), mem1]
-  · rw [f2 x (svR_sp4 hx), mem1]
 
 end C3.RV32.Sv

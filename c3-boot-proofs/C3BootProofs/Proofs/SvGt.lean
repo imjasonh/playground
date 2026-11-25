@@ -49,13 +49,13 @@ set_option maxHeartbeats 8000000 in
 /-- **A call to `time::generalized_time`** on the `nl` bytes at `p`, with the
 `Result<u64, Error>` at offset `oc`. -/
 theorem sv_gtF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o p : Word} {oc nl : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 generalizedTimeAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc) (ha1 : reg n a1 = p)
-    (ha2 : reg n a2 = BitVec.ofNat 32 nl) (ho2 : oc + 16 ≤ 0x1690) (ho3 : oc % 4 = 0) (hin : SvIn B p nl) :
+    (ha2 : reg n a2 = BitVec.ofNat 32 nl) (ho2 : oc + 16 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hin : SvIn B p nl) :
     ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
       (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
       SvKeepL B M n'.mem [(oc, 16)] ∧
@@ -73,13 +73,14 @@ theorem sv_gtF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm
   have hpl := hin.lo
   obtain ⟨n2, c2, pc2, sp2, k2, Ok, Er, f2⟩ := generalizedTime_correct n1 (n := nl)
     (by rw [mem1]; exact C.generalizedTime) (by rw [mem1]; exact C.dateTime) (by rw [mem1]; exact C.timeDigits2)
+    (by rw [mem1]; exact C.timeDigits4) (by rw [mem1]; exact C.allAsciiDigit)
     pc1 (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2])
     (by rw [regs1]; simp +decide [upd]) (even_clear _ hev) (by rw [r1 sp (by decide), rsp])
     (by rw [hS]; omega) (by rw [hS]; omega) (by rw [hS]; omega)
     (by rw [sv_at F _ (by omega)]; omega) (sv_al F (by omega) ho3) (by omega) (by omega) hin.pos
     (by rw [sv_sp60, ← sv_base']; exact sepS B (by omega) (by omega) (by omega))
-    (by rw [sv_sp60]; exact (hin.sep14.symm.sub (c := 0x1A0 + 0x2140) (l := 0x60) (by decide) |> fun h => by
-      rw [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0x2140) = B + BitVec.ofNat 32 0x2140 by
+    (by rw [sv_sp60]; exact (hin.sep14.symm.sub (c := 0x1590 + 0x2140) (l := 0x60) (by decide) |> fun h => by
+      rw [show B + 0xFFFFEA70 + BitVec.ofNat 32 (0x1590 + 0x2140) = B + BitVec.ofNat 32 0x2140 by
         rw [BitVec.add_assoc]; rfl] at h; exact h.symm))
   rw [mem1, sv_sp60] at f2
   rw [mem1] at Ok Er

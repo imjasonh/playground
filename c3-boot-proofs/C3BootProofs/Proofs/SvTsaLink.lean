@@ -16,7 +16,7 @@ open C3.Image
 (message digest pointer, `contentType` flag, pointer, bytes left): the body
 of `sv_attrStep`. -/
 def attrBody (B p0 L0 : Word) (M0 : Word → BitVec 8) : Word × Word × Word × Word → Word × Word × Word × Word → Prop :=
-  fun s s' => s.2.2.2 ≠ 0 ∧ (((s.2.2.2)).toNat ≤ (L0).toNat) ∧ ∃ tl6_2, derElement 0x30 (memBytes M0 ((s.2.2.1)) ((s.2.2.2)).toNat) = .ok tl6_2 ∧ ∃ op15_2 ol15_2, derContent (((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) (derOid (memBytes M0 (((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) (BitVec.ofNat 32 tl6_2.len).toNat)) = .ok (op15_2, ol15_2) ∧ ∃ to15_2, derOid (memBytes M0 (((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) (BitVec.ofNat 32 tl6_2.len).toNat) = .ok to15_2 ∧ ∃ tl20_2, derElement 0x31 (memBytes M0 ((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) ((BitVec.ofNat 32 tl6_2.len) - BitVec.ofNat 32 (to15_2.header + to15_2.len)).toNat) = .ok tl20_2 ∧ (((BitVec.ofNat 32 tl6_2.len) - BitVec.ofNat 32 (to15_2.header + to15_2.len)) - BitVec.ofNat 32 (tl20_2.header + tl20_2.len) = 0) ∧ listsOidOf M0 p0 ((L0) - ((s.2.2.2))).toNat (memBytes M0 op15_2 ol15_2.toNat) = .ok false ∧ ∃ tsav_r24_3 : Word, ∃ tsav_w78_3 : Word, ∃ tsav_w1388_3 : Word, ∃ tsav_w138c_3 : Word, (((memBytes M0 op15_2 ol15_2.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x56)) 9) ∧ ∃ op5 ol5, derContent ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) (derOid (memBytes M0 ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) ((BitVec.ofNat 32 tl20_2.len)).toNat)) = .ok (op5, ol5) ∧ ∃ to5, derOid (memBytes M0 ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) ((BitVec.ofNat 32 tl20_2.len)).toNat) = .ok to5 ∧ (memBytes M0 op5 ol5.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x4A)) 11) ∧ (((BitVec.ofNat 32 tl20_2.len)) - BitVec.ofNat 32 (to5.header + to5.len) = 0) ∧ tsav_r24_3 = (s.1) ∧ tsav_w78_3 = BitVec.ofNat 32 0x1 ∧ tsav_w1388_3 = ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) + BitVec.ofNat 32 (to5.header + to5.len) ∧ tsav_w138c_3 = ((BitVec.ofNat 32 tl20_2.len)) - BitVec.ofNat 32 (to5.header + to5.len)) ∨ ((¬ (memBytes M0 op15_2 ol15_2.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x56)) 9)) ∧ (memBytes M0 op15_2 ol15_2.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x5F)) 9) ∧ ∃ vp8 vl8, derContent ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) (derElement 4 (memBytes M0 ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) ((BitVec.ofNat 32 tl20_2.len)).toNat)) = .ok (vp8, vl8) ∧ ∃ te8, derElement 4 (memBytes M0 ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) ((BitVec.ofNat 32 tl20_2.len)).toNat) = .ok te8 ∧ (vl8 = 32) ∧ (((BitVec.ofNat 32 tl20_2.len)) - BitVec.ofNat 32 (te8.header + te8.len) = 0) ∧ tsav_r24_3 = vp8 ∧ tsav_w78_3 = (s.2.1) ∧ tsav_w1388_3 = ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) + BitVec.ofNat 32 (te8.header + te8.len) ∧ tsav_w138c_3 = ((BitVec.ofNat 32 tl20_2.len)) - BitVec.ofNat 32 (te8.header + te8.len)) ∨ ((¬ (memBytes M0 op15_2 ol15_2.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x56)) 9)) ∧ (¬ (memBytes M0 op15_2 ol15_2.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x5F)) 9)) ∧ tsav_r24_3 = (s.1) ∧ tsav_w78_3 = (s.2.1) ∧ tsav_w1388_3 = (((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header) ∧ tsav_w138c_3 = (BitVec.ofNat 32 tl20_2.len))) ∧ SvIn B tsav_w1388_3 tsav_w138c_3.toNat ∧ (tsav_r24_3 = 0 ∨ SvIn B tsav_r24_3 32) ∧ s' = (tsav_r24_3, tsav_w78_3, ((s.2.2.1)) + BitVec.ofNat 32 (tl6_2.header + tl6_2.len), ((s.2.2.2)) - BitVec.ofNat 32 (tl6_2.header + tl6_2.len))
+  fun s s' => s.2.2.2 ≠ 0 ∧ (((s.2.2.2)).toNat ≤ (L0).toNat) ∧ ∃ tl6_2, derElement 0x30 (memBytes M0 ((s.2.2.1)) ((s.2.2.2)).toNat) = .ok tl6_2 ∧ ∃ op15_2 ol15_2, derContent (((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) (derOid (memBytes M0 (((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) (BitVec.ofNat 32 tl6_2.len).toNat)) = .ok (op15_2, ol15_2) ∧ ∃ to15_2, derOid (memBytes M0 (((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) (BitVec.ofNat 32 tl6_2.len).toNat) = .ok to15_2 ∧ ∃ tl20_2, derElement 0x31 (memBytes M0 ((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) ((BitVec.ofNat 32 tl6_2.len) - BitVec.ofNat 32 (to15_2.header + to15_2.len)).toNat) = .ok tl20_2 ∧ (((BitVec.ofNat 32 tl6_2.len) - BitVec.ofNat 32 (to15_2.header + to15_2.len)) - BitVec.ofNat 32 (tl20_2.header + tl20_2.len) = 0) ∧ listsOidOf M0 p0 ((L0) - ((s.2.2.2))).toNat (memBytes M0 op15_2 ol15_2.toNat) = .ok false ∧ ∃ trv_w64 : Word, ∃ trv_w7c : Word, (((memBytes M0 op15_2 ol15_2.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstCmsAddress + 0x15)) 9) ∧ ∃ op5 ol5, derContent ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) (derOid (memBytes M0 ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) ((BitVec.ofNat 32 tl20_2.len)).toNat)) = .ok (op5, ol5) ∧ ∃ to5, derOid (memBytes M0 ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) ((BitVec.ofNat 32 tl20_2.len)).toNat) = .ok to5 ∧ (memBytes M0 op5 ol5.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstCmsAddress + 0x9)) 11) ∧ (((BitVec.ofNat 32 tl20_2.len)) - BitVec.ofNat 32 (to5.header + to5.len) = 0) ∧ trv_w64 = (s.1) ∧ trv_w7c = BitVec.ofNat 32 0x1) ∨ ((¬ (memBytes M0 op15_2 ol15_2.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstCmsAddress + 0x15)) 9)) ∧ (memBytes M0 op15_2 ol15_2.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstCmsAddress + 0x1E)) 9) ∧ ∃ vp8 vl8, derContent ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) (derElement 4 (memBytes M0 ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) ((BitVec.ofNat 32 tl20_2.len)).toNat)) = .ok (vp8, vl8) ∧ ∃ te8, derElement 4 (memBytes M0 ((((((s.2.2.1)) + BitVec.ofNat 32 tl6_2.header) + BitVec.ofNat 32 (to15_2.header + to15_2.len)) + BitVec.ofNat 32 tl20_2.header)) ((BitVec.ofNat 32 tl20_2.len)).toNat) = .ok te8 ∧ (vl8 = 32) ∧ (((BitVec.ofNat 32 tl20_2.len)) - BitVec.ofNat 32 (te8.header + te8.len) = 0) ∧ trv_w64 = vp8 ∧ trv_w7c = (s.2.1)) ∨ ((¬ (memBytes M0 op15_2 ol15_2.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstCmsAddress + 0x15)) 9)) ∧ (¬ (memBytes M0 op15_2 ol15_2.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstCmsAddress + 0x1E)) 9)) ∧ trv_w64 = (s.1) ∧ trv_w7c = (s.2.1))) ∧ (trv_w64 = 0 ∨ SvIn B trv_w64 32) ∧ s' = (trv_w64, trv_w7c, ((s.2.2.1)) + BitVec.ofNat 32 (tl6_2.header + tl6_2.len), ((s.2.2.2)) - BitVec.ofNat 32 (tl6_2.header + tl6_2.len))
 
 theorem attrGo_nil {a : Bytes} {fuel : Nat} {ct : Bool} {md : Option Bytes} :
     readSignedAttributes.go a fuel [] ct md = some (ct, md) := by
@@ -71,9 +71,9 @@ reads every byte, as `readSignedAttributes.go`: a set flag means a
 `contentType` attribute was read, and a message digest pointer that isn't
 null points at the digest it read. -/
 theorem attrGo_chain {M : Word → BitVec 8} {B p0 L0 : Word}
-    (hct : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x56)) 9 = oidContentType)
-    (htst : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x4A)) 11 = oidTstInfo)
-    (hmd : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x5F)) 9 = oidMessageDigest) :
+    (hct : memBytes M (BitVec.ofNat 32 (img% svConstCmsAddress + 0x15)) 9 = oidContentType)
+    (htst : memBytes M (BitVec.ofNat 32 (img% svConstCmsAddress + 0x9)) 11 = oidTstInfo)
+    (hmd : memBytes M (BitVec.ofNat 32 (img% svConstCmsAddress + 0x1E)) 9 = oidMessageDigest) :
     ∀ k {r24 w78 p rem r24' w78' p' : Word} {fuel : Nat} {ct : Bool} {md : Option Bytes},
       svChain (attrBody B p0 L0 M) k (r24, w78, p, rem) (r24', w78', p', 0) →
       rem.toNat ≤ fuel → rem.toNat ≤ L0.toNat → p = p0 + (L0 - rem) →
@@ -89,7 +89,7 @@ theorem attrGo_chain {M : Word → BitVec 8} {B p0 L0 : Word}
   | succ k ih =>
     intro r24 w78 p rem r24' w78' p' fuel ct md h hf hle hp hw hr
     obtain ⟨m, hm, hc⟩ := h
-    obtain ⟨hne, -, tl6, h6, op15, ol15, hc15, to15, ho15, tl20, h20, hz20, hlo, r24n, w78n, w1388, w138c, hbr, -, -, hs⟩ := hm
+    obtain ⟨hne, -, tl6, h6, op15, ol15, hc15, to15, ho15, tl20, h20, hz20, hlo, r24n, w78n, hbr, -, hs⟩ := hm
     subst hs
     simp only at hne h6 hc15 ho15 h20 hz20 hlo hbr hc
     have hB6 := derTlv_mem_bound (derElement_tlv h6)
@@ -119,8 +119,8 @@ theorem attrGo_chain {M : Word → BitVec 8} {B p0 L0 : Word}
     simp only [Option.bind_some, Bool.not_false, require_true]
     rw [← hp] at hearl
     rw [hearl]
-    rcases hbr with ⟨hctc, op5, ol5, hc5, to5, ho5, h5eq, hz5, er24, ew78, -, -⟩ |
-      ⟨hnct, hmdc, vp8, vl8, hc8, te8, h8, hvl, hz8, er24, ew78, -, -⟩ | ⟨hnct, hnmd, er24, ew78, -, -⟩
+    rcases hbr with ⟨hctc, op5, ol5, hc5, to5, ho5, h5eq, hz5, er24, ew78⟩ |
+      ⟨hnct, hmdc, vp8, vl8, hc8, te8, h8, hvl, hz8, er24, ew78⟩ | ⟨hnct, hnmd, er24, ew78⟩
     · rw [ite_eq_left (beq_iff_eq.mpr (hctc.trans hct))]
       rw [ho5] at hc5
       obtain ⟨e5a, e5b⟩ := derContent_ok rfl hc5
@@ -154,9 +154,9 @@ theorem attrGo_chain {M : Word → BitVec 8} {B p0 L0 : Word}
 /-- The signed attributes the code read, as `readSignedAttributes`: the
 message digest is the 32 bytes at the pointer the loop ends with. -/
 theorem readSignedAttributes_code {M : Word → BitVec 8} {B p0 L0 dg' flag' cp' : Word} {k : Nat}
-    (hct : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x56)) 9 = oidContentType)
-    (htst : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x4A)) 11 = oidTstInfo)
-    (hmd : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x5F)) 9 = oidMessageDigest)
+    (hct : memBytes M (BitVec.ofNat 32 (img% svConstCmsAddress + 0x15)) 9 = oidContentType)
+    (htst : memBytes M (BitVec.ofNat 32 (img% svConstCmsAddress + 0x9)) 11 = oidTstInfo)
+    (hmd : memBytes M (BitVec.ofNat 32 (img% svConstCmsAddress + 0x1E)) 9 = oidMessageDigest)
     (h : svChain (attrBody B p0 L0 M) k (BitVec.ofNat 32 0, BitVec.ofNat 32 0, p0, L0) (dg', flag', cp', 0))
     (hdg : dg' ≠ 0) (hflag : flag' = 1) :
     readSignedAttributes (memBytes M p0 L0.toNat) = some (memBytes M dg' 32) := by
@@ -210,8 +210,8 @@ theorem parseTimestamp_code {M : Word → BitVec 8}
       py ly pz lz op53 ol53 op58 ol58 vp23 vl23 vp19 vl19 op8 : Word} {ol8 gt : Nat}
     {tl10 tl22 te33 tl41 to53 tl2a tl15 te26 tl32 te41 tl49 to58 tl2b te23 tl2c tl13 te25 tl31 te39 tl45 te8 te19 : DerTlv}
     {md imp sr ss : Bytes}
-    (hsd : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x41)) 9 = oidSignedData)
-    (hti : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x4A)) 11 = oidTstInfo)
+    (hsd : memBytes M (BitVec.ofNat 32 (img% svConstCmsAddress)) 9 = oidSignedData)
+    (hti : memBytes M (BitVec.ofNat 32 (img% svConstCmsAddress + 0x9)) 11 = oidTstInfo)
     (hes : memBytes M (BitVec.ofNat 32 (img% svConstAddress)) 8 = oidEcdsaSha256)
     (h84 : derElement 0x30 (memBytes M p0 l0.toNat) = .ok tl10)
     (h85 : l0 - BitVec.ofNat 32 (tl10.header + tl10.len) = 0)
@@ -227,7 +227,7 @@ theorem parseTimestamp_code {M : Word → BitVec 8}
     (epc : pc = pa + BitVec.ofNat 32 tl41.header) (elc : lc = BitVec.ofNat 32 tl41.len)
     (h92 : derContent pc (derOid (memBytes M pc lc.toNat)) = .ok (op53, ol53))
     (h93 : derOid (memBytes M pc lc.toNat) = .ok to53)
-    (h94 : memBytes M op53 ol53.toNat = memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x41)) 9)
+    (h94 : memBytes M op53 ol53.toNat = memBytes M (BitVec.ofNat 32 (img% svConstCmsAddress)) 9)
     (epe : pe = pc + BitVec.ofNat 32 (to53.header + to53.len)) (ele : le = lc - BitVec.ofNat 32 (to53.header + to53.len))
     (h95 : derElement 0xA0 (memBytes M pe le.toNat) = .ok tl2a)
     (h96 : le - BitVec.ofNat 32 (tl2a.header + tl2a.len) = 0)
@@ -247,7 +247,7 @@ theorem parseTimestamp_code {M : Word → BitVec 8}
     (epk : pk = pn + BitVec.ofNat 32 tl49.header) (elk : lk = BitVec.ofNat 32 tl49.len)
     (h106 : derContent pk (derOid (memBytes M pk lk.toNat)) = .ok (op58, ol58))
     (h107 : derOid (memBytes M pk lk.toNat) = .ok to58)
-    (h108 : memBytes M op58 ol58.toNat = memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x4A)) 11)
+    (h108 : memBytes M op58 ol58.toNat = memBytes M (BitVec.ofNat 32 (img% svConstCmsAddress + 0x9)) 11)
     (ept : pt = pk + BitVec.ofNat 32 (to58.header + to58.len)) (elt : lt = lk - BitVec.ofNat 32 (to58.header + to58.len))
     (h109 : derOptRes 0xA0 (memBytes M pt lt.toNat) = some (.ok tl2b))
     (h110 : lt - BitVec.ofNat 32 (tl2b.header + tl2b.len) = 0)
@@ -458,8 +458,8 @@ theorem nonce_cont {M : Word → BitVec 8} {p l q ql : Word} {β : Type} (cont :
   · rw [decide_eq_false h2]
     rfl
 
-theorem ordering_nonce_cont {M : Word → BitVec 8} {B p l r8 q ql : Word} {β : Type} (cont : Bytes → Option β)
-    (h : ((l = 0) ∧ r8 = BitVec.ofNat 32 0x18 ∧ q = p ∧ ql = l) ∨
+theorem ordering_nonce_cont {M : Word → BitVec 8} {B p l q ql : Word} {β : Type} (cont : Bytes → Option β)
+    (h : ((l = 0) ∧ q = p ∧ ql = l) ∨
       ((¬ (l = 0)) ∧ (M p = BitVec.ofNat 8 1) ∧
         derBoolOf (memBytes M p l.toNat) (derElement 1 (memBytes M p l.toNat)) = .ok () ∧
         ∃ tb, derElement 1 (memBytes M p l.toNat) = .ok tb ∧ ∃ qb qbl : Word,
@@ -478,12 +478,12 @@ theorem ordering_nonce_cont {M : Word → BitVec 8} {B p l r8 q ql : Word} {β :
             ((¬ (M (p + BitVec.ofNat 32 (tb.header + tb.len)) = BitVec.ofNat 8 2)) ∧
               qn = (p + BitVec.ofNat 32 (tb.header + tb.len)) ∧ qnl = (l - BitVec.ofNat 32 (tb.header + tb.len)))) ∧
             SvIn B qn qnl.toNat ∧ qb = qn ∧ qbl = qnl)) ∧
-          SvIn B qb qbl.toNat ∧ r8 = BitVec.ofNat 32 0xFFFFFFFF ∧ q = qb ∧ ql = qbl) ∨
+          SvIn B qb qbl.toNat ∧ q = qb ∧ ql = qbl) ∨
       ((¬ (l = 0)) ∧ (¬ (M p = BitVec.ofNat 8 1)) ∧ ∃ qn qnl : Word,
         (((M p = BitVec.ofNat 8 2) ∧ ∃ ip il, derIntOf (memBytes M p l.toNat) p (derElement 2 (memBytes M p l.toNat)) =
           .ok (ip, il) ∧ ∃ ti, derElement 2 (memBytes M p l.toNat) = .ok ti ∧
           qn = p + BitVec.ofNat 32 (ti.header + ti.len) ∧ qnl = l - BitVec.ofNat 32 (ti.header + ti.len)) ∨
-        ((¬ (M p = BitVec.ofNat 8 2)) ∧ qn = p ∧ qnl = l)) ∧ SvIn B qn qnl.toNat ∧ r8 = BitVec.ofNat 32 0x18 ∧
+        ((¬ (M p = BitVec.ofNat 8 2)) ∧ qn = p ∧ qnl = l)) ∧ SvIn B qn qnl.toNat ∧
         q = qn ∧ ql = qnl)) :
     (if ((memBytes M p l.toNat).head? == some 1) = true then
       (readBooleanTrue (memBytes M p l.toNat)).bind fun i =>
@@ -491,7 +491,7 @@ theorem ordering_nonce_cont {M : Word → BitVec 8} {B p l r8 q ql : Word} {β :
     else if ((memBytes M p l.toNat).head? == some 2) = true then
       (Option.map (fun x => x.snd) (readInteger (memBytes M p l.toNat))).bind cont
     else cont (memBytes M p l.toNat)) = cont (memBytes M q ql.toNat) := by
-  rcases h with ⟨hz, -, rfl, rfl⟩ | ⟨hz, h1, hb, tb, htb, qb, qbl, hin, -, -, rfl, rfl⟩ | ⟨hz, h1, qn, qnl, hn, -, -, rfl, rfl⟩
+  rcases h with ⟨hz, rfl, rfl⟩ | ⟨hz, h1, hb, tb, htb, qb, qbl, hin, -, rfl, rfl⟩ | ⟨hz, h1, qn, qnl, hn, -, rfl, rfl⟩
   · subst hz; rfl
   · rw [head_beq (by decide) hz, decide_eq_true h1, if_pos rfl, readBooleanTrue_mem htb hb]
     simp only [Option.bind_some, restAt]
@@ -505,7 +505,7 @@ theorem ordering_nonce_cont {M : Word → BitVec 8} {B p l r8 q ql : Word} {β :
 set_option maxHeartbeats 8000000 in
 /-- The `TSTInfo` the code parsed, as `readTstInfo`. -/
 theorem readTstInfo_code {M : Word → BitVec 8}
-    {B p0 l0 pc lc pj lj pm lm pi li ps ls pg lg p3 l3 r8 p4 l4 p5 l5 op32 ol32 vp51 vl51 ip2 il2 : Word}
+    {B p0 l0 pc lc pj lj pm lm pi li ps ls pg lg p3 l3 p4 l4 p5 l5 op32 ol32 vp51 vl51 ip2 il2 : Word}
     {tm : Nat} {tl13 te26 to32 tl36 te45 te51 tl2 tlg : DerTlv}
     (h148 : derElement 0x30 (memBytes M p0 l0.toNat) = .ok tl13)
     (h149 : l0 - BitVec.ofNat 32 (tl13.header + tl13.len) = 0)
@@ -536,7 +536,7 @@ theorem readTstInfo_code {M : Word → BitVec 8}
     (h165 : generalizedTime (memBytes M (pg + BitVec.ofNat 32 tlg.header) (BitVec.ofNat 32 tlg.len).toNat) = some tm)
     (h166 : ∃ e, readOptional 0x30 (memBytes M (pg + BitVec.ofNat 32 (tlg.header + tlg.len))
       (lg - BitVec.ofNat 32 (tlg.header + tlg.len)).toNat) = some (e, memBytes M p3 l3.toNat))
-    (h168 : ((l3 = 0) ∧ r8 = BitVec.ofNat 32 0x18 ∧ p4 = p3 ∧ l4 = l3) ∨
+    (h168 : ((l3 = 0) ∧ p4 = p3 ∧ l4 = l3) ∨
       ((¬ (l3 = 0)) ∧ (M p3 = BitVec.ofNat 8 1) ∧
         derBoolOf (memBytes M p3 l3.toNat) (derElement 1 (memBytes M p3 l3.toNat)) = .ok () ∧
         ∃ tb, derElement 1 (memBytes M p3 l3.toNat) = .ok tb ∧ ∃ qb qbl : Word,
@@ -555,12 +555,12 @@ theorem readTstInfo_code {M : Word → BitVec 8}
             ((¬ (M (p3 + BitVec.ofNat 32 (tb.header + tb.len)) = BitVec.ofNat 8 2)) ∧
               qn = (p3 + BitVec.ofNat 32 (tb.header + tb.len)) ∧ qnl = (l3 - BitVec.ofNat 32 (tb.header + tb.len)))) ∧
             SvIn B qn qnl.toNat ∧ qb = qn ∧ qbl = qnl)) ∧
-          SvIn B qb qbl.toNat ∧ r8 = BitVec.ofNat 32 0xFFFFFFFF ∧ p4 = qb ∧ l4 = qbl) ∨
+          SvIn B qb qbl.toNat ∧ p4 = qb ∧ l4 = qbl) ∨
       ((¬ (l3 = 0)) ∧ (¬ (M p3 = BitVec.ofNat 8 1)) ∧ ∃ qn qnl : Word,
         (((M p3 = BitVec.ofNat 8 2) ∧ ∃ ip il, derIntOf (memBytes M p3 l3.toNat) p3 (derElement 2 (memBytes M p3 l3.toNat)) =
           .ok (ip, il) ∧ ∃ ti, derElement 2 (memBytes M p3 l3.toNat) = .ok ti ∧
           qn = p3 + BitVec.ofNat 32 (ti.header + ti.len) ∧ qnl = l3 - BitVec.ofNat 32 (ti.header + ti.len)) ∨
-        ((¬ (M p3 = BitVec.ofNat 8 2)) ∧ qn = p3 ∧ qnl = l3)) ∧ SvIn B qn qnl.toNat ∧ r8 = BitVec.ofNat 32 0x18 ∧
+        ((¬ (M p3 = BitVec.ofNat 8 2)) ∧ qn = p3 ∧ qnl = l3)) ∧ SvIn B qn qnl.toNat ∧
         p4 = qn ∧ l4 = qnl))
     (h170 : ∃ e, readOptional 0xa0 (memBytes M p4 l4.toNat) = some (e, memBytes M p5 l5.toNat))
     (h172 : ∃ e, readOptional 0xa1 (memBytes M p5 l5.toNat) = some (e, [])) :

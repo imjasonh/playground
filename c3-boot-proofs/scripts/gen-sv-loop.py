@@ -20,7 +20,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from svchain import IDENT, Chain, Stage, subst  # noqa: E402
+from svchain import IDENT, Chain, Stage, param_key, strip_parens, subst, top_split  # noqa: E402
 from svloop import GLOBAL, Loop  # noqa: E402
 from svmerge import sc_pattern  # noqa: E402
 
@@ -36,13 +36,6 @@ PER_SC = {'SvCkdLoop', 'SvCgLoop'}
 
 # file: (theorem, body stage, doc)
 LOOPS = {
-    'SvILoop': ('sv_iloop', ('SvImiss', 'sv_imiss'),
-                "the search of the root's Fulcio intermediates for the leaf's issuer, over `k` entries that "
-                "don't match"),
-    'SvTLoop': ('sv_tloop', ('SvTlmiss', 'sv_tlmiss'),
-                "the search of the root's TSAs for the timestamp's signer, over `k` entries that don't match"),
-    'SvCLoop': ('sv_cloop', ('SvClmiss', 'sv_clmiss'),
-                "the search of the root's logs for the checkpoint's origin, over `k` entries that don't match"),
     'SvCkdLoop': ('sv_ckdloop', ('SvCkd', 'sv_ckd'), "the checkpoint's size, over `k` digits"),
     'SvCgLoop': ('sv_cgloop', ('SvCg', 'sv_cg'), "a cosignature's base64, over `k` groups of four"),
 }
@@ -108,7 +101,7 @@ def write(fname):
     _, names1, pats1, _ = ch.call(st, {p: a for (p, _), a in zip(st.params, args)})
     O(f"    rcases {sname} {L.named()} {' '.join(args)} with {st.errpat} | ⟨{', '.join(names1 + pats1)}⟩")
     O("    · exact .inl e")
-    ov = {'F': 'F', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
+    ov = {'FW': 'FW', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
     for p, _ in L.per:
         ov[p] = p
     a2, _, _, _ = ch.call(st, ov)
@@ -212,7 +205,7 @@ def exit_form(O, name, L, efile, ename, endp):
     open(f'/tmp/{name}_st.stmt', 'w').write(stmt)
     h1 = [f"{p}'" for p in hn]
     fixed_names = list(dict.fromkeys(b for g in L.fixed for b in g[1:g.rindex(' : ')].split()))
-    O(f"  rcases {name} {' '.join(f'({b} := {b})' for b in fixed_names)} F hret hO M0 N {' '.join(hn)} H with e | "
+    O(f"  rcases {name} {' '.join(f'({b} := {b})' for b in fixed_names)} FW hret hO M0 N {' '.join(hn)} H with e | "
       f"⟨n1, {', '.join(ps)}, cs, e0, {'hsc, ' if per else ''}hr3, hr4, hkl, "
       f"{', '.join(h1)}⟩")
     O("  · exact .inl e")
@@ -220,6 +213,9 @@ def exit_form(O, name, L, efile, ename, endp):
     for p in loopfree:
         rn.setdefault(p, p)
     rn.update({endp: f"(hz {' '.join(ps)} e0)"})
+    for p, t in E.params:
+        if p not in rn and param_key(p) and strip_parens(top_split(t, ' = ')[-1]) in L.local:
+            rn[p] = 'rfl'
     eargs = " ".join(rn.get(p, p) for p, _ in E.params)
     enamed = " ".join(f"({b} := {pr.get(b, b)})" for names, _ in L.binders for b in names if b in E.binder_set()
                       and b not in L.local and b != 'n0')
@@ -258,7 +254,7 @@ def run_form(O, name, L, efile, ename, endp, cnt, ptr, slice_hyp):
         O(line)
     F = f"({L.step})"
     T = " × ".join(["Word"] * n)
-    O(f"  refine {name}_st (N := {cnt}.toNat) F hret hO M0 ?_ {' '.join(hn)} ?_ {' '.join(x for x in extra if x != endp)}")
+    O(f"  refine {name}_st (N := {cnt}.toNat) FW hret hO M0 ?_ {' '.join(hn)} ?_ {' '.join(x for x in extra if x != endp)}")
     dec = f"svIter_dec1 (F := {F}) (fun s : {T} => {proj(j_cnt)}) (fun s => rfl)"
     inc = f"svIter_add (F := {F}) (fun s : {T} => {proj(j_ptr)}) (d := 1) (fun s => rfl)"
     O(f"  · intro {' '.join(ps)} e")
@@ -311,7 +307,7 @@ def run4_form(O, name, L, efile, ename, endp, ptr, size, end):
     for line in stmt[i_colon:]:
         O(line)
     O(f"  have fit := slice.fit")
-    O(f"  refine {name}_st {' '.join(f'({b} := {b})' for b in fixed_names)} (N := N) F hret hO M0 ?_ {' '.join(hn)} ?_ "
+    O(f"  refine {name}_st {' '.join(f'({b} := {b})' for b in fixed_names)} (N := N) FW hret hO M0 ?_ {' '.join(hn)} ?_ "
       f"{' '.join(x for x in extra if x != endp)}")
     O(f"  · intro {' '.join(ps)} e")
     O(f"    have h1 := congrArg (fun s => {proj(j_ptr)}) e")
