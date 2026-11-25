@@ -634,6 +634,7 @@ import C3BootProofs.Proofs.AcceptExtractDupLib
 import C3BootProofs.Proofs.AcceptExtractDupN
 import C3BootProofs.Proofs.AcceptExtractDupK
 import C3BootProofs.Proofs.AcceptExtractDup
+import C3BootProofs.Proofs.AcceptExtractTsa
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
