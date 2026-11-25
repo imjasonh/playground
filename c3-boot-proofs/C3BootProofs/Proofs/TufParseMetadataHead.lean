@@ -338,6 +338,148 @@ theorem pm_ty (E : PmEnv M0 M1 s out F g0) {Mk : Word → BitVec 8} {g : Fin 32 
         exact pm_116 E hO5 (by (try rsimp); exact hg26) (by (try rsimp); exact hgsp)
           (by (try rsimp); (try exact hz5)) (by keepz E.hz0)
 
+theorem PmCc.keep {M M' : Word → BitVec 8} {C Q r : Word} {L pos l : Nat} (h : PmCc M C Q L pos)
+    (hO : Out M M' r l) (hs : Sep r l C 12) : PmCc M' C Q L pos :=
+  ⟨(hO.load32 (by have := hs.subR (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this)).trans h.1,
+    (hO.load32 (hs.subR (c := 4) (l := 4) (by decide))).trans h.2.1,
+    (hO.load32 (hs.subR (c := 8) (l := 4) (by decide))).trans h.2.2⟩
+
+theorem pm_c24 (F : Word) : F + BitVec.ofNat 32 16 + 8 = F + BitVec.ofNat 32 24 := by
+  rw [BitVec.add_assoc]; rfl
+
+/-- The cursor at `F + 16` after `next_member` moved it to `a`. -/
+theorem pm_ccNext {Ma M2 : Word → BitVec 8} {F Q : Word} {L pos a : Nat}
+    (hC : PmCc Ma (F + BitVec.ofNat 32 16) Q L pos)
+    (hfa : ∀ x, Sep x 1 (F + 0x1C) 20 → Sep x 1 (F + BitVec.ofNat 32 16 + 8) 4 → M2 x = Ma x)
+    (ta : memLoad32 M2 (F + BitVec.ofNat 32 16 + 8) = BitVec.ofNat 32 a) :
+    PmCc M2 (F + BitVec.ofNat 32 16) Q L a := by
+  have hs : ∀ c, c + 4 ≤ 8 → Sep (F + BitVec.ofNat 32 16 + BitVec.ofNat 32 c) 4 (F + 0x1C) 20 ∧
+      Sep (F + BitVec.ofNat 32 16 + BitVec.ofNat 32 c) 4 (F + BitVec.ofNat 32 16 + 8) 4 := fun c hc => by
+    rw [add_ofNat_assoc, pm_c24]
+    exact ⟨pm_ff F (c := 16 + c) (n := 4) (d := 28) (k := 20) (Or.inl (by omega)) (by omega) (by decide),
+      pm_ff F (c := 16 + c) (n := 4) (d := 24) (k := 4) (Or.inl (by omega)) (by omega) (by decide)⟩
+  have ld : ∀ c, c + 4 ≤ 8 → memLoad32 M2 (F + BitVec.ofNat 32 16 + BitVec.ofNat 32 c) =
+      memLoad32 Ma (F + BitVec.ofNat 32 16 + BitVec.ofNat 32 c) := fun c hc =>
+    memLoad32_congr fun _ hj => hfa _ (sep_pt (hs c hc).1.symm hj) (sep_pt (hs c hc).2.symm hj)
+  refine ⟨?_, ?_, ta⟩
+  · have := ld 0 (by decide); rw [add_ofNat_zero] at this; exact this.trans hC.1
+  · exact (ld 4 (by decide)).trans hC.2.1
+
+/-- The memory after `next_member` writes its result at `F + 0x1C` and the
+position at `F + 24`. -/
+theorem pm_nmOut (E : PmEnv M0 M1 s out F g0) {Mk Ma M2 : Word → BitVec 8}
+    {r : Option (Option (Word × Nat × Word × Nat × Nat))} (hO : Out M1 Mk s 484)
+    (hOa : Out Mk Ma (s + BitVec.ofNat 32 240) 164) (hMR : MemRes Ma M2 (F + 0x1C) (F + BitVec.ofNat 32 16) r) :
+    Out M1 M2 s 484 := by
+  refine hO.trans ((Out.upK rfl hOa (by decide)).trans fun x hx => hMR.out ?_ ?_)
+  · show Sep x 1 (F + BitVec.ofNat 32 0x1C) 20
+    rw [E.Fc]; exact sep_in hx (by decide)
+  · rw [pm_c24, E.Fc]; exact sep_in hx (by decide)
+
+/-- A call to `next_member` with the cursor at `F + 16` and the result at
+`F + 0x1C`. -/
+theorem pm_nm (E : PmEnv M0 M1 s out F g0) {Mk : Word → BitVec 8} {f : Fin 32 → Word} {off : Nat}
+    {hi lo : Word} {R : Except Nat (Word × Nat × Word × Nat)}
+    (h1 : fetchRel tufParseMetadataCode off = some (.auipc ra hi, 4))
+    (h2 : fetchRel tufParseMetadataCode (off + 4) = some (.jalr ra ra lo, 4))
+    (htgt : TPM + BitVec.ofNat 32 off + hi + lo = TPM_JG + 0xFFFFF438) (hev : (off + 8) % 2 = 0)
+    (hO : Out M1 Mk s 484) (h0 : f a0 = F + 0x1C) (ha1 : f a1 = F + BitVec.ofNat 32 16) (hsp : f sp = F)
+    {Q : Word} {L pos : Nat} (hC : PmCc Mk (F + BitVec.ofNat 32 16) Q L pos) (hQ0 : Q.toNat ≠ 0)
+    (hQN : Q.toNat + L < 2 ^ 32) (hpos : pos ≤ L) (hSQ : Sep s 532 Q L)
+    (k : ∀ m2 : Machine, MemResF Mk m2.mem (F + 0x1C) (F + BitVec.ofNat 32 16) (s + BitVec.ofNat 32 240) 164
+      (memRes Q (nextMember (memBytes M0 Q L) pos)) →
+      WP tufParseMetadataCode TPM (pmQ M0 s out g0 R) m2.mem (off + 8)
+        (clob (upd f ra (TPM + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
+    WP tufParseMetadataCode TPM (pmQ M0 s out g0 R) Mk off f := by
+  have hc := E.code hO
+  have hPS := tpm_parseSep E.hsw E.hro
+  refine WP.callNextMember (tb := TPM_JG + 0xFFFFF438) (out := F + 0x1C) (c := F + BitVec.ofNat 32 16)
+    (s := s + BitVec.ofNat 32 240) (p := Q) (n := L) (pos := pos) h1 h2 htgt (by decide) hev hc.get.nm
+    (by rw [show TPM_JG + 0xFFFFF438 + 0x1DE = TPM_JG + 0xFFFFF616 by decide]; exact hc.get.ri)
+    (by rw [show TPM_JG + 0xFFFFF438 + 0x144 = TPM_JG + 0xFFFFF57C by decide]; exact hc.get.ke)
+    h0 ha1 (by rw [hsp]; exact (E.sp 240 (by decide)).symm) (E.alS (by decide))
+    (aligned_add E.halF (by decide)) (aligned_add E.halF (by decide)) hC.1 hC.2.1 hC.2.2 (by omega) (by omega)
+    hQ0 (by omega)
+    (by rw [show TPM_JG + 0xFFFFF438 + 0x1DE = TPM_JG + 0xFFFFF616 by decide]; exact hPS.2.ri.sub (by decide))
+    (by rw [show TPM_JG + 0xFFFFF438 + 0x144 = TPM_JG + 0xFFFFF57C by decide]; exact hPS.2.ke.sub (by decide))
+    (hPS.2.nm.sub (by decide)) (hSQ.sub (by decide))
+    (E.fs (Or.inr (by decide)) (by decide) (by decide)) (E.fs (Or.inr (by decide)) (by decide) (by decide))
+    (pm_ff F (Or.inr (by decide)) (by decide) (by decide))
+    (E.lowF (by decide) (by decide) (by decide)) (E.lowF (by decide) (by decide) (by decide))
+    (E.lowS (by decide) (by decide) (by decide)) (E.lowF (by decide) (by decide) (by decide))
+    (E.lowF (by decide) (by decide) (by decide)) fun m2 hR => k m2 (by rw [E.bytes hO hSQ] at hR; exact hR)
+
+theorem pm_resThen (Q : Word) (r : Except Nat Unit) (x : Nat × Nat × Nat × Nat) :
+    pmRes Q (pmThen r (.ok x)) = pmThen r (.ok (Q + BitVec.ofNat 32 x.1, x.2.1, Q + BitVec.ofNat 32 x.2.2.1, x.2.2.2)) := by
+  cases r <;> rfl
+
+/-- From 0x100: the third member of the top-level object, the `L` bytes at
+`Q`, from `a2`, then `pm_ty` on `signed` at `v2p` and `signatures` at
+`v1p`. -/
+theorem pm_rest (E : PmEnv M0 M1 s out F g0) {Mk : Word → BitVec 8} {g : Fin 32 → Word}
+    (hO : Out M1 Mk s 484) (hgsp : g sp = F) (hg26 : g 26 = out) {KQ : Word} {KL : Nat}
+    (hg23 : g 23 = KQ) (hg22 : g 22 = BitVec.ofNat 32 KL) (hKL : KL < 2 ^ 32) (hSK : Sep s 532 KQ KL)
+    {Q : Word} {L a2 : Nat} (hC : PmCc Mk (F + BitVec.ofNat 32 16) Q L a2) (hQ0 : Q.toNat ≠ 0)
+    (hQN : Q.toNat + L < 2 ^ 32) (hSQ : Sep s 532 Q L) (ha2 : a2 ≤ L) {v1p v1l v2p v2l : Nat}
+    (hv1 : v1p + v1l ≤ L) (hv2 : v2p + v2l ≤ L)
+    (hg19 : g 19 = Q + BitVec.ofNat 32 v2p) (hg20 : g 20 = BitVec.ofNat 32 v2l)
+    (hg21 : g 21 = Q + BitVec.ofNat 32 v1p) (hg18 : g 18 = BitVec.ofNat 32 v1l)
+    (hfr : ∀ x, x ∉ pmE → g x = g0 x) :
+    WP tufParseMetadataCode TPM (pmQ M0 s out g0 (pmRes Q (pmThen (pmRest (memBytes M0 Q L) (memBytes M0 KQ KL)
+      a2 v1p v1l v2p v2l) (.ok (v2p, v2l, v1p, v1l))))) Mk 0x100 g := by
+  rw [pm_resThen]
+  refine WP.aluImm pm_at_100 ?_; wn
+  refine WP.aluImm pm_at_102 ?_; wn
+  refine pm_nm E pm_at_104 pm_at_108 (by decide) (by decide) hO (by (try rsimp); rw [ev_add, hgsp])
+    (by (try rsimp); rw [ev_add, hgsp]; (try rfl)) (by (try rsimp); exact hgsp) hC hQ0 hQN ha2 hSQ
+    fun m2 hR => ?_
+  obtain ⟨Ma, hOa, hMR⟩ := hR
+  generalize m2.mem = M2 at hMR
+  have hO2 : Out M1 M2 s 484 := pm_nmOut E hO hOa hMR
+  refine WP.zero fun hz2 => ?_
+  refine WP.lbu pm_at_10c ?_; wn
+  rcases hnm : nextMember (memBytes M0 Q L) a2 with _ | _ | ⟨k3p, k3l, v3p, v3l, a3⟩ <;>
+    rw [hnm] at hMR <;> simp only [memRes, Option.map_none, Option.map_some] at hMR <;>
+    simp only [pmRest, hnm]
+  · obtain ⟨-, t0, t1⟩ := hMR
+    refine WP.branch pm_at_110 (fun _ => ?_) (fun eb => ?_) <;> wn
+    rotate_left
+    · exfalso; (try rsimp at eb); rw [hgsp, t0] at eb; exact absurd eb (by decide)
+    exact pm_8e E hO2 (by (try rsimp); exact hg26) (by (try rsimp); exact hgsp)
+      (by rw [show F + 0x1D = F + 0x1C + 1 by rw [BitVec.add_assoc]; rfl]; exact t1) (by keepz E.hz0)
+  · obtain ⟨-, t0, t1⟩ := hMR
+    refine WP.branch pm_at_110 (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [hgsp, t0] at eb; exact absurd eb (by decide)
+    refine WP.lw pm_at_112 (by (try rsimp); rw [hgsp]; exact aligned_add E.halF (k := 0x20) (by decide)) ?_; wn
+    have t1' : memLoad32 M2 (F + 0x20) = 0 := by
+      rw [show F + 0x20 = F + 0x1C + 4 by rw [BitVec.add_assoc]; rfl]; exact t1
+    refine WP.branch pm_at_114 (fun _ => ?_) (fun eb => ?_) <;> wn
+    rotate_left
+    · exfalso; (try rsimp at eb); rw [hgsp, t1'] at eb; exact absurd eb (by decide)
+    rw [show slice (memBytes M0 Q L) v2p v2l = memBytes M0 (Q + BitVec.ofNat 32 v2p) v2l from
+        tuf_memBytes_drop_take hv2,
+      show slice (memBytes M0 Q L) v1p v1l = memBytes M0 (Q + BitVec.ofNat 32 v1p) v1l from
+        tuf_memBytes_drop_take hv1]
+    exact pm_ty E hO2 (by (try rsimp); exact hgsp) (by (try rsimp); exact hg26) (by (try rsimp); exact hg23)
+      (by (try rsimp); exact hg22) hKL hSK (by (try rsimp); exact hg19) (by (try rsimp); exact hg21)
+      (by (try rsimp); exact hg18) (by (try rsimp); exact hg20)
+      (by rw [tex_toNat (by omega)]; omega) (by rw [tex_toNat (by omega)]; omega) (hSQ.subR hv1)
+      (by rw [tex_toNat (by omega)]; omega) (by rw [tex_toNat (by omega)]; omega) (hSQ.subR hv2)
+      (by keepz E.hz0)
+  · obtain ⟨-, t0, t1, -⟩ := hMR
+    have hl := nextMember_lt hnm
+    rw [memBytes_length] at hl
+    refine WP.branch pm_at_110 (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [hgsp, t0] at eb; exact absurd eb (by decide)
+    refine WP.lw pm_at_112 (by (try rsimp); rw [hgsp]; exact aligned_add E.halF (k := 0x20) (by decide)) ?_; wn
+    have t1' : memLoad32 M2 (F + 0x20) = Q + BitVec.ofNat 32 k3p := by
+      rw [show F + 0x20 = F + 0x1C + 4 by rw [BitVec.add_assoc]; rfl]; exact t1
+    have hq := nx_q0 hQ0 (n := L + 1) (pos := k3p) (by omega) (by omega)
+    refine WP.branch pm_at_114 (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [hgsp, t1', hq] at eb; exact absurd eb (by decide)
+    exact pm_116 E hO2 (by (try rsimp); exact hg26) (by (try rsimp); exact hgsp) (by (try rsimp); (try exact hz2))
+      (by keepz E.hz0)
+
 end
 
 end C3.RV32
