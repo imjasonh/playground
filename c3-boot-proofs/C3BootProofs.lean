@@ -407,6 +407,7 @@ import C3BootProofs.Proofs.TrustedRootReadChainLoop
 import C3BootProofs.Proofs.TrustedRootReadChainFin
 import C3BootProofs.Proofs.TrustedRootReadChainHead
 import C3BootProofs.Proofs.TrustedRootReadChain
+import C3BootProofs.Proofs.TrustedRootLift
 import C3BootProofs.Models.JsonLink
 import C3BootProofs.Models.JsonLinkLax
 import C3BootProofs.Models.JsonLinkSpec

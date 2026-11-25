@@ -219,6 +219,7 @@ import C3BootProofs.Proofs.TrustedRootReadChainLoop
 import C3BootProofs.Proofs.TrustedRootReadChainFin
 import C3BootProofs.Proofs.TrustedRootReadChainHead
 import C3BootProofs.Proofs.TrustedRootReadChain
+import C3BootProofs.Proofs.TrustedRootLift
 import C3BootProofs.Models.JsonLinkWalk
 import C3BootProofs.Models.JsonLinkValue
 import C3BootProofs.Models.JsonLinkParse
@@ -9037,6 +9038,10 @@ end C3
 
 /-- info: 'C3.RV32.trustedRootReadChain_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.trustedRootReadChain_correct
+/-- info: 'C3.RV32.validForPos_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.validForPos_spec
+/-- info: 'C3.RV32.trustedRootValidFor_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.trustedRootValidFor_spec
 /-- info: 'C3.Json.Members' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.Members
 
