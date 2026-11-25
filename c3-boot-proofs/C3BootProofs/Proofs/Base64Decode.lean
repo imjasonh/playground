@@ -1143,6 +1143,10 @@ def BdiOut (Mt : Word → BitVec 8) (nn : Machine) (res : Word) (tag : BitVec 8)
   Steps nn nn' ∧ St Mt' BDI nn' 0x17A (reg nn') ∧ CodeIn Mt' BDI base64DecodeIntoCode ∧ Mt' res = tag ∧
     (∀ x, Sep res 8 x 1 → Mt' x = Mt x) ∧ ∀ q, q.val ∉ [10, 11] → reg nn' q = reg nn q
 
+/-- The errors `decode_into` returns: `ScratchTooSmall` (0x13) and
+`BadBase64` (0x1C), as `Error`'s discriminants. -/
+def BdiCode (b : BitVec 8) : Prop := b = 0x13 ∨ b = 0x1C
+
 theorem bdi_r01 (res : Word) : res + 1 ≠ res := by
   have := add_ofNat_ne res (c := 1) (d := 0) (by decide) (by decide) (by decide)
   rwa [add_ofNat_zero] at this
@@ -1153,7 +1157,7 @@ theorem bdi_sx {res x : Word} {c : Nat} (h : Sep res 8 x 1) (hc : c < 8) : x ≠
 set_option maxRecDepth 20000 in
 theorem bdi_ex170 {Mt : Word → BitVec 8} (hc : CodeIn Mt BDI base64DecodeIntoCode) {nn : Machine} {res : Word}
     (st : St Mt BDI nn 0x170 (reg nn)) (r18 : reg nn 18 = res) (sRC : Sep res 8 BDI base64DecodeIntoCode.length) :
-    ∃ nn' Mt', BdiOut Mt nn res 1 nn' Mt' := by
+    ∃ nn' Mt', BdiOut Mt nn res 1 nn' Mt' ∧ Mt' (res + 1) = (reg nn a0).extractLsb' 0 8 := by
   have hz := st.zero
   obtain ⟨n1, d1, u1⟩ := st.aluImm hc bdi_at_170 (off' := 0x172) (by decide)
   obtain ⟨n2, d2, u2⟩ := u1.self.sb hc bdi_at_172 (off' := 0x176) (by decide)
@@ -1164,39 +1168,43 @@ theorem bdi_ex170 {Mt : Word → BitVec 8} (hc : CodeIn Mt BDI base64DecodeIntoC
   have hc2 := CodeIn.store8 (v := (reg n1 a1).extractLsb' 0 8) hc s0
   obtain ⟨n3, d3, u3⟩ := u2.self.sb hc2 bdi_at_176 (off' := 0x17A) (by decide)
   rw [u2.regs, e1] at u3
-  refine ⟨n3, _, .cons d1 (.cons d2 (.single d3)), u3.self,
+  refine ⟨n3, _, ⟨.cons d1 (.cons d2 (.single d3)), u3.self,
     CodeIn.store8 hc2 (show Sep (res + 1) 1 BDI base64DecodeIntoCode.length from sRC.sub (c := 1) (l := 1) (by decide)),
-    ?_, fun x hx => ?_, fun q hq => ?_⟩
+    ?_, fun x hx => ?_, fun q hq => ?_⟩, ?_⟩
   · rw [memStore8_ne (bdi_r01 res).symm, memStore8_same, u1.regs]; simp +decide only [upd_app, ↓reduceIte]
     rw [hz]; rfl
   · rw [memStore8_ne (show x ≠ res + 1 from bdi_sx hx (c := 1) (by decide)), memStore8_ne (by
       have := bdi_sx hx (c := 0) (by decide); rwa [add_ofNat_zero] at this)]
   · rw [u3.regs, u2.regs, u1.regs, upd_ne' (by intro e; apply hq; rw [e]; decide) hz]
+  · rw [memStore8_same, u2.regs, u1.regs, upd_ne' (by decide) hz]
 
 set_option maxRecDepth 20000 in
 theorem bdi_ex16E {Mt : Word → BitVec 8} (hc : CodeIn Mt BDI base64DecodeIntoCode) {nn : Machine} {res : Word}
     (st : St Mt BDI nn 0x16E (reg nn)) (r18 : reg nn 18 = res) (sRC : Sep res 8 BDI base64DecodeIntoCode.length) :
-    ∃ nn' Mt', BdiOut Mt nn res 1 nn' Mt' := by
+    ∃ nn' Mt', BdiOut Mt nn res 1 nn' Mt' ∧ Mt' (res + 1) = 0x1C := by
   obtain ⟨n1, d1, u1⟩ := st.aluImm hc bdi_at_16e (off' := 0x170) (by decide)
-  obtain ⟨n2, Mt', c2, u2, hc2, h1, hf, K⟩ := bdi_ex170 hc u1.self (by rw [u1.regs, upd_ne' (by decide) st.zero, r18]) sRC
-  exact ⟨n2, Mt', .cons d1 c2, u2, hc2, h1, hf, fun q hq => by
-    rw [K q hq, u1.regs, upd_ne' (by intro e; apply hq; rw [e]; decide) st.zero]⟩
+  obtain ⟨n2, Mt', ⟨c2, u2, hc2, h1, hf, K⟩, e2⟩ :=
+    bdi_ex170 hc u1.self (by rw [u1.regs, upd_ne' (by decide) st.zero, r18]) sRC
+  refine ⟨n2, Mt', ⟨.cons d1 c2, u2, hc2, h1, hf, fun q hq => by
+    rw [K q hq, u1.regs, upd_ne' (by intro e; apply hq; rw [e]; decide) st.zero]⟩, ?_⟩
+  rw [e2, u1.regs]; simp +decide only [upd_app, ↓reduceIte]; rfl
 
 set_option maxRecDepth 20000 in
 theorem bdi_ex19C {Mt : Word → BitVec 8} (hc : CodeIn Mt BDI base64DecodeIntoCode) {nn : Machine} {res : Word}
     (st : St Mt BDI nn 0x19C (reg nn)) (r18 : reg nn 18 = res) (sRC : Sep res 8 BDI base64DecodeIntoCode.length) :
-    ∃ nn' Mt', BdiOut Mt nn res 1 nn' Mt' := by
+    ∃ nn' Mt', BdiOut Mt nn res 1 nn' Mt' ∧ Mt' (res + 1) = 0x13 := by
   obtain ⟨n1, d1, u1⟩ := st.aluImm hc bdi_at_19c (off' := 0x19E) (by decide)
   obtain ⟨n2, d2, u2⟩ := u1.self.jump hc bdi_at_19e (off' := 0x170) (by decide) (by rw [u1.pc]; decide)
-  obtain ⟨n3, Mt', c3, u3, hc3, h1, hf, K⟩ := bdi_ex170 hc u2.self
+  obtain ⟨n3, Mt', ⟨c3, u3, hc3, h1, hf, K⟩, e3⟩ := bdi_ex170 hc u2.self
     (by rw [u2.regs, u1.regs, upd_ne' (by decide) st.zero, r18]) sRC
-  exact ⟨n3, Mt', .cons d1 (.cons d2 c3), u3, hc3, h1, hf, fun q hq => by
-    rw [K q hq, u2.regs, u1.regs, upd_ne' (by intro e; apply hq; rw [e]; decide) st.zero]⟩
+  refine ⟨n3, Mt', ⟨.cons d1 (.cons d2 c3), u3, hc3, h1, hf, fun q hq => by
+    rw [K q hq, u2.regs, u1.regs, upd_ne' (by intro e; apply hq; rw [e]; decide) st.zero]⟩, ?_⟩
+  rw [e3, u2.regs, u1.regs]; simp +decide only [upd_app, ↓reduceIte]; rfl
 
 set_option maxRecDepth 20000 in
 theorem bdi_ex26 {Mt : Word → BitVec 8} (hc : CodeIn Mt BDI base64DecodeIntoCode) {nn : Machine} {res : Word}
     (st : St Mt BDI nn 0x26 (reg nn)) (r18 : reg nn 18 = res) (sRC : Sep res 8 BDI base64DecodeIntoCode.length)
-    (hra : res.toNat % 4 = 0) : ∃ nn' Mt', BdiOut Mt nn res 1 nn' Mt' := by
+    (hra : res.toNat % 4 = 0) : ∃ nn' Mt', BdiOut Mt nn res 1 nn' Mt' ∧ Mt' (res + 1) = 0x1C := by
   have hz := st.zero
   obtain ⟨n1, d1, u1⟩ := st.lui hc bdi_at_26 (off' := 0x28) (by decide)
   obtain ⟨n2, d2, u2⟩ := u1.self.aluImm hc bdi_at_28 (off' := 0x2C) (by decide)
@@ -1211,12 +1219,14 @@ theorem bdi_ex26 {Mt : Word → BitVec 8} (hc : CodeIn Mt BDI base64DecodeIntoCo
   have hc3 := (CodeIn.store8 (v := (0x1C01 : Word).extractLsb' 0 8) hc s0).store8
     (v := (0x1C01 : Word).extractLsb' 8 8) (sRC.sub (c := 1) (l := 1) (by decide))
   obtain ⟨n4, d4, u4⟩ := u3.jump hc3 bdi_at_30 (off' := 0x17A) (by decide) (by rw [u3.pc]; decide)
-  refine ⟨n4, _, .cons d1 (.cons d2 (.cons d3 (.single d4))), u4.self, hc3, ?_, fun x hx => ?_, fun q hq => ?_⟩
+  refine ⟨n4, _, ⟨.cons d1 (.cons d2 (.cons d3 (.single d4))), u4.self, hc3, ?_, fun x hx => ?_, fun q hq => ?_⟩,
+    ?_⟩
   · rw [memStore8_ne (bdi_r01 res).symm, memStore8_same]; rfl
   · rw [memStore8_ne (show x ≠ res + 1 from bdi_sx hx (c := 1) (by decide)), memStore8_ne (by
       have := bdi_sx hx (c := 0) (by decide); rwa [add_ofNat_zero] at this)]
   · rw [u4.regs, u2.regs, upd_ne' (by intro e; apply hq; rw [e]; decide) u1.self.zero, u1.regs,
       upd_ne' (by intro e; apply hq; rw [e]; decide) hz]
+  · rw [memStore8_same]; rfl
 
 set_option maxRecDepth 20000 in
 theorem bdi_ex164 {Mt : Word → BitVec 8} (hc : CodeIn Mt BDI base64DecodeIntoCode) {nn : Machine} {res : Word}
@@ -1296,7 +1306,8 @@ structure BdiEnv (m : Machine) (Ms0 : Word → BitVec 8) (res t out F : Word) (n
 memory changed only in the output, the scratch frame, and `res`. -/
 def BdiErr (m : Machine) (Ms0 : Word → BitVec 8) (res out F : Word) (L : Nat) (nn nn' : Machine)
     (Mt : Word → BitVec 8) : Prop :=
-  Steps nn nn' ∧ St Mt BDI nn' 0x17A (reg nn') ∧ CodeIn Mt BDI base64DecodeIntoCode ∧ Mt res = 1 ∧
+  Steps nn nn' ∧ St Mt BDI nn' 0x17A (reg nn') ∧ CodeIn Mt BDI base64DecodeIntoCode ∧
+    (Mt res = 1 ∧ BdiCode (Mt (res + 1))) ∧
     (∀ x, Sep out L x 1 → Sep (F + 0xFFFFFFF0) 0x1C x 1 → Sep res 8 x 1 → Mt x = Ms0 x) ∧
     reg nn' sp = F ∧ reg nn' 3 = reg m 3 ∧ reg nn' 4 = reg m 4
 
@@ -1402,7 +1413,8 @@ theorem bdi_group {m : Machine} {Ms0 : Word → BitVec 8} {res t out F : Word} {
     dsimp only at this
     rw [this]
   have mkErr : ∀ {nn' : Machine} {Mt : Word → BitVec 8}, Steps nn nn' → St Mt BDI nn' 0x17A (reg nn') →
-      CodeIn Mt BDI base64DecodeIntoCode → Mt res = 1 → (∀ x, Sep R 0x1C x 1 → Sep res 8 x 1 → Mt x = M x) →
+      CodeIn Mt BDI base64DecodeIntoCode → Mt res = 1 ∧ BdiCode (Mt (res + 1)) →
+      (∀ x, Sep R 0x1C x 1 → Sep res 8 x 1 → Mt x = M x) →
       reg nn' sp = reg nn sp → reg nn' 3 = reg nn 3 → reg nn' 4 = reg nn 4 →
       (∀ bs, base64Decode (memBytes m.mem t n) = some bs → L < bs.length) →
       ∃ nn' Mt, BdiErr m Ms0 res out F L nn nn' Mt ∧
@@ -1416,9 +1428,9 @@ theorem bdi_group {m : Machine} {Ms0 : Word → BitVec 8} {res t out F : Word} {
   cases hf : bdiFold (fun j => if 4 - pad ≤ j then some 0 else b64Value (M (g + BitVec.ofNat 32 j)).toNat) 4 0 0 with
   | none =>
     obtain ⟨n2, c2, u2, K2⟩ := EF hf
-    obtain ⟨n3, Mt, c3, u3, hc3, h1, hf3, K3⟩ :=
+    obtain ⟨n3, Mt, ⟨c3, u3, hc3, h1, hf3, K3⟩, e3⟩ :=
       bdi_ex26 hc u2 (by rw [K2 18 (by decide), K1 18 (by decide), r18]) env.sRC env.hra
-    refine Or.inl (mkErr (c1.trans (c2.trans c3)) u3 hc3 h1 (fun x _ hx => hf3 x hx)
+    refine Or.inl (mkErr (c1.trans (c2.trans c3)) u3 hc3 ⟨h1, .inr e3⟩ (fun x _ hx => hf3 x hx)
       (by rw [K3 sp (by decide), K2 sp (by decide), K1 sp (by decide)])
       (by rw [K3 3 (by decide), K2 3 (by decide), K1 3 (by decide)])
       (by rw [K3 4 (by decide), K2 4 (by decide), K1 4 (by decide)]) fun bs h => ?_)
@@ -1446,9 +1458,9 @@ theorem bdi_group {m : Machine} {Ms0 : Word → BitVec 8} {res t out F : Word} {
     cases hb : bdiBytes bits pad with
     | none =>
       obtain ⟨n3, c3, u3, K3⟩ := EB hb
-      obtain ⟨n4, Mt, c4, u4, hc4, h1, hf4, K4⟩ :=
+      obtain ⟨n4, Mt, ⟨c4, u4, hc4, h1, hf4, K4⟩, e4⟩ :=
         bdi_ex16E hcMs u3 (by rw [K3 18 (by decide), K12 18 (by decide), r18]) env.sRC
-      refine Or.inl (mkErr (c1.trans (c2.trans (c3.trans c4))) u4 hc4 h1
+      refine Or.inl (mkErr (c1.trans (c2.trans (c3.trans c4))) u4 hc4 ⟨h1, .inr e4⟩
         (fun x hx hx' => by rw [hf4 x hx', hMsF x hx])
         (by rw [K4 sp (by decide), K3 sp (by decide), K12 sp (by decide)])
         (by rw [K4 3 (by decide), K3 3 (by decide), K12 3 (by decide)])
@@ -1471,9 +1483,9 @@ theorem bdi_group {m : Machine} {Ms0 : Word → BitVec 8} {res t out F : Word} {
         cases base64Decode rest' <;> simp only [Option.map, List.append_assoc]
       by_cases hL : L < P.length + (3 - pad)
       · obtain ⟨n4, c4, u4, K4⟩ := CE hL
-        obtain ⟨n5, Mt, c5, u5, hc5, h1, hf5, K5⟩ :=
+        obtain ⟨n5, Mt, ⟨c5, u5, hc5, h1, hf5, K5⟩, e5⟩ :=
           bdi_ex19C hcMs u4 (by rw [K4 18 (by decide), K123 18 (by decide), r18]) env.sRC
-        refine Or.inl (mkErr (c1.trans (c2.trans (c3.trans (c4.trans c5)))) u5 hc5 h1
+        refine Or.inl (mkErr (c1.trans (c2.trans (c3.trans (c4.trans c5)))) u5 hc5 ⟨h1, .inl e5⟩
           (fun x hx hx' => by rw [hf5 x hx', hMsF x hx])
           (by rw [K5 sp (by decide), K4 sp (by decide), K123 sp (by decide)])
           (by rw [K5 3 (by decide), K4 3 (by decide), K123 3 (by decide)])
@@ -1565,14 +1577,15 @@ theorem bdi_loop {m : Machine} {Ms0 : Word → BitVec 8} {res t out F : Word} {n
 
 /-- What `decode_into` leaves when it returns: the callee-saved registers,
 `Ok(len)` with the bytes in `out` when the text decodes to at most `L` bytes,
-`Err` when no decoding fits, and memory outside the stack frame, `out`, and
-`res` untouched. -/
+`Err` when no decoding fits, an `Err`'s error byte, and memory outside the
+stack frame, `out`, and `res` untouched. -/
 def BdiResult (m : Machine) (sp0 res t out retAddr : Word) (n L : Nat) (m' : Machine) : Prop :=
   m'.pc = retAddr ∧ reg m' sp = sp0 ∧
     (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
     (∀ bs, base64Decode (memBytes m.mem t n) = some bs → bs.length ≤ L →
       m'.mem res = 0 ∧ memLoad32 m'.mem (res + 4) = BitVec.ofNat 32 bs.length ∧ memBytes m'.mem out bs.length = bs) ∧
     ((∀ bs, base64Decode (memBytes m.mem t n) = some bs → L < bs.length) → m'.mem res = 1) ∧
+    (m'.mem res = 1 → BdiCode (m'.mem (res + 1))) ∧
     ∀ x, Sep (sp0 + 0xFFFFFFB0) 0x50 x 1 → Sep out L x 1 → Sep res 8 x 1 → m'.mem x = m.mem x
 
 theorem bdi_slots {m : Machine} {Ms0 Mt : Word → BitVec 8} {res t out F : Word} {n L G : Nat}
@@ -1628,11 +1641,12 @@ theorem bdi_fin_err {m : Machine} {Ms0 : Word → BitVec 8} {res t out F : Word}
     (hret : retAddr &&& ~~~1 = retAddr) {nn nn' : Machine} {Mt : Word → BitVec 8}
     (E : BdiErr m Ms0 res out F L nn nn' Mt) (hs : ∀ bs, base64Decode (memBytes m.mem t n) = some bs → L < bs.length) :
     ∃ m', Steps nn m' ∧ BdiResult m sp0 res t out retAddr n L m' := by
-  obtain ⟨c, u, hc', h1, fr, sp', r3', r4'⟩ := E
+  obtain ⟨c, u, hc', ⟨h1, hcode⟩, fr, sp', r3', r4'⟩ := E
   obtain ⟨n2, c2, pc2, sp2, mem2, Ks, K34⟩ := bdi_epi hc' u sp' env.hFa (bdi_slots env sRG slots fr)
     (by rw [hra, hret])
   refine ⟨n2, c.trans c2, by rw [pc2, hra], by rw [sp2, hFS], fun q hq => ?_,
-    fun bs h hl => absurd (hs bs h) (by omega), fun _ => by rw [mem2, h1], fun x hx hx1 hx2 => ?_⟩
+    fun bs h hl => absurd (hs bs h) (by omega), fun _ => by rw [mem2, h1], fun _ => by rw [mem2]; exact hcode,
+    fun x hx hx1 hx2 => ?_⟩
   · rcases bdi_ps_mem q hq with h34 | ⟨o, ho⟩
     · rw [K34 q h34]
       rcases (by decide : ∀ q : Fin 32, q.val ∈ [3, 4] → q = 3 ∨ q = 4) q h34 with rfl | rfl
@@ -1663,7 +1677,8 @@ theorem bdi_fin_ok {m : Machine} {Ms0 : Word → BitVec 8} {res t out F : Word} 
     rw [spec, show n - 4 * G = 0 by omega, memBytes_zero]
     simp only [base64Decode, Option.map, List.append_nil]
   refine ⟨n2, c1.trans c2, by rw [pc2, hra], by rw [sp2, hFS], fun q hq => ?_, fun bs h _ => ?_,
-    fun h => absurd (h P hsp) (by omega), fun x hx hx1 hx2 => ?_⟩
+    fun h => absurd (h P hsp) (by omega), fun h => absurd (h.symm.trans (by rw [mem2, h0])) (by decide),
+    fun x hx hx1 hx2 => ?_⟩
   · rcases bdi_ps_mem q hq with h34 | ⟨o, ho⟩
     · rw [K34 q h34]
       rcases (by decide : ∀ q : Fin 32, q.val ∈ [3, 4] → q = 3 ∨ q = 4) q h34 with rfl | rfl
@@ -1683,7 +1698,8 @@ set_option maxHeartbeats 16000000 in
 /-- **The compiled `base64::decode_into` is correct.** Called with `res` in
 `a0`, the `n` bytes of text at `t`, and the `L`-byte buffer at `out`, it
 returns `Ok(len)` with the decoded bytes at `out` when `base64Decode` accepts
-the text and its bytes fit in `L`, and `Err` when no decoding fits. -/
+the text and its bytes fit in `L`, and `Err` when no decoding fits, with
+`ScratchTooSmall` or `BadBase64` as its error byte. -/
 theorem base64DecodeInto_correct (m : Machine) {sp0 res t out retAddr : Word} {n L : Nat}
     (hc : CodeIn m.mem BDI base64DecodeIntoCode) (hcW : CodeIn m.mem BCW copyFromSliceU8Code)
     (hcS : CodeIn m.mem BMS memcpyStubCode) (hcB : CodeIn m.mem BMB memcpyBodyCode)
@@ -1782,10 +1798,10 @@ theorem base64DecodeInto_correct (m : Machine) {sp0 res t out retAddr : Word} {n
       rw [v13, u5.self.zero]; simp only [branchTaken, beq_eq_false_iff_ne, ne_eq]
       intro e; apply h4; have := congrArg BitVec.toNat e
       rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)] at this; exact this)
-    obtain ⟨n7, Mt, c7, u7, hc7, h1, hf7, K7⟩ := bdi_ex26 hc2 u6.self (by rw [u6.regs, v18]) (env 0).sRC hra4
+    obtain ⟨n7, Mt, ⟨c7, u7, hc7, h1, hf7, K7⟩, e7⟩ := bdi_ex26 hc2 u6.self (by rw [u6.regs, v18]) (env 0).sRC hra4
     have hnone : base64Decode (memBytes m.mem t n) = none := b64_len _ (by rw [memBytes_length]; exact h4)
     exact bdi_fin_err (env 0) hFS hRS sRG slots hra hret
-      ⟨pre5.trans (.cons d6 c7), u7, hc7, h1, fun x _ _ hx => hf7 x hx,
+      ⟨pre5.trans (.cons d6 c7), u7, hc7, ⟨h1, .inr e7⟩, fun x _ _ hx => hf7 x hx,
         by rw [K7 sp (by decide), u6.regs, K5 sp (by decide), sp2],
         by rw [K7 3 (by decide), u6.regs, K5m 3 (by decide)], by rw [K7 4 (by decide), u6.regs, K5m 4 (by decide)]⟩
       fun bs h => by rw [hnone] at h; cases h
