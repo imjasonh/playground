@@ -106,20 +106,24 @@ states it for a `Bundle` and a `SigstoreRoot`, the values `sigstoreVerify`
 takes: `SvBundleAt` and `SvRootAt` in
 [`SvRoot.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvRoot.lean) say
 how `rustc` lays the two out at `a1` and `a2`, and
-[`gen-sv-layout.py`](../c3-boot-proofs/scripts/gen-sv-layout.py) derives 88
-of `sv_verify`'s hypotheses from them. The other 43 say where the code and
-constants are (about 30), where the stack is and how the call was made, that
-the result and digest buffers are outside the stack, and the P-256 and P-384
-inversions' side conditions (`side`, `side'`, `hzi`).
+[`gen-sv-layout.py`](../c3-boot-proofs/scripts/gen-sv-layout.py) derives 84
+of `sv_verify`'s 108 hypotheses from them. The rest come from
+`sv_verify_at`'s other 22 hypotheses, which say where the code and
+constants are (12), where the stack is and how the call was made, that the
+result and digest buffers are outside the stack, and the P-384 inversions'
+side conditions (`side`, `side'`). `SvRootAt` describes the 0x428-byte
+`TrustRoot`: the identity policy's five slices at 0x0, Fulcio's 8
+intermediates at 0x28, 16 logs at 0x128, and 8 TSAs at 0x328, 0x20 bytes
+each.
 
-`sv_verify` takes 131 hypotheses, all about the memory and registers at
+`sv_verify` takes 108 hypotheses, all about the memory and registers at
 the entry. Most say how `Bundle` and `SigstoreRoot` lie in memory and that
 the code and constants are where the image puts them. The root keeps its
-Fulcio intermediates, TSAs, and logs in fixed arrays of 4, 4, and 8 entries,
+Fulcio intermediates, TSAs, and logs in fixed arrays of 8, 8, and 16 entries,
 where an unused entry has a null pointer, so each hypothesis about an
 entry's bytes holds only for an entry whose pointer isn't null: the code
-reads them only after that check. The rest are the inversions' side conditions (`hzi`, `PvSide`), which
-the P-256 and P-384 models need. The frame's contents at 0x72 are the
+reads them only after that check. The rest are the inversions' side conditions (`PvSide`), which
+the P-384 model needs. The frame's contents at 0x72 are the
 prologue's (`svProMem`), so they need no hypotheses.
 
 `sv_verify_spec` in
@@ -291,11 +295,10 @@ The key-set chain and trust-root blob are gone from the code, so their specifica
 
 The specification follows c3-verify's version 2 manifest, whose third part is the TUF part, and drops `checkSlot`. The V0 image's `manifest::parse` proofs keep the version 1 format as `decodeManifestV1`.
 
-Six functions changed shape: `manifest_parse`, `generalized_time`, `sigstore::verify`, `boot`, `boot_main`'s first closure, and `boot_main`. The modules that prove something about them, or import a module that does, are pending. `C3BootProofs/Pending.lean` imports them, the root module doesn't, and CI doesn't build them. They are unchanged, for the next proofs to start from:
+Six functions changed shape: `manifest_parse`, `generalized_time`, `sigstore::verify`, `boot`, `boot_main`'s first closure, and `boot_main`. The modules that prove something about them, or import a module that does, were pending. `sigstore::verify` is proved again: `sv_verify`, `sv_verify_at`, and `sv_verify_spec` describe the new code and the 0x428-byte `TrustRoot`, the root module builds them, and `Audit` checks that `sv_verify_spec` depends only on `propext` and `Quot.sound`. The old stages are deleted. `C3BootProofs/Pending.lean` imports them, the root module doesn't, and CI doesn't build them. They are unchanged, for the next proofs to start from:
 
 | Pending modules | Why |
 |-----------------|-----|
-| `Proofs/Sv*` | `sigstore::verify` moved, and its read-only data with it. The P-256 check is now a call to `p256_verify_prehash`, and the leaf certificate's time check calls `generalized_time`. `SvAt`, `SvLib`, the call lemmas (`SvCalls`, `SvLib2`, `SvDer` through `SvDer4`, `SvDerBridge`, and `SvCongr`), `SvModels`, `SvGsSpec`, and `SvPvModel` build again, for the 0x4C0-byte frame. The stages and `sv_verify_spec` don't yet. |
 | `Proofs/ParseCur` | `manifest_parse` reads version 2. |
 | `Proofs/GeneralizedTime`, `Proofs/X509ReadTime` | `generalized_time` changed. |
 | `Proofs/BootSpec`, `Proofs/Boot` | `boot`, `boot_main`, and its first closure now read the TUF part and burn eFuses. |
