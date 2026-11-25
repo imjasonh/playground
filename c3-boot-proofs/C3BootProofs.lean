@@ -399,3 +399,8 @@ import C3BootProofs.Proofs.SvX2c
 import C3BootProofs.Proofs.SvX2n
 import C3BootProofs.Proofs.SvX2z
 import C3BootProofs.Proofs.SvX2t
+import C3BootProofs.Proofs.SvImiss
+import C3BootProofs.Proofs.SvIhit
+import C3BootProofs.Proofs.SvIend
+import C3BootProofs.Proofs.SvPv
+import C3BootProofs.Proofs.SvLh
