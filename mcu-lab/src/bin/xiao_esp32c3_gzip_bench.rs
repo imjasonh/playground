@@ -28,6 +28,15 @@ use miniz_oxide::{MZFlush, MZStatus};
 extern "C" {
     fn esp_clk_cpu_freq() -> i32;
     fn esp_rom_crc32_le(crc: u32, buf: *const u8, len: u32) -> u32;
+    fn tinfl_decompress(
+        r: *mut core::ffi::c_void,
+        in_buf: *const u8,
+        in_buf_size: *mut usize,
+        out_buf_start: *mut u8,
+        out_buf_next: *mut u8,
+        out_buf_size: *mut usize,
+        flags: u32,
+    ) -> i32;
 }
 
 fn now_us() -> u64 {
@@ -196,6 +205,50 @@ fn main() -> Result<()> {
             FreeRtos::delay_ms(5);
         }
         prof.finish("c3_miniz_inflate");
+    }
+
+    // 2b. ESP32-C3 ROM `tinfl_decompress` inflate across all corpora.
+    {
+        const TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF: u32 = 4;
+        const TINFL_STATUS_DONE: i32 = 0;
+        let mut rom_tinfl_state = vec![0u32; 3072].into_boxed_slice();
+        let prof = PcProfiler::start(task_handle);
+        for corpus in CORPORA {
+            let frame = parse_gzip_frame(corpus.gz_bytes).expect("valid gzip");
+            let iters = 32usize;
+            let mut last_written = 0usize;
+            let t0 = now_us();
+            for _ in 0..iters {
+                rom_tinfl_state[0] = 0;
+                let mut in_size = frame.deflate_payload.len();
+                let mut out_size = out_buf.len();
+                let status = unsafe {
+                    tinfl_decompress(
+                        rom_tinfl_state.as_mut_ptr().cast(),
+                        frame.deflate_payload.as_ptr(),
+                        &mut in_size,
+                        out_buf.as_mut_ptr(),
+                        out_buf.as_mut_ptr(),
+                        &mut out_size,
+                        TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF,
+                    )
+                };
+                assert_eq!(status, TINFL_STATUS_DONE);
+                last_written = out_size;
+            }
+            let us = now_us() - t0;
+            assert_eq!(last_written, corpus.raw_len);
+            println!(
+                "BENCH kind=inflate impl=esp32c3_rom_miniz corpus={} iters={} in_bytes={} out_bytes={} total_us={}",
+                corpus.name,
+                iters,
+                frame.deflate_payload.len(),
+                last_written,
+                us
+            );
+            FreeRtos::delay_ms(5);
+        }
+        prof.finish("c3_rom_inflate");
     }
 
     // 3. CRC32 comparison: ESP32-C3 ROM `esp_rom_crc32_le` vs pure-Rust bit-by-bit `protocol::crc32`.
