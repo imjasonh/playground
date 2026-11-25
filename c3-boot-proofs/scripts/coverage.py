@@ -28,7 +28,12 @@ every call is proved.
 
 Usage: coverage.py PROFILE ELF NM OBJDUMP [TOP]
 
-With `-` as PROFILE, it skips boot coverage.
+With `-` as PROFILE, it skips boot coverage. When the profile comes from
+another build, such as the burns-off development build that
+`c3-boot/qemu/boot-lockstep.sh` boots, set `PROFILE_ELF` to that build's
+ELF. Each profiled address then counts as proved when its function in
+`PROFILE_ELF` has the name of a proved function in ELF, or, outside any
+sized symbol (such as `_start`), when the address is proved in ELF.
 """
 
 import bisect
@@ -118,6 +123,12 @@ def symbols(elf, nm):
     return funcs
 
 
+def base_name(symbol):
+    """The symbol without the ` (.N)` suffix that tells local copies apart,
+    whose numbers differ between builds."""
+    return re.sub(r" \(\.\d+\)$", "", symbol)
+
+
 def disassemble(elf, objdump):
     return subprocess.run([objdump, "-d", "--no-show-raw-insn", "-C", elf], check=True,
                           capture_output=True, text=True).stdout.splitlines()
@@ -175,18 +186,22 @@ def main():
 
     syms = symbols(elf, nm)
     reach = reachable(lines, syms, proved)
-    sym_starts = [s[0] for s in syms]
     boot_total = boot_proved = 0
     unproved = {}
+    profile_elf = os.environ.get("PROFILE_ELF")
+    psyms = symbols(profile_elf, nm) if profile_elf else syms
+    psym_starts = [s[0] for s in psyms]
+    proved_names = {base_name(name) for a, _, name in syms if a in proved}
     for line in open(profile) if profile != "-" else []:
         a, c = line.split()
         a, c = int(a, 16), int(c)
         boot_total += c
-        if a in proved:
+        i = bisect.bisect_right(psym_starts, a) - 1
+        found = i >= 0 and a < psyms[i][0] + psyms[i][1]
+        name = psyms[i][2] if found else f"0x{a:08x}"
+        if base_name(name) in proved_names if profile_elf and found else a in proved:
             boot_proved += c
             continue
-        i = bisect.bisect_right(sym_starts, a) - 1
-        name = syms[i][2] if i >= 0 and a < syms[i][0] + syms[i][1] else f"0x{a:08x}"
         unproved[name] = unproved.get(name, 0) + c
 
     print("| Measure | Proved | Total | Share |")
@@ -195,7 +210,7 @@ def main():
           f"{100 * len(proved) / total_image:.1f}% |")
     if boot_total:
         print(f"| Instructions one boot runs | {boot_proved:,} | {boot_total:,} | "
-              f"{100 * boot_proved / boot_total:.1f}% |")
+              f"{100 * boot_proved / boot_total:.3f}% |")
     for root, (done, size, n) in reach.items():
         print(f"| Instructions in the {n} functions `{root}` reaches | {done:,} | {size:,} | "
               f"{100 * done / size:.1f}% |")
@@ -206,7 +221,7 @@ def main():
     print("| --- | --- | --- |")
     for name, c in sorted(unproved.items(), key=lambda kv: -kv[1])[:top]:
         short = name if len(name) <= 90 else name[:87] + "..."
-        print(f"| `{short}` | {c:,} | {100 * c / boot_total:.1f}% |")
+        print(f"| `{short}` | {c:,} | {100 * c / boot_total:.3f}% |")
 
 
 if __name__ == "__main__":
