@@ -9,15 +9,16 @@ import C3BootProofs.Proofs.TrustedRootReadChain
 `readChainPos` on the bytes of an entry. When those bytes are one JSON
 value `entry` (`JVal`) and `readChainPos` accepts them, the spec's
 `readChain entry` accepts the entry too: its window is the model's, and
-its first certificate's serial number, issuer, subject, and validity are
-the ones the model's certificate names (`readChainPos_spec`).
+its first certificate's serial number, issuer, subject, validity, and
+P-384 key are the ones the model's certificate names (`readChainPos_spec`).
 `trustedRootReadChain_spec` states the machine-level theorem that way, with
 the fields read from the decoded certificates in the buffer.
 
 The converse doesn't hold. `read_chain` decodes every certificate into a
 buffer of `fl` bytes, and `readChain` has no such limit, so a chain whose
 decoded certificates don't fit is one that `readChain` accepts and
-`read_chain` rejects.
+`read_chain` rejects. That direction is fail-safe: the device then trusts
+no key from that entry.
 -/
 
 namespace C3.RV32
@@ -47,20 +48,27 @@ theorem trch_viewShift (D E : Bytes) (a l : Nat) : rcView (D ++ E) (D.length + a
 
 theorem RcInfo.app {D E : Bytes} {fp : Word} {c : RcCert} {i : CertInfo} (h : RcInfo D fp c i) :
     RcInfo (D ++ E) fp c i := by
-  obtain ⟨⟨a1, h1, b1, e1⟩, ⟨a2, h2, b2, e2⟩, ⟨a3, h3, b3, e3⟩, hw⟩ := h
+  obtain ⟨⟨a1, h1, b1, e1⟩, ⟨a2, h2, b2, e2⟩, ⟨a3, h3, b3, e3⟩, hw, hk⟩ := h
   have hl : D.length ≤ (D ++ E).length := by rw [List.length_append]; exact Nat.le_add_right _ _
-  exact ⟨⟨a1, h1, Nat.le_trans b1 hl, by rw [e1, trch_viewApp b1]⟩,
+  refine ⟨⟨a1, h1, Nat.le_trans b1 hl, by rw [e1, trch_viewApp b1]⟩,
     ⟨a2, h2, Nat.le_trans b2 hl, by rw [e2, trch_viewApp b2]⟩,
-    ⟨a3, h3, Nat.le_trans b3 hl, by rw [e3, trch_viewApp b3]⟩, hw⟩
+    ⟨a3, h3, Nat.le_trans b3 hl, by rw [e3, trch_viewApp b3]⟩, hw, ?_⟩
+  rcases hk with ⟨a4, h4, b4, e4⟩ | hk
+  · exact Or.inl ⟨a4, h4, Nat.le_trans b4 hl, by rw [e4, trch_viewApp b4]⟩
+  · exact Or.inr hk
 
 theorem RcInfo.shift {D E : Bytes} {fp : Word} {c : RcCert} {i : CertInfo}
     (h : RcInfo E (fp + BitVec.ofNat 32 D.length) c i) : RcInfo (D ++ E) fp c i := by
-  obtain ⟨⟨a1, h1, b1, e1⟩, ⟨a2, h2, b2, e2⟩, ⟨a3, h3, b3, e3⟩, hw⟩ := h
+  obtain ⟨⟨a1, h1, b1, e1⟩, ⟨a2, h2, b2, e2⟩, ⟨a3, h3, b3, e3⟩, hw, hk⟩ := h
   have hl : (D ++ E).length = D.length + E.length := List.length_append
-  exact ⟨⟨D.length + a1, by rw [h1, BitVec.ofNat_add, BitVec.add_assoc], by omega,
+  refine ⟨⟨D.length + a1, by rw [h1, BitVec.ofNat_add, BitVec.add_assoc], by omega,
       by rw [e1, trch_viewShift]⟩,
     ⟨D.length + a2, by rw [h2, BitVec.ofNat_add, BitVec.add_assoc], by omega, by rw [e2, trch_viewShift]⟩,
-    ⟨D.length + a3, by rw [h3, BitVec.ofNat_add, BitVec.add_assoc], by omega, by rw [e3, trch_viewShift]⟩, hw⟩
+    ⟨D.length + a3, by rw [h3, BitVec.ofNat_add, BitVec.add_assoc], by omega, by rw [e3, trch_viewShift]⟩, hw, ?_⟩
+  rcases hk with ⟨a4, h4, b4, e4⟩ | hk
+  · exact Or.inl ⟨D.length + a4, by rw [h4, BitVec.ofNat_add, BitVec.add_assoc], by omega,
+      by rw [e4, trch_viewShift]⟩
+  · exact Or.inr hk
 
 theorem trch_strRes {p b : Word} {d : Bytes} {n : Nat} (h : strRes p d = some (b, n)) :
     2 ≤ d.length ∧ n = d.length - 2 := by
@@ -324,11 +332,27 @@ theorem trch_outDec {M : Word → BitVec 8} {out fr fp : Word} {fl : Nat} {c : R
     (h : RcOut M out fr fp fl (.ok (c, s))) : memBytes M fp s.dec.length = s.dec :=
   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
+theorem trch_outLen {M : Word → BitVec 8} {out fr fp : Word} {fl : Nat} {c : RcCert} {s : RcSt}
+    (h : RcOut M out fr fp fl (.ok (c, s))) : s.dec.length ≤ fl :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+theorem trch_addNe {fp : Word} {a : Nat} (h0 : fp.toNat ≠ 0) (hw : fp.toNat + a < 2 ^ 32) :
+    fp + BitVec.ofNat 32 a ≠ 0 := by
+  intro e
+  have h := congrArg BitVec.toNat e
+  rw [BitVec.toNat_add, Sv.ofNat_toNat_lt (show a < 2 ^ 32 by omega), Nat.mod_eq_of_lt hw,
+    show (0 : Word).toNat = 0 from rfl] at h
+  omega
+
 /-- `trustedRootReadChain_correct` for an entry whose bytes are the JSON
 value `entry`: when `read_chain` returns `Ok`, `readChain entry` accepts
-the entry with the window `read_chain` stored, and the serial number,
-issuer, and subject of its first certificate are the bytes that the
-stored `Cert` points to in the buffer. -/
+the entry with the window `read_chain` stored, the serial number, issuer,
+and subject of its first certificate are the bytes that the stored `Cert`
+points to in the buffer, and its P-384 key is the 97 bytes at the stored
+key address, or `none` when that address is 0. The converse doesn't hold:
+`read_chain` rejects a chain whose decoded certificates overflow the
+buffer, which is fail-safe because the device then trusts no key from
+that entry. -/
 theorem trustedRootReadChain_spec (m : Machine) {sp0 out p fr fp retAddr : Word} {n fl : Nat} {c : Bool}
     {entry : Json}
     (hc : RcCode m.mem) (hpc : m.pc = TRC) (ha0 : reg m a0 = out) (ha1 : reg m a1 = p)
@@ -354,17 +378,24 @@ theorem trustedRootReadChain_spec (m : Machine) {sp0 out p fr fp retAddr : Word}
           info.serial = memBytes m'.mem cert.serial cert.serialLen ∧
           info.issuer = memBytes m'.mem cert.issuer cert.issuerLen ∧
           info.subject = memBytes m'.mem cert.subject cert.subjectLen ∧
-          info.window = ⟨cert.notBefore, cert.notAfter⟩ := by
+          info.window = ⟨cert.notBefore, cert.notAfter⟩ ∧
+          info.p384Key = if cert.key = 0 then none else some (memBytes m'.mem cert.key 0x61) := by
   obtain ⟨m', hs, hpc', hsp', hk, hR⟩ := trustedRootReadChain_correct m hc hpc ha0 ha1 ha2 ha3 hra hret hsp hsa
     hsl hsw h384 sRO hoa how sOG sOR sOB hfa hfw sRG sRR sRB hbw hb0 sBG sBR hfp hfl hpw hp0 sPG sPR sPB
   refine ⟨m', hs, hpc', hsp', hk, hR, fun cert s hr => ?_⟩
   obtain ⟨info, hrc, hi⟩ := readChainPos_spec hj hr
-  have hD : memBytes m'.mem fp s.dec.length = s.dec := by
-    have hO := hR.1
-    rw [hr] at hO
-    exact trch_outDec hO
-  obtain ⟨⟨a1, h1, b1, e1⟩, ⟨a2, h2, b2, e2⟩, ⟨a3, h3, b3, e3⟩, hw⟩ := hi
-  exact ⟨info, hrc, by rw [e1, trch_viewMem hD b1, h1], by rw [e2, trch_viewMem hD b2, h2],
-    by rw [e3, trch_viewMem hD b3, h3], hw⟩
+  have hO := hR.1
+  rw [hr] at hO
+  have hD := trch_outDec hO
+  have hL := trch_outLen hO
+  obtain ⟨⟨a1, h1, b1, e1⟩, ⟨a2, h2, b2, e2⟩, ⟨a3, h3, b3, e3⟩, hw, hk⟩ := hi
+  refine ⟨info, hrc, by rw [e1, trch_viewMem hD b1, h1], by rw [e2, trch_viewMem hD b2, h2],
+    by rw [e3, trch_viewMem hD b3, h3], hw, ?_⟩
+  rcases hk with ⟨a4, h4, b4, e4⟩ | ⟨h4, e4⟩
+  · have hne : ¬cert.key = 0 := by
+      rw [h4]
+      exact trch_addNe hb0 (by omega)
+    rw [e4, ite_eq_right hne, trch_viewMem hD b4, h4]
+  · rw [e4, h4, ite_eq_left rfl]
 
 end C3.RV32
