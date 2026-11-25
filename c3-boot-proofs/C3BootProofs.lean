@@ -628,6 +628,8 @@ import C3BootProofs.Proofs.AcceptBundleCall
 import C3BootProofs.Proofs.AcceptBundleSteps
 import C3BootProofs.Proofs.AcceptBundleSegs
 import C3BootProofs.Proofs.AcceptBundle
+import C3BootProofs.Proofs.ResetPath
+import C3BootProofs.Proofs.Reset
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
