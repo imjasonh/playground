@@ -151,43 +151,25 @@ theorem acl_lz {M : Word → BitVec 8} (L : Loaded M) {a : Word} {k v : Nat}
     (fun _ _ hM => lz_congr k fun i hi => memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact hM _ (by omega)) h hv
 
-open Lean Elab Tactic Meta in
 /-- Proves a code condition from `Loaded` in the context: each piece of code
 or data from the image, a structure of them field by field, and the ROM's
-code from the context. -/
-partial def aclEnvCore : TacticM Unit := do
-  let g ← getMainGoal
-  let t0 ← instantiateMVars (← g.getType)
-  let t ← if (t0.getAppFn.constName? matches some ``CodeIn) then pure t0 else whnfR t0
-  let leaf (tac : TSyntax `tactic) : TacticM Unit :=
-    try Term.withoutErrToSorry (evalTactic tac)
-    catch e => throwError m!"acl_env: not from the image: {t}: {e.toMessageData}"
-  match t.getAppFn.constName? with
-  | some ``CodeIn =>
-    if (t.getArg! 1).isFVar then evalTactic (← `(tactic| assumption))
-    else leaf (← `(tactic| exact acl_code ‹Loaded _› (by decide +kernel)))
-  | some ``PanicCode => leaf (← `(tactic| exact acl_panic ‹Loaded _› (by decide +kernel)))
-  | some ``Eq =>
-    leaf (← match (t.getArg! 1).getAppFn.constName? with
-      | some ``memBytes => `(tactic| exact acl_bytes ‹Loaded _› (by decide +kernel))
-      | some ``feW => `(tactic| exact acl_fe ‹Loaded _› (by decide +kernel) (by decide +kernel))
-      | some ``accV => `(tactic| exact acl_acc ‹Loaded _› (by decide +kernel) (by decide +kernel))
-      | some ``lzLimbs => `(tactic| exact acl_lz ‹Loaded _› (by decide +kernel) (by decide +kernel))
-      | _ => `(tactic| exact acl_s5 ‹Loaded _› (by decide +kernel) (by decide +kernel)))
-  | some ``C3.RV32.EdM.EdImage =>
-    for g' in ← g.apply (mkConst ``C3.RV32.EdM.EdImage.ofCode) do
-      setGoals [g']
-      aclEnvCore
-    setGoals []
-  | _ =>
-    let t' ← whnf t
-    let gs ← (← g.replaceTargetDefEq t').constructor
-    for g' in gs do
-      setGoals [g']
-      aclEnvCore
-    setGoals []
+code from the context. It is a macro rather than `TacticM` code, because
+the axiom audit covers every declaration in the project and `TacticM` code
+depends on `Classical.choice`. -/
+syntax "acl_env" : tactic
 
-elab "acl_env" : tactic => aclEnvCore
+macro_rules
+  | `(tactic| acl_env) => `(tactic| first
+      | assumption
+      | exact acl_code ‹Loaded _› (by decide +kernel)
+      | exact acl_panic ‹Loaded _› (by decide +kernel)
+      | exact acl_bytes ‹Loaded _› (by decide +kernel)
+      | exact acl_fe ‹Loaded _› (by decide +kernel) (by decide +kernel)
+      | exact acl_acc ‹Loaded _› (by decide +kernel) (by decide +kernel)
+      | exact acl_lz ‹Loaded _› (by decide +kernel) (by decide +kernel)
+      | exact acl_s5 ‹Loaded _› (by decide +kernel) (by decide +kernel)
+      | (apply C3.RV32.EdM.EdImage.ofCode <;> acl_env)
+      | (constructor <;> acl_env))
 
 theorem acl_byte {S : Word → BitVec 8} {p : Word} {n : Nat} {c : List Nat} (h : memBytes S p n = c) {i : Nat}
     (hi : i < n) : S (p + BitVec.ofNat 32 i) = BitVec.ofNat 8 (c.getD i 0) := by
