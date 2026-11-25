@@ -581,6 +581,15 @@ import C3BootProofs.Proofs.AcceptStages
 import C3BootProofs.Proofs.AcceptImageSpec
 import C3BootProofs.Proofs.AcceptImage
 import C3BootProofs.Proofs.AcceptFinish
+import C3BootProofs.Proofs.BootMainRecord
+import C3BootProofs.Proofs.BootMainSpec
+import C3BootProofs.Proofs.BootMainTail
+import C3BootProofs.Proofs.BootMainPick
+import C3BootProofs.Proofs.BootMainWrite
+import C3BootProofs.Proofs.BootMainDecide
+import C3BootProofs.Proofs.BootMainPlan
+import C3BootProofs.Proofs.BootMainEntry
+import C3BootProofs.Proofs.BootMainStart
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
