@@ -589,7 +589,8 @@ theorem ace_c6e {X : AceCtx} (O : X.Ok) {M Mx : Word → BitVec 8} {f : Fin 32 �
   refine WP.branch ac_at_cbe (fun eb => ?_) (fun _ => ?_) <;> wn
   · exfalso; rsimp at eb; rw [R.rsp, e350, u0] at eb
     have e0 : X.D + BitVec.ofNat 32 a + BitVec.ofNat 32 vp + 1 = 0 := by simpa [branchTaken] using eb
-    rw [e0] at hq3; simp at hq3
+    have h0 : (0 : Word).toNat = 0 := rfl
+    rw [e0, h0] at hq3; omega
   refine WP.lw ac_at_cc2 (by rsimp; rw [R.rsp, e354a]; exact ace_al4 F (by decide) (by decide)) ?_; wn
   refine WP.lui ac_at_cc6 ?_; wn
   refine WP.aluImm ac_at_cca ?_; wn
