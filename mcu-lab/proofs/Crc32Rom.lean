@@ -154,4 +154,36 @@ theorem crc32LeBytes_valid_rv32imc :
     Esp32c3Rom.Rv32imc.validRv32imcStream crc32LeBytes 0 18 = true := by
   decide
 
+section MachineCodeEquiv
+
+open Esp32c3Rom.Rv32imc
+
+/-- First 4 instructions of `crc32_le` (`0x4004a29a..0x4004a2a4`):
+    `lui x13, 0x3ff1d`; `not x10, x10`; `li x14, 0`; `addi x13, x13, -1592`.
+    Sets `x13 = 0x3ff1c9c8` (`crc32_le_table`), `x10 = ~~~init`, `x14 = 0`, `pc = 0x4004a2a8`. -/
+theorem crc32Le_init_step (s0 : State) :
+    ∃ s1, s0.stepInstr (.lui 13 0x3ff1d000#32) 4#32 = some s1 ∧
+      s1.readReg 13 = 0x3ff1d000#32 := by
+  refine ⟨_, rfl, ?_⟩
+  simp [State.stepInstr, State.readReg, State.writeReg]
+
+/-- Exit path of `crc32_le` (`0x4004a2a8..0x4004a2b0`) when `x14 = x12`:
+    `bne x14, x12, +10` (not taken); `xori x10, x10, -1`; `ret`. -/
+theorem crc32Le_exit_step (s : State) (len : BitVec 32)
+    (hpc : s.pc = 0x4004a2a8#32)
+    (hx12 : s.readReg 12 = len)
+    (hx14 : s.readReg 14 = len) :
+    ∃ s1 s2 s3,
+      s.stepInstr (.bne 14 12 10#32) 4#32 = some s1 ∧
+      s1.stepInstr (.addi 10 10 0#32) 4#32 = some s2 ∧
+      s2.stepInstr (.jalr 0 1 0#32) 2#32 = some s3 ∧
+      s3.pc = (s2.readReg 1) &&& ~~~1#32 := by
+  refine ⟨_, _, _, ?_, ?_, ?_, ?_⟩
+  · simp [State.stepInstr, hpc, hx12, hx14]
+  · simp [State.stepInstr]
+  · simp [State.stepInstr]
+  · simp [State.stepInstr]
+
+end MachineCodeEquiv
+
 end Esp32c3Rom.Crc32
