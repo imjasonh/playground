@@ -412,6 +412,7 @@ import C3BootProofs.Proofs.TufRoleKeysMetAt
 import C3BootProofs.Proofs.TufRoleKeysMetModel
 import C3BootProofs.Proofs.TufRoleKeysMetFrame
 import C3BootProofs.Proofs.TufRoleKeysMetLookup
+import C3BootProofs.Proofs.TufRoleKeysMetCmp
 import C3BootProofs.Proofs.TrustedRootDecode
 import C3BootProofs.Proofs.TrustedRootValidFor
 import C3BootProofs.Proofs.TrustedRootReadChainAt
