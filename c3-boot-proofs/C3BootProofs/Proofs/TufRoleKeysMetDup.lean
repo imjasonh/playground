@@ -322,6 +322,8 @@ theorem rm_dm16 (E : RmBase M0 M1 s F R MP SP ML SL g0) {M2 M' : Word → BitVec
 
 theorem rm_dlk : ∀ x, x ∈ rmDL → x ∈ rmDK := by decide
 
+theorem rm_bnz : ∀ r < 8, branchTaken .beq (BitVec.ofNat 32 (4 * (r + 1))) 0 = false := by decide
+
 theorem rm_blt7 : ∀ j < 8, branchTaken .bltu (aluEval .add 0 7) (BitVec.ofNat 32 j) = false := by decide
 
 /-- One pass of the duplicate-key loop, from 0x184: compare the key of slot
@@ -462,6 +464,109 @@ theorem rm_dstep (E : RmBase M0 M1 s F R MP SP ML SL g0) {t : Nat} {es : List Rk
         first | exact l | (rw [h] at hT0; exact absurd hT0 (by decide))
     exact rm_c2 E (E.codeA hO2) (by omega) hsp' h10 hf' hsk fun hd M' g'' hck =>
       hnk M' g'' hck (rm_ne hw hki hjb hbyi hR2 hcp hj8 (by rw [hl]; exact hd))
+
+/-- No counted slot before position `m` of `cs` holds the key of slot `i`,
+as memory holds keys. -/
+def RmPd (es : List RkEntry) (cs : List Nat) (ti : Nat) (ki : Bytes) (m : Nat) : Prop :=
+  ∀ m', m' < m → ∀ kj, rmKeyAt es (cs.getD m' 0) = some kj → (kj.1, nb kj.2) ≠ (ti, nb ki)
+
+theorem rm_pdS {es : List RkEntry} {cs : List Nat} {ti m : Nat} {ki : Bytes} (h : RmPd es cs ti ki m)
+    (hm : ∀ kj, rmKeyAt es (cs.getD m 0) = some kj → (kj.1, nb kj.2) ≠ (ti, nb ki)) :
+    RmPd es cs ti ki (m + 1) := by
+  intro m' hm' kj hk
+  by_cases hlt : m' < m
+  · exact h m' hlt kj hk
+  · have : m' = m := by omega
+    subst this
+    exact hm kj hk
+
+/-- The duplicate-key loop from 0x184, with `r + 1` counted slots left from
+position `m` of `cs`. -/
+theorem rm_dloop (E : RmBase M0 M1 s F R MP SP ML SL g0) {t : Nat} {es : List RkEntry} (hR : RkAt M0 R t es)
+    (hw : RkWf es) {i ti : Nat} {ki : Bytes} (hi8 : i < 8) (hki : rmKeyAt es i = some (ti, ki))
+    {gK : Fin 32 → Word} (hKsp : gK sp = F) (hK18 : gK 18 = 0x62) (hK19 : gK 19 = R)
+    (hK27 : gK 27 = R + BitVec.ofNat 32 (98 * i)) {W8 : Word} {cs : List Nat} (hc8 : cs.length ≤ 8)
+    (hcs : ∀ m, m < cs.length →
+      memLoad32 Mz (F + BitVec.ofNat 32 (0x28 + 4 * m)) = BitVec.ofNat 32 (cs.getD m 0) ∧ cs.getD m 0 < 8)
+    (hskip : ∀ Mk g', RmDM M1 Mz Mk s F W8 → (∀ x, x ∈ rmDL → g' x = gK x) → g' 0 = 0 →
+      (∀ x, x ∉ rkE → g' x = g0 x) → WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x2C0 g')
+    (hdone : ∀ Mk g', RmDM M1 Mz Mk s F W8 → (∀ x, x ∈ rmDL → g' x = gK x) → g' 0 = 0 →
+      (∀ x, x ∉ rkE → g' x = g0 x) → RmPd es cs ti ki cs.length →
+      WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x20A g') :
+    ∀ r m, m + r + 1 = cs.length → RmPd es cs ti ki m → ∀ (g : Fin 32 → Word) (Mk : Word → BitVec 8),
+      (∀ x, x ∈ rmDL → g x = gK x) → g 8 = F + BitVec.ofNat 32 (0x28 + 4 * m) →
+      g 9 = BitVec.ofNat 32 (4 * (r + 1)) → (∀ x, x ∉ rkE → g x = g0 x) → RmDM M1 Mz Mk s F W8 →
+      WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x184 g := by
+  intro r
+  induction r with
+  | zero =>
+    intro m hm hP g Mk hK h8 h9 hfr hM
+    refine rm_dstep E hR hw hi8 hki hKsp hK18 hK19 hK27 (m := m) (j := cs.getD m 0) (by omega)
+      (hcs m (by omega)).1 (hcs m (by omega)).2 hskip ?_ hK h8 hfr hM
+    intro Mk' g' hM' hK' hz' hf' e8 e9 hne
+    refine WP.aluImm rkm_at_1de ?_; wn
+    refine WP.aluImm rkm_at_1e0 ?_; wn
+    refine WP.branch rkm_at_1e2 (fun eb => ?_) (fun eb => ?_) <;> wn
+    · exact hdone Mk' _ hM' (by rmkeep hK') (by rsimp; (try exact hz')) (by keepz E.hz0)
+        (by rw [← hm]; exact rm_pdS hP hne)
+    · exfalso; (try rsimp at eb); rw [e9, h9, rm_dec4] at eb; exact absurd eb (by decide)
+  | succ r ih =>
+    intro m hm hP g Mk hK h8 h9 hfr hM
+    refine rm_dstep E hR hw hi8 hki hKsp hK18 hK19 hK27 (m := m) (j := cs.getD m 0) (by omega)
+      (hcs m (by omega)).1 (hcs m (by omega)).2 hskip ?_ hK h8 hfr hM
+    intro Mk' g' hM' hK' hz' hf' e8 e9 hne
+    refine WP.aluImm rkm_at_1de ?_; wn
+    refine WP.aluImm rkm_at_1e0 ?_; wn
+    refine WP.branch rkm_at_1e2 (fun eb => ?_) (fun eb => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [e9, h9, rm_dec4] at eb; exact absurd eb (by rw [rm_bnz r (by omega)]; decide)
+    refine WP.jal rkm_at_1e4 (by decide) ?_; wn
+    refine ih (m + 1) (by omega) (rm_pdS hP hne) _ Mk' (by rmkeep hK') ?_ ?_ (by keepz E.hz0) hM'
+    · (try rsimp); rw [e8, h8, ev_add, show (4 : Word) = BitVec.ofNat 32 4 from rfl, add_ofNat_assoc]; rfl
+    · (try rsimp); rw [e9, h9, rm_dec4]
+/-- The duplicate-key loop from 0x17E: either some counted slot holds the
+key of slot `i` and the code goes to 0x2C0, or none does and it goes to
+0x20A. -/
+theorem rm_dup (E : RmBase M0 M1 s F R MP SP ML SL g0) {t : Nat} {es : List RkEntry} (hR : RkAt M0 R t es)
+    (hw : RkWf es) {i ti : Nat} {ki : Bytes} (hi8 : i < 8) (hki : rmKeyAt es i = some (ti, ki))
+    {g : Fin 32 → Word} (hsp : g sp = F) (h18 : g 18 = 0x62) (h19 : g 19 = R)
+    (h27 : g 27 = R + BitVec.ofNat 32 (98 * i)) {W8 : Word} {cs : List Nat} (hc8 : cs.length ≤ 8)
+    (hcs : ∀ m, m < cs.length →
+      memLoad32 Mz (F + BitVec.ofNat 32 (0x28 + 4 * m)) = BitVec.ofNat 32 (cs.getD m 0) ∧ cs.getD m 0 < 8)
+    (hcnt : memLoad32 Mz (F + BitVec.ofNat 32 0x1C) = BitVec.ofNat 32 (4 * cs.length))
+    (hskip : ∀ Mk g', RmDM M1 Mz Mk s F W8 → (∀ x, x ∈ rmDL → g' x = g x) → g' 0 = 0 →
+      (∀ x, x ∉ rkE → g' x = g0 x) → WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x2C0 g')
+    (hdone : ∀ Mk g', RmDM M1 Mz Mk s F W8 → (∀ x, x ∈ rmDL → g' x = g x) → g' 0 = 0 →
+      (∀ x, x ∉ rkE → g' x = g0 x) → RmPd es cs ti ki cs.length →
+      WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x20A g')
+    (hfr : ∀ x, x ∉ rkE → g x = g0 x) {Mk : Word → BitVec 8} (hM : RmDM M1 Mz Mk s F W8) :
+    WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x17E g := by
+  have hE := fun x (_ : x ∈ rmDL) => (rfl : g x = g x)
+  refine WP.zero fun hz => ?_
+  have hc9 : memLoad32 Mk (F + BitVec.ofNat 32 0x1C) = BitVec.ofNat 32 (4 * cs.length) :=
+    (hM.2.1.load (c := 0x10) (by decide)).trans hcnt
+  refine WP.aluImm rkm_at_17e ?_; wn
+  refine WP.lw rkm_at_180 (by (try rsimp); rw [hsp]; exact E.alF (c := 0x1C) (by decide)) ?_; wn
+  refine WP.branch rkm_at_182 (fun eb => ?_) (fun eb => ?_) <;> wn
+  · cases hl : cs.length with
+    | zero =>
+      exact hdone Mk _ hM (by rmkeep hE) (by rsimp; (try exact hz)) (by keepz E.hz0)
+        (by rw [hl]; exact fun m' h => absurd h (by omega))
+    | succ k =>
+      exfalso; (try rsimp at eb); rw [hsp] at eb
+      change branchTaken .beq (memLoad32 Mk (F + BitVec.ofNat 32 0x1C)) 0 = true at eb
+      rw [hc9, hl] at eb; exact absurd eb (by rw [rm_bnz k (by omega)]; decide)
+  · cases hl : cs.length with
+    | zero =>
+      exfalso; (try rsimp at eb); rw [hsp] at eb
+      change branchTaken .beq (memLoad32 Mk (F + BitVec.ofNat 32 0x1C)) 0 = false at eb
+      rw [hc9, hl] at eb; exact absurd eb (by decide)
+    | succ k =>
+      refine rm_dloop E hR hw hi8 hki hsp h18 h19 h27 hc8 hcs hskip hdone k 0 (by omega)
+        (fun m' h => absurd h (by omega)) _ Mk (by rmkeep hE) ?_ ?_ (by keepz E.hz0) hM
+      · (try rsimp); rw [hsp]; rfl
+      · (try rsimp); rw [hsp]
+        change memLoad32 Mk (F + BitVec.ofNat 32 0x1C) = _
+        rw [hc9, hl]
 
 end
 
