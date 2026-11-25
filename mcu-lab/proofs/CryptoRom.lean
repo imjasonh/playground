@@ -110,4 +110,58 @@ theorem bigintModexp_getz (s : BigintState) (base exp mod : Nat) (mDash : UInt32
     (bigintModexp (bigintEnable s) base exp mod mDash len).z = modPow base exp mod := by
   rfl
 
+/-- Convert a little-endian `List UInt32` to `Nat`. -/
+def wordsToNat : List UInt32 → Nat
+  | [] => 0
+  | w :: ws => w.toNat + 2^32 * wordsToNat ws
+
+/-- Square-and-multiply modular exponentiation for computable verification. -/
+def modPowFast (base exp mod : Nat) : Nat :=
+  if mod ≤ 1 then 0
+  else
+    match exp with
+    | 0 => 1 % mod
+    | e + 1 =>
+      let rec go (b e acc : Nat) : Nat :=
+        if e == 0 then acc
+        else
+          let acc' := if e % 2 == 1 then (acc * b) % mod else acc
+          go ((b * b) % mod) (e / 2) acc'
+      termination_by e
+      decreasing_by simp_all; omega
+      go (base % mod) (e + 1) 1
+
+/-- Silicon-verified Vector 1 (64-bit, `words = 2`) from `bigint_vectors.txt`. -/
+theorem bigint_vec1_ok :
+    let m := wordsToNat [0xa3b1799d, 0x4e4018bf]
+    let x := wordsToNat [0x62b5a134, 0x10ab07bd]
+    let y := wordsToNat [0x46685257, 0x1f589dc8]
+    let z := wordsToNat [0xbc71bde4, 0x178a9d6d]
+    m < 2 ^ (32 * 2 - 1) ∧
+      (0xa3b1799d * 0xafa42b4b + 1) % 2^32 = 0 ∧
+      modPowFast x y m = z := by
+  native_decide
+
+/-- Silicon-verified Vector 2 (128-bit, `words = 4`) from `bigint_vectors.txt`. -/
+theorem bigint_vec2_ok :
+    let m := wordsToNat [0x392456df, 0x23b8c1e9, 0xbc8960a9, 0x4d1e8fd3]
+    let x := wordsToNat [0xad3c2d6d, 0xbd9c66b3, 0xe465e150, 0x45ce921a]
+    let y := wordsToNat [0x16419f82, 0x972a8469, 0x6c031199, 0x04117479]
+    let z := wordsToNat [0x20ecab27, 0xeca46594, 0x94497208, 0x118d0fb4]
+    m < 2 ^ (32 * 4 - 1) ∧
+      (0x392456df * 0x42631ae1 + 1) % 2^32 = 0 ∧
+      modPowFast x y m = z := by
+  native_decide
+
+/-- Silicon-verified Vector 3 (256-bit, `words = 8`) from `bigint_vectors.txt`. -/
+theorem bigint_vec3_ok :
+    let m := wordsToNat [0x07a0ca6f, 0x17fc695a, 0x37f8a88b, 0x3b8faa18, 0x815ef6d1, 0x9a1de644, 0x06cb0fb3, 0x47d6e0d3]
+    let x := wordsToNat [0x32e70629, 0xb74d0fb1, 0xa65ed389, 0xb38a088c, 0x8b8148f6, 0x6b65a6a4, 0x386ecbe0, 0x397fae95]
+    let y := wordsToNat [0x96da1dac, 0x47378190, 0xcf36d58b, 0xde8a774b, 0x01a9e71f, 0xc241330b, 0xce4a2bbd, 0x146fb762]
+    let z := wordsToNat [0xed15ac7b, 0xb9776eee, 0x862bf052, 0x6a757000, 0xb2378ab7, 0x8016d8fc, 0x9b209757, 0x0ca43682]
+    m < 2 ^ (32 * 8 - 1) ∧
+      (0x07a0ca6f * 0x5b5a2b71 + 1) % 2^32 = 0 ∧
+      modPowFast x y m = z := by
+  native_decide
+
 end Esp32c3Rom.Crypto
