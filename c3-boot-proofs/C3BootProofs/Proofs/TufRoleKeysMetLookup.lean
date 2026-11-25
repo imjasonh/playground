@@ -14,6 +14,24 @@ in the error tails otherwise, which `rm_fail` proves return an error.
 
 namespace C3.Json
 
+theorem rm_eb_objGet (d key : Bytes) : ∀ e, objGet d key = .error e → e < 0x27 := by
+  intro e h
+  unfold objGet getOut at h
+  repeat' split at h
+  all_goals first
+    | (cases h; done)
+    | (cases h; decide)
+
+/-- Every error byte of `objField` is below 0x27. -/
+theorem rm_eb_objField (d key : Bytes) : ∀ e, objField d key = .error e → e < 0x27 := by
+  intro e h
+  unfold objField at h
+  repeat' split at h
+  all_goals first
+    | (cases h; done)
+    | (cases h; decide)
+    | (cases h; exact rm_eb_objGet d key _ ‹_›)
+
 /-! ## One step of `metSig` -/
 
 theorem msig_none {a id : Bytes} {k pos : Nat} (h : nextElement a pos = none) : metSig a id (k + 1) pos = none := by
@@ -113,47 +131,60 @@ variable {M0 M1 Mk : Word → BitVec 8} {s F R MP SP : Word} {ML SL : Nat} {g0 g
 /-- The epilogue with `i < n`: an error, whatever `a1` holds. -/
 theorem rm_fail (E : RmBase M0 M1 s F R MP SP ML SL g0) (hO : Out M1 Mk s 0x38EC) (hsp : g sp = F)
     (hfr : ∀ x, x ∉ rkE → g x = g0 x) {i n : Nat} (h22 : g 22 = BitVec.ofNat 32 i)
-    (h20 : g 20 = BitVec.ofNat 32 n) (hin : i < n) (hn : n < 2 ^ 32) :
+    (h20 : g 20 = BitVec.ofNat 32 n) (hin : i < n) (hn : n < 2 ^ 32) (he : (g 26 &&& 0xFF).toNat < 0x27) :
     WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x36E g :=
   rm_epi hsp (E.saved hO) E.hsp0 E.hret (by have := E.halF; omega) E.hz0 hfr (E.agree hO)
-    (fun h => absurd h (by rw [h22, h20, rm_sltu1 hin hn]; decide))
+    (fun h => absurd h (by rw [h22, h20, rm_sltu1 hin hn]; decide)) fun _ => he
+
+theorem rm_zb {b : BitVec 8} (h : b.toNat < 0x27) : (b.zeroExtend 32 &&& 0xFF).toNat < 0x27 := by
+  rw [BitVec.toNat_and]
+  refine Nat.lt_of_le_of_lt Nat.and_le_left ?_
+  rw [BitVec.toNat_setWidth]
+  have := b.isLt
+  rw [Nat.mod_eq_of_lt (by omega)]; exact h
 
 /-- The error tails at 0x342, 0x348, 0x34E, and 0x3AA. -/
 theorem rm_342 (E : RmBase M0 M1 s F R MP SP ML SL g0) (hO : Out M1 Mk s 0x38EC) (hsp : g sp = F)
     (hfr : ∀ x, x ∉ rkE → g x = g0 x) {i n : Nat} (h22 : g 22 = BitVec.ofNat 32 i)
-    (h20 : g 20 = BitVec.ofNat 32 n) (hin : i < n) (hn : n < 2 ^ 32) (hz0 : g0 0 = 0) :
+    (h20 : g 20 = BitVec.ofNat 32 n) (hin : i < n) (hn : n < 2 ^ 32) (hz0 : g0 0 = 0)
+    (he : (Mk (F + 0x49)).toNat < 0x27) :
     WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x342 g := by
   refine WP.lbu rkm_at_342 ?_; wn
   refine WP.jal rkm_at_346 (by decide) ?_; wn
   exact rm_fail E hO (by (try rsimp); exact hsp) (by keepz hz0) (by (try rsimp); exact h22)
-    (by (try rsimp); exact h20) hin hn
+    (by (try rsimp); exact h20) hin hn (by (try rsimp); rw [hsp]; exact rm_zb he)
 
 theorem rm_348 (E : RmBase M0 M1 s F R MP SP ML SL g0) (hO : Out M1 Mk s 0x38EC) (hsp : g sp = F)
     (hfr : ∀ x, x ∉ rkE → g x = g0 x) {i n : Nat} (h22 : g 22 = BitVec.ofNat 32 i)
-    (h20 : g 20 = BitVec.ofNat 32 n) (hin : i < n) (hn : n < 2 ^ 32) (hz0 : g0 0 = 0) :
+    (h20 : g 20 = BitVec.ofNat 32 n) (hin : i < n) (hn : n < 2 ^ 32) (hz0 : g0 0 = 0)
+    (he : (Mk (F + 0x4C)).toNat < 0x27) :
     WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x348 g := by
   refine WP.lbu rkm_at_348 ?_; wn
   refine WP.jal rkm_at_34c (by decide) ?_; wn
   exact rm_fail E hO (by (try rsimp); exact hsp) (by keepz hz0) (by (try rsimp); exact h22)
-    (by (try rsimp); exact h20) hin hn
+    (by (try rsimp); exact h20) hin hn (by (try rsimp); rw [hsp]; exact rm_zb he)
 
 theorem rm_34e (E : RmBase M0 M1 s F R MP SP ML SL g0) (hO : Out M1 Mk s 0x38EC) (hsp : g sp = F)
     (hfr : ∀ x, x ∉ rkE → g x = g0 x) {i n : Nat} (h22 : g 22 = BitVec.ofNat 32 i)
-    (h20 : g 20 = BitVec.ofNat 32 n) (hin : i < n) (hn : n < 2 ^ 32) (hz0 : g0 0 = 0) :
+    (h20 : g 20 = BitVec.ofNat 32 n) (hin : i < n) (hn : n < 2 ^ 32) (hz0 : g0 0 = 0)
+    (he : (Mk (F + 0x190)).toNat < 0x27) :
     WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x34E g := by
   refine WP.lbu rkm_at_34e ?_; wn
   refine WP.jal rkm_at_352 (by decide) ?_; wn
   exact rm_fail E hO (by (try rsimp); exact hsp) (by keepz hz0) (by (try rsimp); exact h22)
-    (by (try rsimp); exact h20) hin hn
+    (by (try rsimp); exact h20) hin hn (by (try rsimp); rw [hsp]; exact rm_zb he)
 
 theorem rm_3aa (E : RmBase M0 M1 s F R MP SP ML SL g0) (hO : Out M1 Mk s 0x38EC) (hsp : g sp = F)
     (hfr : ∀ x, x ∉ rkE → g x = g0 x) {i n : Nat} (h22 : g 22 = BitVec.ofNat 32 i)
-    (h20 : g 20 = BitVec.ofNat 32 n) (hin : i < n) (hn : n < 2 ^ 32) (hz0 : g0 0 = 0) :
+    (h20 : g 20 = BitVec.ofNat 32 n) (hin : i < n) (hn : n < 2 ^ 32) (hz0 : g0 0 = 0)
+    (he : (g 8 &&& 0xFF).toNat < 0x27) :
     WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x3AA g := by
   refine WP.alu rkm_at_3aa ?_; wn
   refine WP.jal rkm_at_3ac (by decide) ?_; wn
   exact rm_fail E hO (by (try rsimp); exact hsp) (by keepz hz0) (by (try rsimp); exact h22)
     (by (try rsimp); exact h20) hin hn
+    (by (try rsimp); rw [(hfr 0 (by decide)).trans hz0]; show ((0 : Word) + g 8 &&& 255).toNat < 39
+        rw [show (0 : Word) + g 8 = g 8 from BitVec.zero_add _]; exact he)
 
 end
 
@@ -313,12 +344,12 @@ theorem rm_look (E : RmBase M0 M1 s F R MP SP ML SL g0) {gK : Fin 32 → Word} (
   rcases hne : nextElement (memBytes M0 SP SL) pos with _ | _ | ⟨ep, el, nx⟩ <;> rw [hne] at hER <;>
     simp only [elemRes, Option.map_none, Option.map_some] at hER
   · -- An error inside the array.
-    obtain ⟨-, t1, -⟩ := hER
+    obtain ⟨-, t1, t2⟩ := hER
     refine WP.branch rkm_at_f6 (fun _ => ?_) (fun eb => ?_) <;> wn
     rotate_left
     · exfalso; (try rsimp at eb); rw [hgsp, t1] at eb; exact absurd eb (by decide)
     exact rm_342 E hO2 (by (try rsimp); exact hgsp) (by keepz E.hz0) (by (try rsimp); exact hg22)
-      (by (try rsimp); exact hg20) hin hn E.hz0
+      (by (try rsimp); exact hg20) hin hn E.hz0 (by rw [show F + 0x49 = F + 0x48 + 1 by rw [BitVec.add_assoc]; rfl, t2]; decide)
   · -- The end of the array: no item has the key ID.
     obtain ⟨hfa, t1, t2⟩ := hER
     refine WP.branch rkm_at_f6 (fun eb => ?_) (fun _ => ?_) <;> wn
@@ -392,12 +423,12 @@ theorem rm_look (E : RmBase M0 M1 s F R MP SP ML SL g0) {gK : Fin 32 → Word} (
     rcases hof : objField (memBytes M0 (SP + BitVec.ofNat 32 ep) el) (ascii!"keyid") with e | ⟨kp, kl⟩ <;>
       rw [hof] at hFR <;> simp only [fieldRes, Except.map] at hFR
     · -- No `keyid`.
-      obtain ⟨-, t1, -⟩ := hFR
+      obtain ⟨-, t1, t2⟩ := hFR
       refine WP.branch rkm_at_11c (fun _ => ?_) (fun eb => ?_) <;> wn
       rotate_left
       · exfalso; (try rsimp at eb); rw [hgsp, t1] at eb; exact absurd eb (by decide)
       exact rm_348 E hO3 (by (try rsimp); exact hgsp) (by keepz E.hz0) (by (try rsimp); exact hg22)
-        (by (try rsimp); exact hg20) hin hn E.hz0
+        (by (try rsimp); exact hg20) hin hn E.hz0 (by rw [show F + 0x4C = F + 0x48 + 4 by rw [BitVec.add_assoc]; rfl, t2, BitVec.toNat_ofNat]; have := rm_eb_objField _ _ _ hof; omega)
     · -- `keyid` at `kp`.
       obtain ⟨-, t1, t2⟩ := hFR
       have hv := objField_val hof
@@ -433,12 +464,12 @@ theorem rm_look (E : RmBase M0 M1 s F R MP SP ML SL g0) {gK : Fin 32 → Word} (
       rcases hsb : strBody (memBytes M0 (SP + BitVec.ofNat 32 ep + BitVec.ofNat 32 kp) kl) with _ | b <;>
         rw [hsb] at hS <;> simp only [Option.map_none, Option.map_some] at hS
       · -- `keyid` is not a string.
-        obtain ⟨-, t1, -⟩ := hS
+        obtain ⟨-, t1, t2⟩ := hS
         refine WP.branch rkm_at_130 (fun _ => ?_) (fun eb => ?_) <;> wn
         rotate_left
         · exfalso; (try rsimp at eb); rw [hgsp, t1] at eb; exact absurd eb (by decide)
         exact rm_34e E hO4 (by (try rsimp); exact hgsp) (by keepz E.hz0) (by (try rsimp); exact hg22)
-          (by (try rsimp); exact hg20) hin hn E.hz0
+          (by (try rsimp); exact hg20) hin hn E.hz0 (by rw [show F + 0x190 = F + 0x18C + 4 by rw [BitVec.add_assoc]; rfl, t2]; decide)
       · -- The key ID `b`: compare it with `id`.
         obtain ⟨-, t1, t2⟩ := hS
         obtain ⟨hb2, hbe⟩ := tex_body hsb
@@ -530,12 +561,12 @@ theorem rm_look (E : RmBase M0 M1 s F R MP SP ML SL g0) {gK : Fin 32 → Word} (
           rcases hog : objField (memBytes M0 (SP + BitVec.ofNat 32 ep) el) (ascii!"sig") with e | ⟨gp, gl⟩ <;>
             rw [hog] at hGR <;> simp only [fieldRes, Except.map] at hGR
           · -- No `sig`.
-            obtain ⟨-, t1, -⟩ := hGR
+            obtain ⟨-, t1, t2⟩ := hGR
             refine WP.branch rkm_at_160 (fun _ => ?_) (fun eb => ?_) <;> wn
             rotate_left
             · exfalso; (try rsimp at eb); rw [hgsp, t1] at eb; exact absurd eb (by decide)
             exact rm_348 E hO7 (by (try rsimp); exact hgsp) (by keepz E.hz0) (by (try rsimp); exact hg22)
-              (by (try rsimp); exact hg20) hin hn E.hz0
+              (by (try rsimp); exact hg20) hin hn E.hz0 (by rw [show F + 0x4C = F + 0x48 + 4 by rw [BitVec.add_assoc]; rfl, t2, BitVec.toNat_ofNat]; have := rm_eb_objField _ _ _ hog; omega)
           · -- `sig` at `gp`.
             obtain ⟨-, t1, t2⟩ := hGR
             have hw := objField_val hog
@@ -573,12 +604,12 @@ theorem rm_look (E : RmBase M0 M1 s F R MP SP ML SL g0) {gK : Fin 32 → Word} (
             rcases hsg : strBody (memBytes M0 (SP + BitVec.ofNat 32 ep + BitVec.ofNat 32 gp) gl) with _ | c <;>
               rw [hsg] at hS <;> simp only [Option.map_none, Option.map_some] at hS
             · -- `sig` is not a string.
-              obtain ⟨-, t1, -⟩ := hS
+              obtain ⟨-, t1, t2⟩ := hS
               refine WP.branch rkm_at_174 (fun _ => ?_) (fun eb => ?_) <;> wn
               rotate_left
               · exfalso; (try rsimp at eb); rw [hgsp, t1] at eb; exact absurd eb (by decide)
               exact rm_34e E hO8 (by (try rsimp); exact hgsp) (by keepz E.hz0) (by (try rsimp); exact hg22)
-                (by (try rsimp); exact hg20) hin hn E.hz0
+                (by (try rsimp); exact hg20) hin hn E.hz0 (by rw [show F + 0x190 = F + 0x18C + 4 by rw [BitVec.add_assoc]; rfl, t2]; decide)
             · -- The signature `c`.
               obtain ⟨-, t1, t2⟩ := hS
               obtain ⟨hc2', hce⟩ := tex_body hsg
@@ -683,12 +714,13 @@ theorem rm_open (E : RmBase M0 M1 s F R MP SP ML SL g0) {g : Fin 32 → Word} (h
   refine WP.lw rkm_at_ba (by (try rsimp); rw [hsp]; exact aligned_add hF4 (k := 0x48) (by decide)) ?_; wn
   refine WP.lbu rkm_at_bc ?_; wn
   rcases hco : curOpen 91 SP (memBytes M0 SP SL) with _ | ⟨q, l, k⟩ <;> rw [hco] at hCR
-  · obtain ⟨-, t1, -⟩ := hCR
+  · obtain ⟨-, t1, t2⟩ := hCR
     refine WP.branch rkm_at_c0 (fun _ => ?_) (fun eb => ?_) <;> wn
     rotate_left
     · exfalso; (try rsimp at eb); rw [hsp, t1] at eb; exact absurd eb (by decide)
     exact rm_3aa E hO2 (by (try rsimp); exact hsp) (by keepz E.hz0) (by (try rsimp); exact h22)
       (by (try rsimp); exact h20) hin hn E.hz0
+      (by (try rsimp); rw [hsp, show F + 0x4C = F + 0x48 + 4 by rw [BitVec.add_assoc]; rfl, t2]; decide)
   · obtain ⟨hq, hl, hk, hnc⟩ := pm_co_some hco
     rw [memBytes_length] at hl
     obtain ⟨-, t1, t2, t3⟩ := hCR

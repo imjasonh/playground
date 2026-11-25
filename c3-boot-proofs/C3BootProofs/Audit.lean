@@ -9156,6 +9156,9 @@ end C3
 /-- info: 'C3.RV32.tufRoleKeysMet_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_correct
 
+/-- info: 'C3.RV32.tufRoleKeysMet_ret' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_ret
+
 /-- info: 'C3.RV32.tufRoleKeysMet_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_spec
 
@@ -9669,6 +9672,9 @@ end C3
 
 /-- info: 'C3.RV32.Ac.act_836' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.act_836
+
+/-- info: 'C3.RV32.Ac.act_metSpec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.act_metSpec
 
 /-- info: 'C3.RV32.Ac.act_stage' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.act_stage

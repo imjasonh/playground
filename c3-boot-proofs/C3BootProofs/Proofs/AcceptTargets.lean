@@ -60,7 +60,8 @@ def ActDoc (flash : Nat → BitVec 8) (M : Word → BitVec 8) (idx start : Word)
   ∀ o l, tufIndexDocSpec M idx i = .ok (o, l) → flashBytes flash (start.toNat + o) l = d
 
 /-- At 0x836: the roots led to `root`, whose expiry `re` is at `sp + 0x1318`
-and whose keys for `targets` are at `sp + 0xDD0`. The index at `sp + 0x244`
+and whose keys for `targets` are at `sp + 0xDD0`, every byte of their key
+IDs and keys below 256. The index at `sp + 0x244`
 locates `targets.json` and `trusted_root.json` as documents
 `sp[0x1C]` and `sp[0x1C] + 1` of the TUF part at `s8`, of `s7` bytes. `s4`
 is `doc`, and `sp + 0x40` holds the result pointer `r`. -/
@@ -70,7 +71,7 @@ def AcTargetsPre (flash : Nat → BitVec 8) (pinned : Bytes) (parts : TufParts) 
   memLoad32 n.mem (acSlot B 0x1318) = BitVec.ofNat 32 re ∧
   memLoad32 n.mem (acSlot B 0x131C) = BitVec.ofNat 32 (re / 2 ^ 32) ∧
   (∃ t es, roleKeys root.md.signed (ascii!"targets") = some (t, es) ∧
-    RkAt n.mem (acSlot B 0xDD0) t (es.map C3.Json.rkTag) ∧ RkWf (es.map C3.Json.rkTag)) ∧
+    RkAt n.mem (acSlot B 0xDD0) t (es.map C3.Json.rkTag) ∧ RkWf (es.map C3.Json.rkTag) ∧ RkBytes es) ∧
   ActDoc flash n.mem (acSlot B 0x244) (reg n (24 : Fin 32))
     (memLoad32 n.mem (acSlot B 0x1C)).toNat parts.targets ∧
   ActDoc flash n.mem (acSlot B 0x244) (reg n (24 : Fin 32))
@@ -106,10 +107,10 @@ def AcTargetsPost (pinned : Bytes) (parts : TufParts) (root : TufRoot) (re : Nat
   reg n (21 : Fin 32) = x21 ∧ reg n (25 : Fin 32) = x25 ∧ reg n (27 : Fin 32) = x27 ∧
   ∀ x, ActOut B Bf x → n.mem x = Mi x
 
-/-- `tufRoleKeysMet_spec`, without `RkBytes`, and with what `RoleKeys::met`
-returns in `a0` and `a1`: when bit 0 of `a0` is clear (`Ok`), bit 0 of `a1`
-set means `thresholdMet` holds, and when it is set (`Err`), the low byte of
-`a1` is an error code below 0x27. The stage assumes this contract. -/
+/-- What the stage needs of `RoleKeys::met`: when bit 0 of `a0` is clear
+(`Ok`), bit 0 of `a1` set means `thresholdMet` holds, and when it is set
+(`Err`), the low byte of `a1` is an error code below 0x27. `act_metSpec`
+proves it from `tufRoleKeysMet_ret`. -/
 def ActMetSpec : Prop :=
   ∀ (m : Machine) {retAddr s R A MP SP : Word} {ML SL t : Nat}
     {md : Meta} {dj sj : Json} {role : Bytes} {es : List (Bytes × Option TufKey)},
@@ -127,7 +128,7 @@ def ActMetSpec : Prop :=
     memLoad32 m.mem (A + BitVec.ofNat 32 8) = SP →
     memLoad32 m.mem (A + BitVec.ofNat 32 12) = BitVec.ofNat 32 SL →
     roleKeys dj role = some (t, es) → RkAt m.mem R t (es.map C3.Json.rkTag) →
-    RkWf (es.map C3.Json.rkTag) → memBytes m.mem MP ML = encode md.signed →
+    RkWf (es.map C3.Json.rkTag) → RkBytes es → memBytes m.mem MP ML = encode md.signed →
     JVal true (memBytes m.mem SP SL) sj → (sj.asArr >>= List.mapM sigPair) = some md.sigs →
     ∃ m', Steps m m' ∧
       (rmH m'.pc m'.mem (reg m') ∨
@@ -137,7 +138,7 @@ def ActMetSpec : Prop :=
 
 /-- **The `targets.json` stage**, from 0x836 to 0xC12, for the callees' code
 and data `AcTargetsEnv` in memory that agrees with `M0` outside the stack
-and `Buffers`, and `RoleKeys::met` as `ActMetSpec` describes it. It reaches
+and `Buffers`. It reaches
 0xC12 only when `verifyTuf` accepts the parts, and then `AcTargetsPost`
 holds. -/
 def AcTargetsStage : Prop :=

@@ -5,7 +5,7 @@ import C3BootProofs.Proofs.AcceptTargetsMet
 
 From 0x836: keep the root's expiry at `sp + 0x28`, read `targets.json`,
 parse its metadata, and go on to `act_89a`. `act_stage` proves
-`AcTargetsStage` from `ActMetSpec`.
+`AcTargetsStage`.
 -/
 
 namespace C3.RV32.Ac
@@ -20,7 +20,7 @@ variable {romBase : Word} {romCode : List Nat} {B Bf g t r : Word} {v : Nat → 
 
 /-- **From 0x836**: store the root's expiry at `sp + 0x28`, read
 `targets.json` into `doc`, parse its metadata, then `act_89a`. -/
-theorem act_836 (hMet : ActMetSpec) {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R romBase romCode)
+theorem act_836 {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R romBase romCode)
     (hR4 : R % 4 = 0) (hR : R ≤ 0x3A50 - 0x180)
     (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
     (hr : memLoad32 M (acSlot B 0x40) = r) {pinned : Bytes} {parts : TufParts} {root : TufRoot} {re : Nat}
@@ -31,6 +31,7 @@ theorem act_836 (hMet : ActMetSpec) {flash : Nat → BitVec 8} {R : Nat} (hROM :
     (h131C : memLoad32 M (acSlot B 0x131C) = BitVec.ofNat 32 (re / 2 ^ 32))
     (hrk : roleKeys root.md.signed (ascii!"targets") = some (tt, es))
     (hRk : RkAt M (acSlot B 0xDD0) tt (es.map C3.Json.rkTag)) (hw : RkWf (es.map C3.Json.rkTag))
+    (hB : RkBytes es)
     (hdT : ActDoc flash M (acSlot B 0x244) (f 24) (memLoad32 M (acSlot B 0x1C)).toNat parts.targets)
     (hdoc : ActDoc flash M (acSlot B 0x244) (f 24) ((memLoad32 M (acSlot B 0x1C)).toNat + 1) parts.trustedRoot)
     (hs4 : f 20 = Bf + 0x4000) (hs5 : f 21 = x21) (hs9 : f 25 = x25) (hs11 : f 27 = x27) :
@@ -244,10 +245,10 @@ theorem act_836 (hMet : ActMetSpec) {flash : Nat → BitVec 8} {R : Nat} (hROM :
     rw [hm1, show (0 : Word).toNat = 0 from rfl] at this
     omega
   wn
-  refine act_89a (S := Bf + 0x4000 + BitVec.ofNat 32 gp) (SP := Bf + 0x4000 + BitVec.ofNat 32 sq) hMet hROM hR4 hR X
+  refine act_89a (S := Bf + 0x4000 + BitVec.ofNat 32 gp) (SP := Bf + 0x4000 + BitVec.ofNat 32 sq) hROM hR4 hR X
     (hI3.regs (by act_r) (by act_r) (by act_r)) hr3 (fun x hx => (kO3 x hx).trans ((kO2 x hx).trans (kO1 x hx)))
     (by act_r; exact hdoc3) (by act_r; exact hs4) (by act_r; exact hq) (by act_r) hq4 hq8 hqC
-    (by omega) (by omega) (by omega) (by omega) hd (CanonEncode _ _ hv1) hsj hps hrk hRk3 hw ?_ h28 h2C
+    (by omega) (by omega) (by omega) (by omega) hd (CanonEncode _ _ hv1) hsj hps hrk hRk3 hw hB ?_ h28 h2C
     (by act_r; exact hs5) (by act_r; exact hs9) (by act_r; exact hs11)
   intro hth te hte p1 l1 p2 l2 p3 l3 val p4 l4 p5 l5 body h1 h2 h3 h4 h5 h6 h7 hv hbd
   rw [act_verifyTuf, hroot]
@@ -255,16 +256,15 @@ theorem act_836 (hMet : ActMetSpec) {flash : Nat → BitVec 8} {R : Nat} (hROM :
 
 end
 
-/-- The `targets.json` stage holds for `RoleKeys::met` as `ActMetSpec`
-describes it. -/
-theorem act_stage (hMet : ActMetSpec) : AcTargetsStage := by
+/-- The `targets.json` stage holds. -/
+theorem act_stage : AcTargetsStage := by
   intro flash R romBase romCode hROM n B Bf g t r v M0 pinned parts root re hE hC F sB sRo sRom sBR bal bhi hR4 hR
     hS hInv hPre
-  obtain ⟨hroot, hre, h1318, h131C, ⟨tt, es, hrk, hRk, hw⟩, hdT, hdoc, hs4, hr⟩ := hPre
+  obtain ⟨hroot, hre, h1318, h131C, ⟨tt, es, hrk, hRk, hw, hB⟩, hdT, hdoc, hs4, hr⟩ := hPre
   have X : ActX romBase romCode B Bf M0 := ⟨F, sB, sRo, sRom, sBR, bal, bhi, hE⟩
   have hI : ActI B Bf g t v M0 n.mem (reg n) := ⟨hInv.sp, hInv.gp, hInv.tp, hInv.saves, hInv.out⟩
-  obtain ⟨n', hst, hq⟩ := act_836 hMet hROM hR4 hR X hI hr (Mi := n.mem) (fun _ _ => rfl) hroot hre h1318 h131C
-    hrk hRk hw hdT hdoc hs4 rfl rfl rfl (by decide) hC n hS
+  obtain ⟨n', hst, hq⟩ := act_836 hROM hR4 hR X hI hr (Mi := n.mem) (fun _ _ => rfl) hroot hre h1318 h131C
+    hrk hRk hw hB hdT hdoc hs4 rfl rfl rfl (by decide) hC n hS
   exact ⟨n', hst, hq n' rfl rfl rfl⟩
 
 end C3.RV32.Ac
