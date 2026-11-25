@@ -23,10 +23,10 @@ theorem gsOk_congr {M M0 : Word → BitVec 8} {inp : Word}
   unfold GsOk; rw [e0, e1, e2]
 
 /-- The P-256 constants are outside the stack. -/
-theorem P2Data.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (D : P2Data M0)
+theorem P2Data.sv {M M0 : Word → BitVec 8} {B : Word} (FW : Fr (B + 0xFFFFEC10) 0x3A50) (D : P2Data M0)
     (fR : ∀ x, SvR B x → M x = M0 x) : P2Data M :=
   D.ofR fun i hi => fR _ (by
-    have := dataR (q := (img% dataWindowAddress : Word)) (ql := (img% dataWindowSize)) F (by decide) (by decide) i hi
+    have := dataR (q := (img% dataWindowAddress : Word)) (ql := (img% dataWindowSize)) FW (by decide) (by decide) i hi
     exact this)
 
 theorem sv_sp2d0 (B : Word) : B + 0x21A0 = B + BitVec.ofNat 32 0x1ED0 + 0x2D0 := by
@@ -36,13 +36,13 @@ set_option maxHeartbeats 8000000 in
 /-- **A call to `VerifyingKey::from_sec1_bytes`** on the 65 bytes at `inp`,
 with the result at offset `oc`. -/
 theorem sv_gsF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o inp : Word} {oc : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (D : P2Data M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (D : P2Data M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 p256FromSec1Address)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc) (ha1 : reg n a1 = inp)
-    (ho2 : oc + 0x48 ≤ 0x1690) (ho3 : oc % 4 = 0) (hin : SvIn B inp 0x41) :
+    (ho2 : oc + 0x48 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hin : SvIn B inp 0x41) :
     ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
       (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
       SvKeepL B M n'.mem [(oc, 0x48)] ∧

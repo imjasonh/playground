@@ -64,26 +64,6 @@ import C3BootProofs.Proofs.SvDp3
 import C3BootProofs.Proofs.SvDp4
 import C3BootProofs.Proofs.SvDp5
 import C3BootProofs.Proofs.SvDpv
-import C3BootProofs.Proofs.SvEc
-import C3BootProofs.Proofs.SvEcA1
-import C3BootProofs.Proofs.SvEcA2
-import C3BootProofs.Proofs.SvEcA3
-import C3BootProofs.Proofs.SvEcD
-import C3BootProofs.Proofs.SvEcDs
-import C3BootProofs.Proofs.SvEcLib2
-import C3BootProofs.Proofs.SvEcMl
-import C3BootProofs.Proofs.SvEcMl2
-import C3BootProofs.Proofs.SvEcMl3
-import C3BootProofs.Proofs.SvEcPt
-import C3BootProofs.Proofs.SvEcT0a
-import C3BootProofs.Proofs.SvEcT0b
-import C3BootProofs.Proofs.SvEcT0c
-import C3BootProofs.Proofs.SvEcT1a
-import C3BootProofs.Proofs.SvEcT1b
-import C3BootProofs.Proofs.SvEcT1c
-import C3BootProofs.Proofs.SvEcW
-import C3BootProofs.Proofs.SvEcW2
-import C3BootProofs.Proofs.SvEcW3
 import C3BootProofs.Proofs.SvEcdsa
 import C3BootProofs.Proofs.SvEd
 import C3BootProofs.Proofs.SvEdImage
@@ -100,13 +80,6 @@ import C3BootProofs.Proofs.SvISearch
 import C3BootProofs.Proofs.SvIend
 import C3BootProofs.Proofs.SvIhit
 import C3BootProofs.Proofs.SvImiss
-import C3BootProofs.Proofs.SvIvA
-import C3BootProofs.Proofs.SvIvB
-import C3BootProofs.Proofs.SvIvE
-import C3BootProofs.Proofs.SvIvHc
-import C3BootProofs.Proofs.SvIvHx
-import C3BootProofs.Proofs.SvIvLib
-import C3BootProofs.Proofs.SvIvLoop
 import C3BootProofs.Proofs.SvKu
 import C3BootProofs.Proofs.SvL1
 import C3BootProofs.Proofs.SvL2
@@ -116,7 +89,6 @@ import C3BootProofs.Proofs.SvL5
 import C3BootProofs.Proofs.SvL6
 import C3BootProofs.Proofs.SvL7
 import C3BootProofs.Proofs.SvL8a
-import C3BootProofs.Proofs.SvLayout
 import C3BootProofs.Proofs.SvLeafH
 import C3BootProofs.Proofs.SvLeafH1
 import C3BootProofs.Proofs.SvLeafH2
@@ -124,16 +96,9 @@ import C3BootProofs.Proofs.SvLeafH3
 import C3BootProofs.Proofs.SvLeafHash
 import C3BootProofs.Proofs.SvLeafLink
 import C3BootProofs.Proofs.SvLh
-import C3BootProofs.Proofs.SvMs0
 import C3BootProofs.Proofs.SvNSearch
 import C3BootProofs.Proofs.SvOk
 import C3BootProofs.Proofs.SvP256
-import C3BootProofs.Proofs.SvP256A
-import C3BootProofs.Proofs.SvP256All
-import C3BootProofs.Proofs.SvP256B
-import C3BootProofs.Proofs.SvP256C
-import C3BootProofs.Proofs.SvP256D
-import C3BootProofs.Proofs.SvP256St
 import C3BootProofs.Proofs.SvPv
 import C3BootProofs.Proofs.SvPvWitness
 import C3BootProofs.Proofs.SvRk
@@ -246,18 +211,6 @@ import C3BootProofs.Proofs.SvX2
 import C3BootProofs.Proofs.SvX2c
 import C3BootProofs.Proofs.SvX2n
 import C3BootProofs.Proofs.SvX2z
-import C3BootProofs.Proofs.SvZA
-import C3BootProofs.Proofs.SvZB
-import C3BootProofs.Proofs.SvZDs
-import C3BootProofs.Proofs.SvZDs2
-import C3BootProofs.Proofs.SvZDs3
-import C3BootProofs.Proofs.SvZDs4
-import C3BootProofs.Proofs.SvZE
-import C3BootProofs.Proofs.SvZLib
-import C3BootProofs.Proofs.SvZLib2
-import C3BootProofs.Proofs.SvZLoop
-import C3BootProofs.Proofs.SvZLoop2
-import C3BootProofs.Proofs.SvZS
 
 /-!
 # Pending proofs
