@@ -249,6 +249,7 @@ import C3BootProofs.Proofs.BootMainSpec
 import C3BootProofs.Proofs.BootMainTail
 import C3BootProofs.Proofs.BootMainPick
 import C3BootProofs.Proofs.BootMainWrite
+import C3BootProofs.Proofs.BootMainDecide
 
 /-!
 # Audit
@@ -9307,3 +9308,66 @@ end C3
 
 /-- info: 'C3.RV32.Cur.bmc_call' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bmc_call
+
+/-- info: 'C3.RV32.Cur.bmt_lo' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_lo
+
+/-- info: 'C3.RV32.Cur.bmt_lo_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_lo_eq
+
+/-- info: 'C3.RV32.Cur.bmt_mod_add' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_mod_add
+
+/-- info: 'C3.RV32.Cur.bmt_addlo' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_addlo
+
+/-- info: 'C3.RV32.Cur.bmt_sublo' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_sublo
+
+/-- info: 'C3.RV32.Cur.bmt_xorlo' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_xorlo
+
+/-- info: 'C3.RV32.Cur.bmt_and1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_and1
+
+/-- info: 'C3.RV32.Cur.bmt_low_and' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmt_low_and
+
+/-- info: 'C3.RV32.Cur.bmd_plan_trial' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_plan_trial
+
+/-- info: 'C3.RV32.Cur.bmd_word_byte' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_word_byte
+
+/-- info: 'C3.RV32.Cur.bmd_sat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_sat
+
+/-- info: 'C3.RV32.Cur.bmd_boots' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_boots
+
+/-- info: 'C3.RV32.Cur.bmd_rec_tr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_rec_tr
+
+/-- info: 'C3.RV32.Cur.bmd_rec_nt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_rec_nt
+
+/-- info: 'C3.RV32.Cur.bmd_dec_acc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_dec_acc
+
+/-- info: 'C3.RV32.Cur.bmd_dec_rej' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_dec_rej
+
+/-- info: 'C3.RV32.Cur.bmd_dec_oth' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_dec_oth
+
+/-- info: 'C3.RV32.Cur.BmdPre.keep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.BmdPre.keep
+
+/-- info: 'C3.RV32.Cur.bmd_kin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_kin
+
+/-- info: 'C3.RV32.Cur.bmd_lowS' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_lowS
+
+/-- info: 'C3.RV32.Cur.bmd_acc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_acc
