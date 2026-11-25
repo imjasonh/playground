@@ -246,6 +246,7 @@ import C3BootProofs.Models.TufLinkKeys
 import C3BootProofs.Proofs.AcceptStages
 import C3BootProofs.Proofs.AcceptImageSpec
 import C3BootProofs.Proofs.AcceptImage
+import C3BootProofs.Proofs.AcceptFinish
 
 /-!
 # Audit
@@ -9283,3 +9284,14 @@ end C3
 
 /-- info: 'C3.RV32.Ac.acImage_stage' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acImage_stage
+/-- info: 'C3.RV32.Ac.acf_seg_cmp' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acf_seg_cmp
+
+/-- info: 'C3.RV32.Ac.acf_seg_write' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acf_seg_write
+
+/-- info: 'C3.RV32.Ac.acf_exit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acf_exit
+
+/-- info: 'C3.RV32.Ac.ac_finish_stage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_finish_stage
