@@ -67,13 +67,21 @@ What is not linked yet:
   development genesis keys and without eFuse burns. Another build is
   covered only where its function bytes are identical.
 - **Flash to memory.** The theorems assume the bytes are at their
-  addresses in memory. The ESP32-C3 ROM loader puts them there. `boot-sim`
-  loads the image the same way and matches QEMU, but on the chip the
-  loader is trusted until the plan's platform contracts state it.
+  addresses in memory. The ESP32-C3 ROM loader puts them there. `Loaded M`
+  (`Proofs/LoadedImage.lean`, written by `scripts/gen-loaded.py`) states
+  that as one hypothesis: `M` holds every extracted function and piece of
+  read-only data at its link address. `reset_correct_loaded` derives
+  `reset_correct`'s code hypotheses from it. `boot-sim` loads the image the
+  way the ROM does and matches QEMU, but on the chip the loader is
+  trusted.
 - **The SRAM alias.** The model keeps SRAM's instruction-bus and data-bus
-  addresses separate, while the chip aliases them. The proofs hold as long
-  as no store reaches code through the data-bus address, which is not yet
-  a stated obligation.
+  addresses separate, while the chip aliases them. `Proofs/SramAlias.lean`
+  states the obligation `AliasOk`: every fetch and load reads an address
+  where both views agree, and no store reaches the instruction bus's view
+  or the data-bus view of the bootloader's IRAM. Under it, `chip_steps`
+  proves that the chip runs as the model does. `aliasOk_regions` proves
+  which memory-map regions meet those conditions. That the run from reset
+  meets `AliasOk` is assumed.
 - **The whole boot.** Each function's theorem has hypotheses, such as a
   stack layout and argument ranges, that its caller's proof must discharge.
   `reset_correct` (`Proofs/Reset.lean`) states the plan's headline theorem

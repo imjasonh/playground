@@ -637,6 +637,10 @@ import C3BootProofs.Proofs.AcceptExtractDup
 import C3BootProofs.Proofs.AcceptExtractTsa
 import C3BootProofs.Proofs.AcceptExtractCaLib
 import C3BootProofs.Proofs.AcceptExtractCa
+import C3BootProofs.Proofs.Loaded
+import C3BootProofs.Proofs.LoadedImage
+import C3BootProofs.Proofs.ResetLoaded
+import C3BootProofs.Proofs.SramAlias
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
