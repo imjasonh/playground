@@ -109,6 +109,8 @@ make flash-gzip-bench-xiao PORT=/dev/cu.usbmodem1101
 3. **`miniz_oxide` deflate (`CompressorOxide`) OOM:** `sizeof(CompressorOxide) = 65,656 B` plus `HashBuffers` (33 + 64 + 64 KiB) and `LocalBuf` (83 KiB) + `Default::default()` stack frame exceeds ESP32-C3's `319,616 B` total free SRAM even with BLE disabled.
 4. **Bit-by-bit `protocol::crc32` (81.1 cyc/B, 1.97 MB/s):** Calling ROM `esp_rom_crc32_le` (`16.6 cyc/B`, `9.61 MB/s`) is **4.9× faster** at zero extra RAM cost.
 
+> **Validated local `miniz_oxide` patches:** Compiling `miniz_oxide` at `opt-level = 3`, using a single full-match `copy_within` in `inflate::core::transfer`, and shrinking `LZ_DICT_SIZE` + `LZ_CODE_BUF_SIZE` to `8,192` B (reducing `CompressorOxide` total heap from ~308 KiB to **65.3 KiB**) eliminated the deflate OOM and boosted `rle_epd` inflate from **11.71 → 16.14 MB/s** (`9.9 cyc/B`, **+37.8%**), `json_otel` inflate to **5.43 MB/s**, and `miniz_deflate_l1` to **6.78 MB/s** (`rle_epd`) / **2.11 MB/s** (`json_otel`).
+
 ### Theoretical Max Throughput (160 MHz RISC-V RV32IMC, 1 Core)
 
 | Operation | Measured @ 160 MHz | Theoretical Max @ 160 MHz |
