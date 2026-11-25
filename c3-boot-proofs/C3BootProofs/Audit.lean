@@ -213,6 +213,7 @@ import C3BootProofs.Proofs.TufParseMetadataHead
 import C3BootProofs.Proofs.TufParseRoot
 import C3BootProofs.Proofs.TufRoleKeysRead
 import C3BootProofs.Proofs.TufRoleKeysMetSpec
+import C3BootProofs.Proofs.TufRoleKeysMetResult
 import C3BootProofs.Proofs.TrustedRootDecode
 import C3BootProofs.Proofs.TrustedRootValidFor
 import C3BootProofs.Proofs.TrustedRootReadChainAt
@@ -9162,6 +9163,15 @@ end C3
 
 /-- info: 'C3.RV32.tufRoleKeysMet_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_spec
+
+/-- info: 'C3.RV32.tufRoleKeysMet_result' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_result
+
+/-- info: 'C3.RV32.rmr_okBit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.rmr_okBit
+
+/-- info: 'C3.RV32.rmr_tag' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.rmr_tag
 
 /-- info: 'C3.Json.parseValue_bytes' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.parseValue_bytes
