@@ -49,6 +49,12 @@ harness = false
 required-features = ["firmware"]
 
 [[bin]]
+name = "waveshare-epd75-grayscale"
+path = "src/bin/waveshare_epd75_grayscale.rs"
+harness = false
+required-features = ["firmware"]
+
+[[bin]]
 name = "waveshare-epd75-photo"
 path = "src/bin/waveshare_epd75_photo.rs"
 harness = false

@@ -11,8 +11,9 @@ Read [`README.md`](README.md) for the wire layout and build commands.
 
 - **Host tests stay off the ESP-IDF C toolchain.** `cargo test --lib` and
   `cargo clippy --lib` compile the host-safe modules (`src/protocol.rs`,
-  `src/panel.rs`, `src/maze/`) only. Device code lives behind the `firmware`
-  feature and `required-features` on the `xiao-esp32c3` and `epd-maze` binaries.
+  `src/panel.rs`, `src/maze/`, `src/grayscale/`, `src/gzip_bench.rs`) only.
+  Device code lives behind the `firmware` feature and `required-features` on
+  the board+app binaries.
 - **Do not add this crate to the generic Rust job.** `discover-esp32-apps.sh`
   matches `[target.riscv32*-esp-espidf]` / `[target.xtensa-*-espidf]` in
   `.cargo/config.toml` so the ESP32 jobs in `test.yml` run host tests and the
