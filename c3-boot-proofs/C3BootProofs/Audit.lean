@@ -10525,6 +10525,12 @@ end C3
 /-- info: 'C3.RV32.Ac.acs_contract' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acs_contract
 
+/-- info: 'C3.RV32.Ac.acl_envs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acl_envs
+
+/-- info: 'C3.RV32.Ac.acl_acsE' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acl_acsE
+
 /-- info: 'C3.RV32.Cur.bmc_pop_lt' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bmc_pop_lt
 
