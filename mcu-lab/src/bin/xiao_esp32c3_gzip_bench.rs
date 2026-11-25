@@ -212,7 +212,6 @@ fn main() -> Result<()> {
         const TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF: u32 = 4;
         const TINFL_STATUS_DONE: i32 = 0;
         let mut rom_tinfl_state = vec![0u32; 3072].into_boxed_slice();
-        let prof = PcProfiler::start(task_handle);
         for corpus in CORPORA {
             let frame = parse_gzip_frame(corpus.gz_bytes).expect("valid gzip");
             let iters = 32usize;
@@ -248,7 +247,6 @@ fn main() -> Result<()> {
             );
             FreeRtos::delay_ms(5);
         }
-        prof.finish("c3_rom_inflate");
     }
 
     // 3. CRC32 comparison: ESP32-C3 ROM `esp_rom_crc32_le` vs pure-Rust bit-by-bit `protocol::crc32`.
