@@ -521,4 +521,86 @@ theorem pr_82 (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) (h8 : g 8 = ou
 
 end
 
+theorem pr_st6 {M Mf : Word → BitVec 8} {o a b c d e w : Word}
+    (hM : memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 M o a) (o + 4) b) (o + 8) c)
+      (o + 0xC) d) (o + 0x10) e) (o + 0x14) w = Mf) :
+    Out M Mf o 24 ∧ memLoad32 Mf o = a ∧ memLoad32 Mf (o + 4) = b ∧ memLoad32 Mf (o + 8) = c ∧
+      memLoad32 Mf (o + 0xC) = d ∧ memLoad32 Mf (o + 0x10) = e ∧ memLoad32 Mf (o + 0x14) = w := by
+  subst hM
+  refine ⟨(((((out_store32 _ _ _).mono (by decide)).trans (Out.widen (d := 4) (out_store32 _ _ _) (by decide))).trans
+      (Out.widen (d := 8) (out_store32 _ _ _) (by decide))).trans (Out.widen (d := 0xC) (out_store32 _ _ _)
+      (by decide))).trans (Out.widen (d := 0x10) (out_store32 _ _ _) (by decide)) |>.trans
+      (Out.widen (d := 0x14) (out_store32 _ _ _) (by decide)), ?_, ?_, ?_, ?_, ?_, memLoad32_store32_same _ _ _⟩
+  · have := ld_skip (s := o) (v := w) 0 0x14 (Or.inl (by decide)) (by decide) (by decide)
+      (ld_skip (v := e) 0 0x10 (Or.inl (by decide)) (by decide) (by decide)
+      (ld_skip (v := d) 0 0xC (Or.inl (by decide)) (by decide) (by decide)
+      (ld_skip (v := c) 0 8 (Or.inl (by decide)) (by decide) (by decide)
+        (ld_skip (v := b) 0 4 (Or.inl (by decide)) (by decide) (by decide)
+          (show memLoad32 (memStore32 M o a) (o + BitVec.ofNat 32 0) = a by
+            rw [add_ofNat_zero]; exact memLoad32_store32_same _ _ _)))))
+    rwa [add_ofNat_zero] at this
+  · exact ld_skip 4 0x14 (Or.inl (by decide)) (by decide) (by decide)
+      (ld_skip 4 0x10 (Or.inl (by decide)) (by decide) (by decide)
+      (ld_skip 4 0xC (Or.inl (by decide)) (by decide) (by decide)
+      (ld_skip 4 8 (Or.inl (by decide)) (by decide) (by decide) (memLoad32_store32_same _ _ _))))
+  · exact ld_skip 8 0x14 (Or.inl (by decide)) (by decide) (by decide)
+      (ld_skip 8 0x10 (Or.inl (by decide)) (by decide) (by decide)
+      (ld_skip 8 0xC (Or.inl (by decide)) (by decide) (by decide) (memLoad32_store32_same _ _ _)))
+  · exact ld_skip 0xC 0x14 (Or.inl (by decide)) (by decide) (by decide)
+      (ld_skip 0xC 0x10 (Or.inl (by decide)) (by decide) (by decide) (memLoad32_store32_same _ _ _))
+  · exact ld_skip 0x10 0x14 (Or.inl (by decide)) (by decide) (by decide) (memLoad32_store32_same _ _ _)
+
+theorem pr_st8 (M : Word → BitVec 8) (a w : Word) :
+    memStore8 (memStore8 (memStore8 (memStore8 M a (w.extractLsb' 0 8)) (a + 1) (w.extractLsb' 8 8)) (a + 2)
+      (w.extractLsb' 16 8)) (a + 3) (w.extractLsb' 24 8) = memStore32 M a w := rfl
+
+theorem pr_srl8 (x : Word) : aluEval .srl x 8 = x >>> 8 := rfl
+
+theorem pr_srl16 (x : Word) : aluEval .srl x 16 = x >>> 16 := rfl
+
+section
+variable {M0 M1 Mf : Word → BitVec 8} {s out F : Word} {g g0 : Fin 32 → Word}
+
+/-- The success tail at 0x9C: `signed`, `signatures`, and the version at
+`out`, and the epilogue. The length of `signed` is in `s2` (its low byte)
+and `s5` (its other three bytes). -/
+theorem pr_9c {q1 q2 lo hi : Word} {l1 l2 v : Nat} {b12 b13 b14 b15 : BitVec 8}
+    (E : PrEnv M0 M1 s out F g0) (hO : Out M1 Mf s 568) (h8 : g 8 = out) (hsp : g sp = F) (h9 : g 9 = q1)
+    (h18 : g 18 = b12.zeroExtend 32) (h21 : g 21 = 0#8 ++ b15 ++ b14 ++ b13) (h19 : g 19 = q2)
+    (h20 : g 20 = BitVec.ofNat 32 l2) (h10 : g a0 = lo) (h11 : g a1 = hi)
+    (hW : (b15 ++ b14 ++ b13 ++ b12 : Word) = BitVec.ofNat 32 l1) (hv : hi.toNat * 2 ^ 32 + lo.toNat = v)
+    (hfr : ∀ x, x ∉ prE → g x = g0 x) :
+    WP tufParseRootCode TPR (prQ M0 s out g0 (.ok (q1, l1, q2, l2, v))) Mf 0x9C g := by
+  have hoT := E.outT
+  refine WP.aluImm pr_at_9c ?_; wn
+  refine WP.aluImm pr_at_a0 ?_; wn
+  refine WP.sw pr_at_a4 (by (try rsimp); rw [h8, add_lit_zero]; exact E.halo)
+    (by (try rsimp); rw [h8, add_lit_zero]; exact tex_sepL hoT (by decide)) ?_; wn
+  refine WP.sb pr_at_a6 (by (try rsimp); rw [h8]; exact hoT.sub (c := 4) (l := 1) (by decide)) ?_; wn
+  refine WP.sb pr_at_aa (by (try rsimp); rw [h8]; exact hoT.sub (c := 5) (l := 1) (by decide)) ?_; wn
+  refine WP.sb pr_at_ae (by (try rsimp); rw [h8]; exact hoT.sub (c := 6) (l := 1) (by decide)) ?_; wn
+  refine WP.sb pr_at_b2 (by (try rsimp); rw [h8]; exact hoT.sub (c := 7) (l := 1) (by decide)) ?_; wn
+  refine WP.sw pr_at_b6 (by (try rsimp); rw [h8]; exact aligned_add E.halo (k := 8) (by decide))
+    (by (try rsimp); rw [h8]; exact hoT.sub (c := 8) (l := 4) (by decide)) ?_; wn
+  refine WP.sw pr_at_ba (by (try rsimp); rw [h8]; exact aligned_add E.halo (k := 0xC) (by decide))
+    (by (try rsimp); rw [h8]; exact hoT.sub (c := 0xC) (l := 4) (by decide)) ?_; wn
+  refine WP.sw pr_at_be (by (try rsimp); rw [h8]; exact aligned_add E.halo (k := 0x10) (by decide))
+    (by (try rsimp); rw [h8]; exact hoT.sub (c := 0x10) (l := 4) (by decide)) ?_; wn
+  refine WP.sw pr_at_c0 (by (try rsimp); rw [h8]; exact aligned_add E.halo (k := 0x14) (by decide))
+    (by (try rsimp); rw [h8]; exact hoT.sub (c := 0x14) (l := 4) (by decide)) ?_; wn
+  refine WP.jal pr_at_c2 (by decide) ?_; wn
+  (try rsimp)
+  obtain ⟨x0, x1, x2, x3⟩ := pr_x b12 b13 b14 b15
+  generalize hWd : b15 ++ b14 ++ b13 ++ b12 = W at x0 x1 x2 x3 hW
+  rw [h8, h9, h18, h21, h19, h20, h10, h11, add_lit_zero, pr_srl8, pr_srl16, ri_ze,
+    pr_e0, pr_e1, pr_e2, ← x0, ← x1, ← x2, ← x3, show out + 5 = out + 4 + 1 by rw [BitVec.add_assoc]; rfl,
+    show out + 6 = out + 4 + 2 by rw [BitVec.add_assoc]; rfl, show out + 7 = out + 4 + 3 by rw [BitVec.add_assoc]; rfl,
+    pr_st8, hW]
+  obtain ⟨hOs, r0, r1, r2, r3, r4, r5⟩ := pr_st6 (M := Mf) (o := out) (a := q1) (b := BitVec.ofNat 32 l1)
+    (c := q2) (d := BitVec.ofNat 32 l2) (e := lo) (w := hi) rfl
+  exact pr_epi (by (try rsimp); exact hsp) (E.savedOut (E.saved hO) hOs) E.hsp0 E.hret E.halF E.hz0 (by keepz E.hz0)
+    ⟨fun x hx ho => (hOs x ho).trans (E.agree hO x hx), r0, r1, r2, r3, by rw [r4, r5]; exact hv⟩
+
+end
+
 end C3.RV32
