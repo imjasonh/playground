@@ -259,6 +259,7 @@ import C3BootProofs.Proofs.BootMainEntry
 import C3BootProofs.Proofs.BootMainStart
 import C3BootProofs.Proofs.AcceptPinned
 import C3BootProofs.Proofs.AcceptIndex
+import C3BootProofs.Proofs.AcceptRead
 
 /-!
 # Audit
@@ -9643,3 +9644,5 @@ end C3
 
 /-- info: 'C3.RV32.Ac.acx_loop' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acx_loop
+/-- info: 'C3.RV32.Ac.acceptRead' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acceptRead
