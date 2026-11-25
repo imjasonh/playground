@@ -584,6 +584,8 @@ import C3BootProofs.Proofs.BootMainPick
 import C3BootProofs.Proofs.BootMainWrite
 import C3BootProofs.Proofs.BootMainDecide
 import C3BootProofs.Proofs.BootMainPlan
+import C3BootProofs.Proofs.BootMainEntry
+import C3BootProofs.Proofs.BootMainStart
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs

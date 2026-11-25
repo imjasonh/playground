@@ -1,12 +1,13 @@
 import C3BootProofs.Proofs.BootMainEntry
 
 /-!
-# `boot_main` from its entry to 0xB4
+# `boot_main` from its entry
 
 `boot_main` saves registers, logs, records the flash size, reads the two
 boot-state records from flash at 0x28000 and 0x29000, and decodes each.
-`bmsDecoded` shows what the decoded copies hold, and `bmsBoot` runs from
-the entry to the jump into the application, or to a halt or a panic.
+`bms_copy` shows what the decoded copies hold, `bms_entry` runs from the
+entry to the jump into the application, or to a halt or a panic, and
+`bootMain_correct` states that end in terms of `decideBoot`.
 -/
 
 namespace C3.RV32.Cur
@@ -167,7 +168,7 @@ theorem bms_Fbig {M0 : Word → BitVec 8} {top : Word} {R romStack stack0 : Nat}
   rw [hKv] at hlo; rw [hbp] at hhi
   exact ⟨by omega, by omega⟩
 
-theorem bms_m70 {F : Word} (h : 112 ≤ F.toNat) : F + 0xFFFFFF90 = F - BitVec.ofNat 32 112 :=
+theorem bms_m70 {F : Word} (_h : 112 ≤ F.toNat) : F + 0xFFFFFF90 = F - BitVec.ofNat 32 112 :=
   BitVec.eq_of_toNat_eq (by
     rw [BitVec.toNat_add, BitVec.toNat_sub, show (0xFFFFFF90 : Word).toNat = 2 ^ 32 - 112 from rfl,
       BitVec.toNat_ofNat]
@@ -466,5 +467,232 @@ theorem bms_reads {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
   exact BmEnd.pre (c1.trans (c2.trans (.cons e3 (c4.trans (c5.trans (.cons e6 (c7.trans (c8.trans
     (c9.trans c10))))))))) (bme_sel X t10 hF K10 cA' cB
       (by rw [k10' 20 (.inr rfl)]; exact h20) (by rw [k10' sp (.inl rfl)]; exact sp8))
+
+/-! ## The prologue -/
+
+/-- The byte at `x` is apart from what instruction `i` stores. -/
+def bmsFr1 (x : Word) : BInstr → BState → Prop
+  | .sw rs1 _ o, (_, f) => Sep (f rs1 + o) 4 x 1
+  | .sb rs1 _ o, (_, f) => Sep (f rs1 + o) 1 x 1
+  | _, _ => True
+
+/-- The byte at `x` is apart from every store of a block. -/
+def bmsFr (x : Word) : List BInstr → BState → Prop
+  | [], _ => True
+  | i :: is, s => bmsFr1 x i s ∧ bmsFr x is (i.run s)
+
+theorem bms_frmem (x : Word) :
+    ∀ (is : List BInstr) (s : BState), bmsFr x is s → (runBlock is s).1 x = s.1 x
+  | [], _, _ => rfl
+  | i :: is, (M, f), ⟨h1, h2⟩ => by
+    rw [runBlock, bms_frmem x is _ h2]
+    cases i with
+    | sw rs1 rs2 o => exact memStore32_get_sep h1
+    | sb rs1 rs2 o =>
+      exact memStore8_ne fun e => h1 0 (by decide) 0 (by decide) (by rw [add_ofNat_zero, add_ofNat_zero]; exact e.symm)
+    | _ => rfl
+
+theorem bms_spc {F top : Word} (htop : F + BitVec.ofNat 32 0xBE80 = top) (c : Nat) (_hc : c < 0x100) :
+    top + 0xFFFFFF00 + BitVec.ofNat 32 c = F + BitVec.ofNat 32 (0xBD80 + c) := by
+  rw [← htop, BitVec.add_assoc, BitVec.add_assoc]
+  refine congrArg (F + ·) (BitVec.eq_of_toNat_eq ?_)
+  rw [BitVec.toNat_add, BitVec.toNat_add, show (0xFFFFFF00 : Word) = BitVec.ofNat 32 0xFFFFFF00 from rfl,
+    BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+  omega
+
+set_option maxRecDepth 20000 in
+theorem bms_swok {M0 : Word → BitVec 8} {top : Word} {R romStack stack0 : Nat} {romBase : Word}
+    {romCode : List Nat} (C : BmEnv M0 top R romStack stack0 romBase romCode) {F : Word}
+    (hF : F.toNat + 0xBE80 = top.toNat) (htop : F + BitVec.ofNat 32 0xBE80 = top) (c : Nat)
+    (hc : c < 0x100) (h4 : c % 4 = 0) :
+    (top + 0xFFFFFF00 + BitVec.ofNat 32 c).toNat % 4 = 0 ∧
+      Sep (top + 0xFFFFFF00 + BitVec.ofNat 32 c) 4 BM bootMainCode.length := by
+  rw [bms_spc htop c hc]
+  exact ⟨bme_F4 C hF (by omega) (by omega), bme_low hF C.hhi (by omega) (by decide) (by decide)⟩
+
+theorem bms_swfr {F top x : Word} {R romStack stack0 : Nat} (hF : F.toNat + 0xBE80 = top.toNat)
+    (hlo : 0x3FCC8000 + bmK R romStack stack0 ≤ top.toNat) (htop : F + BitVec.ofNat 32 0xBE80 = top)
+    (c : Nat) (hc0 : 0xD0 ≤ c) (hc : c ≤ 0xFC)
+    (hx : Sep (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) x 1) :
+    Sep (top + 0xFFFFFF00 + BitVec.ofNat 32 c) 4 x 1 := by
+  rw [bms_spc htop c (by omega)]; exact bme_kin hF hlo (by omega) hx
+
+theorem bms_spF (F : Word) :
+    F + BitVec.ofNat 32 0xBE80 + 0xFFFFFF00 - aluEval .add 0xC000 0xFFFFFD80 = F := by
+  rw [BitVec.add_assoc, show aluEval .add 0xC000 0xFFFFFD80 = BitVec.ofNat 32 0xBE80 + 0xFFFFFF00 by decide,
+    BitVec.add_sub_cancel]
+
+/-- The word at `bmPtr` lies above `boot_main`'s stack. -/
+theorem bms_ptr {top : Word} {R romStack stack0 : Nat} (hlo : 0x3FCC8000 + bmK R romStack stack0 ≤ top.toNat)
+    (hhi : top.toNat ≤ bmPtr.toNat) (j : Nat) (hj : j < 4) :
+    Sep (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) (bmPtr + BitVec.ofNat 32 j) 1 := by
+  have hbp : bmPtr.toNat = 0x3FCDFFF0 := rfl
+  have hW : (top - BitVec.ofNat 32 (bmK R romStack stack0)).toNat = top.toNat - bmK R romStack stack0 := by
+    rw [BitVec.toNat_sub, BitVec.toNat_ofNat]; omega
+  have hP : (bmPtr + BitVec.ofNat 32 j).toNat = 0x3FCDFFF0 + j := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, hbp]; omega
+  exact sep_of_le (by rw [hW, hP]; omega) (by rw [hP]; omega)
+
+set_option maxHeartbeats 8000000 in
+set_option maxRecDepth 20000 in
+/-- From the entry to 0x64: `boot_main` saves registers, makes its frame,
+logs, records the flash size, and clears the two read buffers. -/
+theorem bms_entry {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
+    {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
+    {E : (Word → BitVec 8) → Prop}
+    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    (m : Machine) (hm : m.mem = M0) (hpc : m.pc = BM) (hsp : reg m sp = top) :
+    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) m := by
+  have C := X.env
+  have hlo := C.hlo
+  have hhi := C.hhi
+  have hKv : bmK R romStack stack0 = 0xBE80 + 0x150 + R + romStack + stack0 := rfl
+  let F := top - BitVec.ofNat 32 0xBE80
+  have hF : F.toNat + 0xBE80 = top.toNat := by
+    show (top - BitVec.ofNat 32 0xBE80).toNat + 0xBE80 = top.toNat
+    rw [BitVec.toNat_sub, BitVec.toNat_ofNat]; omega
+  have htop : F + BitVec.ofNat 32 0xBE80 = top := BitVec.sub_add_cancel _ _
+  obtain ⟨hFl, _⟩ := bms_Fbig C hF
+  have s0 : St m.mem BM m 0 (reg m) := ⟨by rw [hpc]; decide, rfl, fun _ => rfl⟩
+  have hc0 : CodeIn m.mem BM bootMainCode := by rw [hm]; exact C.code
+  -- 0x0: save registers and make the frame.
+  have ok : ∀ c, c < 0x100 → c % 4 = 0 → (reg m sp + 0xFFFFFF00 + BitVec.ofNat 32 c).toNat % 4 = 0 ∧
+      Sep (reg m sp + 0xFFFFFF00 + BitVec.ofNat 32 c) 4 BM bootMainCode.length :=
+    fun c h1 h2 => by rw [hsp]; exact bms_swok C hF htop c h1 h2
+  obtain ⟨n1, c1, u1⟩ := s0.block bmB0 hc0 bmB0_end
+    ⟨trivial, ok 0xFC (by decide) (by decide), ok 0xF8 (by decide) (by decide), ok 0xF4 (by decide) (by decide),
+      ok 0xF0 (by decide) (by decide), ok 0xEC (by decide) (by decide), ok 0xE8 (by decide) (by decide),
+      ok 0xE4 (by decide) (by decide), ok 0xE0 (by decide) (by decide), ok 0xDC (by decide) (by decide),
+      ok 0xD8 (by decide) (by decide), ok 0xD4 (by decide) (by decide), ok 0xD0 (by decide) (by decide),
+      trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩
+  have r1 : ∀ r, reg n1 r = (runBlock bmB0 (m.mem, reg m)).2 r := fun r => by rw [u1.regs]
+  have t1 : St n1.mem BM n1 0x2E (reg n1) := ⟨u1.pc, rfl, fun _ => rfl⟩
+  have sp1 : reg n1 sp = F := by
+    rw [r1]; simp +decide only [runBlock, BInstr.run, bmB0, upd, ↓reduceIte]
+    rw [hsp, ← htop]; exact bms_spF F
+  have S1 : ∀ x, Sep (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) x 1 →
+      n1.mem x = M0 x := fun x hx => by
+    have sw : ∀ c, 0xD0 ≤ c → c ≤ 0xFC → Sep (reg m sp + 0xFFFFFF00 + BitVec.ofNat 32 c) 4 x 1 :=
+      fun c h1 h2 => by rw [hsp]; exact bms_swfr hF hlo htop c h1 h2 hx
+    rw [u1.mem, bms_frmem x bmB0 (m.mem, reg m)
+      ⟨trivial, sw 0xFC (by decide) (by decide), sw 0xF8 (by decide) (by decide), sw 0xF4 (by decide) (by decide),
+        sw 0xF0 (by decide) (by decide), sw 0xEC (by decide) (by decide), sw 0xE8 (by decide) (by decide),
+        sw 0xE4 (by decide) (by decide), sw 0xE0 (by decide) (by decide), sw 0xDC (by decide) (by decide),
+        sw 0xD8 (by decide) (by decide), sw 0xD4 (by decide) (by decide), sw 0xD0 (by decide) (by decide),
+        trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩]
+    show m.mem x = M0 x
+    rw [hm]
+  have K1 : BmKeep M0 n1.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) :=
+    fun x h _ => S1 x h
+  -- 0x2E: the log call.
+  obtain ⟨n2, c2, t2, mem2, keep2⟩ := bm_romcall 0x40000040 X.log t1 sp1
+    (K1.codeIn C C.code (.inr ⟨by decide, by decide⟩))
+    (K1.codeIn C C.rom (.inr ⟨C.hrb, by have := C.hrl; omega⟩)) (by omega)
+    bm_at_2e bm_at_32 (by decide) (by decide) (by decide)
+  have S2 : ∀ x, Sep (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) x 1 →
+      n2.mem x = M0 x := fun x hx => by
+    rw [mem2 x (bme_below hF hlo (by omega) hx)]; exact S1 x hx
+  have sp2 : reg n2 sp = F := by rw [keep2 sp (by decide)]; exact sp1
+  have K2 : BmKeep M0 n2.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) :=
+    fun x h _ => S2 x h
+  -- 0x36: record the flash size, and set up the first memset.
+  have hpe : (0x3FCE0000 : Word) + 0xFFFFFFF0 = bmPtr := by decide
+  have hpt : memLoad32 n2.mem bmPtr = memLoad32 M0 bmPtr :=
+    memLoad32_congr fun j hj => S2 _ (bms_ptr hlo hhi j hj)
+  have hph := C.hph
+  have hpa := C.hpa
+  have hP : (memLoad32 M0 bmPtr + 4).toNat = (memLoad32 M0 bmPtr).toNat + 4 := by
+    rw [BitVec.toNat_add, show (4 : Word).toNat = 4 from rfl]; omega
+  have hc2 := K2.codeIn C C.code (.inr ⟨by decide, by decide⟩)
+  obtain ⟨n3, c3, u3⟩ := t2.block bmB1 hc2 bmB1_end
+    ⟨trivial, (by show ((0x3FCE0000 : Word) + 0xFFFFFFF0).toNat % 4 = 0; decide), trivial,
+      (by
+        show (memLoad32 n2.mem ((0x3FCE0000 : Word) + 0xFFFFFFF0) + 4).toNat % 4 = 0 ∧
+          Sep (memLoad32 n2.mem ((0x3FCE0000 : Word) + 0xFFFFFFF0) + 4) 4 BM bootMainCode.length
+        rw [hpe, hpt]
+        exact ⟨by rw [hP]; omega, lowSep (by rw [hP]; omega) (by decide) (by decide)⟩),
+      trivial, trivial, trivial, trivial⟩
+  have r3 : ∀ r, reg n3 r = (runBlock bmB1 (n2.mem, reg n2)).2 r := fun r => by rw [u3.regs]
+  have t3 : St n3.mem BM n3 0x4C (reg n3) := ⟨u3.pc, rfl, fun _ => rfl⟩
+  have K3 : BmKeep M0 n3.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) :=
+    fun x h1 h2 => by
+      rw [u3.mem, bms_frmem x bmB1 (n2.mem, reg n2) ⟨trivial, trivial, trivial,
+        (by show Sep (memLoad32 n2.mem ((0x3FCE0000 : Word) + 0xFFFFFFF0) + 4) 4 x 1
+            rw [hpe, hpt]; exact h2), trivial, trivial, trivial, trivial⟩]
+      exact S2 x h1
+  have sp3 : reg n3 sp = F := by rw [r3, runBlock_reg bmB1 _ _ sp t2.zero (by decide), sp2]
+  -- 0x4C: clear the first read buffer.
+  obtain ⟨n4, c4, t4, mem4, k4⟩ := bme_memset C t3 (K3.codeIn C C.code (.inr ⟨by decide, by decide⟩))
+    (K3.codeIn C C.memset (.inr ⟨by decide, by decide⟩)) hF (d := 0x10) (N := 0x20)
+    bm_at_4c bm_at_50 (by decide) (by decide)
+    (by rw [r3]; simp +decide only [runBlock, BInstr.run, bmB1, upd, ↓reduceIte]; rw [sp2]; rfl)
+    (by rw [r3]; simp +decide only [runBlock, BInstr.run, bmB1, upd, ↓reduceIte]; (try rw [t2.zero]); try rfl)
+    (by rw [r3]; simp +decide only [runBlock, BInstr.run, bmB1, upd, ↓reduceIte]; (try rw [t2.zero]); try rfl)
+    (by decide)
+  have K4 : BmKeep M0 n4.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) :=
+    K3.step fun x hx => by rw [mem4, fillBytes_sep (bme_kin hF hlo (by decide) hx) (Nat.le_refl _)]
+  have sp4 : reg n4 sp = F := by
+    rw [k4 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)]; exact sp3
+  -- 0x54: set up the second memset.
+  have hc4 := K4.codeIn C C.code (.inr ⟨by decide, by decide⟩)
+  obtain ⟨n5, c5, u5⟩ := t4.block bmB2 hc4 bmB2_end ⟨trivial, trivial, trivial, trivial⟩
+  have r5 : ∀ r, reg n5 r = (runBlock bmB2 (n4.mem, reg n4)).2 r := fun r => by rw [u5.regs]
+  have t5 : St n5.mem BM n5 0x5C (reg n5) := ⟨u5.pc, rfl, fun _ => rfl⟩
+  have K5 : BmKeep M0 n5.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) := by
+    rw [u5.mem]; exact K4
+  have sp5 : reg n5 sp = F := by rw [r5, runBlock_reg bmB2 _ _ sp t4.zero (by decide), sp4]
+  -- 0x5C: clear the second read buffer.
+  obtain ⟨n6, c6, t6, mem6, k6⟩ := bme_memset C t5 (K5.codeIn C C.code (.inr ⟨by decide, by decide⟩))
+    (K5.codeIn C C.memset (.inr ⟨by decide, by decide⟩)) hF (d := 0x30) (N := 0x20)
+    bm_at_5c bm_at_60 (by decide) (by decide)
+    (by rw [r5]; simp +decide only [runBlock, BInstr.run, bmB2, upd, ↓reduceIte]; rw [sp4]; rfl)
+    (by rw [r5]; simp +decide only [runBlock, BInstr.run, bmB2, upd, ↓reduceIte]; (try rw [t4.zero]); try rfl)
+    (by rw [r5]; simp +decide only [runBlock, BInstr.run, bmB2, upd, ↓reduceIte]; (try rw [t4.zero]); try rfl)
+    (by decide)
+  have K6 : BmKeep M0 n6.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) :=
+    K5.step fun x hx => by rw [mem6, fillBytes_sep (bme_kin hF hlo (by decide) hx) (Nat.le_refl _)]
+  have sp6 : reg n6 sp = F := by
+    rw [k6 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)]; exact sp5
+  exact BmEnd.pre (c1.trans (c2.trans (c3.trans (c4.trans (c5.trans c6))))) (bms_reads X t6 hF K6 sp6)
+
+/-! ## The headline theorem -/
+
+/-- **`boot_main` boots only what `decideBoot` boots.** Started at its
+entry with the stack pointer at `top`, in memory `M0` and flash `flash` that
+meet `BmHyp`, `boot_main` panics or halts, or it jumps to the entry point of
+the image in a slot `slot` that `decideBoot` boots at level `target`, given
+the boot-state records in flash, the eFuse level at entry, and as the check
+the security version of each slot that `acceptTufSlot` accepts at that
+level (`bmcAccept`).
+
+At the jump, `a0` holds the slot, the target is at most the entry level, and
+outside `boot_main`'s stack and the peripheral registers memory is what
+`boot` loads from a memory `Mb` that keeps `M0` outside that stack and holds
+the image's header at `bmAcc top`. `BmHyp` lets the ROM's flash-write routine
+run only with the record that `decideBoot` writes. -/
+theorem bootMain_correct {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy}
+    {M0 : Word → BitVec 8} {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
+    {E : (Word → BitVec 8) → Prop}
+    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    (m : Machine) (hm : m.mem = M0) (hpc : m.pc = BM) (hsp : reg m sp = top) :
+    Panics m ∨ ∃ m', Steps m m' ∧
+      ∃ (slot : Slot) (target : Nat) (mf : Manifest) (sv t : Nat) (h : ImageHeader) (Mb : Word → BitVec 8),
+        (decideBoot (bmRecs flash).1 (bmLevel M0) fun s =>
+          (bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum s))).map (·.2.1)).outcome =
+          .boot slot target ∧
+        bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t) ∧
+        decodeImageHeader (bmcImage flash (BitVec.ofNat 32 (bmSlotNum slot)) mf) mf.image.length = some h ∧
+        target ≤ bmLevel M0 ∧
+        m'.pc = BitVec.ofNat 32 h.entryPoint &&& ~~~1 ∧
+        reg m' a0 = BitVec.ofNat 32 (bmSlotNum slot) ∧
+        BmKeep M0 Mb (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) ∧
+        HdrAt Mb (bmAcc top) h ∧
+        ∀ x, Sep (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) x 1 →
+          (x.toNat < 0x60000000 ∨ 0x600C4000 ≤ x.toNat) →
+          m'.mem x = bootMem flash Mb (bmAcc top)
+            (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x := by
+  rcases bms_entry X m hm hpc hsp with ⟨m', hs, hj⟩ | hp
+  · exact .inr ⟨m', hs, hj⟩
+  · exact .inl hp
 
 end C3.RV32.Cur
