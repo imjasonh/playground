@@ -9235,6 +9235,18 @@ end C3
 /-- info: 'C3.RV32.tufRoleKeysMet_result' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_result
 
+/-- info: 'C3.RV32.tufRoleKeysMet_ret_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_ret_pi
+
+/-- info: 'C3.RV32.tufRoleKeysMet_correct_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_correct_pi
+
+/-- info: 'C3.RV32.tufRoleKeysMet_spec_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_spec_pi
+
+/-- info: 'C3.RV32.tufRoleKeysMet_result_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_result_pi
+
 /-- info: 'C3.RV32.rmr_okBit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.rmr_okBit
 
@@ -9762,6 +9774,9 @@ end C3
 
 /-- info: 'C3.RV32.Ac.act_metSpec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.act_metSpec
+
+/-- info: 'C3.RV32.Ac.act_metSpec_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.act_metSpec_pi
 
 /-- info: 'C3.RV32.Ac.ActRk.congr' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ActRk.congr
