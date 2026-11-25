@@ -10650,6 +10650,12 @@ end C3
 /-- info: 'C3.RV32.Cur.reset_correct_loaded' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.reset_correct_loaded
 
+/-- info: 'C3.RV32.Cur.reset_hlo' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_hlo
+
+/-- info: 'C3.RV32.Cur.reset_hlo_c0' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_hlo_c0
+
 /-- info: 'C3.RV32.chip_step' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.chip_step
 

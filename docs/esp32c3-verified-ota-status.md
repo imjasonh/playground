@@ -247,8 +247,8 @@ leave the image in place. Its remaining hypotheses are:
   of the first closure's stages discharges.
 - `0x3FCC8000 + bmK R romStack stack0 ≤ 0x3FCDC700`: the stack that
   `boot_main`, the ROM, and the first closure use stays above the image's
-  read-only data. That needs the ROM's and the first closure's stack
-  sizes.
+  read-only data. `reset_hlo_c0` gives it from `R + romStack ≤ 0x2B20`
+  with the first closure's 0x5C10 bytes (see "The stack bound `hlo`").
 
 Flash contents enter as the `flash` argument, which `decideBoot` and the
 conclusion read.
@@ -290,6 +290,154 @@ theorems bound what a run changes, not each step's addresses. At the jump
 to the application, the model holds the application's RAM code at its
 data-bus addresses, where `boot` copied it; the model's bytes at the
 instruction-bus addresses are not the chip's there.
+
+#### Assessment: proving `AliasOk` from reset
+
+Measured on `286be6d5c`. The cheapest route that needs only proofs is
+large: it changes most proof files. A firmware route needs almost no proof
+work, but it depends on hardware behavior that still has to be confirmed.
+
+**Why the existing proofs can't give it.** `Steps` is an inductive `Prop`
+that records nothing about the states it passes through, and a function
+theorem concludes only `∃ m', Steps m m' ∧ (facts about m')`. A step that
+stores a value and a later step that restores it leave the same final
+state, so no fact about the final state can show that no store went to a
+forbidden address. Making every top-level fact hold for every value of
+the forbidden bytes doesn't help either, because a run can read such a
+byte and still reach the same outcome. Each step's addresses have to be
+checked inside the proofs that build the steps.
+
+Function theorems are also generic in their placement. They take `base`,
+`sp`, and pointer arguments as variables, with hypotheses such as
+`Sep dst n base code.length`. A store's only side condition today is that
+it misses the function's own code (`BInstr.ok`, `St.sw`, `St.sb`), and a
+load has none. So a fact like "this store's address is `StoreOk`" can't
+be derived from what a proof has in scope. Each function needs new
+hypotheses that say where its stack and buffers are allowed to be.
+
+**Measurements.**
+
+| What | Count |
+| --- | --- |
+| Proof files that mention `Steps` | 665 of 853 (about 781,000 lines) |
+| Files that build `Steps` directly (`.cons`, `Steps.single`) | 493 |
+| Theorems that conclude `∃ m', Steps …` | 1,812 |
+| `St.block` uses | 3,165 in 373 files |
+| Step frameworks local to one file (`WP.sw`, `EvSt.sw`, `HfSt.sb`, …) | 79 lemmas; `WP.` appears in 80 files |
+| Generated proof files | 151 files, about 192,000 lines, from 29 `scripts/gen-*.py` |
+| Image functions | 296, with 31,984 instructions |
+| Store instructions in the image | 3,600: 2,155 based on `sp` and 1,445 on another register |
+| Load instructions in the image | 4,241: 2,698 based on `sp` and 1,543 on another register |
+| Uses of `memLoad32`, `memStore8`/`memStore32`, `sep_offsets`, `sep_of_le` | 108,172, 5,815, 4,700, and 1,131 |
+
+The step lemmas in `Proof/Step.lean` and `Proofs/Block.lean` are central,
+but most files also build steps themselves, and 79 local lemmas repeat
+the store and load cases. The image counts are from `image-facts.py`'s
+decoder applied to `Image/Bootloader.lean` and `BootloaderReset.lean`.
+
+**Routes.**
+
+- (a) A checked step relation. Give `Steps.cons` a `StepOk` argument, or
+  add a checked `StepsA` next to `Steps` with `StepsA.toSteps`. Every
+  place that builds a step then supplies three facts: the fetch is
+  `Coherent`, each load is `Coherent`, and each store is `StoreOk`. The
+  fetch fact can be handled centrally: add a coherence hypothesis for the
+  function's code range next to `CodeIn` in the step lemmas, give every
+  function theorem one such hypothesis, and discharge it at the top by
+  `decide`, since all code is in IRAM or ROM. Loads and stores can't be
+  handled centrally. The 4,853 `sp`-based accesses follow from one new
+  hypothesis per function, "the stack region it uses is `StoreOk`," and
+  the offset bounds that the frame proofs already compute, so a lemma
+  like `StoreOkR.sub` handles most of them. The 2,988 accesses through
+  other registers each need the pointer argument's region, which callers
+  pass down. This route changes the 493 files that build steps, the
+  statements of the roughly 300 function contracts, and the 29 generators.
+  With a checked `Steps`, theorem conclusions keep their text and
+  `chip_steps` needs no `AliasOk`.
+- (b) A region clause on each conclusion ("every store address lies in
+  R"), threaded through the call lemmas. Each block and store still has
+  to establish its address, so it costs as much as (a) and also changes
+  all 1,812 conclusions. (a) is cheaper.
+- (c) A syntactic scan of the image plus base-register invariants. Only
+  60% of stores and 64% of loads use `sp`. The other 1,445 stores and
+  1,543 loads go through pointers computed from data, such as indices
+  checked against buffer lengths. A lemma that "those bases stay in the
+  stack and buffer regions" is the per-step invariant that (a) proves,
+  with no proof to borrow it from, so (c) reduces to (a).
+- Making the model the chip, by reading `memLoad32`, `memStore8`,
+  `CodeIn`, and `Sep` through `sramCanon`, would remove the obligation.
+  But `sep_of_le` stops holding across the two views, so the 108,172
+  load uses and the 5,815 store uses would need new disjointness facts.
+  That is larger than (a).
+- (d) Hardware enforcement. If the reset path set the chip's memory
+  permissions so that any data-bus store to 0x3FCA0000 to 0x3FCC4000 and
+  any data access to 0x40380000 to 0x403E0000 faults, and the fault
+  handler never jumps to the application, then a chip run matches the
+  model up to its first bad access and stops there. "Only firmware that
+  passes every check boots" would then follow with no step-by-step proof.
+  The proof work is a version of `chip_steps` that splits on `StepOk`
+  instead of assuming it, the reset path's permission writes, and the
+  exception path. First confirm in the ESP32-C3 Technical Reference
+  Manual and on a board which data accesses to the instruction-bus range
+  fault without any setup, whether the permission control's split lines
+  can make IRAM's data-bus view read-only, and where `mtvec` points at
+  reset. The catch is that this changes `_start`, so the image changes
+  and the cutover regeneration (`image-facts.py`, `gen-loaded.py`, and
+  every proof whose function moved) has to run again, unless the new
+  code goes after the existing functions.
+
+**Plan for (a), in parallel pieces.** Each piece keeps the build green,
+because a migrated function proves `StepsA` while unmigrated callers
+still use `StepsA.toSteps`. A caller can migrate once its callees have.
+
+1. Infrastructure, one agent, first. In `Proof/Step.lean`,
+   `Proofs/Block.lean`, and `SramAlias.lean`: `StepsA` and `toSteps`; the
+   lemma that `StepsA` gives `Steps` and `AliasOk`, which needs only that
+   `step` is a function; region predicates `StoreOkR`, `CohR`, and their
+   lemmas for sub-ranges, unions, and `decide` on literals; versions of the
+   `St.*` lemmas, `St.block`, and `BlockOk` that produce `StepsA`; the
+   checked forms of the `RomFn`, `RomRead`, `EfuseCtl`, and
+   `Closure0Contract` assumptions, which then also assume that the ROM's
+   own steps are `StepOk`; and a written convention for how a contract
+   states its regions. Migrate `memset` and `memcpy` as the examples.
+2. Leaves, in parallel once (1) is merged:
+   - SHA-256 and SHA-512 (29 files)
+   - P-256 and P-384 field and scalar arithmetic (108 files, two agents)
+   - Ed25519 field and point arithmetic (80 files, two agents)
+   - DER, X.509, time, and base64 readers (24 files)
+   - the flash and ROM wrappers and the image checks (22 image files
+     and the flash files)
+   - the TUF and JSON readers (31 files, including `JsonWp`'s `WP.*`)
+
+   Each agent also updates the generators that write its files.
+3. `sigstore::verify`, the `Sv*` files (192 files), after (2). Split by
+   stage, with one agent each for the layout and search files, the
+   document and payload files, the transparency-log files, and the
+   certificate-chain files, following the `gen-sv-*.py` generators.
+4. The other 145 files, mostly the composed P-256 and Ed25519 verifiers
+   and the parsers. Assign them by import graph during (2) and (3).
+5. The top, one agent, last: the `Accept*` closure stages (18 files),
+   `boot_main`, the reset path, and the headline, ending in
+   `reset_correct_loaded` with `StepsA` and `AliasOk` proved.
+
+Pieces (2) through (4) hold most of the work, and most of that is the
+2,988 accesses through registers other than `sp`.
+
+#### The stack bound `hlo`
+
+`reset_hlo` (`Proofs/ResetLoaded.lean`) reduces `hlo` to
+`R + romStack + stack0 ≤ 0x8730`. That leaves 0x14700 bytes between the
+read-only data's end and the stack top, minus `boot_main`'s 0xBE80-byte
+frame and the 0x150 bytes it opens on the way to a callee.
+`reset_hlo_c0` fixes `stack0` at 0x5C10, the first closure's need below
+its frame top. The ROM's flash read and its other routines may then use
+0x2B20 bytes (11,040) together: `R + romStack ≤ 0x2B20`. The closure's
+stages also need `R ≤ 0x38D0` and a `printf` stack of at most 0x3A50
+bytes, which that bound implies. The `RomFn` contracts take `romStack` as
+a parameter, so the last number has to come from the ROM itself. Measure
+the deepest `sp` inside each ROM call in QEMU, for example by extending
+`c3-boot/qemu/boot-lockstep.sh`, and check that `R` and `romStack` are
+multiples of 4 that fit.
 
 ## What was proved by Nov 16, in detail
 

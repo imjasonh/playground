@@ -180,4 +180,30 @@ theorem reset_correct_loaded {flash : Nat → BitVec 8} {pinned : Bytes} {policy
             (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x :=
   reset_correct (loaded_rstCode L) (loaded_bmHyp L ctl rom c0 hE hlo) m hm hpc
 
+/-! ## The stack bound `hlo`
+
+Between the read-only data's end at 0x3FCC8000 and the stack top at
+0x3FCDC700 there are 0x14700 bytes. `boot_main` takes 0xBE80 of them for
+its frame and 0x150 for the deepest frame it opens on the way to a callee,
+which leaves 0x8730 bytes for `R`, `romStack`, and `stack0`. -/
+
+/-- `hlo` holds when the ROM's flash-read stack `R`, its other routines'
+stack `romStack`, and the first closure's stack `stack0` total at most
+0x8730 bytes. -/
+theorem reset_hlo {R romStack stack0 : Nat} (h : R + romStack + stack0 ≤ 0x8730) :
+    0x3FCC8000 + bmK R romStack stack0 ≤ 0x3FCDC700 := by
+  have e : 0x3FCC8000 + bmK R romStack stack0 = 0x3FCD3FD0 + (R + romStack + stack0) := by
+    simp only [bmK, ← Nat.add_assoc]
+  rw [e]
+  exact Nat.add_le_add_left h 0x3FCD3FD0
+
+/-- `hlo` with the first closure's stack at 0x5C10 bytes, the most that its
+stages use below its frame's top (`AcceptSlot.lean`): the ROM's flash
+read and its other routines may then use 0x2B20 bytes together. The
+closure's stages separately need `R ≤ 0x38D0` and a `printf` stack of at
+most 0x3A50 bytes, which this bound implies. -/
+theorem reset_hlo_c0 {R romStack : Nat} (h : R + romStack ≤ 0x2B20) :
+    0x3FCC8000 + bmK R romStack 0x5C10 ≤ 0x3FCDC700 :=
+  reset_hlo (Nat.add_le_add_right h 0x5C10)
+
 end C3.RV32.Cur
