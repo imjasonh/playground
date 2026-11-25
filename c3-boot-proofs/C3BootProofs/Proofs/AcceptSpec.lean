@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.AcceptSpecPin
+import C3BootProofs.Proofs.AcceptExtractDup
 
 /-!
 # `boot_main`'s first closure: the specification
@@ -40,8 +41,8 @@ returns with `AcsRes`: memory kept outside its stack, `Buffers`, and the
 result, and a result that is `None` or a `Some` for the slot that
 `bmcAccept` accepts. -/
 theorem acs_spec (hF : AcsFront) (hNK : AcsTargetsNoKeys) (hC : AceCaStage) (hT : AceTlogStage)
-    (hS : AceTsaStage) (hD : AceDupStage) (hB : AcsBundleStage) (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {m : Machine} (e : AcsEntry X m) : X.End m :=
-  hF X ok m e fun _ _ _ _ S => acs_pin hNK (ac_extract_loops hC hT hS hD) hB hFx ok S
+    (hS : AceTsaStage) (hB : AcsBundleStage) (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {m : Machine} (e : AcsEntry X m) : X.End m :=
+  hF X ok m e fun _ _ _ _ S => acs_pin hNK (ac_extract_loops hC hT hS ace_dup) hB hFx ok S
 
 /-! ## The contract -/
 
@@ -85,7 +86,7 @@ theorem acs_keep {m n : Machine} (hsp : reg n sp = reg m sp)
 /-- **The closure meets `Closure0Contract`** with a stack of 0x5C10 bytes:
 the frame's 0x5A70 and the 0x1A0 below it that `sigstore::verify` writes. -/
 theorem acs_contract (hF : AcsFront) (hNK : AcsTargetsNoKeys) (hC : AceCaStage) (hT : AceTlogStage)
-    (hS : AceTsaStage) (hD : AceDupStage) (hB : AcsBundleStage) (hFx : AcsFinishBad) (hCo : AcsComplete)
+    (hS : AceTsaStage) (hB : AcsBundleStage) (hFx : AcsFinishBad) (hCo : AcsComplete)
     {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Word} {romCode : List Nat} {pinned : Bytes}
     {policy : Policy} (log : RomFn romBase romCode 0x40000040 romStack fun _ => True) (hrs : romStack ≤ 0x3A50)
     (hR : R ≤ 0x3A50 - 0x180) (hR4 : R % 4 = 0) (rb : 0x40000000 ≤ romBase.toNat)
@@ -129,7 +130,7 @@ theorem acs_contract (hF : AcsFront) (hNK : AcsTargetsNoKeys) (hC : AceCaStage) 
   have hTop : reg m sp - BitVec.ofNat 32 0x5A70 + 0x5A70 = reg m sp := BitVec.sub_add_cancel _ _
   have e : AcsEntry X m :=
     ⟨⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩, C, hTop.symm, h0, h1, h2, h3, rfl, rfl, fun _ _ => rfl⟩
-  rcases acs_spec hF hNK hC hT hS hD hB hFx ok e with hp | ⟨n', st, pc, sp', sv, r3, r4, hm, hres⟩
+  rcases acs_spec hF hNK hC hT hS hB hFx ok e with hp | ⟨n', st, pc, sp', sv, r3, r4, hm, hres⟩
   · exact .inr hp
   refine .inl ⟨n', st, pc.trans A.ra.symm, acs_keep (sp'.trans hTop) sv r3 r4, fun x hs hr hb => ?_, ?_⟩
   · rw [hW] at hs
