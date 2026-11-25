@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.BootMainEntry
+import C3BootProofs.Proofs.BootLevel
 
 /-!
 # `boot_main` from its entry
@@ -652,8 +653,12 @@ the boot-state records in flash, the eFuse level at entry, and as the check
 the security version of each slot that `acceptTufSlot` accepts at that
 level (`bmcAccept`).
 
-At the jump, `a0` holds the slot, the target is at most the entry level, and
-outside `boot_main`'s stack and the peripheral registers memory is what
+At the jump, `a0` holds the slot, and the target is at most the eFuse level
+then: `Spec/Level`'s `level` of the `SECURE_VERSION` field, bits 14 to 29 of
+the eFuse word at `efuseRd`. That word is its value at entry with some bits
+set, so the level never falls. When `decideBoot` raises the level, `boot`
+burns the field until the level read back reaches `target`; the eFuse
+controller is assumed only to meet `EfuseCtl` (`BmEnv.epr`). Outside `boot_main`'s stack and the peripheral registers memory is what
 `boot` loads from a memory `Mb` that keeps `M0` outside that stack and holds
 the image's header at `bmAcc top`. `BmHyp` lets the ROM's flash-write routine
 run only with the record that `decideBoot` writes. -/
@@ -669,7 +674,8 @@ theorem bootMain_correct {flash : Nat → BitVec 8} {pinned : Bytes} {policy : P
           .boot slot target ∧
         bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t) ∧
         decodeImageHeader (bmcImage flash (BitVec.ofNat 32 (bmSlotNum slot)) mf) mf.image.length = some h ∧
-        target ≤ bmLevel M0 ∧
+        target ≤ level (Fuses.ofNat (((memLoad32 m'.mem efuseRd).toNat >>> 14) % 65536)) ∧
+        (∃ X, memLoad32 m'.mem efuseRd = memLoad32 M0 efuseRd ||| X) ∧
         m'.pc = BitVec.ofNat 32 h.entryPoint &&& ~~~1 ∧
         reg m' a0 = BitVec.ofNat 32 (bmSlotNum slot) ∧
         BmKeep M0 Mb (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) ∧
@@ -679,7 +685,10 @@ theorem bootMain_correct {flash : Nat → BitVec 8} {pinned : Bytes} {policy : P
           m'.mem x = bootMem flash Mb (bmAcc top)
             (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x := by
   rcases bms_entry X m hm hpc hsp with ⟨m', hs, hj⟩ | hp
-  · exact .inr ⟨m', hs, hj⟩
+  · unfold BmJump at hj
+    obtain ⟨slot, target, mf, sv, t, h, Mb, hD, hA, hd, hl, rest⟩ := hj
+    rw [bmLevel, BootLevel.btPop_level] at hl
+    exact .inr ⟨m', hs, slot, target, mf, sv, t, h, Mb, hD, hA, hd, hl, rest⟩
   · exact .inl hp
 
 end C3.RV32.Cur

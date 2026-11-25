@@ -824,6 +824,59 @@ theorem bt_map (hbt : BT.toNat + bootFnCode.length ≤ 0x600C4000) {M0 Mi : Word
         exact ⟨n', .cons d1 (c2.trans (.cons d3 (c4.trans (c5.trans (.cons d6 (c7.trans (.cons d8 (c9.trans c')))))))),
           s', k'⟩
 
+/-! ## The eFuse controller -/
+
+/-- The entry of `efuse_program_run`. -/
+abbrev EPR : Word := BitVec.ofNat 32 efuseProgramRunAddress
+
+/-- The eFuse word that `boot` counts the security level from: block 0's
+read register that holds `SECURE_VERSION` in bits 14 to 29. -/
+abbrev efuseRd : Word := 0x6000883C
+
+/-- `M` agrees with `Mb` outside the eFuse controller's registers
+0x60008800 to 0x600089FF. -/
+def EfOut (Mb M : Word → BitVec 8) : Prop :=
+  ∀ x : Word, (x.toNat < 0x60008800 ∨ 0x60008A00 ≤ x.toNat) → M x = Mb x
+
+/-- **The eFuse controller's contract**, for the code `code` at `EPR`.
+
+`boot` programs a bit by writing the timing registers and the data word,
+then calling `efuse_program_run(0x5A5A, 2)`, which writes the command and
+polls until the controller clears it or a timeout passes. It then zeroes
+the data registers and, when that call returned nonzero, calls
+`efuse_program_run(0x5AA5, 1)` to reload the read registers. After both,
+it reads the level word again and counts the attempt as failed unless the
+bit it programmed is set.
+
+A call with `a1` equal to 1 or 2 returns to `ra` and keeps every register
+other than `a0` to `a5`. Memory outside the controller's registers is
+unchanged, and the level word at `efuseRd` reads as its old value with
+some bits set: eFuse bits only go from 0 to 1, and a read register shows
+blown bits or nothing new. Which bits, and whether the burn worked, is
+left open: `boot` detects a burn that didn't set the bit by reading the
+word back, and the proof covers every outcome. A plain-memory model of the
+controller meets this contract (`eprAt_of_code`). -/
+structure EfuseCtl (code : List Nat) : Prop where
+  run : ∀ m : Machine, CodeIn m.mem EPR code → m.pc = EPR → (reg m a1 = 1 ∨ reg m a1 = 2) →
+    ∃ m', Steps m m' ∧ m'.pc = reg m ra &&& ~~~1 ∧
+      (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → reg m' r = reg m r) ∧
+      EfOut m.mem m'.mem ∧ ∃ X, memLoad32 m'.mem efuseRd = memLoad32 m.mem efuseRd ||| X
+
+/-- Memory `M` holds code at `EPR`, below the peripheral registers, that
+meets the eFuse controller's contract. -/
+def EprAt (M : Word → BitVec 8) : Prop :=
+  ∃ code : List Nat, CodeIn M EPR code ∧ EPR.toNat + code.length ≤ 0x60000000 ∧ EfuseCtl code
+
+theorem EprAt.code {M M' : Word → BitVec 8} (h : EprAt M)
+    (hx : ∀ x : Word, 0x40000000 ≤ x.toNat → x.toNat < 0x60000000 → M' x = M x) : EprAt M' := by
+  obtain ⟨code, hc, hl, hF⟩ := h
+  refine ⟨code, fun i hi => ?_, hl, hF⟩
+  have hE : EPR.toNat = (img% efuseProgramRunAddress) := rfl
+  rw [hE] at hl
+  have e : (EPR + BitVec.ofNat 32 i).toNat = (img% efuseProgramRunAddress) + i := by
+    rw [BitVec.toNat_add, hE, BitVec.toNat_ofNat]; omega
+  rw [hx _ (by rw [e]; omega) (by rw [e]; omega)]; exact hc i hi
+
 /-- The stack `boot` and its callees use: its own 0x40 bytes, then
 `flash_read_words`' 16 and the ROM's `R` below them, and `romStack` for the
 other ROM routines. -/
@@ -841,7 +894,7 @@ structure BtCtx (M0 : Word → BitVec 8) (top acc imgf : Word) (R romStack : Nat
     (romCode : List Nat) : Prop where
   code : CodeIn M0 BT bootFnCode
   rfw : CodeIn M0 (BitVec.ofNat 32 romFlashReadWordsAddress) romFlashReadWordsCode
-  epr : CodeIn M0 (BitVec.ofNat 32 efuseProgramRunAddress) efuseProgramRunCode
+  epr : EprAt M0
   panic : PanicCode M0
   rom : CodeIn M0 romBase romCode
   hrb : 0x40000000 ≤ romBase.toNat
@@ -1302,7 +1355,7 @@ theorem BtCtx.transfer {M M' : Word → BitVec 8} {top acc imgf romBase : Word} 
     (hh : HdrEq M M' acc) : BtCtx M' top acc imgf R romStack romBase romCode := by
   have hN := sgCount_le M acc
   refine ⟨hiKeep C.code hH (by decide) (by decide), hiKeep C.rfw hH (by decide) (by decide),
-    hiKeep C.epr hH (by decide) (by decide), panicKeep C.panic hH, hiKeep C.rom hH C.hrb C.hrl, C.hrb, C.hrl,
+    C.epr.code hH, panicKeep C.panic hH, hiKeep C.rom hH C.hrb C.hrl, C.hrb, C.hrl,
     C.hsp, C.hspl, C.hsph, C.hR, C.hacc, C.haccl, C.sAS, fun j hj => ?_, fun j hj hk => ?_⟩
   · rw [← hh.count] at hj; rw [← hh.kind (by omega)]; exact C.kind j hj
   · rw [← hh.count] at hj; rw [← hh.kind (by omega)] at hk

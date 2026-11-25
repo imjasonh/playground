@@ -9632,3 +9632,36 @@ end C3
 
 /-- info: 'C3.RV32.Cur.rst_path' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.rst_path
+
+/-- info: 'C3.RV32.Cur.EprAt.code' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.EprAt.code
+
+/-- info: 'C3.RV32.Cur.eprAt_of_code' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.eprAt_of_code
+
+/-- info: 'C3.RV32.Cur.EprAt.out' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.EprAt.out
+
+/-- info: 'C3.RV32.Cur.EfOut.code' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.EfOut.code
+
+/-- info: 'C3.RV32.Cur.EfOut.panic' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.EfOut.panic
+
+/-- info: 'C3.RV32.Cur.rs_chkv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.rs_chkv
+
+/-- info: 'C3.RV32.Cur.rs_chk' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.rs_chk
+
+/-- info: 'C3.RV32.Cur.rs_tail' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.rs_tail
+
+/-- info: 'C3.RV32.Cur.rs_iter' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.rs_iter
+
+/-- info: 'C3.RV32.Cur.rs_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.rs_loop
+
+/-- info: 'C3.RV32.Cur.bt_bootMem_hi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bt_bootMem_hi
