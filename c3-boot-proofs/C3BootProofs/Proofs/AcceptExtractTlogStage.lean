@@ -265,7 +265,7 @@ theorem acetl_tlog_stage : AceTlogStage := by
   induction rest generalizing n fp ls with
   | nil => exact acetl_stage A.code A.st (acetl_end O A I)
   | cons j rest ih =>
-    refine AcStage.seq (acetl_stage A.code A.st (acetl_pass O A I)) fun n1 _ _ h1 => ?_
+    refine AcStagePI.seq (acetl_stage A.code A.st (acetl_pass O A I)) fun n1 _ _ h1 => ?_
     obtain ⟨fp1, ls1, A1, I1⟩ := h1
     exact ih n1 fp1 ls1 A1 I1
 

@@ -44,6 +44,15 @@ def AcBundleStage : Prop :=
     AcBundlePre B Bf L n → AcStage B Bf g t r v M0 n 0x1A46 (fun n' =>
       AcBundlePost B Bf L n n' ∧ ∀ q : Fin 32, q.val ∈ [21, 25, 27] → reg n' q = reg n q)
 
+/-- **`AcBundleStage` with its halt refined**: the stage halts only if an
+inversion bound fails. -/
+def AcBundleStagePI : Prop :=
+  ∀ (n : Machine) (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (L : Nat),
+    CodeIn n.mem AC bootMainClosure0Code → AcBundleEnv n.mem → Fr B 0x5A70 → Sep B 0x5A70 Bf acBufLen →
+    St n.mem AC n 0x1816 (reg n) → AcInv B Bf g t v M0 n → memLoad32 n.mem (acSlot B 0x40) = r →
+    AcBundlePre B Bf L n → AcStagePI B Bf g t r v M0 n 0x1A46 (fun n' =>
+      AcBundlePost B Bf L n n' ∧ ∀ q : Fin 32, q.val ∈ [21, 25, 27] → reg n' q = reg n q)
+
 theorem acb_sq (B : Word) (a : Nat) (k : Word) {c : Nat}
     (h : BitVec.ofNat 32 (0x3A50 + a) + k = BitVec.ofNat 32 (0x3A50 + c)) : acSlot B a + k = acSlot B c := by
   unfold acSlot; rw [BitVec.add_assoc, h]
@@ -102,7 +111,7 @@ theorem acb_digest {B : Word} {n0 n : Machine} (K : AcbK B n0 n) :
 
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 4000000 in
-theorem acBundleStage : AcBundleStage := by
+theorem acBundleStage_pi : AcBundleStagePI := by
   intro n0 B Bf g t r v M0 L C E F hs s I hr P
   have G : AcbG B Bf g t r v M0 L n0 := ⟨C, E, ⟨F, hs, P.sv, P.hL⟩, I, hr⟩
   have hL := P.hL
@@ -209,5 +218,10 @@ theorem acBundleStage : AcBundleStage := by
     · rw [u3]; apply BitVec.eq_of_toNat_eq
       rw [q12, memLoad32_toNat, e5, e6, e7, kb0 4 (by decide), kb0 5 (by decide), kb0 6 (by decide),
         kb0 7 (by decide)]
+
+/-- `AcBundleStage`, from `acBundleStage_pi`. -/
+theorem acBundleStage : AcBundleStage :=
+  fun n B Bf g t r v M0 L h1 h2 h3 h4 h5 h6 h7 h8 =>
+    (acBundleStage_pi n B Bf g t r v M0 L h1 h2 h3 h4 h5 h6 h7 h8).acStage
 
 end C3.RV32.Ac

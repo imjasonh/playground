@@ -1,6 +1,7 @@
 import C3BootProofs.Proofs.AcceptLib
 import C3BootProofs.Proofs.FlashRead
 import C3BootProofs.Spec.Accept
+import C3BootProofs.Proofs.PanicFree
 
 /-!
 # `boot_main`'s first closure: the stages' interface
@@ -59,6 +60,36 @@ def AcStage (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (n0 
   ∃ n', Steps n0 n' ∧ (Halting n' ∨
     (AcInv B Bf g t v M0 n' ∧ (AcFail B r n' ∨ (n'.pc = AC + BitVec.ofNat 32 o' ∧ Q n'))))
 
+/-- **`AcStage` with its halt refined**: from `n0`, the closure halts only
+if an inversion bound fails, reaches an exit, or reaches offset `o'` in a
+state that `Q` holds of. -/
+def AcStagePI (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (n0 : Machine) (o' : Nat)
+    (Q : Machine → Prop) : Prop :=
+  ∃ n', Steps n0 n' ∧ ((¬ InvBounds ∧ Halting n') ∨
+    (AcInv B Bf g t v M0 n' ∧ (AcFail B r n' ∨ (n'.pc = AC + BitVec.ofNat 32 o' ∧ Q n'))))
+
+theorem AcStagePI.acStage {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {n0 : Machine}
+    {o' : Nat} {Q : Machine → Prop} (h : AcStagePI B Bf g t r v M0 n0 o' Q) : AcStage B Bf g t r v M0 n0 o' Q :=
+  let ⟨n', c, hn⟩ := h; ⟨n', c, hn.imp_left And.right⟩
+
+/-- A stage that ends where the next one starts. -/
+theorem AcStagePI.seq {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {n0 : Machine} {o1 o2 : Nat}
+    {Q1 Q2 : Machine → Prop} (h1 : AcStagePI B Bf g t r v M0 n0 o1 Q1)
+    (h2 : ∀ n1, AcInv B Bf g t v M0 n1 → n1.pc = AC + BitVec.ofNat 32 o1 → Q1 n1 →
+      AcStagePI B Bf g t r v M0 n1 o2 Q2) :
+    AcStagePI B Bf g t r v M0 n0 o2 Q2 := by
+  obtain ⟨n1, s1, h⟩ := h1
+  rcases h with h | ⟨I1, h | ⟨hp, hq⟩⟩
+  · exact ⟨n1, s1, .inl h⟩
+  · exact ⟨n1, s1, .inr ⟨I1, .inl h⟩⟩
+  · obtain ⟨n2, s2, h2'⟩ := h2 n1 I1 hp hq
+    exact ⟨n2, s1.trans s2, h2'⟩
+
+/-- A stage from `n1` is one from `n` when `n` steps to `n1`. -/
+theorem AcStagePI.pre {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {n n1 : Machine} {o : Nat}
+    {Q : Machine → Prop} (h : Steps n n1) (e : AcStagePI B Bf g t r v M0 n1 o Q) : AcStagePI B Bf g t r v M0 n o Q :=
+  let ⟨n', s, q⟩ := e; ⟨n', h.trans s, q⟩
+
 /-- The flash address of slot `slot`'s first byte. -/
 def acBase (slot : Word) : Nat := if slot = 0 then 0x30000 else 0x210000
 
@@ -105,6 +136,27 @@ def AcReadStage (E : (Word → BitVec 8) → Prop) : Prop :=
     reg n (8 : Fin 32) = slot → reg n a3 = slot → reg n (24 : Fin 32) = 0x210000 →
     AcStage B Bf g t r v M0 n 0x1AA fun n' =>
       ∃ mf, decodeManifest (flashBytes flash (acBase slot) 32) = some mf ∧ AcReadPost flash B Bf r slot level mf n'
+
+/-- **`AcReadStage` with its halt refined**: the stage halts only if an
+inversion bound fails. -/
+def AcReadStagePI (E : (Word → BitVec 8) → Prop) : Prop :=
+  ∀ (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romCode : List Nat), RomRead flash R romBase romCode →
+  ∀ (n : Machine) (B Bf g t r slot level : Word) (v : Nat → Word) (M0 : Word → BitVec 8),
+    (∀ M, (∀ x, Sep x 1 B 0x5A70 → Sep x 1 Bf acBufLen → M x = M0 x) → E M) →
+    CodeIn n.mem AC bootMainClosure0Code → Fr B 0x5A70 → Sep B 0x5A70 Bf acBufLen →
+    Bf.toNat % 4 = 0 → Bf.toNat + acBufLen ≤ 0x40000000 → R ≤ 0x3A50 - 0x150 →
+    CodeIn n.mem romBase romCode → 0x40000000 ≤ romBase.toNat → romBase.toNat + romCode.length ≤ 2 ^ 32 →
+    R % 4 = 0 → St n.mem AC n 0x32 (reg n) → AcInv B Bf g t v M0 n →
+    reg n (19 : Fin 32) = r → reg n (26 : Fin 32) = level → reg n (21 : Fin 32) = Bf →
+    reg n (8 : Fin 32) = slot → reg n a3 = slot → reg n (24 : Fin 32) = 0x210000 →
+    AcStagePI B Bf g t r v M0 n 0x1AA fun n' =>
+      ∃ mf, decodeManifest (flashBytes flash (acBase slot) 32) = some mf ∧ AcReadPost flash B Bf r slot level mf n'
+
+theorem AcReadStagePI.acStage {E : (Word → BitVec 8) → Prop} (h : AcReadStagePI E) : AcReadStage E :=
+  fun flash R romBase romCode rr n B Bf g t r slot level v M0 hE c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14
+    c15 c16 c17 c18 =>
+  (h flash R romBase romCode rr n B Bf g t r slot level v M0 hE c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14
+    c15 c16 c17 c18).acStage
 
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 4000000 in

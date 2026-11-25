@@ -254,6 +254,15 @@ def AcExtractStage : Prop :=
     AcInv B Bf g t v M0 n → AcExtractPre B Bf r D json n →
     AcStage B Bf g t r v M0 n 0x1816 (AcExtractPost B Bf M0 n json)
 
+/-- **`AcExtractStage` with its halt refined**: the stage halts only if an
+inversion bound fails. -/
+def AcExtractStagePI : Prop :=
+  ∀ (n : Machine) (B Bf g t r D : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (json : Bytes),
+    (∀ M, (∀ x, Sep x 1 B 0x5A70 → Sep x 1 Bf acBufLen → M x = M0 x) → AcExtractEnv M) →
+    AceLayout B Bf → CodeIn n.mem AC bootMainClosure0Code → St n.mem AC n 0xC12 (reg n) →
+    AcInv B Bf g t v M0 n → AcExtractPre B Bf r D json n →
+    AcStagePI B Bf g t r v M0 n 0x1816 (AcExtractPost B Bf M0 n json)
+
 /-! ## The sub-stages -/
 
 /-- What every sub-stage shares: the closure's parameters, the machine `K`
@@ -279,9 +288,9 @@ structure AceCtx.Ok (X : AceCtx) : Prop where
   inv : AcInv X.B X.Bf X.g X.t X.v X.M0 X.K
   pre : AcExtractPre X.B X.Bf X.r X.D X.json X.K
 
-/-- `AcStage` in the context `X`. -/
+/-- `AcStagePI` in the context `X`. -/
 abbrev AceCtx.stage (X : AceCtx) (n : Machine) (o' : Nat) (Q : Machine → Prop) : Prop :=
-  AcStage X.B X.Bf X.g X.t X.r X.v X.M0 n o' Q
+  AcStagePI X.B X.Bf X.g X.t X.r X.v X.M0 n o' Q
 
 /-- At every cut after 0xC12: the closure's code and state at `off`, what
 the stage keeps, the expiry, and `keys`'s free part at `fp`. -/

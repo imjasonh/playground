@@ -137,6 +137,17 @@ def AcImageStage (E : (Word → BitVec 8) → Prop) : Prop :=
     St n.mem AC n 0x1AA (reg n) → AcInv B Bf g t v M0 n → AcImagePre flash B Bf r slot level mf n →
     AcStage B Bf g t r v M0 n 0x2A6 (AcImagePost flash B slot level mf n)
 
+/-- **`AcImageStage` with its halt refined**: the stage halts only if an
+inversion bound fails. -/
+def AcImageStagePI (E : (Word → BitVec 8) → Prop) : Prop :=
+  ∀ (flash : Nat → BitVec 8) (n : Machine) (B Bf g t r slot level : Word) (v : Nat → Word)
+    (M0 : Word → BitVec 8) (mf : Manifest),
+    (∀ M, (∀ x, Sep x 1 B 0x5A70 → Sep x 1 Bf acBufLen → M x = M0 x) → E M) →
+    CodeIn n.mem AC bootMainClosure0Code → Fr B 0x5A70 → Sep B 0x5A70 Bf acBufLen →
+    Bf.toNat + acBufLen ≤ 0x40000000 →
+    St n.mem AC n 0x1AA (reg n) → AcInv B Bf g t v M0 n → AcImagePre flash B Bf r slot level mf n →
+    AcStagePI B Bf g t r v M0 n 0x2A6 (AcImagePost flash B slot level mf n)
+
 /-- `AcReadPost` gives `AcImagePre`. -/
 theorem acImagePre_of_read {flash : Nat → BitVec 8} {B Bf r slot level : Word} {mf : Manifest} {n : Machine}
     (hm : decodeManifest (flashBytes flash (acBase slot) 32) = some mf)
@@ -603,7 +614,7 @@ theorem acs_imgW_cnt {M : Word → BitVec 8} {ptr len ilen : Word} {sv cnt : Bit
 
 set_option maxHeartbeats 8000000 in
 /-- **From 0x1AA to 0x2A6.** -/
-theorem acImage_stage : AcImageStage AcImageEnv := by
+theorem acImage_stage_pi : AcImageStagePI AcImageEnv := by
   intro flash n B Bf g t r slot level v M0 mf hE C F sBf hBf s I P
   obtain ⟨h40, h22, h25, h26, h27, hL, hhd⟩ := P
   have rsp : reg n sp = B + BitVec.ofNat 32 0x3A50 := I.sp
@@ -1053,5 +1064,10 @@ theorem acImage_stage : AcImageStage AcImageEnv := by
         rw [P13 i hi, L13 _ (aci_ptL (by omega) (by omega) (.inr (by omega)))]
       · intro x h1 h2 h3
         exact WW13 x ⟨by rw [add_ofNat_zero]; exact h1, h2, h3⟩
+
+/-- `AcImageStage`, from `acImage_stage_pi`. -/
+theorem acImage_stage : AcImageStage AcImageEnv :=
+  fun flash n B Bf g t r slot level v M0 mf h1 h2 h3 h4 h5 h6 h7 h8 =>
+    (acImage_stage_pi flash n B Bf g t r slot level v M0 mf h1 h2 h3 h4 h5 h6 h7 h8).acStage
 
 end C3.RV32.Ac

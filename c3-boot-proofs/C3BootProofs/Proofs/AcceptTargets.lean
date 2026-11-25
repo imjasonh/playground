@@ -170,4 +170,21 @@ def AcTargetsStage : Prop :=
       (AcTargetsPost pinned parts root re B Bf (reg n (21 : Fin 32)) (reg n (25 : Fin 32)) (reg n (27 : Fin 32))
         n.mem)
 
+/-- **`AcTargetsStage` with its halt refined**: the stage halts only if an
+inversion bound fails. -/
+def AcTargetsStagePI : Prop :=
+  ∀ (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romCode : List Nat), RomRead flash R romBase romCode →
+  ∀ (n : Machine) (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8)
+    (pinned : Bytes) (parts : TufParts) (root : TufRoot) (re : Nat),
+    (∀ M, (∀ x, Sep x 1 B 0x5A70 → Sep x 1 Bf acBufLen → M x = M0 x) → AcTargetsEnv romBase romCode M) →
+    CodeIn n.mem AC bootMainClosure0Code → Fr B 0x5A70 → Sep B 0x5A70 Bf acBufLen →
+    Sep B 0x5A70 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize) →
+    Sep B 0x5A70 romBase romCode.length → Sep Bf acBufLen romBase romCode.length →
+    Bf.toNat % 4 = 0 → Bf.toNat + acBufLen ≤ 0x40000000 → R % 4 = 0 → R ≤ 0x3A50 - 0x180 →
+    St n.mem AC n 0x836 (reg n) → AcInv B Bf g t v M0 n →
+    AcTargetsPre flash pinned parts root re B Bf r n →
+    AcStagePI B Bf g t r v M0 n 0xC12
+      (AcTargetsPost pinned parts root re B Bf (reg n (21 : Fin 32)) (reg n (25 : Fin 32)) (reg n (27 : Fin 32))
+        n.mem)
+
 end C3.RV32.Ac

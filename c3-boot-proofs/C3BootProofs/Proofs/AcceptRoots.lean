@@ -207,6 +207,17 @@ def AcRootsStage : Prop :=
     R ≤ 0x38D0 → St n.mem AC n 0x584 (reg n) → AcInv B Bf g t v M0 n → AcRootsPre flash B Bf r docs first n →
     AcStage B Bf g t r v M0 n 0x836 (AcRootsPost B Bf docs first n)
 
+/-- **`AcRootsStage` with its halt refined**: the stage halts only if an
+inversion bound fails. -/
+def AcRootsStagePI : Prop :=
+  ∀ (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romCode : List Nat), RomRead flash R romBase romCode →
+  ∀ (n : Machine) (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (docs : List Bytes)
+    (first : TufRoot),
+    (∀ M, (∀ x, Sep x 1 B 0x5A70 → Sep x 1 Bf acBufLen → M x = M0 x) → AcRootsEnv R romBase romCode B Bf M) →
+    Fr B 0x5A70 → Sep B 0x5A70 Bf acBufLen → Bf.toNat % 4 = 0 → Bf.toNat + acBufLen ≤ 0x40000000 →
+    R ≤ 0x38D0 → St n.mem AC n 0x584 (reg n) → AcInv B Bf g t v M0 n → AcRootsPre flash B Bf r docs first n →
+    AcStagePI B Bf g t r v M0 n 0x836 (AcRootsPost B Bf docs first n)
+
 /-! ## Addresses and separation -/
 
 set_option maxRecDepth 20000
