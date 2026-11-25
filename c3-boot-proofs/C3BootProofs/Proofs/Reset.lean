@@ -8,7 +8,7 @@ import C3BootProofs.Proofs.BootMainStart
 entry of `boot_main`, with `bootMain_correct`, from that entry to the jump
 into an application or a halt. The reset path changes only the stack word
 that `setup` pushes and the watchdog and clock registers, so the eFuse
-level word that `boot_main` reads is the one the ROM left (`rst_word`).
+level word that `boot_main` reads is the one the ROM left (`reset_word`).
 -/
 
 namespace C3.RV32.Cur
@@ -16,15 +16,15 @@ namespace C3.RV32.Cur
 open C3 C3.Image C3.RV32.BootMainContract
 
 /-- The reset path leaves the eFuse level word alone. -/
-theorem rst_word (M0 : Word → BitVec 8) : memLoad32 (resetMem M0) efuseRd = memLoad32 M0 efuseRd :=
+theorem reset_word (M0 : Word → BitVec 8) : memLoad32 (resetMem M0) efuseRd = memLoad32 M0 efuseRd :=
   memLoad32_congr fun j hj => by
     have e : (efuseRd + BitVec.ofNat 32 j).toNat = 0x6000883C + j := by
       rw [BitVec.toNat_add, BitVec.toNat_ofNat, show efuseRd.toNat = 0x6000883C from rfl]; omega
     exact resetMem_out M0 (efuseRd + BitVec.ofNat 32 j) (.inr (by omega)) (.inl (by omega)) (.inl (by omega))
 
 /-- The level that `boot_main` reads at its entry is the level at reset. -/
-theorem rst_level (M0 : Word → BitVec 8) : bmLevel (resetMem M0) = bmLevel M0 := by
-  unfold bmLevel; rw [rst_word]
+theorem reset_level (M0 : Word → BitVec 8) : bmLevel (resetMem M0) = bmLevel M0 := by
+  unfold bmLevel; rw [reset_word]
 
 /-- **The bootloader boots only what `decideBoot` boots, from reset.**
 
@@ -91,7 +91,7 @@ theorem reset_correct {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Poli
   obtain ⟨n, c, pc, mem, sp⟩ := rst_path C hm hpc
   rcases bootMain_correct X n mem pc sp with hp | ⟨m', c', rest⟩
   · exact .inl (Panics.of_steps c hp)
-  · rw [rst_level, rst_word] at rest
+  · rw [reset_level, reset_word] at rest
     exact .inr ⟨m', c.trans c', rest⟩
 
 end C3.RV32.Cur

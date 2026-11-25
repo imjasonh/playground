@@ -9667,11 +9667,11 @@ end C3
 /-- info: 'C3.RV32.Cur.bt_bootMem_hi' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bt_bootMem_hi
 
-/-- info: 'C3.RV32.Cur.rst_word' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.Cur.rst_word
+/-- info: 'C3.RV32.Cur.reset_word' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_word
 
-/-- info: 'C3.RV32.Cur.rst_level' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.Cur.rst_level
+/-- info: 'C3.RV32.Cur.reset_level' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_level
 
 /-- info: 'C3.RV32.Cur.reset_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.reset_correct
