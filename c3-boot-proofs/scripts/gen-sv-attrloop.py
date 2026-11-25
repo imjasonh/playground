@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Writes `SvAttrLoop.lean`: the timestamp's signed attributes loop of
-`sigstore::verify`, from its branch at 0x267A to the attributes' end at
-0x2704.
+`sigstore::verify`, from its branch at 0xFF8 to the attributes' end at
+0x10A4.
 
-One iteration is the segment `sv_seg_attr` (`sv_tsal`, `sv_tsaa`, then
-`sv_tsav`). It takes the next attribute off the slice (`cp`, `rem`), so
+One iteration is the segment `sv_seg_attr` (`sv_trl`, `sv_tra`, then
+`sv_trv`). It takes the next attribute off the slice (`cp`, `rem`), so
 its new state depends on what it parsed; `sv_attrStep` is that step as a
 relation, and `svChain` strings `k` of them together. The exit is
-`sv_tsax`, once `rem` is 0. The theorem is by induction on a bound on
+`sv_trx`, once `rem` is 0. The theorem is by induction on a bound on
 `rem`, which every attribute (two bytes at least) lowers. It carries one
 invariant besides the stages' hypotheses: the content-type flag is 0 or 1,
-which `sv_tsax` needs and `sv_tsav` keeps.
+which `sv_trx` needs and `sv_trv` keeps.
 
 Usage: python3 scripts/gen-sv-attrloop.py   (from c3-boot-proofs/)
 """
@@ -26,11 +26,11 @@ from svmerge import paths_of, sc_pattern, split  # noqa: E402
 from svseg import canon, strip_exists  # noqa: E402
 
 BODY = ('SvSegAttr', 'sv_seg_attr')
-EXIT = ('SvTsax', 'sv_tsax')
+EXIT = ('SvTrx', 'sv_trx')
 NAME = 'sv_attrloop'
 STEP = 'sv_attrStep'
 OK = 'sv_attrloopOk'
-TSAV = [('SvTsavct', 'sv_tsavct'), ('SvTsavmd', 'sv_tsavmd'), ('SvTsavother', 'sv_tsavother')]
+TSAV = [('SvTrvct', 'sv_trvct'), ('SvTrvmd', 'sv_trvmd'), ('SvTrvother', 'sv_trvother')]
 
 
 def success_text(sfile, sname):
@@ -75,7 +75,7 @@ def main():
                  if re.fullmatch(r"derElement 0x30 \(memBytes M0 cp rem\.toNat\) = \.ok \w+", canon(strip_exists(piece))))
     tl = re.search(r"\.ok (\w+)$", canon(strip_exists(dict(proofs)[tl_pf]))).group(1)
     tl_local = names1[names1.index(tl_pf) - 1]
-    flag_pf = next(nm for nm, piece in proofs if "tsav_w78" in piece and " ∨ " in piece)
+    flag_pf = next(nm for nm, piece in proofs if "trv_w7c" in piece and " ∨ " in piece)
     ov = {'FW': 'FW', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
     for p, _ in L.per:
         ov[p] = p
@@ -157,7 +157,7 @@ def main():
         st_v = Stage(vf, vn)
         nm = [f"pc{i}'" for i in range(len(paths[st_v.name]))] + [f"{x}'" for x in sc_pattern(st_v)]
         pats.append("⟨" + ", ".join(nm + ["e0", "e1", "e2", "e3"]) + "⟩")
-    w78 = next(x for x in names1 if "tsav_w78" in x)
+    w78 = next(x for x in names1 if "trv_w7c" in x)
     O(f"    have hflag' : {w78} = 0 ∨ {w78} = 1 := by")
     O(f"      rcases {flag_pf} with {' | '.join(pats)}")
     O("      · exact .inr e1")

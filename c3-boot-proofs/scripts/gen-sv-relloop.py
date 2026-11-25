@@ -9,7 +9,7 @@ The theorem is by induction on a bound on the fuel, a length that every pass
 lowers. The loops:
 
 - `SvCosigLoop.lean`: the checkpoint's signature lines, `sv_seg_cosig` until
-  `w5c` is 0, then `sv_csx`. The state includes the signature found so far.
+  `w50` is 0, then `sv_csx`. The state includes the signature found so far.
 - `SvEkuLoop.lean`: the OIDs of an `ExtKeyUsage` value, `sv_deku2` until
   `cl` is 0, then `sv_deku3`.
 
@@ -34,13 +34,13 @@ def find(proofs, rx):
 
 
 def cosig_slice(proofs, names1):
-    nl = find(proofs, r"nlScan M0 w38 0 w5c\.toNat = some \w+")
+    nl = find(proofs, r"nlScan M0 w38 0 w50\.toNat = some \w+")
     return {'sg_in': f"(by rw [svSubOfNat_toNat (by have := (nlScan_lt _ _ _ {nl}).2; omega)]; "
                      f"exact (sg_in).nlRest {nl})"}
 
 
 def cosig_dec(proofs, names1):
-    nl = find(proofs, r"nlScan M0 w38 0 w5c\.toNat = some \w+")
+    nl = find(proofs, r"nlScan M0 w38 0 w50\.toNat = some \w+")
     ix = names1[names1.index(nl) - 1]
     return f"svRem_le1 (a := {ix} + 1) (N := N) (by omega) (by have := (nlScan_lt _ _ _ {nl}).2; omega) hN"
 
@@ -69,13 +69,13 @@ def eku_dec(proofs, names1):
 
 SIG_OF = """/-- The signature that memory holds where the signature loop keeps a found one. -/
 def svSigOf (M : Word → BitVec 8) (B : Word) : Bytes :=
-  (M (B + 0x21A0 + BitVec.ofNat 32 0x10)).toNat :: memBytes M (B + 0x21A0 + BitVec.ofNat 32 0x1480) 63
+  (M (B + 0x21A0 + BitVec.ofNat 32 0x14)).toNat :: memBytes M (B + 0x21A0 + BitVec.ofNat 32 0x1FC) 63
 
 theorem svSigOf_at (M : Word → BitVec 8) (B : Word) :
-    M (B + 0x21A0 + BitVec.ofNat 32 0x10) = BitVec.ofNat 8 ((svSigOf M B).getD 0 0) ∧
-    ∀ j, j < 63 → M (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 ((svSigOf M B).getD (1 + j) 0) := by
+    M (B + 0x21A0 + BitVec.ofNat 32 0x14) = BitVec.ofNat 8 ((svSigOf M B).getD 0 0) ∧
+    ∀ j, j < 63 → M (B + 0x21A0 + BitVec.ofNat 32 (0x1FC + j)) = BitVec.ofNat 8 ((svSigOf M B).getD (1 + j) 0) := by
   refine ⟨BitVec.eq_of_toNat_eq ?_, fun j hj => BitVec.eq_of_toNat_eq ?_⟩
-  · show _ = (BitVec.ofNat 8 (M (B + 0x21A0 + BitVec.ofNat 32 0x10)).toNat).toNat
+  · show _ = (BitVec.ofNat 8 (M (B + 0x21A0 + BitVec.ofNat 32 0x14)).toNat).toNat
     rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (M _).isLt]
   · rw [svSigOf, Nat.add_comm 1 j, List.getD_cons_succ, List.getD_eq_getElem?_getD, memBytes,
       List.getElem?_map, List.getElem?_range hj, Option.map_some, Option.getD_some, add_ofNat_assoc,
@@ -84,10 +84,10 @@ theorem svSigOf_at (M : Word → BitVec 8) (B : Word) :
 
 LOOPS = {
     'SvCosigLoop': dict(body=('SvSegCosig', 'sv_seg_cosig'), exit=('SvCsx', 'sv_csx'), name='sv_cosigloop',
-                        step='sv_cosigStep', ok='sv_cosigloopOk', fuel='w5c', cond='hrem', xcond='hrem0',
+                        step='sv_cosigStep', ok='sv_cosigloopOk', fuel='w50', cond='hrem', xcond='hrem0',
                         slice=cosig_slice, dec=cosig_dec, title="the checkpoint's signature loop",
                       pick=dict(binder='sg', value="svSigOf n0.mem B",
-                                hyps={'b0_10': "(svSigOf_at n0.mem B).1", 'q0_1480': "(svSigOf_at n0.mem B).2"},
+                                hyps={'b0_14': "(svSigOf_at n0.mem B).1", 'q0_1fc': "(svSigOf_at n0.mem B).2"},
                                 doc="the signature that memory holds where the loop keeps a found one: before any "
                                 "line, the loop has found none, so any value does.",
                                 lemma=SIG_OF),
