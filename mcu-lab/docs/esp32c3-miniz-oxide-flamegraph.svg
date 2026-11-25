@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1140" height="372" viewBox="0 0 1140 372">
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, "SF Mono", Menlo, monospace; }
+  .title { font-size: 17px; font-weight: 700; fill: #1a1f2c; }
+  .sub { font-size: 12px; fill: #556070; }
+  .ptitle { font-size: 12.5px; font-weight: 700; fill: #1a1f2c; }
+  .lbl { font-size: 10.5px; fill: #ffffff; font-weight: 600; }
+</style>
+<rect width="1140" height="372" fill="#fafbfc" rx="8"/>
+<text x="24" y="30" class="title">XIAO ESP32-C3 (160 MHz RISC-V RV32IMC) — 2 kHz PC Flame Chart</text>
+<text x="24" y="49" class="sub">Pure-Rust miniz_oxide inflate (Flash XIP), ROM esp_rom_crc32_le, and Rust crc32</text>
+<text x="24" y="74" class="ptitle">1. ESP32-C3 miniz_oxide inflate @ 160 MHz (3.98–11.71 MB/s compressed; 112.1 MB/s stored)  [n=1079 samples]</text>
+<rect x="24" y="81" width="1092" height="22" fill="#2d3748" rx="3"/>
+<text x="32" y="96" class="lbl">c3_miniz_inflate (100%)</text>
+<rect x="24.0" y="107" width="449.4" height="24" fill="#9aa5b1" rx="2"><title>(other tail PCs): 445 (41.2%)</title></rect>
+<text x="29.0" y="123" class="lbl">(other tail PCs) (41%)</text>
+<rect x="474.4" y="107" width="325.9" height="24" fill="#f0ad4e" rx="2"><title>miniz_oxide::inflate::core::init_tree: 323 (29.9%)</title></rect>
+<text x="479.4" y="123" class="lbl">miniz::init_tree (30%)</text>
+<rect x="801.3" y="107" width="98.2" height="24" fill="#5cb85c" rx="2"><title>miniz_oxide::inflate::core::transfer: 98 (9.1%)</title></rect>
+<text x="806.3" y="123" class="lbl">miniz::trans…</text>
+<rect x="900.4" y="107" width="66.8" height="24" fill="#428bca" rx="2"><title>mcu_lab::gzip_bench::inflate_miniz_oxide: 67 (6.2%)</title></rect>
+<text x="905.4" y="123" class="lbl">mcu_lab:…</text>
+<rect x="968.2" y="107" width="59.7" height="24" fill="#8e6cc0" rx="2"><title>copy&lt;u8&gt;: 60 (5.6%)</title></rect>
+<text x="973.2" y="123" class="lbl">copy&lt;u…</text>
+<rect x="1029.0" y="107" width="42.5" height="24" fill="#3aa6a6" rx="2"><title>vPortYield: 43 (4.0%)</title></rect>
+<rect x="1072.5" y="107" width="14.2" height="24" fill="#d96b98" rx="2"><title>decompress_fast: 15 (1.4%)</title></rect>
+<rect x="1087.7" y="107" width="8.1" height="24" fill="#d9534f" rx="2"><title>into_slice_range: 9 (0.8%)</title></rect>
+<rect x="1096.8" y="107" width="7.1" height="24" fill="#f0ad4e" rx="2"><title>vPortClearInterruptMaskFromISR: 8 (0.7%)</title></rect>
+<rect x="1104.9" y="107" width="5.1" height="24" fill="#5cb85c" rx="2"><title>apply_match: 6 (0.6%)</title></rect>
+<rect x="1110.9" y="107" width="4.1" height="24" fill="#428bca" rx="2"><title>fast_lookup: 5 (0.5%)</title></rect>
+<text x="24" y="168" class="ptitle">2. ESP32-C3 ROM esp_rom_crc32_le @ 160 MHz (9.61 MB/s, 16.6 cyc/B)  [n=3142 samples]</text>
+<rect x="24" y="175" width="1092" height="22" fill="#2d3748" rx="3"/>
+<text x="32" y="190" class="lbl">c3_rom_crc32 (100%)</text>
+<rect x="24.0" y="201" width="1065.3" height="24" fill="#d9534f" rx="2"><title>ROM:??: 3068 (97.6%)</title></rect>
+<text x="29.0" y="217" class="lbl">ROM:?? (98%)</text>
+<rect x="1090.3" y="201" width="23.3" height="24" fill="#f0ad4e" rx="2"><title>vPortYield: 70 (2.2%)</title></rect>
+<text x="24" y="262" class="ptitle">3. ESP32-C3 Pure-Rust bit-by-bit crc32 @ 160 MHz (1.97 MB/s, 81.1 cyc/B)  [n=3772 samples]</text>
+<rect x="24" y="269" width="1092" height="22" fill="#2d3748" rx="3"/>
+<text x="32" y="284" class="lbl">c3_rust_crc32 (100%)</text>
+<rect x="24.0" y="295" width="706.3" height="24" fill="#d9534f" rx="2"><title>crc32: 2443 (64.8%)</title></rect>
+<text x="29.0" y="311" class="lbl">crc32 (65%)</text>
+<rect x="731.3" y="295" width="373.3" height="24" fill="#f0ad4e" rx="2"><title>xiao_esp32c3_gzip_bench::main: 1293 (34.3%)</title></rect>
+<text x="736.3" y="311" class="lbl">main (34%)</text>
+<rect x="1105.6" y="295" width="8.3" height="24" fill="#5cb85c" rx="2"><title>vPortYield: 32 (0.8%)</title></rect>
+</svg>

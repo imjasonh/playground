@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="515" viewBox="0 0 980 515">
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+  .title { font-size: 16px; font-weight: 700; fill: #1a1f2c; }
+  .sub { font-size: 11.5px; fill: #556070; }
+  .gtitle { font-size: 12px; font-weight: 700; fill: #1a1f2c; }
+  .lbl { font-size: 11px; fill: #334155; }
+  .val { font-size: 11px; font-weight: 600; fill: #1e293b; }
+</style>
+<rect width="980" height="515" fill="#fafbfc" rx="8"/>
+<text x="24" y="28" class="title">ESP32 Mask-ROM (240 MHz) vs. ESP32-C3 miniz_oxide (160 MHz)</text>
+<text x="24" y="46" class="sub">Measured USB-C throughput (MB/s) — higher is better</text>
+<line x1="230.0" y1="60" x2="230.0" y2="491" stroke="#e2e8f0" stroke-width="1"/>
+<text x="230.0" y="507" text-anchor="middle" class="sub">0 MB/s</text>
+<line x1="407.5" y1="60" x2="407.5" y2="491" stroke="#e2e8f0" stroke-width="1"/>
+<text x="407.5" y="507" text-anchor="middle" class="sub">5 MB/s</text>
+<line x1="585.0" y1="60" x2="585.0" y2="491" stroke="#e2e8f0" stroke-width="1"/>
+<text x="585.0" y="507" text-anchor="middle" class="sub">10 MB/s</text>
+<line x1="762.5" y1="60" x2="762.5" y2="491" stroke="#e2e8f0" stroke-width="1"/>
+<text x="762.5" y="507" text-anchor="middle" class="sub">15 MB/s</text>
+<line x1="940.0" y1="60" x2="940.0" y2="491" stroke="#e2e8f0" stroke-width="1"/>
+<text x="940.0" y="507" text-anchor="middle" class="sub">20 MB/s</text>
+<text x="24" y="78" class="gtitle">Inflate: rle_epd (8 KiB, 65.5x)</text>
+<text x="222" y="97" text-anchor="end" class="lbl">ESP32 Mask-ROM (240 MHz)</text>
+<rect x="230" y="86" width="637.2" height="14" fill="#428bca" rx="2"/>
+<text x="873.2" y="97" class="val">17.95 MB/s</text>
+<text x="222" y="116" text-anchor="end" class="lbl">ESP32-C3 miniz_oxide (160 MHz)</text>
+<rect x="230" y="105" width="415.7" height="14" fill="#f0ad4e" rx="2"/>
+<text x="651.7" y="116" class="val">11.71 MB/s</text>
+<text x="222" y="135" text-anchor="end" class="lbl">ESP32-C3 patched miniz_oxide</text>
+<rect x="230" y="124" width="573.0" height="14" fill="#5cb85c" rx="2"/>
+<text x="809.0" y="135" class="val">16.14 MB/s</text>
+<text x="24" y="165" class="gtitle">Inflate: json_otel (4 KiB, 7.0x)</text>
+<text x="222" y="184" text-anchor="end" class="lbl">ESP32 Mask-ROM (240 MHz)</text>
+<rect x="230" y="173" width="256.0" height="14" fill="#428bca" rx="2"/>
+<text x="492.0" y="184" class="val">7.21 MB/s</text>
+<text x="222" y="203" text-anchor="end" class="lbl">ESP32-C3 miniz_oxide (160 MHz)</text>
+<rect x="230" y="192" width="179.3" height="14" fill="#f0ad4e" rx="2"/>
+<text x="415.3" y="203" class="val">5.05 MB/s</text>
+<text x="222" y="222" text-anchor="end" class="lbl">ESP32-C3 patched miniz_oxide</text>
+<rect x="230" y="211" width="192.8" height="14" fill="#5cb85c" rx="2"/>
+<text x="428.8" y="222" class="val">5.43 MB/s</text>
+<text x="24" y="252" class="gtitle">Inflate: code_ascii (4 KiB, 3.9x)</text>
+<text x="222" y="271" text-anchor="end" class="lbl">ESP32 Mask-ROM (240 MHz)</text>
+<rect x="230" y="260" width="199.2" height="14" fill="#428bca" rx="2"/>
+<text x="435.2" y="271" class="val">5.61 MB/s</text>
+<text x="222" y="290" text-anchor="end" class="lbl">ESP32-C3 miniz_oxide (160 MHz)</text>
+<rect x="230" y="279" width="141.3" height="14" fill="#f0ad4e" rx="2"/>
+<text x="377.3" y="290" class="val">3.98 MB/s</text>
+<text x="222" y="309" text-anchor="end" class="lbl">ESP32-C3 patched miniz_oxide</text>
+<rect x="230" y="298" width="147.7" height="14" fill="#5cb85c" rx="2"/>
+<text x="383.7" y="309" class="val">4.16 MB/s</text>
+<text x="24" y="339" class="gtitle">Deflate: json_otel (4 KiB, fast)</text>
+<text x="222" y="358" text-anchor="end" class="lbl">ESP32 Mask-ROM p1 (240 MHz)</text>
+<rect x="230" y="347" width="66.0" height="14" fill="#428bca" rx="2"/>
+<text x="302.0" y="358" class="val">1.86 MB/s</text>
+<text x="222" y="377" text-anchor="end" class="lbl">ESP32-C3 miniz_oxide (stock)</text>
+<text x="234" y="377" class="val" fill="#d9534f">OOM (~308 KiB)</text>
+<text x="222" y="396" text-anchor="end" class="lbl">ESP32-C3 patched l1 (160 MHz)</text>
+<rect x="230" y="385" width="74.9" height="14" fill="#5cb85c" rx="2"/>
+<text x="310.9" y="396" class="val">2.11 MB/s</text>
+<text x="24" y="426" class="gtitle">CRC32 (8 KiB)</text>
+<text x="222" y="445" text-anchor="end" class="lbl">ESP32 Mask-ROM mz_crc32</text>
+<rect x="230" y="434" width="372.4" height="14" fill="#428bca" rx="2"/>
+<text x="608.4" y="445" class="val">10.49 MB/s</text>
+<text x="222" y="464" text-anchor="end" class="lbl">ESP32-C3 ROM esp_rom_crc32_le</text>
+<rect x="230" y="453" width="341.2" height="14" fill="#5cb85c" rx="2"/>
+<text x="577.2" y="464" class="val">9.61 MB/s</text>
+<text x="222" y="483" text-anchor="end" class="lbl">ESP32-C3 Rust bit-by-bit</text>
+<rect x="230" y="472" width="69.9" height="14" fill="#d9534f" rx="2"/>
+<text x="305.9" y="483" class="val">1.97 MB/s</text>
+</svg>

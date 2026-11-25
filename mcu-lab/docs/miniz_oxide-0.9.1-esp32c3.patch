@@ -1,0 +1,38 @@
+diff -ruN miniz_oxide-orig/src/deflate/buffer.rs miniz_oxide-patched/src/deflate/buffer.rs
+--- miniz_oxide-orig/src/deflate/buffer.rs	2026-11-25 10:45:27
++++ miniz_oxide-patched/src/deflate/buffer.rs	2026-11-25 10:45:27
+@@ -7,7 +7,7 @@
+ use alloc::vec;
+ 
+ /// Size of the buffer of lz77 encoded data.
+-pub const LZ_CODE_BUF_SIZE: usize = 64 * 1024;
++pub const LZ_CODE_BUF_SIZE: usize = 8 * 1024;
+ pub const LZ_CODE_BUF_MASK: usize = LZ_CODE_BUF_SIZE - 1;
+ /// Size of the output buffer.
+ pub const OUT_BUF_SIZE: usize = (LZ_CODE_BUF_SIZE * 13) / 10;
+diff -ruN miniz_oxide-orig/src/deflate/core.rs miniz_oxide-patched/src/deflate/core.rs
+--- miniz_oxide-orig/src/deflate/core.rs	2026-11-25 10:45:27
++++ miniz_oxide-patched/src/deflate/core.rs	2026-11-25 10:45:27
+@@ -341,7 +341,7 @@
+ /// Huffman length values.
+ const MAX_HUFF_SYMBOLS_2: usize = 19;
+ /// Size of the chained hash table.
+-pub(crate) const LZ_DICT_SIZE: usize = 32_768;
++pub(crate) const LZ_DICT_SIZE: usize = 8_192;
+ /// Mask used when stepping through the hash chains.
+ pub(crate) const LZ_DICT_SIZE_MASK: usize = (LZ_DICT_SIZE as u32 - 1) as usize;
+ /// The minimum length of a match.
+diff -ruN miniz_oxide-orig/src/inflate/core.rs miniz_oxide-patched/src/inflate/core.rs
+--- miniz_oxide-orig/src/inflate/core.rs	2026-11-25 10:45:27
++++ miniz_oxide-patched/src/inflate/core.rs	2026-11-25 10:45:27
+@@ -1104,6 +1104,10 @@
+     // if the difference between `source_pos` and `out_pos` is greater than 3,
+     // and we are not wrapping, we
+     // can do slightly better than the naive case by copying everything at once
++    } else if not_wrapping && out_pos > source_pos && (out_pos - source_pos >= match_len) {
++        let copy_len = cmp::min(match_len, out_slice.len().saturating_sub(out_pos));
++        out_slice.copy_within(source_pos..source_pos + copy_len, out_pos);
++        return;
+     } else if not_wrapping && out_pos > source_pos && (out_pos - source_pos >= 4) {
+         let end_pos = cmp::min(end_pos, out_slice.len().saturating_sub(3));
+         while out_pos < end_pos {
