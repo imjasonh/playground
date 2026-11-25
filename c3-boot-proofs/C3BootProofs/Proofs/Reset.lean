@@ -26,6 +26,39 @@ theorem reset_word (M0 : Word → BitVec 8) : memLoad32 (resetMem M0) efuseRd = 
 theorem reset_level (M0 : Word → BitVec 8) : bmLevel (resetMem M0) = bmLevel M0 := by
   unfold bmLevel; rw [reset_word]
 
+/-- `reset_correct`, with the bootloader's halts: from reset it halts with
+a deliberate code, panics only when the first closure's contract allows it
+(`Q`), or jumps into the slot that `decideBoot` boots. -/
+theorem reset_correct_q {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy}
+    {M0 : Word → BitVec 8} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
+    {E : (Word → BitVec 8) → Prop} (C : RstCode M0)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy (resetMem M0) 0x3FCDC700 R romStack stack0 romBase romCode E)
+    (m : Machine) (hm : m.mem = M0) (hpc : m.pc = RST) :
+    (HaltsDeliberately m ∨ (Q ∧ Panics m)) ∨ ∃ m', Steps m m' ∧
+      ∃ (check : Slot → Option Nat) (slot : Slot) (target : Nat) (mf : Manifest) (sv t : Nat) (h : ImageHeader)
+        (Mb : Word → BitVec 8),
+        (∀ s l, check s = some l →
+          ∃ mf t, bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum s)) = some (mf, l, t)) ∧
+        (decideBoot (bmRecs flash).1 (bmLevel M0) check).outcome = .boot slot target ∧
+        bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t) ∧
+        decodeImageHeader (bmcImage flash (BitVec.ofNat 32 (bmSlotNum slot)) mf) mf.image.length = some h ∧
+        target ≤ level (Fuses.ofNat (((memLoad32 m'.mem efuseRd).toNat >>> 14) % 65536)) ∧
+        (∃ X, memLoad32 m'.mem efuseRd = memLoad32 M0 efuseRd ||| X) ∧
+        m'.pc = BitVec.ofNat 32 h.entryPoint &&& ~~~1 ∧
+        reg m' a0 = BitVec.ofNat 32 (bmSlotNum slot) ∧
+        BmKeep (resetMem M0) Mb (0x3FCDC700 - BitVec.ofNat 32 (bmK R romStack stack0))
+          (bmK R romStack stack0) ∧
+        HdrAt Mb (bmAcc 0x3FCDC700) h ∧
+        ∀ x, Sep (0x3FCDC700 - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) x 1 →
+          (x.toNat < 0x60000000 ∨ 0x600C4000 ≤ x.toNat) →
+          m'.mem x = bootMem flash Mb (bmAcc 0x3FCDC700)
+            (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x := by
+  obtain ⟨n, c, pc, mem, sp⟩ := rst_path C hm hpc
+  rcases bootMain_correct_q X n mem pc sp with hp | ⟨m', c', rest⟩
+  · exact .inl (hp.imp (HaltsDeliberately.of_steps c) fun h => ⟨h.1, Panics.of_steps c h.2⟩)
+  · rw [reset_level, reset_word] at rest
+    exact .inr ⟨m', c.trans c', rest⟩
+
 /-- **The bootloader boots only what `decideBoot` boots, from reset.**
 
 The ROM jumps to `_start` (`RST`, 0x403A0000) with memory `M0` and any
@@ -91,11 +124,7 @@ theorem reset_correct {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Poli
         ∀ x, Sep (0x3FCDC700 - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) x 1 →
           (x.toNat < 0x60000000 ∨ 0x600C4000 ≤ x.toNat) →
           m'.mem x = bootMem flash Mb (bmAcc 0x3FCDC700)
-            (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x := by
-  obtain ⟨n, c, pc, mem, sp⟩ := rst_path C hm hpc
-  rcases bootMain_correct X n mem pc sp with hp | ⟨m', c', rest⟩
-  · exact .inl (Panics.of_steps c hp)
-  · rw [reset_level, reset_word] at rest
-    exact .inr ⟨m', c.trans c', rest⟩
+            (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x :=
+  (reset_correct_q C X.q m hm hpc).imp_left fun h => h.elim HaltsDeliberately.panics And.right
 
 end C3.RV32.Cur

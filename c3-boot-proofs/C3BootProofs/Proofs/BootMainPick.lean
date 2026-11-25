@@ -51,7 +51,7 @@ and the slot's `Accepted` bytes at `F + 0xBBF0`. -/
 theorem bmp_first {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0x2C2 (reg n)) (hsp : reg n sp = F)
     (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
@@ -65,7 +65,7 @@ theorem bmp_first {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
     (h8 : reg n 8 &&& 0xFF = BitVec.ofNat 32 (bmSlotNum slot)) (h19 : reg n 19 = BitVec.ofNat 32 (c + 256 * p))
     (h20 : reg n 20 = F + BitVec.ofNat 32 0xB9A8) (h26 : reg n 26 = BitVec.ofNat 32 sv)
     (h23 : reg n 23 = btPop (memLoad32 M0 efuseRd)) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   have h16 := C.hsp
   obtain ⟨_, hge, hsv, _⟩ := bmc_accept hA
@@ -166,7 +166,7 @@ slot's `Accepted` bytes, with its security version at +0x128, at
 theorem bmp_other {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
-    (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
+    {Q : Prop} (X : BmHypQ Q flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0x304 (reg n)) (hsp : reg n sp = F)
     (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
@@ -182,7 +182,7 @@ theorem bmp_other {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
     (h9 : reg n 9 &&& 0xFF = BitVec.ofNat 32 (bmSlotNum slot))
     (h19 : reg n 19 = BitVec.ofNat 32 (c + 256 * p)) (h20 : reg n 20 = F + BitVec.ofNat 32 0xB9A8)
     (h23 : reg n 23 = btPop (memLoad32 M0 efuseRd)) :
-    BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
+    BmEnd Q (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   have h16 := C.hsp
   obtain ⟨_, hge, hsv, _⟩ := bmc_accept hA

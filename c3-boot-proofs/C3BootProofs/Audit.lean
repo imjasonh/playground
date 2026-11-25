@@ -10839,3 +10839,21 @@ end C3
 
 /-- info: 'C3.RV32.Cur.resetCorrectLoaded_np_of_pi' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.resetCorrectLoaded_np_of_pi
+
+/-- info: 'C3.RV32.BootMainContract.Closure0Contract.q' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.BootMainContract.Closure0Contract.q
+
+/-- info: 'C3.RV32.Cur.boot_correct_halt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.boot_correct_halt
+
+/-- info: 'C3.RV32.Cur.BmHyp.q' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.BmHyp.q
+
+/-- info: 'C3.RV32.Cur.BmEnd.panic' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.BmEnd.panic
+
+/-- info: 'C3.RV32.Cur.bootMain_correct_q' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bootMain_correct_q
+
+/-- info: 'C3.RV32.Cur.reset_correct_q' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.reset_correct_q

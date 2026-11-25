@@ -327,13 +327,18 @@ theorem rs_bit (a : Word) : ((a + 1) &&& (a ^^^ 0xFFFFFFFF)) &&& a = 0 := by
 
 /-- `boot`'s halt with code 0xE1, at 0x29C. -/
 theorem rs_halt {n : Machine} (s : St n.mem BT n 0x29C (reg n)) (hc : CodeIn n.mem BT bootFnCode)
-    (hP : PanicCode n.mem) (hR : Room (reg n sp) 16) : Panics n := by
+    (hP : PanicCode n.mem) (hR : Room (reg n sp) 16) : HaltsWith n 0xE1 := by
   obtain ⟨n1, d1, u1⟩ := s.aluImm hc bt_at_29c (off' := 0x2A0) (by decide)
   obtain ⟨n2, c2, pc2, mem2, regs2⟩ := u1.self.callRa (cb := haltBase) hc bt_at_2a0 bt_at_2a4
     (by decide) (by decide)
   have sp2 : reg n2 sp = reg n sp := by
     rw [regs2, updz u1.self.zero (by decide), u1.regs, updz s.zero (by decide)]
-  exact Panics.of_steps (.cons d1 c2) (halt_panics n2 (by rw [mem2]; exact hP) pc2 (by rw [sp2]; exact hR))
+  have a02 : reg n2 a0 = 0xE1 := by
+    rw [regs2, updz u1.self.zero (by decide), u1.regs]; simp +decide only [upd_app, ↓reduceIte]
+    rw [s.zero]; rfl
+  have hh := halt_haltCode n2 (by rw [mem2]; exact hP) pc2 (by rw [sp2]; exact hR)
+  rw [a02] at hh
+  exact hh.of_steps (.cons d1 c2)
 
 theorem rs_p4 (p : Word) (h : p.toNat + 4 < 2 ^ 32) : (p + 4).toNat = p.toNat + 4 := by
   rw [BitVec.toNat_add, show (4 : Word).toNat = 4 from rfl]; omega
@@ -695,7 +700,7 @@ theorem rs_iter {Mb : Word → BitVec 8} (E : RsEnv Mb) {target : Word} (k : Nat
       ((k + 1 ≤ 3 ∧ RsRegs (reg n') (k + 1) target) ∨
         (memLoad32 n'.mem efuseRd ≠ memLoad32 n.mem efuseRd ∧ RsRegs (reg n') 0 target)) ∧
       ∀ r, r ∈ ([2, 20] : List (Fin 32)) → reg n' r = reg n r) ∨
-    Panics n := by
+    HaltsWith n 0xE1 := by
   have hc := hO.code E.code (by decide)
   have hz := s.zero
   obtain ⟨n1, c1, u1⟩ := s.block rsHead hc rsHead_end
@@ -726,8 +731,8 @@ theorem rs_iter {Mb : Word → BitVec 8} (E : RsEnv Mb) {target : Word} (k : Nat
     have v3a0 : reg n3 a0 = aluEval .srl (memLoad32 n.mem efuseRd) 0xE := by
       rw [u3.regs, rs_keep _ _ hz2 (by decide), u2.regs, v1a0]
     have halt : ∀ n' : Machine, Steps n n' → St n.mem BT n' 0x29C (reg n') → reg n' sp = reg n sp →
-        Panics n :=
-      fun n' c t hsp => Panics.of_steps c (rs_halt ⟨t.pc, rfl, fun _ => rfl⟩ (by rw [t.mem]; exact hc)
+        HaltsWith n 0xE1 :=
+      fun n' c t hsp => HaltsWith.of_steps c (rs_halt ⟨t.pc, rfl, fun _ => rfl⟩ (by rw [t.mem]; exact hc)
         (by rw [t.mem]; exact hO.panic E.panic) (by rw [hsp]; exact hR))
     rcases Nat.lt_or_ge k 3 with hk3 | hk3
     · obtain ⟨n4, d4, u4⟩ := t3.notTaken hc 0xA8 bt_at_a4 (by decide) (by
@@ -783,7 +788,7 @@ theorem rs_loop {Mb : Word → BitVec 8} (E : RsEnv Mb) {target : Word} :
       (∃ n', Steps n n' ∧ St n'.mem BT n' 0x156 (reg n') ∧ EfOut Mb n'.mem ∧
         (btPop (memLoad32 n'.mem efuseRd)).ult target = false ∧
         (∃ X, memLoad32 n'.mem efuseRd = memLoad32 n.mem efuseRd ||| X) ∧
-        ∀ r, r ∈ ([2, 20, 22] : List (Fin 32)) → reg n' r = reg n r) ∨ Panics n
+        ∀ r, r ∈ ([2, 20, 22] : List (Fin 32)) → reg n' r = reg n r) ∨ HaltsWith n 0xE1
   | 0, _, _, _, hN, _, _, _, _ => absurd hN (Nat.not_lt_zero _)
   | N + 1, k, n, hk, hN, s, hO, R, hR => by
     rcases rs_iter E k hk s hO R hR with ⟨n', c, s', hge, K⟩ | ⟨n', c, s', hO', ⟨X, hX⟩, RR, K⟩ | hp
@@ -810,7 +815,7 @@ theorem rs_loop {Mb : Word → BitVec 8} (E : RsEnv Mb) {target : Word} :
         · exact K 2 (by decide)
         · exact K 20 (by decide)
         · rw [R'.r22, R.r22]
-      · exact Or.inr (Panics.of_steps c hp)
+      · exact Or.inr (HaltsWith.of_steps c hp)
     · exact Or.inr hp
 
 /-- `boot`'s raise of the security level, from 0x3E: `boot` reaches the
@@ -822,7 +827,7 @@ theorem rs_raise {n : Machine} (E : RsEnv n.mem) {target : Word} (s : St n.mem B
     (∃ n', Steps n n' ∧ St n'.mem BT n' 0x156 (reg n') ∧ EfOut n.mem n'.mem ∧
       (btPop (memLoad32 n'.mem efuseRd)).ult target = false ∧
       (∃ X, memLoad32 n'.mem efuseRd = memLoad32 n.mem efuseRd ||| X) ∧
-      ∀ r, r ∈ ([2, 20, 22] : List (Fin 32)) → reg n' r = reg n r) ∨ Panics n := by
+      ∀ r, r ∈ ([2, 20, 22] : List (Fin 32)) → reg n' r = reg n r) ∨ HaltsWith n 0xE1 := by
   have hc := E.code
   have hz := s.zero
   obtain ⟨n1, c1, u1⟩ := s.block rsInit hc rsInit_end
@@ -843,6 +848,6 @@ theorem rs_raise {n : Machine} (E : RsEnv n.mem) {target : Word} (s : St n.mem B
   · rw [m1] at hX
     exact Or.inl ⟨n', c1.trans c', s', hO', hge, ⟨X, hX⟩,
       fun r hr => by rw [K' r hr, q1 r (by revert hr; revert r; decide)]⟩
-  · exact Or.inr (Panics.of_steps c1 hp)
+  · exact Or.inr (HaltsWith.of_steps c1 hp)
 
 end C3.RV32.Cur

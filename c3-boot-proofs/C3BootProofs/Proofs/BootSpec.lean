@@ -1,5 +1,5 @@
 import C3BootProofs.Proofs.BootWrite
-import C3BootProofs.Proofs.Panic
+import C3BootProofs.Proofs.HaltCode
 
 /-!
 # `c3_bootloader::boot`: the specification and its loops
@@ -977,7 +977,7 @@ theorem bt_copy (C : BtCtx M0 top acc imgf R romStack romBase romCode) (hROM : R
         (∀ i, i < 0x40 → n'.mem (top + 0xFFFFFFC0 + BitVec.ofNat 32 i) = n.mem (top + 0xFFFFFFC0 + BitVec.ofNat 32 i)) ∧
         (∀ x, Sep (top - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) x 1 →
           n'.mem x = ramLoad flash M0 acc imgf (sgCount M0 acc) x) ∧
-        ∀ r, romKeep r = true → r ≠ 8 → r ≠ 9 → reg n' r = reg n r) ∨ Panics n
+        ∀ r, romKeep r = true → r ≠ 8 → r ≠ 9 → reg n' r = reg n r) ∨ HaltsWith n 0xE2
   | 0, j, _, hj, hjN, _, _, _, _, _, _, _, _, _ => absurd hj (by omega)
   | d + 1, j, n, hj, hjN, s, hH, hM, hsp, h9, h8, h19, h23, h21 => by
     have hN16 := sgCount_le M0 acc
@@ -1006,7 +1006,7 @@ theorem bt_copy (C : BtCtx M0 top acc imgf R romStack romBase romCode) (hROM : R
           (∀ i, i < 0x40 → n''.mem (top + 0xFFFFFFC0 + BitVec.ofNat 32 i) = n.mem (top + 0xFFFFFFC0 + BitVec.ofNat 32 i)) ∧
           (∀ x, Sep (top - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) x 1 →
             n''.mem x = ramLoad flash M0 acc imgf (sgCount M0 acc) x) ∧
-          ∀ r, romKeep r = true → r ≠ 8 → r ≠ 9 → reg n'' r = reg n r) ∨ Panics n := by
+          ∀ r, romKeep r = true → r ≠ 8 → r ≠ 9 → reg n'' r = reg n r) ∨ HaltsWith n 0xE2 := by
       intro n' c' s' hH' hM' k' fr'
       have hc' : CodeIn n'.mem BT bootFnCode := hiKeep C.code hH' (by decide) (by decide)
       obtain ⟨n2, c2, u2⟩ := s'.block btNextB hc' btNextB_end ⟨trivial, trivial, trivial⟩
@@ -1045,7 +1045,7 @@ theorem bt_copy (C : BtCtx M0 top acc imgf R romStack romBase romCode) (hROM : R
         · exact Or.inl ⟨n'', c'.trans (c2.trans (.cons d3 c'')), s'', hH'',
             fun i hi => by rw [fr'' i hi, u3.mem]; exact fr' i hi, hM'', fun r hr h8' h9' => by
             rw [k'' r hr h8' h9', kk r hr h8' h9']⟩
-        · exact Or.inr (Panics.of_steps (c'.trans (c2.trans (.single d3))) hp')
+        · exact Or.inr (HaltsWith.of_steps (c'.trans (c2.trans (.single d3))) hp')
       · have e : j + 1 = sgCount M0 acc := by omega
         obtain ⟨n3, d3, u3⟩ := t2.notTaken hc' 0x1E2 bt_at_1e0 (by decide) (by
           show (reg n2 8 != reg n2 x0) = false
@@ -1179,9 +1179,15 @@ theorem bt_copy (C : BtCtx M0 top acc imgf R romStack romBase romCode) (hROM : R
             k8 sp (by decide), hsp]
         have hspn : (top + 0xFFFFFFC0).toNat = top.toNat - 0x40 := by
           rw [BitVec.toNat_add, show (0xFFFFFFC0 : Word).toNat = 2 ^ 32 - 0x40 from rfl]; omega
-        refine Or.inr (Panics.of_steps (.cons d1 (.cons d2 (c5.trans (c6.trans (c7.trans (c8.trans
-          (.cons d9 (.cons d10 c11)))))))) (halt_panics n11 (by rw [mem11]; exact panicKeep C.panic hH8) pc11 ?_))
-        rw [sp11]; refine ⟨by rw [hspn]; omega, by rw [hspn]; omega, by rw [hspn]; unfold dramEnd; omega⟩
+        have a011 : reg n11 a0 = 0xE2 := by
+          rw [regs11, updz u10.self.zero (by decide), u10.regs]; simp +decide only [upd_app, ↓reduceIte]
+          rw [t9.zero]; rfl
+        have hR11 : Room (reg n11 sp) 16 := by
+          rw [sp11]; refine ⟨by rw [hspn]; omega, by rw [hspn]; omega, by rw [hspn]; unfold dramEnd; omega⟩
+        have hh := halt_haltCode n11 (by rw [mem11]; exact panicKeep C.panic hH8) pc11 hR11
+        rw [a011] at hh
+        exact Or.inr (HaltsWith.of_steps (.cons d1 (.cons d2 (c5.trans (c6.trans (c7.trans (c8.trans
+          (.cons d9 (.cons d10 c11)))))))) hh)
       · obtain ⟨n9, d9, u9⟩ := t8.notTaken hc8 0x1DC bt_at_1da (by decide) (by
           show (reg n8 a0 == reg n8 x0) = false; rw [a0o, t8.zero]; rfl)
         refine tail (.cons d1 (.cons d2 (c5.trans (c6.trans (c7.trans (c8.trans (.single d9)))))))
