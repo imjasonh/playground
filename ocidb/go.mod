@@ -14,7 +14,7 @@ require (
 )
 
 require (
-	github.com/docker/cli v29.10.0+incompatible // indirect
+	github.com/docker/cli v29.10.1+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.13 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

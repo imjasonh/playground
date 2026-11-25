@@ -1,3 +1,4 @@
+cloud.google.com/go v0.123.0 h1:2NAUJwPR47q+E35uaJeYoNhuNEM9kM8SjgRgdeOJUSE=
 cloud.google.com/go/longrunning v1.5.0 h1:aGonu6LHQl38DyozLs2jxGieI4Ixk+7GTnmHVcHt8zA=
 cloud.google.com/go/longrunning v1.5.0/go.mod h1:vjM1U85ZQuTv8lJoUBSA44HLWvM6BBFeaSJYGFF1Q00=
 github.com/bazelbuild/remote-apis v0.0.0-20261110225606-e0c0554bfc8a h1:gDr2nGTyUfbFrz4HU4cHoyPH0loLZyFoQDeRygMscMg=
