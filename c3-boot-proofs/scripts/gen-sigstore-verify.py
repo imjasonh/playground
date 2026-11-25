@@ -7202,12 +7202,15 @@ CS_BINDERS = ("{B out bp x20 x21 x22 x23 x24 x25 x26 x27 f w38 w50 kh w48 w44 kp
               "{v : Nat → Word} {n0 : Machine}")
 
 
-def cs_start(g):
+def cs_start(g, regs=None, words=None):
     """The signature loop's head at 0x1642: the word at 0x30 says whether a
     signature by the log was found, which would be at offsets 0x14 and 0x1FC;
     the rest of the signature section is the `w50` bytes at `w38`."""
-    params = start(g, t_regs0(), {0x30: "f", 0x38: "w38", 0x50: "w50", 0x18: "kh", 0x48: "w48", 0x44: "w44",
-                                  0x34: "kp", 0x28: "ckp", 0x24: "bl"}, {})
+    r = t_regs0()
+    r.update({k: ("U", v) for k, v in (regs or {}).items()})
+    w = {0x30: "f", 0x38: "w38", 0x50: "w50", 0x18: "kh", 0x48: "w48", 0x44: "w44", 0x34: "kp", 0x28: "ckp", 0x24: "bl"}
+    w.update(words or {})
+    params = start(g, r, w, {})
     # Only the word's first byte matters, and only once a signature is found.
     g.bytes[0x14] = "BitVec.ofNat 8 (sg.getD 0 0)"
     params.append(f"(b0_14 : n0.mem ({fa(0x14)}) = BitVec.ofNat 8 (sg.getD 0 0))")
@@ -7360,117 +7363,108 @@ def stage_cn(kind):
     return g, info
 
 
-def cg_start(g):
-    params = cs_start(g)
-    new = {10: "pg", 22: "gi", 8: "s0v", 21: "s5v", 23: "s7v"}
-    params = [q for q in params if not any(q.startswith(f"(g0_{r} :") for r in new)]
-    for r, v in new.items():
-        g.regs[r] = ("U", v)
-        params.append(f"(g0_{r} : reg n0 {rname(r)} = {v})")
-    return params
+CG_REGS = {10: "pg", 21: "gi", 8: "nl", 9: "ns1", 24: "ni", 26: "ns10", 27: "np"}
+CG_WORDS = {0x8: "w8", 0xC: "wc", 0x10: "w10"}
 
 
 def stage_cg(kpad):
-    """One pass of the base64 group loop, from 0x2E0C back to it, for a group
+    """One pass of the base64 group loop, from 0x16D4 back to it, for a group
     whose first `=` is at position `kpad` (4: none): the group decodes."""
     g = Gen(f"Cg{kpad}")
     g.generic_alu = True
-    params = cg_start(g)
+    params = cs_start(g, CG_REGS, CG_WORDS)
     params += ["(hne : pg ≠ w8)", "(CK0 : SvCkCode M0)", "(pg_in : SvIn B pg 4)",
                "(pb1 : SvIn B (pg + 0x1) 1)", "(pb2 : SvIn B (pg + 0x2) 1)", "(pb3 : SvIn B (pg + 0x3) 1)"]
-    g.load(0x2E0C, "lw")
-    g.branch(0x2E0E, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_beq_f hne")
-    g.load_in(0x2E12, "pb1", "(by decide)")
-    g.load_in(0x2E16, "pb2", "(by decide)")
-    g.load_in(0x2E1A, "pb3", "(by decide)")
-    g.load_in(0x2E1E, "pg_in", "(by decide)")
-    for o, e in ((0x2E22, 0x2E24), (0x2E24, 0x2E26), (0x2E26, 0x2E28), (0x2E28, 0x2E2A), (0x2E2A, 0x2E2C), (0x2E2C, 0x2E2E)):
-        g.block(o, e)
+    g.load(0x16D4, "lw")
+    g.branch(0x16D6, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_beq_f hne")
+    g.load_in(0x16DA, "pb1", "(by decide)")
+    g.load_in(0x16DE, "pb2", "(by decide)")
+    g.load_in(0x16E2, "pb3", "(by decide)")
+    g.load_in(0x16E6, "pg_in", "(by decide)")
+    for o in (0x16EA, 0x16EC, 0x16EE, 0x16F0, 0x16F2, 0x16F4):
+        g.block(o, o + 2)
     k = g.k
     g.emit(f"  have pk{k} : {lean_val(g.regs[11])} = memLoad32 M0 pg := pack4 _ _ _ _")
     g.emit(f"  rw [pk{k}] at g{k}_11")
     g.regs[11] = ("U", "memLoad32 M0 pg")
-    g.block(0x2E2E, 0x2E32)
-    g.block(0x2E32, 0x2E3A)
-    g.store(0x2E3A, "sw")
-    g.block(0x2E3C, 0x2E3E)
-    g.block(0x2E3E, 0x2E40)
-    for j in range(4):
-        if j == kpad:
-            break
-        g.branch(0x2E40, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+    g.block(0x16F6, 0x16FA)
+    g.store(0x16FA, "sw")
+    g.store(0x16FC, "sw")
+    g.block(0x1700, 0x1702)
+    g.block(0x1702, 0x1704)
+
+    def pad_step(nm, eq):
         addr = lean_val(g.regs[10])
-        nm = f"pc{j}"
         params.append(f"({nm} : SvIn B ({addr}) 1)")
-        g.load_in(0x2E42, nm, "(by decide)")
-        g.block(0x2E46, 0x2E4A, {12: (f"(M0 ({addr})).zeroExtend 32 + 0xFFFFFFC3",
-                                      "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, " + f"svCg{kpad}2e46" + ", upd, ↓reduceIte]; rw [g{p}_12]; rfl")})
-        g.block(0x2E4A, 0x2E4C)
-        g.block(0x2E4C, 0x2E4E)
+        g.load_in(0x1706, nm, "(by decide)")
+        g.block(0x170A, 0x170E, {12: (f"(M0 ({addr})).zeroExtend 32 + 0xFFFFFFC3",
+                                      "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, " + f"svCg{kpad}170a"
+                                      + ", upd, ↓reduceIte]; rw [g{p}_12]; rfl")})
+        g.block(0x170E, 0x1710)
+        g.block(0x1710, 0x1712)
+        return addr
+
+    for j in range(min(kpad, 4)):
+        g.branch(0x1704, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+        addr = pad_step(f"pc{j}", False)
         hn = f"hq{j}"
         params.append(f"({hn} : M0 ({addr}) ≠ 0x3D)")
-        g.branch(0x2E4E, True, f"by rw [g{g.k}_12, s{g.k}.zero]; exact br_bne_t fun e => {hn} ((pad_iff _).mp e)")
+        g.branch(0x1712, True, f"by rw [g{g.k}_12, s{g.k}.zero]; exact br_bne_t fun e => {hn} ((pad_iff _).mp e)")
     if kpad < 4:
-        g.branch(0x2E40, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
-        addr = lean_val(g.regs[10])
-        params.append(f"(pc{kpad} : SvIn B ({addr}) 1)")
+        g.branch(0x1704, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+        addr = pad_step(f"pc{kpad}", True)
         params.append(f"(hq{kpad} : M0 ({addr}) = 0x3D)")
-        g.load_in(0x2E42, f"pc{kpad}", "(by decide)")
-        g.block(0x2E46, 0x2E4A, {12: (f"(M0 ({addr})).zeroExtend 32 + 0xFFFFFFC3",
-                                      "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, " + f"svCg{kpad}2e46" + ", upd, ↓reduceIte]; rw [g{p}_12]; rfl")})
-        g.block(0x2E4A, 0x2E4C)
-        g.block(0x2E4C, 0x2E4E)
-        g.branch(0x2E4E, False, f"by rw [g{g.k}_12, s{g.k}.zero]; exact br_bne_f ((pad_iff _).mpr hq{kpad})")
-        g.load(0x2E50, "lw")
-        last = lean_val(g.regs[22])
+        g.branch(0x1712, False, f"by rw [g{g.k}_12, s{g.k}.zero]; exact br_bne_f ((pad_iff _).mpr hq{kpad})")
+        g.load(0x1714, "lw")
+        last = lean_val(g.regs[21])
 
         def not_last(sub):
-            sub.branch(0x2E52, True, f"by rw [g{sub.k}_22, g{sub.k}_10]; exact br_bne_t hlast")
+            sub.branch(0x1716, True, f"by rw [g{sub.k}_21, g{sub.k}_10]; exact br_bne_t hlast")
             ck_fail_1878(sub, "hlast")
         g.prop_check(f"{last} = {lean_val(g.words[0xC])}", "hlast", not_last)
-        g.branch(0x2E52, False, f"by rw [g{g.k}_22, g{g.k}_10]; exact br_bne_f hlast")
+        g.branch(0x1716, False, f"by rw [g{g.k}_21, g{g.k}_10]; exact br_bne_f hlast")
     else:
-        g.branch(0x2E40, True, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
-    g.block(0x2E56, 0x2E68)
-    kb = g.b64f(0x2E68, 0x420, 0x200, 0x1380, "4", "3")
-    g.emit(f"  rw [mb4_of_ld w{kb-1}_1380] at Ok{kb} Bad{kb}")
+        g.branch(0x1704, True, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+    g.block(0x171A, 0x1728)
+    kb = g.b64f(0x1728, 0x420, 0x370, 0x400, "4", "3")
+    g.emit(f"  rw [mb4_of_ld w{kb-1}_400] at Ok{kb} Bad{kb}")
     ex = "base64Decode (memBytes M0 pg 4)"
     g.emit(f"  obtain ⟨r{kb}, hr{kb}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
     g.emit(f"  rcases r{kb} with _ | bq{kb}")
     g.sc.append(("eq", ex, f"some bq{kb}", [f"bq{kb}"], f"hr{kb}"))
 
     def bad_tail(sub):
-        sub.load(0x2E70, "lbu")
-        sub.block(0x2E74, 0x2E76)
-        sub.branch(0x2E76, True, f"by rw [g{sub.k}_11, s{sub.k}.zero]; decide")
+        sub.load(0x1730, "lbu")
+        sub.load(0x1734, "lw")
+        sub.branch(0x1736, True, f"by rw [g{sub.k}_11, s{sub.k}.zero]; decide")
 
     def none(sub):
         sub.emit(f"  have z{kb} := Bad{kb} fun b h => by rw [hr{kb}] at h; cases h")
-        sub.frame_after(kb, [(0x420, 8), (0x200, 3)], {}, {0x420: ("(1 : BitVec 8)", f"z{kb}")})
+        sub.frame_after(kb, [(0x420, 8), (0x370, 3)], {}, {0x420: ("(1 : BitVec 8)", f"z{kb}")})
         bad_tail(sub)
         ck_fail_none(sub, ("eq", f"hr{kb}"))
     g.fork(none)
 
     def long(sub):
         sub.emit(f"  have z{kb} := Bad{kb} fun b h => by rw [hr{kb}] at h; cases h; omega")
-        sub.frame_after(kb, [(0x420, 8), (0x200, 3)], {}, {0x420: ("(1 : BitVec 8)", f"z{kb}")})
+        sub.frame_after(kb, [(0x420, 8), (0x370, 3)], {}, {0x420: ("(1 : BitVec 8)", f"z{kb}")})
         bad_tail(sub)
         ck_fail_none(sub, ("prop", "hl3"))
     g.prop_check(f"bq{kb}.length ≤ 3", "hl3", long)
     g.emit(f"  have z{kb} := Ok{kb} bq{kb} hr{kb} hl3")
-    g.frame_after(kb, [(0x420, 8), (0x200, 3)], {}, {0x420: ("(0 : BitVec 8)", f"z{kb}")})
-    g.load(0x2E70, "lbu")
-    g.block(0x2E74, 0x2E76)
-    g.branch(0x2E76, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
-    g.jump(0x2E7A)
-    keep = sorted(set(CL_KEEP_REGS + [8, 10, 21, 22, 23, 24]))
-    stmt, proof = finish(g, 0x2E0C, keep, set(g.words) - {0x420, 0x424}, {0x10})
+    g.frame_after(kb, [(0x420, 8), (0x370, 3)], {}, {0x420: ("(0 : BitVec 8)", f"z{kb}")})
+    g.load(0x1730, "lbu")
+    g.load(0x1734, "lw")
+    g.branch(0x1736, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+    g.jump(0x173A)
+    keep = sorted(set(CL_KEEP_REGS + [10]))
+    stmt, proof = finish(g, 0x16D4, keep, set(g.words) - {0x420, 0x424}, {0x14})
     info = {"name": f"sv_cg{kpad}", "title": "a base64 group of a signature line",
-            "doc": f"One pass of the base64 group loop, from 0x2E0C back to it: the next four bytes decode as base64, "
+            "doc": f"One pass of the base64 group loop, from 0x16D4 back to it: the next four bytes decode as base64, "
             + ("and none is `=`." if kpad == 4 else f"their first `=` is byte {kpad}, and this is the last group."),
             "params": params, "stmt": stmt, "proof": proof,
-            "binders": CS_BINDERS.replace("op ol : Word}", "op ol pg gi s0v s5v s7v : Word}"),
-            "start": 0x2E0C, "import": "C3BootProofs.Proofs.SvCs"}
+            "binders": CS_BINDERS.replace("bl : Word}", "bl pg gi nl ns1 ni ns10 np w8 wc w10 : Word}"),
+            "start": 0x16D4, "import": "C3BootProofs.Proofs.SvCs"}
     return g, info
 
 

@@ -5,11 +5,6 @@ import C3BootProofs.Proofs.SvAttrLoop
 import C3BootProofs.Proofs.SvCLoop
 import C3BootProofs.Proofs.SvCSearch
 import C3BootProofs.Proofs.SvCg
-import C3BootProofs.Proofs.SvCg0
-import C3BootProofs.Proofs.SvCg1
-import C3BootProofs.Proofs.SvCg2
-import C3BootProofs.Proofs.SvCg3
-import C3BootProofs.Proofs.SvCg4
 import C3BootProofs.Proofs.SvCgLoop
 import C3BootProofs.Proofs.SvCk2
 import C3BootProofs.Proofs.SvCkdLoop
