@@ -338,6 +338,62 @@ theorem rm_exit (E : RmBase M0 M1 s F R MP SP ML SL g0) {t : Nat} {es : List RkE
   rw [hR.2.1] at this
   exact this
 
+/-- From 0xAA, slot `j` with a key and its key ID's length in `s9`: look up
+the ID's signature, check that no counted slot has the same key, decode
+the signature, check it, and count the slot when it checks. -/
+theorem rm_body (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
+    {t : Nat} {es : List RkEntry} (hR : RkAt M0 R t es) (hw : RkWf es) {cs : List Nat} {j ti : Nat} {ki : Bytes}
+    (hj8 : j < 8) (hjn : j < es.length) (hki : rmKeyAt es j = some (ti, ki)) {Mk : Word → BitVec 8}
+    {g : Fin 32 → Word} (hO : Out M1 Mk s 0x38EC) (hHM : RmHM Mk F MP SP ML SL cs)
+    (hS : RmSnd (memBytes M0 SP SL) (memBytes M0 MP ML) es cs) (hcj : cs.length ≤ j) (hsp : g sp = F)
+    (hz : g 0 = 0) (hfr : ∀ x, x ∉ rkE → g x = g0 x) (h19 : g 19 = R) (h20 : g 20 = BitVec.ofNat 32 es.length)
+    (h22 : g 22 = BitVec.ofNat 32 j) (h23 : g 23 = BitVec.ofNat 32 (j + 1))
+    (h24 : g 24 = (BitVec.ofNat 8 ti).zeroExtend 32)
+    (h25 : g 25 = BitVec.ofNat 32 (es.getD j ([], none)).1.length) (h27 : g 27 = R + BitVec.ofNat 32 (98 * j))
+    (h13 : g 13 = SP) (h12 : g 12 = BitVec.ofNat 32 SL)
+    (IH : ∀ cs' Mk' g', RmHd M0 M1 s F R MP SP ML SL g0 es cs' (j + 1) Mk' g' →
+      WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk' 0x78 g') :
+    WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0xAA g := by
+  have hn8 := hR.1
+  obtain ⟨hid, -, hIL⟩ := rm_slotId hR hj8
+  refine rm_open E.toRmBase hsp hj8 hjn (by omega) hIL h19 h20 h22 h25 h13 h12 hz hfr hO (RmLow.refl Mk F)
+    (fun Mk1 g1 hO1 hL1 hr hz1 hf1 _ => ?_) (fun Mk1 g1 q l hO1 hL1 hr hz1 hf1 h25' h8' hql hlk => ?_)
+  · obtain ⟨r1, -, r19, r20, -, -, r23, -, -, -⟩ := hr
+    exact rm_2c0 E.toRmBase hO1 hL1 hHM hS r1 hz1 hf1 r19 r20 (r23.trans h23) (by omega) (by omega) (IH cs)
+  obtain ⟨r1, r18, r19, r20, -, r22, r23, r24, -, r27⟩ := hr
+  rw [hid] at hlk
+  refine rm_dup E.toRmBase hR hw hj8 hki r1 r18 r19 (r27.trans h27) (W8 := BitVec.ofNat 32 l) hHM.2.2.2.2.2.2.2.1
+    hHM.2.2.2.2.2.2.2.2 hHM.2.2.2.1 (fun Mk2 g2 hD hK2 hz2 hf2 => ?_) (fun Mk2 g2 hD hK2 hz2 hf2 hpd => ?_) hf1
+    ⟨hO1, hL1, h8'⟩
+  · exact rm_2c0 E.toRmBase hD.1 hD.2.1 hHM hS ((hK2 sp (by decide)).trans r1) hz2 hf2
+      ((hK2 19 (by decide)).trans r19) ((hK2 20 (by decide)).trans r20)
+      ((hK2 23 (by decide)).trans (r23.trans h23)) (by omega) (by omega) (IH cs)
+  refine rm_hex E.toRmBase ((hK2 sp (by decide)).trans r1) hz2 hf2 ((hK2 25 (by decide)).trans h25') hql
+    ⟨hD.1, hD.2.1⟩ hD.2.2 (fun Mk3 g3 hV hK3 hz3 hf3 => ?_)
+    (fun Mk3 g3 bs hV hK3 hz3 hf3 h10 h11 hl hp hbl hbm => ?_)
+  · exact rm_2c0 E.toRmBase hV.1 hV.2 hHM hS ((hK3 sp (by decide)).trans ((hK2 sp (by decide)).trans r1)) hz3
+      hf3 ((hK3 19 (by decide)).trans ((hK2 19 (by decide)).trans r19))
+      ((hK3 20 (by decide)).trans ((hK2 20 (by decide)).trans r20))
+      ((hK3 23 (by decide)).trans ((hK2 23 (by decide)).trans (r23.trans h23))) (by omega) (by omega) (IH cs)
+  refine rm_ver E hH hR hw hj8 hki (G := g3) (fun _ _ => rfl)
+    ((hK3 sp (by decide)).trans ((hK2 sp (by decide)).trans r1)) hz3 hf3
+    ((hK3 27 (by decide)).trans ((hK2 27 (by decide)).trans (r27.trans h27)))
+    ((hK3 24 (by decide)).trans ((hK2 24 (by decide)).trans (r24.trans h24))) h10 h11 hl hp hbl hV hbm hHM.2.1
+    hHM.1 (fun Mk4 g4 hV4 hK4 hz4 hf4 => ?_) (fun Mk4 g4 hV4 hK4 hz4 hf4 hsig => ?_)
+  · exact rm_2c0 E.toRmBase hV4.1 hV4.2 hHM hS
+      ((hK4 sp (by decide)).trans ((hK3 sp (by decide)).trans ((hK2 sp (by decide)).trans r1))) hz4 hf4
+      ((hK4 19 (by decide)).trans ((hK3 19 (by decide)).trans ((hK2 19 (by decide)).trans r19)))
+      ((hK4 20 (by decide)).trans ((hK3 20 (by decide)).trans ((hK2 20 (by decide)).trans r20)))
+      ((hK4 23 (by decide)).trans ((hK3 23 (by decide)).trans ((hK2 23 (by decide)).trans (r23.trans h23))))
+      (by omega) (by omega) (IH cs)
+  exact rm_314 E.toRmBase hV4.1 hV4.2 hHM hS
+    ((hK4 sp (by decide)).trans ((hK3 sp (by decide)).trans ((hK2 sp (by decide)).trans r1))) hz4 hf4
+    ((hK4 19 (by decide)).trans ((hK3 19 (by decide)).trans ((hK2 19 (by decide)).trans r19)))
+    ((hK4 20 (by decide)).trans ((hK3 20 (by decide)).trans ((hK2 20 (by decide)).trans r20)))
+    ((hK4 22 (by decide)).trans ((hK3 22 (by decide)).trans ((hK2 22 (by decide)).trans r22)))
+    ((hK4 23 (by decide)).trans ((hK3 23 (by decide)).trans ((hK2 23 (by decide)).trans (r23.trans h23))))
+    hcj hjn hn8 (fun h => rm_sndS hS hjn hki hlk (hsig h) hpd) IH
+
 end
 
 end C3.RV32
