@@ -450,3 +450,7 @@ import C3BootProofs.Proofs.SvCk2a
 import C3BootProofs.Proofs.SvCk2b
 import C3BootProofs.Proofs.SvCkd
 import C3BootProofs.Proofs.SvCke
+import C3BootProofs.Proofs.SvClmiss
+import C3BootProofs.Proofs.SvClhit
+import C3BootProofs.Proofs.SvClend
+import C3BootProofs.Proofs.SvCs1

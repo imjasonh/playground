@@ -7056,33 +7056,21 @@ def ck_fail_none(sub, why):
     sub.fail(sub.fail_proof(why), "sv_fail_1882")
 
 
-CL_BINDERS = ("{B out bp x21 x26 dg c q rl rp sgp op ol : Word} {rt : Bytes} "
-              + "{" + " ".join(f"w{e:x}" for e in [0x8, 0xC, 0x10, 0x14, 0x18, 0x20] + TST_WORDS)
-              + " : Word} {wa20 wa24 wa28 wa2c wa30 wa34 wa38 wa3c : Word} {v : Nat → Word} {n0 : Machine}")
-CL_KEEP_REGS = [2, 3, 4, 9, 18, 19, 21, 22, 23, 24, 25, 26, 27]
+CL_BINDERS = "{B out bp x20 x21 x22 x23 x24 x25 x26 x27 c q op ol w48 w44 : Word} {v : Nat → Word} {n0 : Machine}"
+CL_KEEP_REGS = [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]
 
 
-def cl_start(g):
-    """The log loop's head at 0x2CE2: `s1` counts down the bytes of entries
-    left and `s9` points 0x20 bytes before the next entry."""
-    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
-            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
-            9: ("U", "c"), 22: ("U", "rl"), 23: ("U", "rp"), 25: ("U", "q")}
-    words = {e: f"w{e:x}" for e in TST_WORDS}
-    words.update({0x74: "q'", 0x428: "sgp", 0x1C: "(BitVec.ofNat 8 (rt.getD 0 0)).zeroExtend 32"})
-    words.pop(0x74)
-    words.update(TL_STRUCT)
-    # The checkpoint's checks change the frame words that the struct at 0xA20
-    # copied during the timestamp's search.
-    words.update({e: f"w{e:x}" for e in CS_STRUCT})
-    words.update({e: f"w{e:x}" for e in (0x8, 0xC, 0x10, 0x14, 0x18, 0x20)})
-    params = start(g, regs, words, {})
-    g.ranges[0x320] = (31, "BitVec.ofNat 8 (rt.getD (1 + j) 0)")
-    params += ["(q0_320 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0))"]
-    return params
+def cl_start(g, words=None):
+    """The log loop's head at 0x15C0: `s0` counts down the bytes of entries
+    left, and the word at 0x4C points 0x20 bytes before the next entry."""
+    regs = t_regs0()
+    regs[8] = ("U", "c")
+    w = {0x4C: "q", 0x48: "w48", 0x44: "w44"}
+    w.update(words or {})
+    return start(g, regs, w, {})
 
 
-CL_PARAMS = ["(hc : c ≠ 0)", "(horg : memLoad32 M0 (q + 0x20) = op)",
+CL_PARAMS = ["(horg : memLoad32 M0 (q + 0x20) = op)",
              "(hol : memLoad32 M0 (q + 0x24) = ol)", "(eo_in : SvIn B (q + 0x20) 4)",
              "(el_in : SvIn B (q + 0x24) 4)",
              "(a_op : (q + 0x20).toNat % 4 = 0)", "(a_ol : (q + 0x24).toNat % 4 = 0)",
@@ -7091,107 +7079,107 @@ CL_EQ = "memBytes M0 op ol.toNat = memBytes M0 w48 w44.toNat"
 
 
 def stage_cl(kind):
-    """The log loop at 0x2CE2: a log whose origin isn't the checkpoint's
-    ("miss", back to 0x2CE2), the log whose origin is ("hit", to 0x2D12), or
+    """The log loop at 0x15C0: a log whose origin isn't the checkpoint's
+    ("miss", back to 0x15C0), the log whose origin is ("hit", to 0x15F0), or
     no logs left ("end")."""
     g = Gen("Cl" + kind)
     params = cl_start(g)
-    g.block(0x2CE2, 0x2CE4)
+    g.block(0x15C0, 0x15C2)
     if kind == "end":
         params.append("(hc : c = 0)")
 
         def none(sub):
-            sub.branch(0x2CE4, False, f"by rw [g{sub.k}_9, s{sub.k}.zero]; exact br_bne_f hc")
-            sub.jump(0x2CE6)
-            sub.fail(sub.fail_proof(("prop", "hf")))
+            sub.branch(0x15C2, True, f"by rw [g{sub.k}_8, s{sub.k}.zero]; exact br_beq_t hc")
+            sub.fail(sub.fail_proof(("prop", "hf")), "sv_fail_1882")
         g.prop_check("False", "hf", none)
-        stmt, _ = finish(g, 0x2CE2, [2], set(), set())
+        stmt, _ = finish(g, 0x15C0, [2], set(), set())
         g.emit("  exact hf.elim")
         proof = ""
-        title, doc = "no log left", ("The log loop at 0x2CE2 with no entries left: no listed log has the "
+        title, doc = "no log left", ("The log loop at 0x15C0 with no entries left: no listed log has the "
                                      "checkpoint's origin, and `sigstore::verify` fails.")
     else:
-        params += CL_PARAMS + [f"(hm : {'¬ ' if kind == 'miss' else ''}{CL_EQ})"]
-        g.branch(0x2CE4, True, f"by rw [g{g.k}_9, s{g.k}.zero]; exact br_bne_t hc")
-        g.load_mem(0x2CEA, "op", "horg", "eo_in", "a_op")
-        g.store(0x2CEE, "sw")
+        params += ["(hc : c ≠ 0)"] + CL_PARAMS + [f"(hm : {'¬ ' if kind == 'miss' else ''}{CL_EQ})"]
+        g.branch(0x15C2, False, f"by rw [g{g.k}_8, s{g.k}.zero]; exact br_beq_f hc")
+        g.load(0x15C6, "lw")
+        g.load_mem(0x15C8, "op", "horg", "eo_in", "a_op")
+        g.store(0x15CA, "sw")
         hz = f"hz_{g.k}"
 
         def null(sub):
-            sub.branch(0x2CF0, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_f (Decidable.of_not_not {hz})")
-            sub.jump(0x2CF2)
-            sub.fail(sub.fail_proof(("prop", hz)))
+            sub.branch(0x15CC, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not {hz})")
+            sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_1882")
         g.prop_check("op ≠ 0", hz, null)
         g.pinned.add(hz)
-        g.branch(0x2CF0, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_t {hz}")
-        g.load_mem(0x2CF6, "ol", "hol", "el_in", "a_ol")
-        g.load(0x2CFA, "lw")
-        g.block(0x2CFC, 0x2CFE)
-        g.load(0x2CFE, "lw")
-        g.load(0x2D00, "lw")
-        ke = g.seqeq(0x2D02, "op", "ol.toNat", "w48", "w44.toNat", f"(.inl (o_in {hz}))", "(.inl l_in)",
+        g.branch(0x15CC, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f {hz}")
+        g.load(0x15D0, "lw")
+        g.load_mem(0x15D2, "ol", "hol", "el_in", "a_ol")
+        g.load(0x15D6, "lw")
+        g.block(0x15D8, 0x15DA)
+        g.load(0x15DA, "lw")
+        g.load(0x15DC, "lw")
+        ke = g.seqeq(0x15DE, "op", "ol.toNat", "w48", "w44.toNat", f"(.inl (o_in {hz}))", "(.inl l_in)",
                      f"(by rw [g{g.k}_13, ofNat_toNat_self])", f"(by rw [g{g.k}_11, ofNat_toNat_self])")
         g.set_a0(ke, 0 if kind == "miss" else 1, f"ite_eq_{'right' if kind == 'miss' else 'left'} hm")
-        g.block(0x2D0A, 0x2D0C)
-        g.block(0x2D0C, 0x2D10)
+        g.block(0x15E6, 0x15E8)
+        g.block(0x15E8, 0x15EC)
+        g.store(0x15EC, "sw")
         if kind == "miss":
-            g.branch(0x2D10, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-            end = 0x2CE2
+            g.branch(0x15EE, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            end = 0x15C0
             title, doc = "a log that didn't sign the checkpoint", (
-                "One pass of the log loop, from 0x2CE2 back to it, for a listed log whose origin isn't the "
+                "One pass of the log loop, from 0x15C0 back to it, for a listed log whose origin isn't the "
                 "checkpoint's.")
         else:
-            g.branch(0x2D10, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-            end = 0x2D12
+            g.branch(0x15EE, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            end = 0x15F0
             title, doc = "the log the checkpoint names", (
-                "The log loop's end, from 0x2CE2 to 0x2D12, at a listed log whose origin is the checkpoint's.")
+                "The log loop's end, from 0x15C0 to 0x15F0, at a listed log whose origin is the checkpoint's.")
         stmt, proof = finish(g, end, CL_KEEP_REGS, set(g.words), set(g.bytes))
     info = {"name": "sv_cl" + kind, "title": title, "doc": doc,
-            "params": params, "stmt": stmt, "proof": proof, "binders": CL_BINDERS, "start": 0x2CE2,
+            "params": params, "stmt": stmt, "proof": proof, "binders": CL_BINDERS, "start": 0x15C0,
             "import": "C3BootProofs.Proofs.SvCkpt"}
     return g, info
 
 
 def stage_cs1():
-    """From the log's entry at 0x2D12 to the signature loop at 0x2D6E: the log
+    """From the log's entry at 0x15F0 to the signature loop at 0x1642: the log
     key's hash, from the origin, a newline, the Ed25519 tag, and the key."""
     g = Gen("Cs1")
     params = cl_start(g)
-    params += ["(S2 : SvSha2Code M0)", "(KS : SvK2Sep B)", "(hkp : memLoad32 M0 (q + 0x18) = kp)",
+    params += ["(S2 : SvSha2Code M0)", "(RS : SvRoSep B)", "(hkp : memLoad32 M0 (q + 0x18) = kp)",
                "(hkw : memLoad32 M0 (q + 0x1C) = kw)", "(kp_in4 : SvIn B (q + 0x18) 4)", "(kw_in4 : SvIn B (q + 0x1C) 4)",
                "(a_kp : (q + 0x18).toNat % 4 = 0)", "(a_kw : (q + 0x1C).toNat % 4 = 0)",
                "(kp_in : SvIn B kp 32)", "(l_in : SvIn B w48 w44.toNat)"]
-    g.block(0x2D12, 0x2D14)
-    g.load_mem(0x2D14, "kp", "hkp", "kp_in4", "a_kp")
-    g.load_mem(0x2D16, "kw", "hkw", "kw_in4", "a_kw")
-    g.store(0x2D18, "sw")
-    g.block(0x2D1A, 0x2D24)
-    g.load(0x2D24, "lw")
-    g.block(0x2D26, 0x2D2A)
-    g.store(0x2D2A, "sw")
-    g.load(0x2D2C, "lw")
-    for o in (0x2D2E, 0x2D30, 0x2D32):
+    g.load(0x15F0, "lw")
+    g.load_mem(0x15F2, "kp", "hkp", "kp_in4", "a_kp")
+    g.load_mem(0x15F4, "kw", "hkw", "kw_in4", "a_kw")
+    g.store(0x15F6, "sw")
+    g.block(0x15F8, 0x1602)
+    g.load(0x1602, "lw")
+    g.block(0x1604, 0x1608)
+    g.store(0x1608, "sw")
+    g.load(0x160A, "lw")
+    for o in (0x160C, 0x160E, 0x1610):
         g.store(o, "sw")
-    g.block(0x2D34, 0x2D40)
-    for o in (0x2D40, 0x2D42, 0x2D44, 0x2D46, 0x2D48):
+    g.block(0x1612, 0x161E)
+    for o in (0x161E, 0x1620, 0x1622, 0x1624, 0x1626):
         g.store(o, "sw")
-    g.block(0x2D4A, 0x2D58)
+    g.block(0x1628, 0x1632)
     parts = [("w48", "(w44).toNat", "(.inl l_in)", f"(by rw [w{g.k}_424, ofNat_toNat_self])", "(by have := l_in.lo; omega)"),
-             ("BitVec.ofNat 32 (img% svConstAddress + 0x38)", "1", "(.inr ⟨by decide, by decide⟩)", f"w{g.k}_42c", "(by decide)"),
+             ("BitVec.ofNat 32 (img% svNewlineAddress)", "1", "(.inr ⟨by decide, by decide⟩)", f"w{g.k}_42c", "(by decide)"),
              ("BitVec.ofNat 32 (img% merklePrefixAddress)", "1", "(.inr ⟨by decide, by decide⟩)", f"w{g.k}_434", "(by decide)"),
              ("kp", "32", "(.inl kp_in)", f"w{g.k}_43c", "(by decide)")]
-    g.parts4(0x2D58, 0x1380, 0x420, parts)
+    g.parts4(0x1632, 0x400, 0x420, parts)
     g.digest_word()
-    g.store(0x2D60, "sw")
-    g.block(0x2D62, 0x2D6A)
-    g.load(0x2D6A, "lw")
-    g.store(0x2D6C, "sw")
-    stmt, proof = finish(g, 0x2D6E, CL_KEEP_REGS, set(g.words), set(g.bytes))
+    g.store(0x163A, "sw")
+    g.load(0x163C, "lw")
+    g.store(0x1640, "sw")
+    stmt, proof = finish(g, 0x1642, CL_KEEP_REGS, set(g.words), set(g.bytes))
     info = {"name": "sv_cs1", "title": "the log key's hash",
-            "doc": "From the log's entry at 0x2D12 to the signature loop at 0x2D6E: the word at offset 0x14 is the "
+            "doc": "From the log's entry at 0x15F0 to the signature loop at 0x1642: the word at offset 0x18 is the "
             "first word of SHA-256 of the origin line, a newline, the Ed25519 key tag, and the log's key.",
-            "params": params, "stmt": stmt, "proof": proof, "binders": CL_BINDERS.replace("op ol : Word}", "op ol kp kw : Word}"),
-            "start": 0x2D12, "import": "C3BootProofs.Proofs.SvCkpt"}
+            "params": params, "stmt": stmt, "proof": proof, "binders": CL_BINDERS.replace("op ol w48", "kp kw w48"),
+            "start": 0x15F0, "import": "C3BootProofs.Proofs.SvCkpt"}
     return g, info
 
 
