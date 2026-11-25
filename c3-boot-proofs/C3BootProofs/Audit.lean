@@ -241,6 +241,7 @@ import C3BootProofs.Models.TufLink
 import C3BootProofs.Models.TufLinkMeta
 import C3BootProofs.Models.TufLinkKeys
 import C3BootProofs.Proofs.AcceptStages
+import C3BootProofs.Proofs.AcceptIndex
 
 /-!
 # Audit
@@ -9197,3 +9198,24 @@ end C3
 
 /-- info: 'C3.RV32.Ac.ac_exit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ac_exit
+
+/-- info: 'C3.RV32.Ac.acIndexStage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acIndexStage
+
+/-- info: 'C3.RV32.Ac.acx_post' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acx_post
+
+/-- info: 'C3.RV32.Ac.acx_to4e4' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acx_to4e4
+
+/-- info: 'C3.RV32.Ac.acx_to440' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acx_to440
+
+/-- info: 'C3.RV32.Ac.acx_t1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acx_t1
+
+/-- info: 'C3.RV32.Ac.acx_t2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acx_t2
+
+/-- info: 'C3.RV32.Ac.acx_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acx_loop
