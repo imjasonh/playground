@@ -272,6 +272,7 @@ import C3BootProofs.Proofs.ResetPath
 import C3BootProofs.Proofs.Reset
 import C3BootProofs.Proofs.AcceptSpec
 import C3BootProofs.Proofs.AcceptExtractDup
+import C3BootProofs.Proofs.AcceptExtractTsa
 
 /-!
 # Audit
@@ -10510,3 +10511,39 @@ end C3
 
 /-- info: 'C3.RV32.Cur.bmc_pop_lt' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bmc_pop_lt
+
+/-- info: 'C3.RV32.Ac.acets_stage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_stage
+
+/-- info: 'C3.RV32.Ac.acets_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_loop
+
+/-- info: 'C3.RV32.Ac.acets_p1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_p1
+
+/-- info: 'C3.RV32.Ac.acets_exit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_exit
+
+/-- info: 'C3.RV32.Ac.acets_p2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_p2
+
+/-- info: 'C3.RV32.Ac.acets_rc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_rc
+
+/-- info: 'C3.RV32.Ac.acets_p3a' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_p3a
+
+/-- info: 'C3.RV32.Ac.acets_p3b' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_p3b
+
+/-- info: 'C3.RV32.Ac.acets_p4' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_p4
+
+/-- info: 'C3.RV32.Ac.acets_p4b' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_p4b
+
+/-- info: 'C3.RV32.Ac.acets_p5' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_p5
+
+/-- info: 'C3.RV32.Ac.acets_back' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_back
