@@ -6,7 +6,7 @@ import C3BootProofs.Spec.Json
 The compiled JSON functions work on a document and a position in it, the
 way `json.rs` reads. These functions say what each one computes, on the
 document's bytes `d` and positions as natural numbers. The machine-code
-theorems are stated with them, and `JsonSpec.lean` relates them to
+theorems are stated with them. No proof yet relates them to
 `Spec/Json.lean`.
 -/
 
