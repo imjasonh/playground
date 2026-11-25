@@ -480,6 +480,188 @@ theorem pm_rest (E : PmEnv M0 M1 s out F g0) {Mk : Word → BitVec 8} {g : Fin 3
     exact pm_116 E hO2 (by (try rsimp); exact hg26) (by (try rsimp); exact hgsp) (by (try rsimp); (try exact hz2))
       (by keepz E.hz0)
 
+theorem pm_key {M : Word → BitVec 8} {Q : Word} {L p l n : Nat} {key : Bytes} (hpl : p + l ≤ L)
+    (hn : key.length = n) :
+    slice (memBytes M Q L) p l = key ↔ l = n ∧ memBytes M (Q + BitVec.ofNat 32 p) n = key := by
+  rw [show slice (memBytes M Q L) p l = memBytes M (Q + BitVec.ofNat 32 p) l from tuf_memBytes_drop_take hpl]
+  constructor
+  · intro h
+    have hl : l = n := by rw [← hn, ← h, memBytes_length]
+    subst hl; exact ⟨rfl, h⟩
+  · rintro ⟨rfl, h⟩; exact h
+
+theorem pm_bne {x y : Word} (h : branchTaken .bne x y = false) : x = y := by
+  simpa [branchTaken] using h
+
+theorem pm_ofNat_ne {l n : Nat} (hl : l < 2 ^ 32) (hn : n < 2 ^ 32) (h : BitVec.ofNat 32 l = BitVec.ofNat 32 n) :
+    l = n := by
+  have := congrArg BitVec.toNat h
+  rwa [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hl, Nat.mod_eq_of_lt hn] at this
+
+/-- From 0x7C: the second member of the top-level object, the `L` bytes at
+`Q`, from `a1`, after the first member, with its key at `k1p` and its
+value at `v1p`. -/
+theorem pm_two (E : PmEnv M0 M1 s out F g0) {Mk : Word → BitVec 8} {g : Fin 32 → Word}
+    (hO : Out M1 Mk s 484) (hgsp : g sp = F) (hg26 : g 26 = out) {KQ : Word} {KL : Nat}
+    (hg23 : g 23 = KQ) (hg22 : g 22 = BitVec.ofNat 32 KL) (hKL : KL < 2 ^ 32) (hSK : Sep s 532 KQ KL)
+    {Q : Word} {L a1 : Nat} (hC : PmCc Mk (F + BitVec.ofNat 32 16) Q L a1) (hQ0 : Q.toNat ≠ 0)
+    (hQN : Q.toNat + L < 2 ^ 32) (hSQ : Sep s 532 Q L) (ha1 : a1 ≤ L) {k1p k1l v1p v1l : Nat}
+    (hk1 : k1p + k1l ≤ L) (hv1 : v1p + v1l ≤ L)
+    (hg9 : g 9 = Q + BitVec.ofNat 32 k1p) (hg19 : g 19 = BitVec.ofNat 32 k1l)
+    (hg21 : g 21 = Q + BitVec.ofNat 32 v1p) (hg18 : g 18 = BitVec.ofNat 32 v1l)
+    (hfr : ∀ x, x ∉ pmE → g x = g0 x) :
+    WP tufParseMetadataCode TPM (pmQ M0 s out g0 (pmRes Q (pmTwo (memBytes M0 Q L) (memBytes M0 KQ KL)
+      a1 k1p k1l v1p v1l))) Mk 0x7C g := by
+  refine WP.aluImm pm_at_7c ?_; wn
+  refine WP.aluImm pm_at_7e ?_; wn
+  refine pm_nm E pm_at_80 pm_at_84 (by decide) (by decide) hO (by (try rsimp); rw [ev_add, hgsp])
+    (by (try rsimp); rw [ev_add, hgsp]; (try rfl)) (by (try rsimp); exact hgsp) hC hQ0 hQN ha1 hSQ
+    fun m2 hR => ?_
+  obtain ⟨Ma, hOa, hMR⟩ := hR
+  generalize m2.mem = M2 at hMR
+  have hC2 : PmCc Ma (F + BitVec.ofNat 32 16) Q L a1 :=
+    hC.keep hOa (E.fs (Or.inr (by decide)) (by decide) (by decide)).symm
+  have hO2 : Out M1 M2 s 484 := pm_nmOut E hO hOa hMR
+  have hc2 := E.code hO2
+  refine WP.zero fun hz2 => ?_
+  refine WP.lbu pm_at_88 ?_; wn
+  rcases hnm : nextMember (memBytes M0 Q L) a1 with _ | _ | ⟨k2p, k2l, v2p, v2l, a2⟩ <;>
+    rw [hnm] at hMR <;> simp only [memRes, Option.map_none, Option.map_some] at hMR <;>
+    simp only [pmTwo, hnm]
+  · obtain ⟨-, t0, t1⟩ := hMR
+    refine WP.branch pm_at_8c (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [hgsp, t0] at eb; exact absurd eb (by decide)
+    exact pm_8e E hO2 (by (try rsimp); exact hg26) (by (try rsimp); exact hgsp)
+      (by rw [show F + 0x1D = F + 0x1C + 1 by rw [BitVec.add_assoc]; rfl]; exact t1) (by keepz E.hz0)
+  · obtain ⟨-, t0, t1⟩ := hMR
+    refine WP.branch pm_at_8c (fun _ => ?_) (fun eb => ?_) <;> wn
+    rotate_left
+    · exfalso; (try rsimp at eb); rw [hgsp, t0] at eb; exact absurd eb (by decide)
+    refine WP.lw pm_at_94 (by (try rsimp); rw [hgsp]; exact aligned_add E.halF (k := 0x20) (by decide)) ?_; wn
+    have t1' : memLoad32 M2 (F + 0x20) = 0 := by
+      rw [show F + 0x20 = F + 0x1C + 4 by rw [BitVec.add_assoc]; rfl]; exact t1
+    refine WP.branch pm_at_96 (fun _ => ?_) (fun eb => ?_) <;> wn
+    rotate_left
+    · exfalso; (try rsimp at eb); rw [hgsp, t1'] at eb; exact absurd eb (by decide)
+    exact pm_116 E hO2 (by (try rsimp); exact hg26) (by (try rsimp); exact hgsp) (by (try rsimp); (try exact hz2))
+      (by keepz E.hz0)
+  · obtain ⟨hfa, t0, t1, t2, t3, t4, t5⟩ := hMR
+    have hl := nextMember_lt hnm
+    rw [memBytes_length] at hl
+    have hC3 : PmCc M2 (F + BitVec.ofNat 32 16) Q L a2 := pm_ccNext hC2 hfa t5
+    have t1' : memLoad32 M2 (F + 0x20) = Q + BitVec.ofNat 32 k2p := by
+      rw [show F + 0x20 = F + 0x1C + 4 by rw [BitVec.add_assoc]; rfl]; exact t1
+    have t2' : memLoad32 M2 (F + 0x24) = BitVec.ofNat 32 k2l := by
+      rw [show F + 0x24 = F + 0x1C + 8 by rw [BitVec.add_assoc]; rfl]; exact t2
+    have t3' : memLoad32 M2 (F + 0x28) = Q + BitVec.ofNat 32 v2p := by
+      rw [show F + 0x28 = F + 0x1C + 12 by rw [BitVec.add_assoc]; rfl]; exact t3
+    have t4' : memLoad32 M2 (F + 0x2C) = BitVec.ofNat 32 v2l := by
+      rw [show F + 0x2C = F + 0x1C + 16 by rw [BitVec.add_assoc]; rfl]; exact t4
+    refine WP.branch pm_at_8c (fun _ => ?_) (fun eb => ?_) <;> wn
+    rotate_left
+    · exfalso; (try rsimp at eb); rw [hgsp, t0] at eb; exact absurd eb (by decide)
+    refine WP.lw pm_at_94 (by (try rsimp); rw [hgsp]; exact aligned_add E.halF (k := 0x20) (by decide)) ?_; wn
+    have hq := nx_q0 hQ0 (n := L + 1) (pos := k2p) (by omega) (by omega)
+    refine WP.branch pm_at_96 (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [hgsp, t1', hq] at eb; exact absurd eb (by decide)
+    refine WP.aluImm pm_at_9a ?_; wn
+    have hbad : ¬(slice (memBytes M0 Q L) k1p k1l = ascii!"signatures" ∧
+        slice (memBytes M0 Q L) k2p k2l = ascii!"signed") → ∀ g' : Fin 32 → Word, g' 26 = out → g' sp = F →
+        g' 0 = 0 → (∀ x, x ∉ pmE → g' x = g0 x) → WP tufParseMetadataCode TPM (pmQ M0 s out g0 (pmRes Q (if slice (memBytes M0 Q L) k1p k1l = ascii!"signatures" ∧
+          slice (memBytes M0 Q L) k2p k2l = ascii!"signed" then
+          pmThen (pmRest (memBytes M0 Q L) (memBytes M0 KQ KL) a2 v1p v1l v2p v2l) (.ok (v2p, v2l, v1p, v1l))
+        else .error 0x21))) M2 0x116 g' := fun hn g' h26 hsp hz hf => by
+      rw [ite_eq_right hn]; exact pm_116 E hO2 h26 hsp hz hf
+    by_cases hl10 : k1l = 10
+    rotate_left
+    · refine WP.branch pm_at_9c (fun _ => ?_) (fun eb => ?_) <;> wn
+      rotate_left
+      · exfalso; (try rsimp at eb); rw [hg19] at eb; (try simp only [ev0] at eb)
+        exact hl10 (pm_ofNat_ne (n := 10) (by omega) (by decide) (pm_bne eb))
+      exact hbad (fun h => hl10 ((pm_key hk1 rfl).1 h.1).1) _ (by (try rsimp); exact hg26) (by (try rsimp); exact hgsp)
+        (by (try rsimp); (try exact hz2)) (by keepz E.hz0)
+    subst hl10
+    refine WP.branch pm_at_9c (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [hg19] at eb; (try simp only [ev0] at eb); exact absurd eb (by decide)
+    refine WP.lw pm_at_a0 (by (try rsimp); rw [hgsp]; exact aligned_add E.halF (k := 0x24) (by decide)) ?_; wn
+    refine WP.lw pm_at_a2 (by (try rsimp); rw [hgsp]; exact aligned_add E.halF (k := 0x28) (by decide)) ?_; wn
+    refine WP.lw pm_at_a4 (by (try rsimp); rw [hgsp]; exact aligned_add E.halF (k := 0x2C) (by decide)) ?_; wn
+    refine WP.lui pm_at_a6 ?_; wn
+    refine WP.aluImm pm_at_aa ?_; wn
+    refine WP.aluImm pm_at_ae ?_; wn
+    refine WP.alu pm_at_b0 ?_; wn
+    refine WP.callMemcmpIff (tb := BitVec.ofNat 32 memcmpAddress) (p := Q + BitVec.ofNat 32 k1p) (q := TPM_KS)
+      (n := 10) pm_at_b2 pm_at_b6 (by decide) (by decide) (by decide) hc2.mc
+      (by (try rsimp); (try simp only [ev0]); exact hg9) (by (try rsimp); (try rfl); (try decide))
+      (by (try rsimp); (try simp only [ev0]); (try rfl)) (by decide) fun m3 hcmp hm3 => ?_
+    rw [hm3]
+    rw [E.bytes hO2 (hSQ.subR hk1), tpm_ks hc2] at hcmp
+    by_cases hm : memBytes M0 (Q + BitVec.ofNat 32 k1p) 10 = ascii!"signatures"
+    rotate_left
+    · refine WP.branch pm_at_ba (fun _ => ?_) (fun eb => ?_) <;> wn
+      rotate_left
+      · exfalso; (try rsimp at eb); exact hm (hcmp.1 (pm_bne eb))
+      exact hbad (fun h => hm ((pm_key hk1 rfl).1 h.1).2) _ (by (try rsimp); exact hg26) (by (try rsimp); exact hgsp)
+        (by (try rsimp); (try exact hz2)) (by keepz E.hz0)
+    have ha0 := hcmp.2 hm
+    refine WP.branch pm_at_ba (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [ha0] at eb; exact absurd eb (by decide)
+    refine WP.aluImm pm_at_bc ?_; wn
+    by_cases hl6 : k2l = 6
+    rotate_left
+    · refine WP.branch pm_at_be (fun _ => ?_) (fun eb => ?_) <;> wn
+      rotate_left
+      · exfalso; (try rsimp at eb); rw [hgsp, t2'] at eb; (try simp only [ev0] at eb)
+        exact hl6 (pm_ofNat_ne (n := 6) (by omega) (by decide) (pm_bne eb))
+      exact hbad (fun h => hl6 ((pm_key hl.2.2.1 rfl).1 h.2).1) _ (by (try rsimp); exact hg26) (by (try rsimp); exact hgsp)
+        (by (try rsimp); (try exact hz2)) (by keepz E.hz0)
+    subst hl6
+    refine WP.branch pm_at_be (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [hgsp, t2'] at eb; (try simp only [ev0] at eb); exact absurd eb (by decide)
+    refine WP.lbu pm_at_c2 ?_; wn
+    refine WP.lbu pm_at_c6 ?_; wn
+    refine WP.lbu pm_at_ca ?_; wn
+    refine WP.lbu pm_at_ce ?_; wn
+    refine WP.lbu pm_at_d2 ?_; wn
+    refine WP.lbu pm_at_d6 ?_; wn
+    refine WP.aluImm pm_at_da ?_; wn
+    refine WP.alu pm_at_dc ?_; wn
+    refine WP.aluImm pm_at_de ?_; wn
+    refine WP.aluImm pm_at_e0 ?_; wn
+    refine WP.alu pm_at_e2 ?_; wn
+    refine WP.aluImm pm_at_e4 ?_; wn
+    refine WP.alu pm_at_e6 ?_; wn
+    refine WP.alu pm_at_e8 ?_; wn
+    refine WP.lui pm_at_ea ?_; wn
+    refine WP.lui pm_at_ee ?_; wn
+    refine WP.aluImm pm_at_f0 ?_; wn
+    refine WP.aluImm pm_at_f4 ?_; wn
+    refine WP.alu pm_at_f8 ?_; wn
+    refine WP.alu pm_at_fa ?_; wn
+    refine WP.alu pm_at_fc ?_; wn
+    have hk2 : slice (memBytes M0 Q L) k2p 6 = ascii!"signed" ↔
+        [(M2 (Q + BitVec.ofNat 32 k2p + 0)).toNat, (M2 (Q + BitVec.ofNat 32 k2p + 1)).toNat,
+          (M2 (Q + BitVec.ofNat 32 k2p + 2)).toNat, (M2 (Q + BitVec.ofNat 32 k2p + 3)).toNat,
+          (M2 (Q + BitVec.ofNat 32 k2p + 4)).toNat, (M2 (Q + BitVec.ofNat 32 k2p + 5)).toNat] = ascii!"signed" := by
+      rw [pm_key (n := 6) hl.2.2.1 rfl, ← E.bytes hO2 (hSQ.subR hl.2.2.1)]
+      exact ⟨fun h => h.2, fun h => ⟨rfl, h⟩⟩
+    have hsig := (pm_signed (M2 (Q + BitVec.ofNat 32 k2p + 0)) (M2 (Q + BitVec.ofNat 32 k2p + 1))
+      (M2 (Q + BitVec.ofNat 32 k2p + 2)) (M2 (Q + BitVec.ofNat 32 k2p + 3)) (M2 (Q + BitVec.ofNat 32 k2p + 4))
+      (M2 (Q + BitVec.ofNat 32 k2p + 5))).trans hk2.symm
+    have c1 : aluEval AluOp.add 1852272640 4294965619 = (0x6E676973 : Word) := by decide
+    have c2 : aluEval AluOp.add 24576 1125 = (0x6465 : Word) := by decide
+    refine WP.branch pm_at_fe (fun eb => ?_) (fun eb => ?_) <;> wn
+    · (try rsimp at eb); rw [hgsp, t1', c1, c2] at eb
+      refine hbad (fun h => ?_) _ (by (try rsimp); exact hg26) (by (try rsimp); exact hgsp)
+          (by (try rsimp); (try exact hz2)) (by keepz E.hz0)
+      rw [hsig.2 h.2] at eb; exact absurd eb (by decide)
+    · (try rsimp at eb); rw [hgsp, t1', c1, c2] at eb
+      rw [ite_eq_left ⟨(pm_key (n := 10) hk1 rfl).2 ⟨rfl, hm⟩, hsig.1 (pm_bne eb)⟩]
+      exact pm_rest E hO2 (by (try rsimp); exact hgsp) (by (try rsimp); exact hg26) (by (try rsimp); exact hg23)
+        (by (try rsimp); exact hg22) hKL hSK hC3 hQ0 hQN hSQ hl.2.2.2.1 hv1 hl.2.2.2.2.2
+        (by (try rsimp); rw [hgsp, t3']) (by (try rsimp); rw [hgsp, t4']) (by (try rsimp); exact hg21)
+        (by (try rsimp); exact hg18) (by keepz E.hz0)
+
 end
 
 end C3.RV32
