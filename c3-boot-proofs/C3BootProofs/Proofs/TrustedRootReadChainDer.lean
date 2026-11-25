@@ -127,12 +127,23 @@ theorem rcd_tlvOut {M : Word → BitVec 8} {G o d b : Word} {L : Bytes} {r : RcR
 
 theorem rcd_tlv_saved : ∀ q : Fin 32, q.val ∈ trSaved → tlvClob q = false := by decide
 
+/-- A callee changed only the stack below the frame, the `ol` bytes at
+`o`, and the `el` bytes at `e`. -/
+def RcFr (G : Word) (M M' : Word → BitVec 8) (o : Word) (ol : Nat) (e : Word) (el : Nat) : Prop :=
+  ∀ x, Sep G 0x5C0 x 1 → Sep o ol x 1 → Sep e el x 1 → M' x = M x
+
 section
 variable {M0 : Word → BitVec 8} {G F out fr fp p : Word} {fl n : Nat} {g0 : Fin 32 → Word}
 
 theorem RcCtx.f8 (_X : RcCtx M0 G F out fr fp fl p n g0) (c : Nat) :
     F + BitVec.ofNat 32 c + 8 = F + BitVec.ofNat 32 (c + 8) :=
   add_ofNat_assoc F c 8
+
+theorem RcCtx.keepOf (X : RcCtx M0 G F out fr fp fl p n g0) {M M' : Word → BitVec 8} {oc ol dc : Nat}
+    (hoc : 0x60 ≤ oc ∧ oc + ol ≤ 0x14C) (hdc : 0x60 ≤ dc ∧ dc + 16 ≤ 0x14C)
+    (h : RcFr G M M' (F + BitVec.ofNat 32 oc) ol (F + BitVec.ofNat 32 (dc + 8)) 8) : RcKeep G M M' :=
+  fun x xa xb => h x xa (by rw [X.fG]; exact rc_gin xb (by omega) (by omega))
+    (by rw [X.fG]; exact rc_gin xb (by omega) (by omega))
 
 /-- The call of `Der::element` at `off` with the result at `F + oc` and the
 reader at `F + dc`. -/
@@ -147,13 +158,15 @@ theorem RcCtx.callElem (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
     (hod : oc + 17 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (ha0 : f a0 = F + BitVec.ofNat 32 oc) (ha1 : f a1 = F + BitVec.ofNat 32 dc) (ha2 : f a2 = BitVec.ofNat 32 tag)
     (htag : tag < 256) (hL : RcL M G b L) (hr : RcRdAt M (F + BitVec.ofNat 32 dc) b L r)
-    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcMemInv M0 G F fr fp fl g0 m2.mem →
+    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 17 (F + BitVec.ofNat 32 (dc + 8)) 8 →
+      RcMemInv M0 G F fr fp fl g0 m2.mem →
       RcTlvOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r (rcElem L tag r) →
       WP trustedRootReadChainCode TRC Q m2.mem (off + 8) (clob (upd f ra (TRC + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
     WP trustedRootReadChainCode TRC Q M off f := by
   have gw := X.gw
-  refine X.callK (P := fun m2 => RcTlvOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r (rcElem L tag r))
-    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hI' hP)
+  refine X.callK (P := fun m2 => RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 17 (F + BitVec.ofNat 32 (dc + 8)) 8 ∧
+      RcTlvOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r (rcElem L tag r))
+    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hP.1 hI' hP.2)
   have C := X.codeAt hI
   rw [← hmem1] at C
   obtain ⟨m2, c2, pc2, hm2, hk2⟩ := derElement_correct m1 (base := RDE) (out := F + BitVec.ofNat 32 oc)
@@ -164,9 +177,11 @@ theorem RcCtx.callElem (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
     (by rw [X.fG]; exact X.glo (by omega) (by decide) (by decide))
     (by rw [X.f8, X.fG]; exact X.glo (by omega) (by decide) (by decide))
   rw [hmem1] at hm2
-  refine ⟨m2, c2, pc2, ⟨fun x _ xb => ?_, ?_⟩, hk2 sp (by decide), fun q hq => hk2 q (rcd_tlv_saved q hq)⟩
-  · rw [hm2, derTlvMem_outside _ (by rw [X.fG]; exact rc_gin xb (by omega) (by omega)),
-      derAdvance_outside _ (by rw [X.f8, X.fG]; exact rc_gin xb (by omega) (by omega))]
+  have hF : RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 17 (F + BitVec.ofNat 32 (dc + 8)) 8 := by
+    intro x _ xo xd
+    rw [hm2, derTlvMem_outside _ xo,
+        derAdvance_outside _ (by rw [X.f8]; exact xd)]
+  refine ⟨m2, c2, pc2, ⟨X.keepOf ⟨hoc.1, hoc.2.1⟩ ⟨hdc.1, hdc.2.1⟩ hF, hF, ?_⟩, hk2 sp (by decide), fun q hq => hk2 q (rcd_tlv_saved q hq)⟩
   · rw [hm2]
     exact rcd_tlvOut hL hr (by rw [X.f8, X.fG, X.fG]; exact X.gsep (by omega) (by omega) (by omega))
 
@@ -286,7 +301,8 @@ theorem RcCtx.callSeq (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
     (hod : oc + 16 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (ha0 : f a0 = F + BitVec.ofNat 32 oc) (ha1 : f a1 = F + BitVec.ofNat 32 dc)
     (hL : RcL M G b L) (hr : RcRdAt M (F + BitVec.ofNat 32 dc) b L r)
-    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcMemInv M0 G F fr fp fl g0 m2.mem →
+    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 16 (F + BitVec.ofNat 32 (dc + 8)) 8 →
+      RcMemInv M0 G F fr fp fl g0 m2.mem →
       RcSeqOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r (rcElem L 0x30 r) →
       WP trustedRootReadChainCode TRC Q m2.mem (off + 8) (clob (upd f ra (TRC + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
     WP trustedRootReadChainCode TRC Q M off f := by
@@ -294,8 +310,9 @@ theorem RcCtx.callSeq (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
   have hw := hL.hw
   have hr2 := hr.2.2
   have eG : F + 0xFFFFFFE0 = G + BitVec.ofNat 32 0x5A0 := X.fneg (k := 0x20) (by decide) (by decide)
-  refine X.callK (P := fun m2 => RcSeqOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r (rcElem L 0x30 r))
-    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hI' hP)
+  refine X.callK (P := fun m2 => RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 16 (F + BitVec.ofNat 32 (dc + 8)) 8 ∧
+      RcSeqOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r (rcElem L 0x30 r))
+    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hP.1 hI' hP.2)
   have C := X.codeAt hI
   rw [← hmem1] at C hL
   have hr1 : RcRdAt m1.mem (F + BitVec.ofNat 32 dc) b L r := by rw [hmem1]; exact hr
@@ -320,9 +337,11 @@ theorem RcCtx.callSeq (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
       by rw [hr1.len hL, hr1.1, hL.w (by omega)]; omega⟩
     hpc1 hsp1 (by rw [hreg1]; trsimp; exact ha0) (by rw [hreg1]; trsimp; exact ha1) (by rw [hreg1]; trsimp) hev
   rw [eG] at hm2
-  refine ⟨m2, c2, pc2, ⟨fun x xa xb => ?_, ?_⟩, by rw [hsp2, hsp1], fun q hq => hk2 q (rcd_oid_saved q hq)⟩
-  · rw [hm2 x (rc_gin (rc_g0 xa) (by decide) (by decide)), rcd_nst_out _ (by rw [X.fG]; exact rc_gin xb (by omega) (by omega)),
-      derAdvance_outside _ (by rw [X.f8, X.fG]; exact rc_gin xb (by omega) (by omega)), hmem1]
+  have hF : RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 16 (F + BitVec.ofNat 32 (dc + 8)) 8 := by
+    intro x xa xo xd
+    rw [hm2 x (rc_gin (rc_g0 xa) (by decide) (by decide)), rcd_nst_out _ xo,
+        derAdvance_outside _ (by rw [X.f8]; exact xd), hmem1]
+  refine ⟨m2, c2, pc2, ⟨X.keepOf ⟨hoc.1, hoc.2.1⟩ ⟨hdc.1, hdc.2.1⟩ hF, hF, ?_⟩, by rw [hsp2, hsp1], fun q hq => hk2 q (rcd_oid_saved q hq)⟩
   · exact rcd_seqOut hL hr1 (by rw [X.f8, X.fG, X.fG]; exact X.gsep (by omega) (by omega) (by omega))
       (by rw [X.fG]; exact X.gsep (Or.inl (by omega)) (by decide) (by omega))
       (by rw [X.f8, X.fG]; exact X.gsep (Or.inl (by omega)) (by decide) (by omega)) hm2
@@ -393,7 +412,8 @@ theorem RcCtx.callBits (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
     (hod : oc + 8 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (ha0 : f a0 = F + BitVec.ofNat 32 oc) (ha1 : f a1 = F + BitVec.ofNat 32 dc)
     (hL : RcL M G b L) (hr : RcRdAt M (F + BitVec.ofNat 32 dc) b L r)
-    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcMemInv M0 G F fr fp fl g0 m2.mem →
+    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 8 (F + BitVec.ofNat 32 (dc + 8)) 8 →
+      RcMemInv M0 G F fr fp fl g0 m2.mem →
       RcBitsOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r (rcElem L 3 r) →
       WP trustedRootReadChainCode TRC Q m2.mem (off + 8) (clob (upd f ra (TRC + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
     WP trustedRootReadChainCode TRC Q M off f := by
@@ -401,8 +421,9 @@ theorem RcCtx.callBits (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
   have hw := hL.hw
   have hr2 := hr.2.2
   have eG : F + 0xFFFFFFE0 = G + BitVec.ofNat 32 0x5A0 := X.fneg (k := 0x20) (by decide) (by decide)
-  refine X.callK (P := fun m2 => RcBitsOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r (rcElem L 3 r))
-    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hI' hP)
+  refine X.callK (P := fun m2 => RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 8 (F + BitVec.ofNat 32 (dc + 8)) 8 ∧
+      RcBitsOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r (rcElem L 3 r))
+    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hP.1 hI' hP.2)
   have C := X.codeAt hI
   rw [← hmem1] at C hL
   have hr1 : RcRdAt m1.mem (F + BitVec.ofNat 32 dc) b L r := by rw [hmem1]; exact hr
@@ -427,9 +448,11 @@ theorem RcCtx.callBits (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
     (by rw [hr1.len hL, hr1.1, X.f8, X.fG]; exact (hL.sep.sub (c := r.1) (l := r.2) (by omega)).symm.sub (by omega))
     hpc1 hsp1 (by rw [hreg1]; trsimp; exact ha0) (by rw [hreg1]; trsimp; exact ha1) (by rw [hreg1]; trsimp) hev
   rw [eG] at hm2
-  refine ⟨m2, c2, pc2, ⟨fun x xa xb => ?_, ?_⟩, by rw [hsp2, hsp1], fun q hq => hk2 q (rcd_oid_saved q hq)⟩
-  · rw [hm2 x (rc_gin (rc_g0 xa) (by decide) (by decide)), slice_out _ (by rw [X.fG]; exact rc_gin xb (by omega) (by omega)),
-      derAdvance_outside _ (by rw [X.f8, X.fG]; exact rc_gin xb (by omega) (by omega)), hmem1]
+  have hF : RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 8 (F + BitVec.ofNat 32 (dc + 8)) 8 := by
+    intro x xa xo xd
+    rw [hm2 x (rc_gin (rc_g0 xa) (by decide) (by decide)), slice_out _ xo,
+        derAdvance_outside _ (by rw [X.f8]; exact xd), hmem1]
+  refine ⟨m2, c2, pc2, ⟨X.keepOf ⟨hoc.1, hoc.2.1⟩ ⟨hdc.1, hdc.2.1⟩ hF, hF, ?_⟩, by rw [hsp2, hsp1], fun q hq => hk2 q (rcd_oid_saved q hq)⟩
   · exact rcd_bitsOut hL hr1 (by rw [X.f8, X.fG, X.fG]; exact X.gsep (by omega) (by omega) (by omega))
       (by rw [X.fG]; exact X.gsep (Or.inl (by omega)) (by decide) (by omega))
       (by rw [X.f8, X.fG]; exact X.gsep (Or.inl (by omega)) (by decide) (by omega)) hm2
@@ -531,7 +554,8 @@ theorem RcCtx.callOpt (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
     (hod : oc + 0x18 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (ha0 : f a0 = F + BitVec.ofNat 32 oc) (ha1 : f a1 = F + BitVec.ofNat 32 dc) (ha2 : f a2 = BitVec.ofNat 32 tag)
     (htag : tag < 256) (hL : RcL M G b L) (hr : RcRdAt M (F + BitVec.ofNat 32 dc) b L r)
-    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcMemInv M0 G F fr fp fl g0 m2.mem →
+    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 24 (F + BitVec.ofNat 32 (dc + 8)) 8 →
+      RcMemInv M0 G F fr fp fl g0 m2.mem →
       RcOptOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r (derOptRes tag (rcView L r)) →
       WP trustedRootReadChainCode TRC Q m2.mem (off + 8) (clob (upd f ra (TRC + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
     WP trustedRootReadChainCode TRC Q M off f := by
@@ -541,9 +565,10 @@ theorem RcCtx.callOpt (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
   have eG : F + 0xFFFFFFD0 = G + BitVec.ofNat 32 0x590 := X.fneg (k := 0x30) (by decide) (by decide)
   have eF : F + 0xFFFFFFE0 + 4 = G + BitVec.ofNat 32 0x5A4 := by
     rw [X.fneg (k := 0x20) (by decide) (by decide)]; exact add_ofNat_assoc G 0x5A0 4
-  refine X.callK (P := fun m2 => RcOptOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r
+  refine X.callK (P := fun m2 => RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 24 (F + BitVec.ofNat 32 (dc + 8)) 8 ∧
+      RcOptOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r
       (derOptRes tag (rcView L r)))
-    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hI' hP)
+    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hP.1 hI' hP.2)
   have C := X.codeAt hI
   rw [← hmem1] at C hL
   have hr1 : RcRdAt m1.mem (F + BitVec.ofNat 32 dc) b L r := by rw [hmem1]; exact hr
@@ -575,11 +600,13 @@ theorem RcCtx.callOpt (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
     hpc1 hsp1 (by rw [hreg1]; trsimp; exact ha0) (by rw [hreg1]; trsimp; exact ha1) (by rw [hreg1]; trsimp; exact ha2)
     htag (by rw [hreg1]; trsimp) hev
   rw [eG] at hm2
-  refine ⟨m2, c2, pc2, ⟨fun x xa xb => ?_, ?_⟩, by rw [hsp2, hsp1], fun q hq => hk2 q (rcd_opt_saved q hq)⟩
-  · rw [hm2 x (rc_gin (rc_g0 xa) (by decide) (by decide)), rcd_opt_out _
-      (by rw [X.fG]; exact rc_gin xb (by omega) (by omega))
-      (by rw [eF]; exact rc_gin (rc_g0 xa) (by decide) (by decide))
-      (by rw [X.f8, X.fG]; exact rc_gin xb (by omega) (by omega)), hmem1]
+  have hF : RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 24 (F + BitVec.ofNat 32 (dc + 8)) 8 := by
+    intro x xa xo xd
+    rw [hm2 x (rc_gin (rc_g0 xa) (by decide) (by decide)), rcd_opt_out _
+        xo
+        (by rw [eF]; exact rc_gin (rc_g0 xa) (by decide) (by decide))
+        (by rw [X.f8]; exact xd), hmem1]
+  refine ⟨m2, c2, pc2, ⟨X.keepOf ⟨hoc.1, hoc.2.1⟩ ⟨hdc.1, hdc.2.1⟩ hF, hF, ?_⟩, by rw [hsp2, hsp1], fun q hq => hk2 q (rcd_opt_saved q hq)⟩
   · exact rcd_optOut hL hr1 (by rw [X.f8, X.fG, X.fG]; exact X.gsep (by omega) (by omega) (by omega))
       (by rw [eF, X.f8, X.fG]; exact X.gsep (Or.inl (by omega)) (by decide) (by omega))
       (by rw [X.fG]; exact X.gsep (Or.inl (by omega)) (by decide) (by omega))
@@ -615,7 +642,8 @@ theorem RcCtx.callTime (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
     (hod : oc + 16 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (ha0 : f a0 = F + BitVec.ofNat 32 oc) (ha1 : f a1 = F + BitVec.ofNat 32 dc)
     (hL : RcL M G b L) (hr : RcRdAt M (F + BitVec.ofNat 32 dc) b L r)
-    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcMemInv M0 G F fr fp fl g0 m2.mem →
+    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 16 (F + BitVec.ofNat 32 (dc + 8)) 8 →
+      RcMemInv M0 G F fr fp fl g0 m2.mem →
       RcTimeOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r (readTime (rcView L r)) →
       WP trustedRootReadChainCode TRC Q m2.mem (off + 8) (clob (upd f ra (TRC + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
     WP trustedRootReadChainCode TRC Q M off f := by
@@ -623,9 +651,10 @@ theorem RcCtx.callTime (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
   have hw := hL.hw
   have hr2 := hr.2.2
   have eR : F + 0xFFFFFFA0 = G + BitVec.ofNat 32 0x560 := X.fneg (k := 0x60) (by decide) (by decide)
-  refine X.callK (P := fun m2 => RcTimeOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r
+  refine X.callK (P := fun m2 => RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 16 (F + BitVec.ofNat 32 (dc + 8)) 8 ∧
+      RcTimeOut m2.mem (F + BitVec.ofNat 32 oc) (F + BitVec.ofNat 32 dc) b L r
       (readTime (rcView L r)))
-    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hI' hP)
+    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hP.1 hI' hP.2)
   have C := X.codeAt hI
   rw [← hmem1] at C hL
   have hr1 : RcRdAt m1.mem (F + BitVec.ofNat 32 dc) b L r := by rw [hmem1]; exact hr
@@ -645,10 +674,12 @@ theorem RcCtx.callTime (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
     (by rw [X.f8, X.fG, X.fG]; exact X.gsep (by omega) (by omega) (by omega))
     (by rw [eR]; exact (hL.sep.sub (c := r.1) (l := r.2 + 14) (by omega)).subR (by decide))
     (by rw [X.f8, X.fG]; exact (hL.sep.sub (c := r.1) (l := r.2) (by omega)).subR (by omega))
-  refine ⟨m2, c2, pc2, ⟨fun x xa xb => ?_, ?_⟩, by rw [hsp2, hsp1], fun q hq => hk2 q (rcd_time_saved q hq)⟩
-  · rw [hm2 x (by rw [eR]; exact rc_gin (rc_g0 xa) (by decide) (by decide))
-      (by rw [X.fG]; exact rc_gin xb (by omega) (by omega))
-      (by rw [X.f8, X.fG]; exact rc_gin xb (by omega) (by omega)), hmem1]
+  have hF : RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 16 (F + BitVec.ofNat 32 (dc + 8)) 8 := by
+    intro x xa xo xd
+    rw [hm2 x (by rw [eR]; exact rc_gin (rc_g0 xa) (by decide) (by decide))
+        xo
+        (by rw [X.f8]; exact xd), hmem1]
+  refine ⟨m2, c2, pc2, ⟨X.keepOf ⟨hoc.1, hoc.2.1⟩ ⟨hdc.1, hdc.2.1⟩ hF, hF, ?_⟩, by rw [hsp2, hsp1], fun q hq => hk2 q (rcd_time_saved q hq)⟩
   · rw [← hV]
     rcases hT : readTime (memBytes m1.mem (b + BitVec.ofNat 32 r.1) r.2) with _ | ⟨t, r1⟩
     · exact hnone hT
@@ -763,7 +794,8 @@ theorem RcCtx.callAlg (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
     (hod : oc + 0x1C ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (ha0 : f a0 = F + BitVec.ofNat 32 oc) (ha1 : f a1 = F + BitVec.ofNat 32 dc)
     (hL : RcL M G b L) (hr : RcRdAt M (F + BitVec.ofNat 32 dc) b L r)
-    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcMemInv M0 G F fr fp fl g0 m2.mem →
+    (k : ∀ m2 : Machine, RcKeep G M m2.mem → RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 28 (F + BitVec.ofNat 32 (dc + 8)) 8 →
+      RcMemInv M0 G F fr fp fl g0 m2.mem →
       RcAlgOut m2.mem (F + BitVec.ofNat 32 oc) b L (rcAlg L r) → RcAlgRd m2.mem (F + BitVec.ofNat 32 dc) b L r →
       WP trustedRootReadChainCode TRC Q m2.mem (off + 8) (clob (upd f ra (TRC + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
     WP trustedRootReadChainCode TRC Q M off f := by
@@ -771,9 +803,10 @@ theorem RcCtx.callAlg (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
   have hw := hL.hw
   have hr2 := hr.2.2
   have eA : F + 0xFFFFFF90 = G + BitVec.ofNat 32 0x550 := X.fneg (k := 0x70) (by decide) (by decide)
-  refine X.callK (P := fun m2 => RcAlgOut m2.mem (F + BitVec.ofNat 32 oc) b L (rcAlg L r) ∧
+  refine X.callK (P := fun m2 => RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 28 (F + BitVec.ofNat 32 (dc + 8)) 8 ∧
+      RcAlgOut m2.mem (F + BitVec.ofNat 32 oc) b L (rcAlg L r) ∧
       RcAlgRd m2.mem (F + BitVec.ofNat 32 dc) b L r)
-    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hI' hP.1 hP.2)
+    h1 h2 htgt hI (fun m1 hpc1 hmem1 hreg1 => ?_) (fun m2 hK hP hI' => k m2 hK hP.1 hI' hP.2.1 hP.2.2)
   have C := X.codeAt hI
   rw [← hmem1] at C hL
   have hr1 : RcRdAt m1.mem (F + BitVec.ofNat 32 dc) b L r := by rw [hmem1]; exact hr
@@ -816,10 +849,12 @@ theorem RcCtx.callAlg (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVe
       by rw [X.f8, X.fG]; exact (hL.sep.sub (c := r.1) (l := r.2) (by omega)).subR (by omega)⟩
     hpc1 hsp1 (by rw [hreg1]; trsimp; exact ha0) (by rw [hreg1]; trsimp; exact ha1) (by rw [hreg1]; trsimp) hev
   rw [eA] at hm2
-  refine ⟨m2, c2, pc2, ⟨fun x xa xb => ?_, rcd_algOut hL hr2 hA, ?_⟩, by rw [hsp2, hsp1],
+  have hF : RcFr G M m2.mem (F + BitVec.ofNat 32 oc) 28 (F + BitVec.ofNat 32 (dc + 8)) 8 := by
+    intro x xa xo xd
+    rw [hm2 x (rc_gin (rc_g0 xa) (by decide) (by decide)) xo,
+        derAdvance_outside _ (by rw [X.f8]; exact xd), hmem1]
+  refine ⟨m2, c2, pc2, ⟨X.keepOf ⟨hoc.1, hoc.2.1⟩ ⟨hdc.1, hdc.2.1⟩ hF, hF, rcd_algOut hL hr2 hA, ?_⟩, by rw [hsp2, hsp1],
     fun q hq => hk2 q (rcd_time_saved q hq)⟩
-  · rw [hm2 x (rc_gin (rc_g0 xa) (by decide) (by decide)) (by rw [X.fG]; exact rc_gin xb (by omega) (by omega)),
-      derAdvance_outside _ (by rw [X.f8, X.fG]; exact rc_gin xb (by omega) (by omega)), hmem1]
   · refine rcd_algRd (S := G + BitVec.ofNat 32 0x550) (k := 0x70) (o := F + BitVec.ofNat 32 oc) (l := 0x1C)
       hL hr1 (by rw [X.f8, X.fG]; exact X.gsep (Or.inl (by omega)) (by decide) (by omega))
       (by rw [X.f8, X.fG, X.fG]; exact X.gsep (by omega) (by omega) (by omega)) (fun x xa xb => ?_)
