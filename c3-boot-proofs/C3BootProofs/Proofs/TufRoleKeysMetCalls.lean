@@ -100,27 +100,6 @@ theorem tmc_keepVal {m n : Machine} (h : ∀ q : Fin 32, q.val ∈ [1, 2, 3, 4, 
 section
 variable {code : List Nat} {base : Word} {Q : Post} {M : Word → BitVec 8} {off : Nat} {f : Fin 32 → Word}
 
-/-- `WP.callGen` for a callee that may panic instead of returning. -/
-theorem WP.callGenP {cl : List (Fin 32)} {P : Machine → Prop} {hi lo tb : Word}
-    (h1 : fetchRel code off = some (.auipc ra hi, 4)) (h2 : fetchRel code (off + 4) = some (.jalr ra ra lo, 4))
-    (htgt : (base + BitVec.ofNat 32 off + hi + lo) &&& ~~~1 = tb)
-    (hQ : ∀ m, Halting m → Q m.pc m.mem (reg m))
-    (hcallee : ∀ m1 : Machine, m1.pc = tb → m1.mem = M →
-      (∀ x, reg m1 x = upd f ra (base + BitVec.ofNat 32 (off + 8)) x) → base.toNat % 2 = 0 →
-      Panics m1 ∨
-      ∃ m2, Steps m1 m2 ∧ m2.pc = base + BitVec.ofNat 32 (off + 8) ∧ P m2 ∧ ∀ x, x ∉ cl → reg m2 x = reg m1 x)
-    (hcode : ∀ m2 : Machine, P m2 → CodeIn M base code → CodeIn m2.mem base code)
-    (k : ∀ m2 : Machine, P m2 →
-      WP code base Q m2.mem (off + 8) (clob (upd f ra (base + BitVec.ofNat 32 (off + 8))) m2 cl)) :
-    WP code base Q M off f := by
-  refine WP.call h1 h2 fun m1 hpc1 hmem1 hreg1 hb hc => ?_
-  rcases hcallee m1 (by rw [hpc1, htgt]) hmem1 hreg1 hb with ⟨m2, c2, hh⟩ | ⟨m2, c2, pc2, hP, hfr⟩
-  · exact ⟨m2, c2, hQ m2 hh⟩
-  · refine WP.resume c2 pc2 (fun x => ?_) hb (hcode m2 hP hc) (k m2 hP)
-    by_cases hx : x ∈ cl
-    · simp only [clob_app, hx, ↓reduceIte]
-    · simp only [clob_app, hx, ↓reduceIte]; rw [hfr x hx, hreg1]
-
 /-- `WP.callGen` for a callee that may panic, but only if an inversion
 bound fails, instead of returning. -/
 theorem WP.callGenPI {cl : List (Fin 32)} {P : Machine → Prop} {hi lo tb : Word}
