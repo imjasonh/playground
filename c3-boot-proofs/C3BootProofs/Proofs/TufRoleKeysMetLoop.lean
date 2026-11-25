@@ -394,6 +394,82 @@ theorem rm_body (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m �
     ((hK4 23 (by decide)).trans ((hK3 23 (by decide)).trans ((hK2 23 (by decide)).trans (r23.trans h23))))
     hcj hjn hn8 (fun h => rm_sndS hS hjn hki hlk (hsig h) hpd) IH
 
+theorem rm_ltN : ∀ n, n ≤ 8 → ∀ j, j < n → branchTaken .bgeu (BitVec.ofNat 32 j) (BitVec.ofNat 32 n) = false := by
+  decide
+
+theorem rm_lt7 : ∀ j, j < 8 → branchTaken .bltu 7 (BitVec.ofNat 32 j) = false := by decide
+
+theorem rm_m98 : ∀ j, j < 8 → aluEval .mul (BitVec.ofNat 32 j) (BitVec.ofNat 32 0x62) = BitVec.ofNat 32 (98 * j) := by
+  decide
+
+theorem rm_s2 : ∀ j, j < 8 → aluEval .sll (BitVec.ofNat 32 j) 2 = BitVec.ofNat 32 (4 * j) := by decide
+
+theorem rm_le64 : ∀ L, L ≤ 64 → branchTaken .bltu (BitVec.ofNat 32 0x40) (BitVec.ofNat 32 L) = false := by decide
+
+theorem rm_tag : ∀ t, t < 3 →
+    branchTaken .beq (aluEval .add ((BitVec.ofNat 8 t).zeroExtend 32) 0xFFFFFF01) 0 = false := by decide
+
+/-- One pass of the loop from 0x78, for slot `j` before the last. -/
+theorem rm_iter (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
+    {t : Nat} {es : List RkEntry} (hR : RkAt M0 R t es) (hw : RkWf es) {cs : List Nat} {j : Nat}
+    {Mk : Word → BitVec 8} {g : Fin 32 → Word} (hd : RmHd M0 M1 s F R MP SP ML SL g0 es cs j Mk g)
+    (hjn : j < es.length)
+    (IH : ∀ cs' Mk' g', RmHd M0 M1 s F R MP SP ML SL g0 es cs' (j + 1) Mk' g' →
+      WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk' 0x78 g') :
+    WP tufRoleKeysMetCode TRM (rmQ H M0 s g0 S) Mk 0x78 g := by
+  obtain ⟨hO, hHM, hS, hsp, hz, hfr, h19, h20, h23, h13, h12, h14, h15, h8, hcj, -⟩ := hd
+  have hn8 := hR.1
+  have hj8 : j < 8 := by omega
+  have hal := E.halR
+  have hb : ∀ c, c + 1 ≤ 0x540 → Mk (R + BitVec.ofNat 32 c) = M0 (R + BitVec.ofNat 32 c) := fun c hc => by
+    have := E.agree hO _ (sep_pt (E.hSR.subR hc) (i := 0) (by decide))
+    rwa [add_ofNat_zero] at this
+  have hw4 : ∀ c, c + 4 ≤ 0x540 → memLoad32 Mk (R + BitVec.ofNat 32 c) = memLoad32 M0 (R + BitVec.ofNat 32 c) :=
+    fun c hc => memLoad32_congr fun j hj => E.agree hO _ (sep_pt (E.hSR.subR hc) hj)
+  have hx0 : g x0 = 0 := hz
+  have e27 : aluEval .add (aluEval .mul (BitVec.ofNat 32 j) (BitVec.ofNat 32 0x62)) R = R + BitVec.ofNat 32 (98 * j) := by
+    rw [ev_add, rm_m98 j hj8, BitVec.add_comm]
+  refine WP.alu rkm_at_78 ?_; wn
+  refine WP.branch rkm_at_7a (fun eb => ?_) (fun _ => ?_) <;> wn
+  · exfalso; (try rsimp at eb); rw [h23, h20, rm_ltN _ hn8 _ hjn] at eb; exact absurd eb (by decide)
+  refine WP.alu rkm_at_7e ?_; wn
+  refine WP.aluImm rkm_at_82 ?_; wn
+  refine WP.alu rkm_at_86 ?_; wn
+  refine WP.aluImm rkm_at_88 ?_; wn
+  refine WP.branch rkm_at_8a (fun eb => ?_) (fun _ => ?_) <;> wn
+  · exfalso; (try rsimp at eb); simp only [hx0, ev0, h23] at eb; rw [rm_lt7 _ hj8] at eb; exact absurd eb (by decide)
+  refine WP.lbu rkm_at_8e ?_; wn
+  refine WP.aluImm rkm_at_92 ?_; wn
+  rw [hx0, ev0, h23, h15, h19, e27, add_lit_zero, hb (98 * j) (by omega)]
+  have hjj : aluEval .add (BitVec.ofNat 32 j) 1 = BitVec.ofNat 32 (j + 1) := by rw [ev_add]; exact ofNat_add_ofNat j 1
+  rcases rm_slotKey hR hj8 with ⟨hn, hT⟩ | ⟨ti, ki, hki, hT, -⟩
+  · rw [hT]
+    refine WP.branch rkm_at_96 (fun _ => ?_) (fun eb => ?_) <;> wn
+    rotate_left
+    · exfalso; (try rsimp at eb); (try rw [hx0] at eb); (try exact absurd eb (by decide))
+    refine IH cs Mk _ ⟨hO, hHM, hS, by rsimp; exact hsp, by rsimp; (try exact hz), by keepz E.hz0,
+      by rsimp; exact h19, by rsimp; exact h20, by rsimp; exact hjj, by rsimp; exact h13, by rsimp; exact h12,
+      by rsimp; exact h14, by rsimp; exact h15, by rsimp; exact h8, by omega, by omega⟩
+  rw [hT]
+  have ht3 : ti < 3 := by rcases rm_wfAt hw hki with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> simp only at h <;> omega
+  refine WP.branch rkm_at_96 (fun eb => ?_) (fun _ => ?_) <;> wn
+  · exfalso; (try rsimp at eb); (try rw [hx0] at eb); rw [rm_tag ti ht3] at eb; exact absurd eb (by decide)
+  obtain ⟨-, hIL, hIL64⟩ := rm_slotId hR hj8
+  have eA : aluEval .add (aluEval .sll (BitVec.ofNat 32 j) 2) (R + BitVec.ofNat 32 0x518) + 0 =
+      R + BitVec.ofNat 32 (0x518 + 4 * j) := by
+    rw [ev_add, rm_s2 j hj8, add_lit_zero, BitVec.add_comm, add_ofNat_assoc]
+  refine WP.aluImm rkm_at_98 ?_; wn
+  refine WP.alu rkm_at_9c ?_; wn
+  refine WP.lw rkm_at_9e (by (try rsimp); rw [h14, eA]; exact aligned_add hal (k := 0x518 + 4 * j) (by omega)) ?_; wn
+  refine WP.aluImm rkm_at_a2 ?_; wn
+  refine WP.branch rkm_at_a6 (fun eb => ?_) (fun _ => ?_) <;> wn
+  · exfalso; (try rsimp at eb); rw [h8, h14, eA, hw4 _ (by omega), hIL, rm_le64 _ hIL64] at eb
+    exact absurd eb (by decide)
+  refine rm_body E hH hR hw hj8 hjn hki hO hHM hS hcj (by rsimp; exact hsp) (by rsimp; (try exact hz))
+    (by keepz E.hz0) (by rsimp; exact h19) (by rsimp; exact h20) (by rsimp; (try exact h23)) (by rsimp; exact hjj)
+    (by rsimp) ?_ (by rsimp) (by rsimp; exact h13) (by rsimp; exact h12) IH
+  rsimp; rw [h14, eA, hw4 _ (by omega), hIL]
+
 end
 
 end C3.RV32
