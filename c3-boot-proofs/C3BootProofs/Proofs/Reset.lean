@@ -34,7 +34,10 @@ then run as `rst_path` proves and enter `boot_main` with the stack pointer
 at 0x3FCDC700 and memory `resetMem M0`. From there, the bootloader halts
 (including every panic), or it jumps to the entry point of the image in a
 slot `slot` that `decideBoot` boots at level `target`, given the boot-state
-records in flash and the eFuse level at reset. At the jump, `target` is at
+records in flash, the eFuse level at reset, and a slot check that accepts
+no slot that `bmcAccept` rejects; the device may reject a slot that the
+specification accepts, when a flash read fails or a buffer is too small,
+but never the reverse. At the jump, `target` is at
 most the eFuse level then, `Spec/Level`'s `level` of the `SECURE_VERSION`
 field that the controller reads back, and that word is its value at reset
 with some bits set. Memory outside `boot_main`'s stack and the peripheral
@@ -71,10 +74,11 @@ theorem reset_correct {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Poli
     (X : BmHyp flash pinned policy (resetMem M0) 0x3FCDC700 R romStack stack0 romBase romCode E)
     (m : Machine) (hm : m.mem = M0) (hpc : m.pc = RST) :
     Panics m ∨ ∃ m', Steps m m' ∧
-      ∃ (slot : Slot) (target : Nat) (mf : Manifest) (sv t : Nat) (h : ImageHeader) (Mb : Word → BitVec 8),
-        (decideBoot (bmRecs flash).1 (bmLevel M0) fun s =>
-          (bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum s))).map (·.2.1)).outcome =
-          .boot slot target ∧
+      ∃ (check : Slot → Option Nat) (slot : Slot) (target : Nat) (mf : Manifest) (sv t : Nat) (h : ImageHeader)
+        (Mb : Word → BitVec 8),
+        (∀ s l, check s = some l →
+          ∃ mf t, bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum s)) = some (mf, l, t)) ∧
+        (decideBoot (bmRecs flash).1 (bmLevel M0) check).outcome = .boot slot target ∧
         bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t) ∧
         decodeImageHeader (bmcImage flash (BitVec.ofNat 32 (bmSlotNum slot)) mf) mf.image.length = some h ∧
         target ≤ level (Fuses.ofNat (((memLoad32 m'.mem efuseRd).toNat >>> 14) % 65536)) ∧

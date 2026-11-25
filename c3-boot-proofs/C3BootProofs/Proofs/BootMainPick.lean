@@ -57,8 +57,8 @@ theorem bmp_first {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     {slot : Slot} {mf : Manifest} {sv t c p : Nat} (hc4 : c < 4) (hp : p ≤ 1)
     (hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t))
-    (hD : (bmDecision flash pinned policy M0).outcome =
-      .boot slot (burnTarget sv (c &&& slot.bit != 0) (bmLevel M0)))
+    {ck : Slot → Option Nat} (hck : BmSound flash pinned policy M0 ck)
+    (hD : (bmDecision flash M0 ck).outcome = .boot slot (burnTarget sv (c &&& slot.bit != 0) (bmLevel M0)))
     (hAcc : AccOk flash (BitVec.ofNat 32 (bmSlotNum slot)) mf n.mem (F + BitVec.ofNat 32 0xBBF0))
     (hlw : memLoad32 n.mem (F + BitVec.ofNat 32 0xBD10) =
       BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset))
@@ -143,7 +143,7 @@ theorem bmp_first {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
     rw [u6.regs, k5 q h9, keep4 q hq, k3 q h18 (fun e => by subst e; exact absurd hq (by decide))
       (fun e => by subst e; exact absurd hq (by decide)) (fun e => by subst e; exact absurd hq (by decide))]
   refine BmEnd.pre (c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (.single e6)))))) ?_
-  refine bmt_tail X t6 ?_ hF ?_ hD hA ?_ ?_ ?_ (bmp_target_le _ hge hsv) ?_ ?_
+  refine bmt_tail X t6 ?_ hF ?_ hck hD hA ?_ ?_ ?_ (bmp_target_le _ hge hsv) ?_ ?_
   · rw [q6 sp (by decide) (by decide) (by decide) (by decide), sp2]
   · rw [u6.mem, m5]; exact hK4
   · refine bmt_acc_move hAcc fun i hi => ?_
@@ -172,8 +172,8 @@ theorem bmp_other {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     {slot : Slot} {mf : Manifest} {sv t c p : Nat} (hc4 : c < 4) (hp : p ≤ 1)
     (hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t))
-    (hD : (bmDecision flash pinned policy M0).outcome =
-      .boot slot (burnTarget sv (c &&& slot.bit != 0) (bmLevel M0)))
+    {ck : Slot → Option Nat} (hck : BmSound flash pinned policy M0 ck)
+    (hD : (bmDecision flash M0 ck).outcome = .boot slot (burnTarget sv (c &&& slot.bit != 0) (bmLevel M0)))
     (hAcc : AccOk flash (BitVec.ofNat 32 (bmSlotNum slot)) mf n.mem (F + BitVec.ofNat 32 0xBD20))
     (hsvb : n.mem (F + BitVec.ofNat 32 0xBE48) = BitVec.ofNat 8 sv)
     (hlw : memLoad32 n.mem (F + BitVec.ofNat 32 0xBE40) =
@@ -248,7 +248,7 @@ theorem bmp_other {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
     rw [keep4 q hq, k3 q h18 (fun e => by subst e; exact absurd hq (by decide))
       (fun e => by subst e; exact absurd hq (by decide)) (fun e => by subst e; exact absurd hq (by decide))]
   refine BmEnd.pre (c1.trans (c2.trans (c3.trans c4))) ?_
-  refine bmt_tail X t4' ?_ hF hK4 hD hA ?_ ?_ ?_ (bmp_target_le _ hge hsv) ?_ ?_
+  refine bmt_tail X t4' ?_ hF hK4 hck hD hA ?_ ?_ ?_ (bmp_target_le _ hge hsv) ?_ ?_
   · rw [q4 sp (by decide) (by decide) (by decide), sp2]
   · refine bmt_acc_move hAcc fun i hi => ?_
     rw [cp4 i (Nat.lt_trans hi (by decide)), m3, m2, m1]

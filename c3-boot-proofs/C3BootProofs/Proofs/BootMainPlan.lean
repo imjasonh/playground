@@ -386,10 +386,8 @@ theorem bmq_exp {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M
       have := bmq_kin (c := 0x128) (n := 10) hF hlo (by decide) hx
       rwa [BitVec.add_assoc] at this)
   have hpl := bmq_plan_exp htr hb
-  have hW : (bmDecision flash pinned policy M0).write = some st.withoutTrial := by
-    cases hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum (plan st).first)) with
-    | none => rw [bmd_dec_rej hst hA, hpl]; rfl
-    | some r => obtain ⟨mf, sv, t'⟩ := r; rw [bmd_dec_acc hst hA, hpl]; rfl
+  have hW : (bmDecision flash M0 fun _ => none).write = some st.withoutTrial := by
+    rw [bmd_dec_rej hst rfl, hpl]; rfl
   -- 0x1C6: the preferred slot is never 2.
   have hc1 := hK1.codeIn C C.code (.inr ⟨by decide, by decide⟩)
   obtain ⟨n2, e2, t2⟩ := t1.notTaken hc1 0x1CA bm_at_1c6 (by decide)
@@ -417,7 +415,7 @@ theorem bmq_exp {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M
     rw [r3]; simp +decide only [runBlock, BInstr.run, bmB19, upd, ↓reduceIte]; rw [P1.rsp]; rfl
   rw [← m3] at hc1 hK1 hrec hval
   obtain ⟨n4, c4, t4, keep4, hK4, _⟩ := bmw_call X t3 P3.rsp hF hK1 (j := 0xBAD0) (by decide) (by decide)
-    a0_3 a1_3 hW hrec hval bm_at_1d6 bm_at_1da (by decide) (by decide)
+    a0_3 a1_3 bm_none_sound hW hrec hval bm_at_1d6 bm_at_1da (by decide) (by decide)
   have P4 : BmqPre flash M0 F st (reg n4) := P3.keep fun q hq => keep4 q (bmq_rom q hq)
   have h24_4 : reg n4 24 = BitVec.ofNat 32 st.generation + 1 := by
     rw [keep4 24 (by decide), k3 24 (by decide) (by decide)]; exact h24'

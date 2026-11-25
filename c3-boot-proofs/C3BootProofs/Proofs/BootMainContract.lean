@@ -102,9 +102,11 @@ in memory, memory that satisfies `E` (the callees' code and data), at least
 the arguments placed as `C0Args` says:
 the closure returns to `ra` with the registers that `romKeep` names kept and
 memory unchanged outside the stack, the result, and the `Buffers`, or it
-panics. On return, the result is `None` when `bmcAccept` is `none`.
-Otherwise it holds the image's flash address and security version, and its
-`Accepted` part holds the slot's decoded image header (`AccOk`). -/
+panics. On return, the result is `None`, or `bmcAccept` accepts the slot
+and the result holds the image's flash address and security version, and
+its `Accepted` part holds the slot's decoded image header (`AccOk`). The
+contract claims soundness only: the closure may reject a slot that
+`bmcAccept` accepts. -/
 def Closure0Contract (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romCode : List Nat)
     (pinned : Bytes) (policy : Policy) (stack : Nat) (E : (Word → BitVec 8) → Prop) : Prop :=
   RomRead flash R romBase romCode →
@@ -118,12 +120,11 @@ def Closure0Contract (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romC
     (∃ m', Steps m m' ∧ m'.pc = reg m ra &&& ~~~1 ∧ (∀ q, romKeep q = true → reg m' q = reg m q) ∧
       (∀ x, Sep (reg m sp - BitVec.ofNat 32 stack) stack x 1 → Sep res 0x12C x 1 →
         Sep bufs 0xB954 x 1 → m'.mem x = m.mem x) ∧
-      match bmcAccept flash pinned policy level.toNat slot with
-      | none => m'.mem (res + 0xC) = 0xFF
-      | some (mf, sv, _) =>
-        m'.mem (res + 0xC) ≠ 0xFF ∧ m'.mem (res + 0x128) = BitVec.ofNat 8 sv ∧
+      (m'.mem (res + 0xC) = 0xFF ∨
+        ∃ mf sv t, bmcAccept flash pinned policy level.toNat slot = some (mf, sv, t) ∧
+          m'.mem (res + 0xC) ≠ 0xFF ∧ m'.mem (res + 0x128) = BitVec.ofNat 8 sv ∧
           memLoad32 m'.mem (res + 0x120) = BitVec.ofNat 32 (bmcBase slot + mf.image.offset) ∧
-          AccOk flash slot mf m'.mem res) ∨
+          AccOk flash slot mf m'.mem res)) ∨
     Panics m
 
 /-! ## From `AccOk` to `boot`'s needs -/

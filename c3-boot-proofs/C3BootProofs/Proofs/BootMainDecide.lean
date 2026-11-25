@@ -188,38 +188,30 @@ theorem bmd_rec_nt (M : Word → BitVec 8) (st g : Word) (b4 b6 b7 : BitVec 8) :
 
 /-! ## The decision -/
 
-theorem bmd_dec_acc {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
-    {st : State} (hst : (bmRecs flash).1 = st) {mf : Manifest} {sv t : Nat}
-    (hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum (plan st).first)) =
-      some (mf, sv, t)) :
-    bmDecision flash pinned policy M0 =
+theorem bmd_dec_acc {flash : Nat → BitVec 8} {M0 : Word → BitVec 8} {st : State} (hst : (bmRecs flash).1 = st)
+    {c : Slot → Option Nat} {sv : Nat} (hc : c (plan st).first = some sv) :
+    bmDecision flash M0 c =
       ⟨if (plan st).isTrial then some st.withTrialBootUsed else (plan st).writeFirst,
         .boot (plan st).first (burnTarget sv (st.isConfirmed (plan st).first) (bmLevel M0))⟩ := by
   unfold bmDecision decideBoot
   rw [hst]
-  simp only [bmCheck, hA, Option.map]
+  simp only [hc]
 
-theorem bmd_dec_rej {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
-    {st : State} (hst : (bmRecs flash).1 = st)
-    (hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum (plan st).first)) = none) :
-    (bmDecision flash pinned policy M0).write =
-      if (plan st).isTrial then some st.withoutTrial else (plan st).writeFirst := by
+theorem bmd_dec_rej {flash : Nat → BitVec 8} {M0 : Word → BitVec 8} {st : State} (hst : (bmRecs flash).1 = st)
+    {c : Slot → Option Nat} (hc : c (plan st).first = none) :
+    (bmDecision flash M0 c).write = if (plan st).isTrial then some st.withoutTrial else (plan st).writeFirst := by
   unfold bmDecision decideBoot
   rw [hst]
-  simp only [bmCheck, hA, Option.map]
+  simp only [hc]
   split <;> rfl
 
-theorem bmd_dec_oth {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
-    {st : State} (hst : (bmRecs flash).1 = st)
-    (hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum (plan st).first)) = none)
-    {mf : Manifest} {sv t : Nat}
-    (hB : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum (plan st).first.other)) =
-      some (mf, sv, t)) :
-    (bmDecision flash pinned policy M0).outcome =
+theorem bmd_dec_oth {flash : Nat → BitVec 8} {M0 : Word → BitVec 8} {st : State} (hst : (bmRecs flash).1 = st)
+    {c : Slot → Option Nat} {sv : Nat} (hc : c (plan st).first = none) (hc' : c (plan st).first.other = some sv) :
+    (bmDecision flash M0 c).outcome =
       .boot (plan st).first.other (burnTarget sv (st.isConfirmed (plan st).first.other) (bmLevel M0)) := by
   unfold bmDecision decideBoot
   rw [hst]
-  simp only [bmCheck, hA, hB, Option.map]
+  simp only [hc, hc']
 
 /-! ## Registers and the frame at 0x1F4 -/
 
@@ -344,8 +336,9 @@ theorem bmd_acc {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M
     bmp_align hF16 hFk (by decide) (by decide)
   clear h16 hF16
   have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
-  have hD := bmd_dec_acc hst hA
-  have hDo : (bmDecision flash pinned policy M0).outcome = .boot (plan st).first
+  have hck := bm_only_sound hA
+  have hD := bmd_dec_acc (M0 := M0) (c := bmOnly (plan st).first sv) hst (if_pos rfl)
+  have hDo : (bmDecision flash M0 (bmOnly (plan st).first sv)).outcome = .boot (plan st).first
       (burnTarget sv (st.confirmed &&& (plan st).first.bit != 0) (bmLevel M0)) := by rw [hD]; rfl
   -- `s10 = sv`, to 0x280
   obtain ⟨n1, c1, u1⟩ := s.block bmB27 hc bmB27_end ⟨trivial, trivial⟩
@@ -375,7 +368,7 @@ theorem bmd_acc {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M
     have P2 : BmdPre flash M0 F st (reg n2) := P1.keep fun q _ => t2.regs q
     rw [← t2.mem] at hK1 hAcc1 hlw1
     exact bmp_first X ⟨t2.pc, rfl, fun _ => rfl⟩ P2.rsp hF hK1 (c := st.confirmed)
-      (p := bmSlotNum st.preferred) hv.2.1 (bmd_slot_le _) hA hDo hAcc1 hlw1 P2.r8 P2.r19 P2.r20
+      (p := bmSlotNum st.preferred) hv.2.1 (bmd_slot_le _) hA hck hDo hAcc1 hlw1 P2.r8 P2.r19 P2.r20
       (by rw [t2.regs]; exact s10) P2.r23
   · -- a trial: write `withTrialBootUsed`
     obtain ⟨tt, htr, hbt, hfirst⟩ := bmd_plan_trial hT
@@ -448,17 +441,17 @@ theorem bmd_acc {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M
       rw [r3]; simp +decide only [runBlock, BInstr.run, bmB28, upd, ↓reduceIte]; rw [P1.rsp]; rfl
     have hK3 : BmKeep M0 n3.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) :=
       hK1.step fun x hx => hrout x (bmd_kin hF hlo hx)
-    have hW : (bmDecision flash pinned policy M0).write = some st.withTrialBootUsed := by
+    have hW : (bmDecision flash M0 (bmOnly (plan st).first sv)).write = some st.withTrialBootUsed := by
       rw [hD]; simp only [hT, ↓reduceIte]
     obtain ⟨n4, c4, t4, keep4, hK4, fr4⟩ := bmw_call X t3 P3.rsp hF hK3 (j := 0xB9A8) (by decide) (by decide)
-      a0_3 a1_3 hW hrec hval bm_at_2ba bm_at_2be (by decide) (by decide)
+      a0_3 a1_3 hck hW hrec hval bm_at_2ba bm_at_2be (by decide) (by decide)
     have P4 : BmdPre flash M0 F st (reg n4) := P3.rom keep4
     have hstk := bmd_stk hF hlo
     have hfr : ∀ x : Word, F.toNat + 0xB9B0 ≤ x.toNat → n4.mem x = n1.mem x := fun x hx => by
       rw [fr4 x (bmd_below hstk (Nat.le_trans (Nat.le_add_right _ _) hx)), hrout x (bmd_rec_sep hFk hx)]
     refine BmEnd.pre (c1.trans ((Steps.single e2).trans (c3.trans c4))) ?_
     refine bmp_first X t4 P4.rsp hF hK4 (c := st.confirmed) (p := bmSlotNum st.preferred) hv.2.1 (bmd_slot_le _)
-      hA hDo ?_ ?_ P4.r8 P4.r19 P4.r20 ?_ P4.r23
+      hA hck hDo ?_ ?_ P4.r8 P4.r19 P4.r20 ?_ P4.r23
     · exact bmt_acc_move hAcc1 fun i hi => hfr _ (bmd_hiOff (k := 0x12C) hFk (by decide) (by decide)
         (Nat.lt_trans hi (by decide)))
     · rw [← hlw1]
@@ -517,8 +510,7 @@ theorem bmd_oth {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M
     (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0x24A (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
-    {st : State} (hst : (bmRecs flash).1 = st) (hv : BmdValid st) (P : BmdPre flash M0 F st (reg n))
-    (hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum (plan st).first)) = none) :
+    {st : State} (hst : (bmRecs flash).1 = st) (hv : BmdValid st) (P : BmdPre flash M0 F st (reg n)) :
     BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   have hc := hK.codeIn C C.code (.inr ⟨by decide, by decide⟩)
@@ -572,31 +564,25 @@ theorem bmd_oth {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M
   have hK3 : BmKeep M0 n3.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) := by
     rw [m3]; exact hK2
   have sp3 : reg n3 sp = F := by rw [k3 sp (by decide), kk sp (by decide) (by decide)]; exact P.rsp
-  revert hres
-  cases hB : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum (plan st).first.other)) with
-  | none =>
-    intro hres
-    obtain ⟨n4, e4, t4⟩ := t3.notTaken hc3 0x270 bm_at_26e (by decide)
+  rcases hres with hres | ⟨mf, sv, t, hB, hne, hsvb, hlw, hAcc⟩
+  · obtain ⟨n4, e4, t4⟩ := t3.notTaken hc3 0x270 bm_at_26e (by decide)
       (by rw [a03, hres, bmd_ffz, t3.zero]; rfl)
     refine .inr (Panics.of_steps (c1.trans (c2.trans (c3.trans (.single e4))))
       (bmd_halt C ⟨t4.pc, rfl, fun _ => rfl⟩ ?_ ?_ ?_ hF))
     · rw [t4.mem]; exact hc3
     · rw [t4.mem]; exact hK3
     · rw [t4.regs]; exact sp3
-  | some r =>
-    obtain ⟨mf, sv, t⟩ := r
-    rintro ⟨hne, hsvb, hlw, hAcc⟩
-    obtain ⟨n4, e4, t4⟩ := t3.taken hc3 0x304 bm_at_26e (by decide)
+  · obtain ⟨n4, e4, t4⟩ := t3.taken hc3 0x304 bm_at_26e (by decide)
       (by rw [a03, t3.zero]; exact bne_iff_ne.mpr (bmd_ffnz _ hne))
     refine BmEnd.pre (c1.trans (c2.trans (c3.trans (.single e4)))) ?_
-    have hD : (bmDecision flash pinned policy M0).outcome = .boot (plan st).first.other
+    have hD : (bmDecision flash M0 (bmOnly (plan st).first.other sv)).outcome = .boot (plan st).first.other
         (burnTarget sv (st.confirmed &&& (plan st).first.other.bit != 0) (bmLevel M0)) := by
-      rw [bmd_dec_oth hst hA hB]; rfl
+      rw [bmd_dec_oth hst (if_neg (bm_ne_other _)) (if_pos rfl)]; rfl
     have q : ∀ r, r ≠ a0 → bmdRegs r = true → r ≠ 9 → reg n4 r = reg n r := fun r h0 hq h9' => by
       rw [t4.regs, k3 r h0, kk r hq h9']
     refine bmp_other X (n := n4) ⟨t4.pc, rfl, fun _ => rfl⟩ (by rw [t4.regs]; exact sp3) hF
       (by rw [t4.mem]; exact hK3) (c := st.confirmed) (p := bmSlotNum st.preferred) hv.2.1 (bmd_slot_le _)
-      hB hD ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+      hB (bm_only_sound hB) hD ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
     · rw [t4.mem, m3]; exact hAcc
     · rw [t4.mem, m3, ← hsvb, BitVec.add_assoc]; rfl
     · rw [t4.mem, m3, ← hlw, BitVec.add_assoc]; rfl
@@ -616,8 +602,7 @@ theorem bmd_rej {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M
     (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
     {n : Machine} {F : Word} (s : St n.mem BM n 0x216 (reg n)) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
-    {st : State} (hst : (bmRecs flash).1 = st) (hv : BmdValid st) (P : BmdPre flash M0 F st (reg n))
-    (hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum (plan st).first)) = none) :
+    {st : State} (hst : (bmRecs flash).1 = st) (hv : BmdValid st) (P : BmdPre flash M0 F st (reg n)) :
     BmEnd (BmJump flash pinned policy M0 top (bmK R romStack stack0)) n := by
   have C := X.env
   have h16 := C.hsp; have hhi := C.hhi; have hlo := C.hlo
@@ -632,7 +617,7 @@ theorem bmd_rej {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M
   · obtain ⟨n1, e1, t1⟩ := s.taken hc 0x24A bm_at_216 (by decide) (by rw [P.r25, hT, s.zero]; decide)
     refine BmEnd.pre (.single e1) ?_
     rw [← t1.mem] at hK
-    exact bmd_oth X ⟨t1.pc, rfl, fun _ => rfl⟩ hF hK hst hv (P.keep fun q _ => t1.regs q) hA
+    exact bmd_oth X ⟨t1.pc, rfl, fun _ => rfl⟩ hF hK hst hv (P.keep fun q _ => t1.regs q)
   · obtain ⟨n1, e1, t1⟩ := s.notTaken hc 0x21A bm_at_216 (by decide) (by rw [P.r25, hT, s.zero]; decide)
     have hS : ∀ c, c < 8 → Sep (reg n 20 + BitVec.ofNat 32 c) 1 BM bootMainCode.length := fun c hc8 => by
       rw [P.r20]; exact bmd_lowS hF hhi (Nat.succ_le_of_lt hc8)
@@ -685,12 +670,12 @@ theorem bmd_rej {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M
       rw [r3]; simp +decide only [runBlock, BInstr.run, bmB23, upd, ↓reduceIte]; rw [P.rsp]; rfl
     have hK3 : BmKeep M0 n3.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) :=
       hK.step fun x hx => hrout x (bmd_kin hF hlo hx)
-    have hW : (bmDecision flash pinned policy M0).write = some st.withoutTrial := by
-      rw [bmd_dec_rej hst hA]; simp only [hT, ↓reduceIte]
+    have hW : (bmDecision flash M0 fun _ => none).write = some st.withoutTrial := by
+      rw [bmd_dec_rej hst rfl]; simp only [hT, ↓reduceIte]
     obtain ⟨n4, c4, t4, keep4, hK4, _⟩ := bmw_call X t3 P3.rsp hF hK3 (j := 0xB9A8) (by decide) (by decide)
-      a0_3 a1_3 hW hrec hval bm_at_242 bm_at_246 (by decide) (by decide)
+      a0_3 a1_3 bm_none_sound hW hrec hval bm_at_242 bm_at_246 (by decide) (by decide)
     refine BmEnd.pre ((Steps.single e1).trans (c3.trans c4)) ?_
-    exact bmd_oth X t4 hF hK4 hst hv (P3.rom keep4) hA
+    exact bmd_oth X t4 hF hK4 hst hv (P3.rom keep4)
 
 /-! ## Checking the plan's first slot -/
 
@@ -752,19 +737,13 @@ theorem bmd_main {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
   have hK3 : BmKeep M0 n3.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) := by
     rw [m3]; exact hK2
   have P3 : BmdPre flash M0 F st (reg n3) := P2.keep fun q hq => k3 q (by rintro rfl; exact absurd hq (by decide))
-  revert hres
-  cases hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum (plan st).first)) with
-  | none =>
-    intro hres
-    obtain ⟨n4, e4, t4⟩ := t3.notTaken hc3 0x216 bm_at_214 (by decide)
+  rcases hres with hres | ⟨mf, sv, t, hA, hne, hsvb, hlw, hAcc⟩
+  · obtain ⟨n4, e4, t4⟩ := t3.notTaken hc3 0x216 bm_at_214 (by decide)
       (by rw [a03, hres, bmd_ffz, t3.zero]; rfl)
     refine BmEnd.pre (c1.trans (c2.trans (c3.trans (.single e4)))) ?_
     rw [← t4.mem] at hc3 hK3
-    exact bmd_rej X ⟨t4.pc, rfl, fun _ => rfl⟩ hF hK3 hst hv (P3.keep fun q _ => t4.regs q) hA
-  | some r =>
-    obtain ⟨mf, sv, t⟩ := r
-    rintro ⟨hne, hsvb, hlw, hAcc⟩
-    obtain ⟨n4, e4, t4⟩ := t3.taken hc3 0x27C bm_at_214 (by decide)
+    exact bmd_rej X ⟨t4.pc, rfl, fun _ => rfl⟩ hF hK3 hst hv (P3.keep fun q _ => t4.regs q)
+  · obtain ⟨n4, e4, t4⟩ := t3.taken hc3 0x27C bm_at_214 (by decide)
       (by rw [a03, t3.zero]; exact bne_iff_ne.mpr (bmd_ffnz _ hne))
     refine BmEnd.pre (c1.trans (c2.trans (c3.trans (.single e4)))) ?_
     rw [← m3, ← t4.mem] at hsvb hlw hAcc

@@ -84,12 +84,6 @@ def AcsE (romBase : Word) (romCode : List Nat) (pinned : Bytes) (policy : Policy
     Prop :=
   ∀ M', (∀ x, AcsOutRam x → M' x = M x) → AcsEnvs romBase romCode pinned policy M'
 
-/-- **Completeness**: when the closure returns `None`, `bmcAccept` rejects
-the slot. -/
-def AcsComplete : Prop :=
-  ∀ (X : AcsCtx), X.Ok → ∀ m, AcsEntry X m → ∀ n, Steps m n → n.pc = X.v 0 → reg n sp = X.B + 0x5A70 →
-    n.mem (X.r + 0xC) = 0xFF → bmcAccept X.flash X.pinned X.policy X.level.toNat X.slot = none
-
 theorem acs_keep {m n : Machine} (hsp : reg n sp = reg m sp)
     (sv : ∀ k, k < 13 → reg n (savedReg k) = reg m (savedReg k))
     (r3 : reg n (3 : Fin 32) = reg m (3 : Fin 32)) (r4 : reg n (4 : Fin 32) = reg m (4 : Fin 32)) :
@@ -117,7 +111,7 @@ theorem acs_keep {m n : Machine} (hsp : reg n sp = reg m sp)
 
 /-- **The closure meets `Closure0Contract`** with a stack of 0x5C10 bytes:
 the frame's 0x5A70 and the 0x1A0 below it that `sigstore::verify` writes. -/
-theorem acs_contract (hS : AcetsRcErr) (hFx : AcsFinishBad) (hCo : AcsComplete)
+theorem acs_contract (hS : AcetsRcErr) (hFx : AcsFinishBad)
     {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Word} {romCode : List Nat} {pinned : Bytes}
     {policy : Policy} (log : RomFn romBase romCode 0x40000040 romStack fun _ => True) (hrs : romStack ≤ 0x3A50)
     (hR : R ≤ 0x3A50 - 0x180) (hR4 : R % 4 = 0) (rb : 0x40000000 ≤ romBase.toNat)
@@ -166,17 +160,6 @@ theorem acs_contract (hS : AcetsRcErr) (hFx : AcsFinishBad) (hCo : AcsComplete)
   refine .inl ⟨n', st, pc.trans A.ra.symm, acs_keep (sp'.trans hTop) sv r3 r4, fun x hs hr hb => ?_, ?_⟩
   · rw [hW] at hs
     exact hm x hs.symm hb.symm hr.symm
-  · cases hk : bmcAccept flash pinned policy level.toNat slot with
-    | none =>
-      rcases hres with h | ⟨_, _, _, h, -⟩
-      · exact h
-      · exact nomatch hk.symm.trans h
-    | some a =>
-      obtain ⟨mf, sv, tm⟩ := a
-      rcases hres with h | ⟨mf', sv', tm', h, h12, h128, h120, hacc⟩
-      · exact nomatch (hCo X ok m e n' st pc sp' h).symm.trans hk
-      · rw [hk] at h
-        cases h
-        exact ⟨h12, h128, h120, hacc⟩
+  · exact hres
 
 end C3.RV32.Ac

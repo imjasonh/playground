@@ -649,9 +649,11 @@ theorem bms_entry {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} 
 entry with the stack pointer at `top`, in memory `M0` and flash `flash` that
 meet `BmHyp`, `boot_main` panics or halts, or it jumps to the entry point of
 the image in a slot `slot` that `decideBoot` boots at level `target`, given
-the boot-state records in flash, the eFuse level at entry, and as the check
-the security version of each slot that `acceptTufSlot` accepts at that
-level (`bmcAccept`).
+the boot-state records in flash, the eFuse level at entry, and the device's
+slot check `check`, which gives a slot only the security version that
+`acceptTufSlot` accepts it at, at that level (`bmcAccept`). The device may
+reject a slot that the specification accepts, when a flash read fails or a
+buffer is too small, but never accepts a slot that it rejects.
 
 At the jump, `a0` holds the slot, and the target is at most the eFuse level
 then: `Spec/Level`'s `level` of the `SECURE_VERSION` field, bits 14 to 29 of
@@ -661,17 +663,18 @@ burns the field until the level read back reaches `target`; the eFuse
 controller is assumed only to meet `EfuseCtl` (`BmEnv.epr`). Outside `boot_main`'s stack and the peripheral registers memory is what
 `boot` loads from a memory `Mb` that keeps `M0` outside that stack and holds
 the image's header at `bmAcc top`. `BmHyp` lets the ROM's flash-write routine
-run only with the record that `decideBoot` writes. -/
+run only with the record that `decideBoot` writes with such a check. -/
 theorem bootMain_correct {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy}
     {M0 : Word → BitVec 8} {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
     (X : BmHyp flash pinned policy M0 top R romStack stack0 romBase romCode E)
     (m : Machine) (hm : m.mem = M0) (hpc : m.pc = BM) (hsp : reg m sp = top) :
     Panics m ∨ ∃ m', Steps m m' ∧
-      ∃ (slot : Slot) (target : Nat) (mf : Manifest) (sv t : Nat) (h : ImageHeader) (Mb : Word → BitVec 8),
-        (decideBoot (bmRecs flash).1 (bmLevel M0) fun s =>
-          (bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum s))).map (·.2.1)).outcome =
-          .boot slot target ∧
+      ∃ (check : Slot → Option Nat) (slot : Slot) (target : Nat) (mf : Manifest) (sv t : Nat) (h : ImageHeader)
+        (Mb : Word → BitVec 8),
+        (∀ s l, check s = some l →
+          ∃ mf t, bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum s)) = some (mf, l, t)) ∧
+        (decideBoot (bmRecs flash).1 (bmLevel M0) check).outcome = .boot slot target ∧
         bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t) ∧
         decodeImageHeader (bmcImage flash (BitVec.ofNat 32 (bmSlotNum slot)) mf) mf.image.length = some h ∧
         target ≤ level (Fuses.ofNat (((memLoad32 m'.mem efuseRd).toNat >>> 14) % 65536)) ∧
@@ -686,9 +689,9 @@ theorem bootMain_correct {flash : Nat → BitVec 8} {pinned : Bytes} {policy : P
             (BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum slot)) + mf.image.offset)) x := by
   rcases bms_entry X m hm hpc hsp with ⟨m', hs, hj⟩ | hp
   · unfold BmJump at hj
-    obtain ⟨slot, target, mf, sv, t, h, Mb, hD, hA, hd, hl, rest⟩ := hj
+    obtain ⟨c, slot, target, mf, sv, t, h, Mb, hc, hD, hA, hd, hl, rest⟩ := hj
     rw [bmLevel, BootLevel.btPop_level] at hl
-    exact .inr ⟨m', hs, slot, target, mf, sv, t, h, Mb, hD, hA, hd, hl, rest⟩
+    exact .inr ⟨m', hs, c, slot, target, mf, sv, t, h, Mb, hc, hD, hA, hd, hl, rest⟩
   · exact .inl hp
 
 end C3.RV32.Cur

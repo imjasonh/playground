@@ -22,17 +22,38 @@ open C3 C3.Image C3.RV32.BootMainContract
 level field of the eFuse register. -/
 def bmLevel (M0 : Word → BitVec 8) : Nat := (btPop (memLoad32 M0 efuseRd)).toNat
 
-/-- The check that `boot_main`'s first closure makes of a slot: its
-security version, when `acceptTufSlot` accepts it at the entry level. -/
-def bmCheck (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (M0 : Word → BitVec 8)
-    (sl : Slot) : Option Nat :=
-  (bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum sl))).map (·.2.1)
+/-- A slot check that accepts a slot only at the security version that
+`bmcAccept` gives it at the entry level. -/
+def BmSound (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (M0 : Word → BitVec 8)
+    (c : Slot → Option Nat) : Prop :=
+  ∀ s l, c s = some l →
+    ∃ mf t, bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum s)) = some (mf, l, t)
 
-/-- The decision that `boot_main` carries out: `decideBoot` on the records
-in flash, the entry level, and `bmCheck`. -/
-def bmDecision (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (M0 : Word → BitVec 8) :
-    Decision :=
-  decideBoot (bmRecs flash).1 (bmLevel M0) (bmCheck flash pinned policy M0)
+/-- The slot check that accepts only slot `s`, at security version `v`. -/
+def bmOnly (s : Slot) (v : Nat) : Slot → Option Nat := fun s' => if s' = s then some v else none
+
+theorem bm_only_sound {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
+    {s : Slot} {mf : Manifest} {v t : Nat}
+    (hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum s)) = some (mf, v, t)) :
+    BmSound flash pinned policy M0 (bmOnly s v) := fun s' l h => by
+  unfold bmOnly at h
+  by_cases e : s' = s
+  · subst e
+    rw [if_pos rfl] at h
+    cases h
+    exact ⟨mf, t, hA⟩
+  · rw [if_neg e] at h
+    exact nomatch h
+
+theorem bm_none_sound {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8} :
+    BmSound flash pinned policy M0 fun _ => none := fun _ _ h => nomatch h
+
+theorem bm_ne_other (s : Slot) : s ≠ s.other := by cases s <;> decide
+
+/-- The decision that `boot_main` carries out with the slot check `c`:
+`decideBoot` on the records in flash and the entry level. -/
+def bmDecision (flash : Nat → BitVec 8) (M0 : Word → BitVec 8) (c : Slot → Option Nat) : Decision :=
+  decideBoot (bmRecs flash).1 (bmLevel M0) c
 
 /-! ## The assumptions and the end -/
 
@@ -43,7 +64,8 @@ callees call, and the first closure's contract, whose memory condition `E`
 holds of every memory that keeps `M0` outside `boot_main`'s stack.
 
 The ROM's flash-write routine may only be entered with 32 bytes that decode
-to the record that `bmDecision` writes, at the address of the copy that
+to the record that `bmDecision` writes for some sound slot check, at the
+address of the copy that
 `bootstate::read` didn't return, and the erase routine only with that
 copy's sector. -/
 structure BmHyp (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (M0 : Word → BitVec 8)
@@ -56,7 +78,7 @@ structure BmHyp (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (M
   erase : RomFn romBase romCode 0x40000128 romStack fun n => reg n a0 = bwAddr (bmCopy (bmRecs flash).2) >>> 12
   write : RomFn romBase romCode 0x4000012C romStack fun n =>
     reg n a0 = bwAddr (bmCopy (bmRecs flash).2) ∧ reg n a2 = 32 ∧
-      ∃ w, (bmDecision flash pinned policy M0).write = some w ∧
+      ∃ w, (∃ c, BmSound flash pinned policy M0 c ∧ (bmDecision flash M0 c).write = some w) ∧
         decodeRecord ((List.range 32).map fun i => (n.mem (reg n a1 + BitVec.ofNat 32 i)).toNat) = some w
   suspend : RomFn romBase romCode 0x40000524 romStack fun _ => True
   invalidate : RomFn romBase romCode 0x400004D8 romStack fun _ => True
@@ -68,8 +90,8 @@ structure BmHyp (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (M
 def bmAcc (top : Word) : Word := top - 0x3B0
 
 /-- **The jump into the application.** The machine `m'` is at the entry
-point of slot `slot`, which `bmDecision` boots at security level `target`:
-`bmcAccept` accepts the slot, the image's header `h` decodes, `target` is at
+point of slot `slot`, which `bmDecision` boots at security level `target`
+with a sound slot check `c`: `bmcAccept` accepts the slot, the image's header `h` decodes, `target` is at
 most the eFuse level at the jump, the eFuse level word at the jump is its
 value at entry with some bits set, `a0` holds the slot, and the memory outside the
 `K`-byte stack below `top` and the peripheral registers is what `boot` loads
@@ -77,8 +99,8 @@ from memory `Mb`. `Mb` keeps `M0` outside that stack and holds `h` at
 `bmAcc top`. -/
 def BmJump (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (M0 : Word → BitVec 8) (top : Word)
     (K : Nat) (m' : Machine) : Prop :=
-  ∃ (slot : Slot) (target : Nat) (mf : Manifest) (sv t : Nat) (h : ImageHeader) (Mb : Word → BitVec 8),
-    (bmDecision flash pinned policy M0).outcome = .boot slot target ∧
+  ∃ (c : Slot → Option Nat) (slot : Slot) (target : Nat) (mf : Manifest) (sv t : Nat) (h : ImageHeader)
+    (Mb : Word → BitVec 8), BmSound flash pinned policy M0 c ∧ (bmDecision flash M0 c).outcome = .boot slot target ∧
     bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t) ∧
     decodeImageHeader (bmcImage flash (BitVec.ofNat 32 (bmSlotNum slot)) mf) mf.image.length = some h ∧
     target ≤ bmLevel m'.mem ∧ (∃ X, memLoad32 m'.mem efuseRd = memLoad32 M0 efuseRd ||| X) ∧
@@ -379,8 +401,8 @@ theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
     {n : Machine} {F : Word} (s : St n.mem BM n 0x348 (reg n)) (hsp : reg n sp = F)
     (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
-    {slot : Slot} {target : Nat} {mf : Manifest} {sv t : Nat}
-    (hD : (bmDecision flash pinned policy M0).outcome = .boot slot target)
+    {slot : Slot} {target : Nat} {mf : Manifest} {sv t : Nat} {c : Slot → Option Nat}
+    (hcs : BmSound flash pinned policy M0 c) (hD : (bmDecision flash M0 c).outcome = .boot slot target)
     (hA : bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t))
     (hAcc : AccOk flash (BitVec.ofNat 32 (bmSlotNum slot)) mf n.mem (F + BitVec.ofNat 32 0xB9AD))
     (h9 : reg n 9 &&& 0xFF = BitVec.ofNat 32 (bmSlotNum slot))
@@ -536,8 +558,8 @@ theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
   · have e5 : memLoad32 n5.mem efuseRd = memLoad32 M0 efuseRd :=
       bmt_load_congr fun j hj => hi5 _ (by
         rw [BitVec.toNat_add, BitVec.toNat_ofNat, show efuseRd.toNat = 0x6000883C from rfl]; omega)
-    refine .inl ⟨m', c1.trans (c2.trans (c3.trans (c4.trans (c5.trans c6)))), slot, target, mf, sv, t, h,
-      n5.mem, hD, hA, hd, ?_, ⟨X6, by rw [hX6, e5]⟩, ?_, a06, ?_, ?_, ?_⟩
+    refine .inl ⟨m', c1.trans (c2.trans (c3.trans (c4.trans (c5.trans c6)))), c, slot, target, mf, sv, t, h,
+      n5.mem, hcs, hD, hA, hd, ?_, ⟨X6, by rw [hX6, e5]⟩, ?_, a06, ?_, ?_, ?_⟩
     · have ht : target < 2 ^ 32 := by omega
       rcases lev6 with e | ⟨e, ew⟩
       · exact bmt_ult ht e

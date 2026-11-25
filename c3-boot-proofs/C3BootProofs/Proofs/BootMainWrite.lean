@@ -37,7 +37,7 @@ theorem bmw_call {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
     (s : St n.mem BM n off (reg n)) (hsp : reg n sp = F) (hF : F.toNat + 0xBE80 = top.toNat)
     (hK : BmKeep M0 n.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0))
     (hj : j + 8 ≤ 0xBE80) (hj4 : j % 4 = 0) (ha0 : reg n a0 = bmCopy (bmRecs flash).2) (ha1 : reg n a1 = F + BitVec.ofNat 32 j)
-    (hW : (bmDecision flash pinned policy M0).write = some w)
+    {c : Slot → Option Nat} (hcs : BmSound flash pinned policy M0 c) (hW : (bmDecision flash M0 c).write = some w)
     (hst : bmrSt n.mem (F + BitVec.ofNat 32 j) = w) (hv : BmwValid n.mem (F + BitVec.ofNat 32 j))
     (h1 : fetchRel bootMainCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel bootMainCode (off + 4) = some (.jalr ra ra o, 4))
@@ -89,7 +89,7 @@ theorem bmw_call {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
     (by rw [hst8]; omega)
     X.unlock
     (fun mm hcm hpm hpre hsm => X.erase mm hcm hpm hpre hsm)
-    (fun mm hcm hpm ⟨e0, e2, e3⟩ hsm => X.write mm hcm hpm ⟨e0, e2, w, hW, by
+    (fun mm hcm hpm ⟨e0, e2, e3⟩ hsm => X.write mm hcm hpm ⟨e0, e2, w, ⟨c, hcs, hW⟩, by
       rw [List.map_congr_left (g := fun i => (bwRec n1.mem (F + BitVec.ofNat 32 j) i).toNat)
         fun i hi => by rw [e3 i (List.mem_range.mp hi)]]
       rw [mem1] at ⊢
@@ -127,7 +127,7 @@ set_option maxRecDepth 20000 in
 at `F + k`, the `Buffers` at `F + 0x50`, slot `sl`, and the entry level: it
 returns to `off + 8` with the registers in `romKeep` kept and memory
 outside its stack, the result, and the `Buffers` as it was, and the result
-says what `bmcAccept` says, or it panics. -/
+is `None` or what `bmcAccept` accepts, or it panics. -/
 theorem bmc_call {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {M0 : Word → BitVec 8}
     {top : Word} {R romStack stack0 : Nat} {romBase : Word} {romCode : List Nat}
     {E : (Word → BitVec 8) → Prop}
@@ -146,13 +146,12 @@ theorem bmc_call {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
       BmKeep M0 n'.mem (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) ∧
       (∀ x, Sep (F - BitVec.ofNat 32 stack0) stack0 x 1 → Sep (F + BitVec.ofNat 32 k) 0x12C x 1 →
         Sep (F + BitVec.ofNat 32 0x50) 0xB954 x 1 → n'.mem x = n.mem x) ∧
-      match bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum sl)) with
-      | none => n'.mem (F + BitVec.ofNat 32 k + 0xC) = 0xFF
-      | some (mf, sv, _) =>
-        n'.mem (F + BitVec.ofNat 32 k + 0xC) ≠ 0xFF ∧ n'.mem (F + BitVec.ofNat 32 k + 0x128) = BitVec.ofNat 8 sv ∧
+      (n'.mem (F + BitVec.ofNat 32 k + 0xC) = 0xFF ∨
+        ∃ mf sv t, bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum sl)) = some (mf, sv, t) ∧
+          n'.mem (F + BitVec.ofNat 32 k + 0xC) ≠ 0xFF ∧ n'.mem (F + BitVec.ofNat 32 k + 0x128) = BitVec.ofNat 8 sv ∧
           memLoad32 n'.mem (F + BitVec.ofNat 32 k + 0x120) =
             BitVec.ofNat 32 (bmcBase (BitVec.ofNat 32 (bmSlotNum sl)) + mf.image.offset) ∧
-          AccOk flash (BitVec.ofNat 32 (bmSlotNum sl)) mf n'.mem (F + BitVec.ofNat 32 k)) ∨
+          AccOk flash (BitVec.ofNat 32 (bmSlotNum sl)) mf n'.mem (F + BitVec.ofNat 32 k))) ∨
     Panics n := by
   have C := X.env
   have hlo := C.hlo; have hhi := C.hhi
