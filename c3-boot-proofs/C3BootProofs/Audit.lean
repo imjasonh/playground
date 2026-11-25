@@ -9284,6 +9284,12 @@ end C3
 /-- info: 'C3.RV32.Ac.ac_exit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ac_exit
 
+/-- info: 'C3.RV32.Ac.AcInv.wide' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcInv.wide
+
+/-- info: 'C3.RV32.Ac.ac_exit_wide' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_exit_wide
+
 /-- info: 'C3.decodeImageHeader_take' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.decodeImageHeader_take
 

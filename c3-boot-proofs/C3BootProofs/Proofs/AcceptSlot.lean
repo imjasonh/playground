@@ -29,7 +29,11 @@ target is `acceptTufSlot` in `Spec/Accept.lean`.
 * The prologue opens 0x100 bytes, saves `ra` and `s0..s11` at
   `sp + 0xFC` down to `sp + 0xCC`, and opens 0x1F20 more: 0x2020 in all.
   `sigstoreVerify` needs 0x3A50 bytes below the frame, the most of any
-  callee, so the closure's stack is 0x5A70 bytes.
+  callee, so the frame `Fr B 0x5A70` is 0x5A70 bytes. `sigstoreVerify`
+  also writes 0x1A0 bytes below `B`, so the closure's real stack
+  requirement is 0x5C10 bytes below the frame's top `B + 0x5A70`, from
+  `B + 0xFFFFFE60` (`AcInvW`). A caller's stack bound, such as the `stack`
+  parameter of `boot_main`'s `Closure0Contract`, must be at least 0x5C10.
 * Every failure reaches 0x16A, which logs `slot %x not bootable` through
   the ROM's `printf` (0x40000040), writes 0xFF at `result + 0xC` (`None`),
   and leaves through the epilogue at 0x184.
