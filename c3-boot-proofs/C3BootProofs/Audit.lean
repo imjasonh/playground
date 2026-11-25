@@ -244,6 +244,7 @@ import C3BootProofs.Proofs.AcceptStages
 import C3BootProofs.Proofs.AcceptExtractTail
 import C3BootProofs.Proofs.AcceptExtractErr
 import C3BootProofs.Proofs.AcceptExtractHeadLib
+import C3BootProofs.Proofs.AcceptExtractHead
 
 /-!
 # Audit
@@ -9233,3 +9234,36 @@ end C3
 
 /-- info: 'C3.RV32.Ac.ace_stage' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ace_stage
+
+/-- info: 'C3.RV32.Ac.ace_d38' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_d38
+
+/-- info: 'C3.RV32.Ac.ace_d04' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_d04
+
+/-- info: 'C3.RV32.Ac.ace_zl' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_zl
+
+/-- info: 'C3.RV32.Ac.ace_cec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_cec
+
+/-- info: 'C3.RV32.Ac.ace_c6e' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_c6e
+
+/-- info: 'C3.RV32.Ac.ace_hm0' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_hm0
+
+/-- info: 'C3.RV32.Ac.ace_c32' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_c32
+
+/-- info: 'C3.RV32.Ac.ace_c24' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_c24
+
+/-- info: 'C3.RV32.Ac.ace_c12' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_c12
+
+/-- info: 'C3.RV32.Ac.ace_head' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ace_head
+
+/-- info: 'C3.RV32.Ac.ac_extract_loops' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_extract_loops

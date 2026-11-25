@@ -8,7 +8,7 @@ import C3BootProofs.Proofs.TufMetaCalls
 The head, from 0xC12 to 0xD8C, writes only a few ranges of the frame and
 the frames of its callees below `sp`. `AceHM` says what memory holds between
 0xC54 and 0xD8C, and `AceHR` names the registers that the head keeps.
-`ace_fail1A6A` and `ace_fail1A66` are its two ways into the exit at 0x7D6.
+`ace_f1A6A` and `ace_f1A66` are its two ways into the exit at 0x7D6.
 -/
 
 namespace C3.RV32.Ac

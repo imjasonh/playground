@@ -1,6 +1,7 @@
 import C3BootProofs.Proofs.AcceptExtractHeadLib
 import C3BootProofs.Proofs.TufParseMetadataHead
 import C3BootProofs.Models.TufLinkMeta
+import C3BootProofs.Proofs.AcceptExtractTail
 
 /-!
 # The extract stage's head, from 0xC12 to 0xD8C
@@ -8,7 +9,8 @@ import C3BootProofs.Models.TufLinkMeta
 The head takes the earlier expiry, parses the document, checks its
 `mediaType`, zeroes the Fulcio array at `sp + 0x1ED0`, and opens a cursor
 over `certificateAuthorities` at `sp + 0x1310`. Each segment below is
-proved from its end back to its start.
+proved from its end back to its start, and `ace_head` proves
+`AceHeadStage`.
 -/
 
 namespace C3.RV32.Ac
@@ -652,5 +654,222 @@ theorem ace_c6e {X : AceCtx} (O : X.Ok) {M Mx : Word → BitVec 8} {f : Fin 32 �
     · refine ace_cec (p0 := X.D + BitVec.ofNat 32 a) (w30 := BitVec.ofNat 32 l) O H4 (by hr) ⟨hpj, ?_⟩ (by rsimp) h30 ⟨by omega, by rw [hl32, hpD]; exact hden⟩
       rw [hf]; exact hs.trans (by rw [heq])
     · exfalso; rsimp at eb; rw [hr4] at eb; simp only [heq, ↓reduceIte] at eb; exact absurd eb (by decide)
+
+
+
+set_option maxHeartbeats 4000000 in
+/-- After the stores at 0xC50 and 0xC54: the memory the head keeps from 0xC58. -/
+theorem ace_hm0 {X : AceCtx} (O : X.Ok) {M : Word → BitVec 8}
+    (hM : ∀ x, Sep x 1 (X.B + BitVec.ofNat 32 0x3A70) 8 → M x = X.K.mem x)
+    (hexp : aceU64 M (acSlot X.B 0x20) = min (aceU64 X.K.mem (acSlot X.B 0x20)) (aceU64 X.K.mem (acSlot X.B 0x28))) :
+    AceHM X (memStore32 (memStore32 M (acSlot X.B 0x1FDC) (memLoad32 M (acSlot X.B 0x30))) (acSlot X.B 0x1FE0) 0x5040) := by
+  have F := O.lay.fr
+  have hh := F.hi
+  have hS : ∀ x, x.toNat < X.B.toNat + 0x5A2C ∨ X.B.toNat + 0x5A34 ≤ x.toNat →
+      memStore32 (memStore32 M (acSlot X.B 0x1FDC) (memLoad32 M (acSlot X.B 0x30))) (acSlot X.B 0x1FE0) 0x5040 x = M x := by
+    intro x h
+    have h1 : Sep x 1 (acSlot X.B 0x1FE0) 4 := ace_sepX F (by decide) (by rcases h with h | h; exact .inl (by omega); exact .inr (by omega))
+    have h2 : Sep x 1 (acSlot X.B 0x1FDC) 4 := ace_sepX F (by decide) (by rcases h with h | h; exact .inl (by omega); exact .inr (by omega))
+    rw [memStore32_get_sep h1.symm, memStore32_get_sep h2.symm]
+  have hs1 : Sep (acSlot X.B 0x1FE0) 4 (acSlot X.B 0x1FDC) 4 :=
+    (sep_of_le (by rw [ace_slotN F (by decide), ace_slotN F (by decide)]; omega)
+      (by rw [ace_slotN F (by decide)]; omega)).symm
+  refine ⟨fun x hx => (hS x hx.2.2).trans (hM x (hx.s20 F (by decide) (by decide))), ?_, ?_, ?_⟩
+  · rw [← hexp]
+    unfold aceU64
+    rw [show acSlot X.B 0x20 + 4 = acSlot X.B 0x24 by unfold acSlot; rw [BitVec.add_assoc]; rfl]
+    rw [ace_load_eq fun j hj => hS _ (.inl (by rw [ace_slotAdd F (by omega)]; omega)),
+      ace_load_eq fun j hj => hS _ (.inl (by rw [ace_slotAdd F (by omega)]; omega))]
+  · rw [memLoad32_store32_sep hs1, memLoad32_store32_same, ← O.pre.keys]
+    exact ace_load_eq fun j hj => hM _ (ace_sepX F (by decide) (.inr (by rw [ace_slotAdd F (by omega)]; omega)))
+  · exact memLoad32_store32_same _ _ _
+
+set_option maxHeartbeats 4000000 in
+/-- From 0xC32, with the earlier expiry stored: the length check, `keys`'s
+slice, and `parse`. -/
+theorem ace_c32 {X : AceCtx} (O : X.Ok) {M : Word → BitVec 8} {f : Fin 32 → Word}
+    (hM : ∀ x, Sep x 1 (X.B + BitVec.ofNat 32 0x3A70) 8 → M x = X.K.mem x)
+    (hexp : aceU64 M (acSlot X.B 0x20) = min (aceU64 X.K.mem (acSlot X.B 0x20)) (aceU64 X.K.mem (acSlot X.B 0x28)))
+    (R : AceHR X f) (h18 : f 18 = X.D) (h22 : f 22 = acSlot X.B 0x1310)
+    (h24 : f 24 = BitVec.ofNat 32 X.json.length) :
+    WP bootMainClosure0Code AC (aceHQ X (aceHP X)) M 0xC32 f := by
+  have F := O.lay.fr
+  have hjl := O.pre.docHi
+  have hD0 := O.pre.docLo
+  have hbh := O.lay.hi
+  have hh := F.hi
+  unfold acBufLen at hbh
+  have hU : ∀ x, AceU X.B x → M x = X.K.mem x := fun x hx => hM x (hx.s20 F (by decide) (by decide))
+  refine WP.aluImm ac_at_c32 ?_; wn
+  refine WP.aluImm ac_at_c34 ?_; wn
+  refine WP.branch ac_at_c36 (fun eb => ?_) (fun eb => ?_) <;> wn
+  · have hl : X.json.length ≤ 0x2800 := by
+      rsimp at eb; rw [R.rz, h24] at eb
+      have e : aluEval AluOp.sll (aluEval AluOp.add 0 5) 11 = (0x2800 : Word) := by decide
+      rw [e] at eb
+      simp only [branchTaken, BitVec.ult, Bool.not_eq_true', decide_eq_false_iff_not, BitVec.toNat_ofNat] at eb
+      omega
+    refine WP.lui ac_at_c40 ?_; wn
+    refine WP.aluImm ac_at_c42 ?_; wn
+    refine WP.lui ac_at_c46 ?_; wn
+    refine WP.aluImm ac_at_c48 ?_; wn
+    refine WP.alu ac_at_c4c ?_; wn
+    have e30 : X.B + 0x3A50 + 0x30 = acSlot X.B 0x30 := by simp only [acSlot]; bv_omega
+    have eA : (8192 : Word) + 4294966704 + (X.B + 0x3A50) + 556 = acSlot X.B 0x1FDC := by
+      simp only [acSlot]; bv_omega
+    have eB : (8192 : Word) + 4294966704 + (X.B + 0x3A50) + 560 = acSlot X.B 0x1FE0 := by
+      simp only [acSlot]; bv_omega
+    refine WP.lw ac_at_c4e (by rsimp; rw [R.rsp, e30]; exact ace_al4 F (by decide) (by decide)) ?_; wn
+    refine WP.sw ac_at_c50 (by rsimp; simp only [ev_add, R.rsp]; rw [eA]; exact ace_al4 F (by decide) (by decide))
+      (by rsimp; simp only [ev_add, R.rsp]; rw [eA]; exact ace_cs F (by decide)) ?_; wn
+    refine WP.sw ac_at_c54 (by rsimp; simp only [ev_add, R.rsp]; rw [eB]; exact ace_al4 F (by decide) (by decide))
+      (by rsimp; simp only [ev_add, R.rsp]; rw [eB]; exact ace_cs F (by decide)) ?_; wn
+    simp only [ev_add, R.rsp]
+    rw [eA, eB, e30, show (20480 : Word) + 64 = 0x5040 from rfl]
+    have H := ace_hm0 O hM hexp
+    generalize memStore32 _ _ _ = M' at H ⊢
+    refine WP.lui ac_at_c58 ?_; wn
+    refine WP.aluImm ac_at_c5a ?_; wn
+    refine WP.alu ac_at_c5e ?_; wn
+    refine WP.alu ac_at_c60 ?_; wn
+    refine WP.alu ac_at_c62 ?_; wn
+    refine WP.aluImm ac_at_c64 ?_; wn
+    have E := ace_env O H.mem
+    refine WP.callParse (tb := BitVec.ofNat 32 jsonParseAddress) (out := acSlot X.B 0x1320)
+      (s := X.B + BitVec.ofNat 32 0x38BC) (p := X.D) (n := X.json.length) (c := false)
+      ac_at_c66 ac_at_c6a (by decide) (by decide) (by decide) E.parse
+      (by rsimp; simp only [ev_add, R.rsp, acSlot]; bv_omega)
+      (by rsimp; simp only [ev_add]; rw [h18]; exact BitVec.zero_add _)
+      (by rsimp; simp only [ev_add]; rw [h24]; exact BitVec.zero_add _)
+      (by rsimp <;> rfl)
+      (by rsimp; rw [R.rsp]; bv_omega)
+      (ace_al4 F (by decide) (by decide)) (ace_al4 (c := 0x3A50 + 0x1320) F (by decide) (by decide))
+      (by rw [F.at _ (by decide)]; omega) (by omega) (by omega) (by omega)
+      (tpm_parseSep (by rw [F.at _ (by decide)]; omega) (O.lay.ro.sub (by decide)))
+      (ace_bufSep O (by decide) (Nat.le_refl _) (by omega))
+      (show Sep (X.B + BitVec.ofNat 32 (0x3A50 + 0x1320)) 8 _ _ from ace_sepB' F (.inr (by decide)) (by decide) (by decide))
+      (show Sep (X.B + BitVec.ofNat 32 (0x3A50 + 0x1320)) 8 _ _ from ace_hs F (by decide) (by decide) (by decide))
+      (ace_cs F (by decide))
+      (show Sep (X.B + BitVec.ofNat 32 (0x3A50 + 0x1320)) 8 _ _ from ace_cs F (by decide)) fun m2 hR => ?_
+    rw [ace_doc O H.mem] at hR
+    generalize m2.mem = M2 at hR
+    obtain ⟨M1, hO1, hF⟩ := hR
+    have hM2 : ∀ x, AceL X.B x → M2 x = M' x := fun x hx =>
+      (hF.out x (hx.s1310 F (by decide) (by decide))).trans (hO1 x (hx.frame F (by decide) (by decide)))
+    exact ace_c6e O (H.mono F hM2) (by hr) (by rsimp; exact h22) hF
+  · refine WP.aluImm ac_at_c3a ?_; wn
+    refine WP.jal ac_at_c3c (by decide) ?_; wn
+    exact ace_f1A6A O hU (by hr) (by rsimp)
+
+set_option maxHeartbeats 4000000 in
+/-- From 0xC24, with the words to compare in `a0` and `a1`: the earlier
+expiry. -/
+theorem ace_c24 {X : AceCtx} (O : X.Ok) {f : Fin 32 → Word} {x y : Word}
+    (hxy : x.toNat < y.toNat ↔ aceU64 X.K.mem (acSlot X.B 0x20) < aceU64 X.K.mem (acSlot X.B 0x28))
+    (R : AceHR X f) (h18 : f 18 = X.D) (h22 : f 22 = acSlot X.B 0x1310)
+    (h24 : f 24 = BitVec.ofNat 32 X.json.length) (ha0 : f 10 = x) (ha1 : f 11 = y) :
+    WP bootMainClosure0Code AC (aceHQ X (aceHP X)) X.K.mem 0xC24 f := by
+  have F := O.lay.fr
+  have hh := F.hi
+  refine WP.alu ac_at_c24 ?_; wn
+  refine WP.branch ac_at_c28 (fun eb => ?_) (fun eb => ?_) <;> wn
+  · rsimp at eb
+    rw [ha0, ha1] at eb
+    rcases Nat.lt_or_ge x.toNat y.toNat with h | h
+    · refine ace_c32 O (fun _ _ => rfl) (Nat.min_eq_left (Nat.le_of_lt (hxy.mp h))).symm (by hr)
+        (by rsimp; exact h18) (by rsimp; exact h22) (by rsimp; exact h24)
+    · rw [show aluEval .sltu x y = 0 by unfold aluEval BitVec.ult; rw [decide_eq_false (Nat.not_lt.mpr h)]; rfl] at eb
+      exact absurd eb (by decide)
+  · rsimp at eb
+    rw [ha0, ha1] at eb
+    rcases Nat.lt_or_ge x.toNat y.toNat with h | h
+    · rw [show aluEval .sltu x y = 1 by unfold aluEval BitVec.ult; rw [decide_eq_true h]; rfl] at eb
+      exact absurd eb (by decide)
+    have hle : aceU64 X.K.mem (acSlot X.B 0x28) ≤ aceU64 X.K.mem (acSlot X.B 0x20) :=
+      Nat.not_lt.mp fun h' => Nat.not_lt.mpr h (hxy.mpr h')
+    have e20 : X.B + 0x3A50 + 0x20 = acSlot X.B 0x20 := by simp only [acSlot]; bv_omega
+    have e24 : X.B + 0x3A50 + 0x24 = acSlot X.B 0x24 := by simp only [acSlot]; bv_omega
+    have e28 : X.B + 0x3A50 + 0x28 = acSlot X.B 0x28 := by simp only [acSlot]; bv_omega
+    have e2C : X.B + 0x3A50 + 0x2C = acSlot X.B 0x2C := by simp only [acSlot]; bv_omega
+    refine WP.lw ac_at_c2a (by rsimp; rw [R.rsp, e2C]; exact ace_al4 F (by decide) (by decide)) ?_; wn
+    refine WP.sw ac_at_c2c (by rsimp; rw [R.rsp, e24]; exact ace_al4 F (by decide) (by decide))
+      (by rsimp; rw [R.rsp, e24]; exact ace_cs F (by decide)) ?_; wn
+    refine WP.lw ac_at_c2e (by rsimp; rw [R.rsp, e28]; exact ace_al4 F (by decide) (by decide)) ?_; wn
+    refine WP.sw ac_at_c30 (by rsimp; rw [R.rsp, e20]; exact ace_al4 F (by decide) (by decide))
+      (by rsimp; rw [R.rsp, e20]; exact ace_cs F (by decide)) ?_; wn
+    rw [R.rsp, e20, e24, e28, e2C]
+    have s2024 : Sep (acSlot X.B 0x20) 4 (acSlot X.B 0x24) 4 :=
+      show Sep (X.B + BitVec.ofNat 32 (0x3A50 + 0x20)) 4 (X.B + BitVec.ofNat 32 (0x3A50 + 0x24)) 4 from
+        ace_sepB' F (.inl (by decide)) (by decide) (by decide)
+    have s2428 : Sep (acSlot X.B 0x24) 4 (acSlot X.B 0x28) 4 :=
+      show Sep (X.B + BitVec.ofNat 32 (0x3A50 + 0x24)) 4 (X.B + BitVec.ofNat 32 (0x3A50 + 0x28)) 4 from
+        ace_sepB' F (.inl (by decide)) (by decide) (by decide)
+    refine ace_c32 O (fun z hz => ?_) ?_ (by hr) (by rsimp; exact h18) (by rsimp; exact h22) (by rsimp; exact h24)
+    · have h' := ace_ofSep hz
+      rw [F.at _ (by decide)] at h'
+      rw [memStore32_get_sep (ace_sepX F (c := 0x3A50 + 0x20) (n := 4) (by decide)
+          (by rcases h' with h' | h'; exact .inl (by omega); exact .inr (by omega))).symm,
+        memStore32_get_sep (ace_sepX F (c := 0x3A50 + 0x24) (n := 4) (by decide)
+          (by rcases h' with h' | h'; exact .inl (by omega); exact .inr (by omega))).symm]
+    · rw [Nat.min_eq_right hle]
+      unfold aceU64
+      rw [show acSlot X.B 0x20 + 4 = acSlot X.B 0x24 by unfold acSlot; rw [BitVec.add_assoc]; rfl,
+        show acSlot X.B 0x28 + 4 = acSlot X.B 0x2C by unfold acSlot; rw [BitVec.add_assoc]; rfl,
+        memLoad32_store32_same, memLoad32_store32_sep s2024, memLoad32_store32_same,
+        memLoad32_store32_sep s2428]
+
+set_option maxHeartbeats 4000000 in
+/-- From 0xC12 to 0xD8C. -/
+theorem ace_c12 {X : AceCtx} (O : X.Ok) :
+    WP bootMainClosure0Code AC (aceHQ X (aceHP X)) X.K.mem 0xC12 (reg X.K) := by
+  have F := O.lay.fr
+  have R : AceHR X (reg X.K) := ⟨rfl, O.inv.sp, O.inv.gp, O.inv.tp, O.pre.r19, rfl, rfl, rfl⟩
+  have e20 : X.B + 0x3A50 + 0x20 = acSlot X.B 0x20 := by simp only [acSlot]; bv_omega
+  have e24 : X.B + 0x3A50 + 0x24 = acSlot X.B 0x24 := by simp only [acSlot]; bv_omega
+  have e28 : X.B + 0x3A50 + 0x28 = acSlot X.B 0x28 := by simp only [acSlot]; bv_omega
+  have e2C : X.B + 0x3A50 + 0x2C = acSlot X.B 0x2C := by simp only [acSlot]; bv_omega
+  have u20 : aceU64 X.K.mem (acSlot X.B 0x20) =
+      (memLoad32 X.K.mem (acSlot X.B 0x20)).toNat + 2 ^ 32 * (memLoad32 X.K.mem (acSlot X.B 0x24)).toNat := by
+    unfold aceU64; rw [show acSlot X.B 0x20 + 4 = acSlot X.B 0x24 by unfold acSlot; rw [BitVec.add_assoc]; rfl]
+  have u28 : aceU64 X.K.mem (acSlot X.B 0x28) =
+      (memLoad32 X.K.mem (acSlot X.B 0x28)).toNat + 2 ^ 32 * (memLoad32 X.K.mem (acSlot X.B 0x2C)).toNat := by
+    unfold aceU64; rw [show acSlot X.B 0x28 + 4 = acSlot X.B 0x2C by unfold acSlot; rw [BitVec.add_assoc]; rfl]
+  have b20 := (memLoad32 X.K.mem (acSlot X.B 0x20)).isLt
+  have b28 := (memLoad32 X.K.mem (acSlot X.B 0x28)).isLt
+  refine WP.lw ac_at_c12 (by rw [R.rsp, e24]; exact ace_al4 F (by decide) (by decide)) ?_; wn
+  refine WP.lw ac_at_c14 (by rsimp; rw [R.rsp, e2C]; exact ace_al4 F (by decide) (by decide)) ?_; wn
+  refine WP.branch ac_at_c16 (fun eb => ?_) (fun eb => ?_) <;> wn
+  · rsimp at eb
+    rw [R.rsp, e24, e2C] at eb
+    have he := congrArg BitVec.toNat (eq_of_beq eb)
+    refine WP.lw ac_at_c20 (by rsimp; rw [R.rsp, e20]; exact ace_al4 F (by decide) (by decide)) ?_; wn
+    refine WP.lw ac_at_c22 (by rsimp; rw [R.rsp, e28]; exact ace_al4 F (by decide) (by decide)) ?_; wn
+    refine ace_c24 O ?_ (by hr) (by rsimp; exact O.pre.r18) (by rsimp; exact O.pre.r22)
+      (by rsimp; exact O.pre.r24) (by rsimp; rw [R.rsp, e20]) (by rsimp; rw [R.rsp, e28])
+    rw [u20, u28, he]
+    exact ⟨fun h => by omega, fun h => by omega⟩
+  · rsimp at eb
+    rw [R.rsp, e24, e2C] at eb
+    have hne : (memLoad32 X.K.mem (acSlot X.B 0x24)).toNat ≠ (memLoad32 X.K.mem (acSlot X.B 0x2C)).toNat :=
+      fun e => Bool.false_ne_true (eb.symm.trans (decide_eq_true (BitVec.eq_of_toNat_eq e)))
+    refine WP.lw ac_at_c1a (by rsimp; rw [R.rsp, e24]; exact ace_al4 F (by decide) (by decide)) ?_; wn
+    refine WP.lw ac_at_c1c (by rsimp; rw [R.rsp, e2C]; exact ace_al4 F (by decide) (by decide)) ?_; wn
+    refine WP.jal ac_at_c1e (by decide) ?_; wn
+    refine ace_c24 O ?_ (by hr) (by rsimp; exact O.pre.r18) (by rsimp; exact O.pre.r22)
+      (by rsimp; exact O.pre.r24) (by rsimp; rw [R.rsp, e24]) (by rsimp; rw [R.rsp, e2C])
+    rw [u20, u28]
+    rcases Nat.lt_or_ge (memLoad32 X.K.mem (acSlot X.B 0x24)).toNat (memLoad32 X.K.mem (acSlot X.B 0x2C)).toNat with h | h
+    · exact ⟨fun _ => by omega, fun _ => h⟩
+    · have h' := Nat.lt_of_le_of_ne h (Ne.symm hne)
+      exact ⟨fun h2 => absurd h2 (Nat.not_lt.mpr h), fun h2 => absurd h2 (by omega)⟩
+
+/-- The head, from 0xC12 to 0xD8C. -/
+theorem ace_head : AceHeadStage := fun _ O => ace_stage O (ace_c12 O)
+
+/-- **The extract stage**, from the sub-stages of its loops at 0xD8C, 0xEBA,
+0x123A, and 0x1434. -/
+theorem ac_extract_loops (hC : AceCaStage) (hT : AceTlogStage) (hS : AceTsaStage) (hD : AceDupStage) :
+    AcExtractStage :=
+  ac_extract ace_head hC hT hS hD ace_tail
 
 end C3.RV32.Ac
