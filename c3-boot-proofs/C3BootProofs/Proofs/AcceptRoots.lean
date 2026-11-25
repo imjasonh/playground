@@ -1994,6 +1994,267 @@ theorem aco_C (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n0)
   · rw [D6 hq1]; exact hmsg
   · rw [D6 hq2]; exact hsj
 
+theorem aco_foldStep {i : Nat} {prev r : TufRoot} {d : Bytes} (hi : i < docs.length) (hd : docs[i] = d)
+    (hpf : (docs.take i).foldlM acoStep first = some prev) (hp : parseTufRoot d = some r)
+    (hv : r.version = prev.version + 1)
+    (h1 : thresholdMet r.md prev.md.signed (ascii!"root") = some true)
+    (h2 : thresholdMet r.md r.md.signed (ascii!"root") = some true) :
+    (docs.take (i + 1)).foldlM acoStep first = some r := by
+  rw [List.take_succ_eq_append_getElem hi, List.foldlM_append, hpf, hd]
+  have e : acoStep prev d = some r := by
+    unfold acoStep
+    rw [hp]
+    show (require (r.version == prev.version + 1) >>= _) = _
+    rw [hv, show (prev.version + 1 == prev.version + 1) = true from beq_iff_eq.mpr rfl]
+    show (thresholdMet r.md prev.md.signed (ascii!"root") >>= _) = _
+    rw [h1]
+    show (thresholdMet r.md r.md.signed (ascii!"root") >>= _) = _
+    rw [h2]
+    rfl
+  show (acoStep prev d >>= fun s' => List.foldlM acoStep s' []) = some r
+  rw [e]; rfl
+
+theorem aco_stC {M M' : Word → BitVec 8} {s6 : Word} {prev : TufRoot} (N : AcoNum B Bf) (h : AcoState B M s6 prev)
+    (hm : ∀ x, Sep x 1 (acSlot B 0x1ED0) 0x18 → M' x = M x) : AcoState B M' s6 prev := by
+  have := N.b0; have := N.b1
+  have L : ∀ k, k + 4 ≤ 0x1ED0 → memLoad32 M' (acSlot B k) = memLoad32 M (acSlot B k) := fun k hk =>
+    memLoad32_congr fun j hj => hm _ (by aco_num)
+  have := N.b0; have := N.b1
+  refine ⟨?_, ?_, h.b, ?_, h.src⟩
+  · rw [L _ (by decide), L _ (by decide)]; exact h.ver
+  · rw [L _ (by decide)]; exact h.w
+  · rw [L _ (by decide)]
+    refine aco_rkC (fun o ho => ?_) h.keys
+    simp only [acoTB]
+    split; · rfl
+    split; · rfl
+    exact hm _ (by rw [aco_so B _ _ (by omega)]; aco_num)
+
+
+/-- `s0 = [sp + 0x1870]`, the parsed root's `signed` pointer, at 0x5BC. -/
+def acoB1 : List BInstr := [.lui a0 0x1000, .aluImm .add a0 a0 0x310, .alu .add a0 a0 sp, .lw (8 : Fin 32) a0 0x560]
+
+/-- `a0 = [sp + 0x1874]`, the byte of `parse_root`'s error, at 0x7B6. -/
+def acoB2 : List BInstr := [.lui a0 0x1000, .aluImm .add a0 a0 0x310, .alu .add a0 a0 sp, .lbu a0 a0 0x564]
+
+/-- The parsed root's spans and version to `sp + 0x1ED0`, and the trusted
+root's version check, at 0x5CC. -/
+def acoB3 : List BInstr := [.lui a0 0x1000, .aluImm .add a0 a0 0x310, .alu .add a2 sp a0, .aluImm .add a3 a2 0x500,
+  .lw (9 : Fin 32) a3 0x64, .lw a0 a3 0x68, .lw a1 a3 0x6C, .lw a4 a3 0x70, .lw a5 a3 0x74, .lw a2 sp 0x24,
+  .lw a3 sp 0x20, .alu .and a2 a2 a3, .lui a3 0x2000, .aluImm .add a3 a3 0xFFFFFDB0, .alu .add a3 a3 sp,
+  .sw a3 (8 : Fin 32) 0x120, .sw a3 (9 : Fin 32) 0x124, .sw a3 a0 0x128, .aluImm .add a0 a3 0x100, .sw a0 a1 0x2C,
+  .sw a0 a4 0x30, .sw a0 a5 0x34, .aluImm .add a0 x0 0x22, .aluImm .add a1 x0 0xFFFFFFFF]
+
+/-- The next version check, at 0x612. -/
+def acoB4 : List BInstr := [.alu .add (26 : Fin 32) x0 a4, .alu .add (19 : Fin 32) x0 a5, .lw a1 sp 0x24,
+  .aluImm .add a1 a1 0x1, .aluImm .sltu a2 a1 0x1, .lw a3 sp 0x20, .alu .add a2 a2 a3, .alu .xor a1 a1 a4,
+  .alu .xor a2 a2 a5, .alu .or a1 a1 a2]
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 16000000 in
+/-- **After `parse_root`**, at 0x5BC: reject `parse_root`'s error, a trusted
+version at the maximum, or a version that isn't the next one; otherwise
+go on to the signatures at 0x62C. -/
+theorem aco_B2 (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n0) {n : Machine} {i : Nat}
+    {prev : TufRoot} {d : Bytes} {Mp : Word → BitVec 8}
+    (s : St n.mem AC n 0x5BC (reg n)) (K : AcoKeep B Bf n0.mem n.mem) (KR : AcoKR n0 n)
+    (hi : i < docs.length) (hc : memLoad32 n.mem (acSlot B 0x2C) = BitVec.ofNat 32 i)
+    (hS : AcoState B n.mem (reg n (22 : Fin 32)) prev) (hpf : (docs.take i).foldlM acoStep first = some prev)
+    (hdi : docs[i] = d) (hd : memBytes n.mem (Bf + 0x4000) d.length = d) (hdl : d.length ≤ 0x2800)
+    (hP : PrRes Mp n.mem (B + 0x37FC) (acSlot B 0x1870) (prRes (Bf + 0x4000) (prModel d)))
+    (IH : ∀ n', St n'.mem AC n' 0x584 (reg n') → AcoInv B Bf docs first n0 n' (i + 1) →
+      AcoG B Bf g t r v M0 docs first n0 n') :
+    AcoG B Bf g t r v M0 docs first n0 n := by
+  have N := C.N
+  have := N.b0; have := N.b1; have := N.b2; have := N.f0; have := N.bb
+  have hz := s.zero
+  have rsp0 : reg n sp = acSlot B 0 := C.sp KR.a
+  have CC := C.code K
+  obtain ⟨n1, c1, u1⟩ := s.block (off' := 0x5C8) acoB1 CC (by decide) (by
+    simp only [BlockOk, BInstr.ok, BInstr.run, acoB1]; simp +decide only [upd, ↓reduceIte, true_and, and_true]
+    rw [rsp0]; aco_simp; aco_num)
+  have M1 : n1.mem = n.mem := u1.mem
+  have s0v : reg n1 (8 : Fin 32) = memLoad32 n.mem (acSlot B 0x1870) := by
+    rw [u1.regs]; simp +decide only [runBlock, BInstr.run, acoB1, upd, ↓reduceIte]; rw [rsp0]; aco_simp
+  have r1 : ∀ q : Fin 32, q.val ≠ 10 → q.val ≠ 8 → reg n1 q = reg n q := fun q h0 h1 => by
+    rw [u1.regs, runBlock_reg _ _ _ q hz (by simp only [acoB1]; revert h0 h1; revert q; decide)]
+  have t1 : St n1.mem AC n1 0x5C8 (reg n1) := ⟨u1.pc, rfl, fun _ => rfl⟩
+  have C1 : CodeIn n1.mem AC bootMainClosure0Code := by rw [M1]; exact CC
+  have K1 : AcoKeep B Bf n0.mem n1.mem := by rw [M1]; exact K
+  have hspec := prModel_spec d
+  rcases hpm : prModel d with e | ⟨gp, gl, sp', sl, ver⟩ <;> rw [hpm] at hP hspec <;>
+    simp only [prRes, Except.map, PrRes, aco_slotAdd, BitVec.reduceToNat, Nat.reduceAdd] at hP
+  · obtain ⟨_, h0, he⟩ := hP
+    obtain ⟨n2, e2, t2⟩ := t1.taken C1 0x7B6 ac_at_5c8 (by decide)
+      (by simp only [branchTaken, s0v, t1.zero, h0, beq_iff_eq])
+    have t2' : St n2.mem AC n2 0x7B6 (reg n2) := ⟨t2.pc, rfl, fun _ => rfl⟩
+    have M2 : n2.mem = n.mem := t2.mem.trans M1
+    have rsp2 : reg n2 sp = acSlot B 0 := by rw [t2.regs, r1 sp (by decide) (by decide), rsp0]
+    obtain ⟨n3, c3, t3, g3⟩ := aco_jmp (blk := acoB2) (tgt := 0x7D4) t2' (by rw [M2]; exact CC) (by decide)
+      ⟨trivial, trivial, trivial, trivial, trivial⟩ (by simp only [runBlock, BInstr.run, acoB2]) ac_at_7c2 (by decide)
+      (by decide)
+    refine aco_pre (c1.trans ((Steps.single e2).trans c3)) (aco_leaf C ⟨t3.pc, rfl, fun _ => rfl⟩
+      (by rw [t3.mem, M2]; exact K) (fun q hq => ?_) ?_)
+    · rw [g3, runBlock_reg _ _ _ q t2'.zero (by simp only [acoB2]; revert hq; revert q; decide), t2.regs,
+        r1 q (by revert hq; revert q; decide) (by revert hq; revert q; decide)]
+      exact KR.a q hq
+    · rw [g3]; simp +decide only [runBlock, BInstr.run, acoB2, upd, ↓reduceIte]
+      rw [rsp2]; aco_simp; rw [M2, he, aco_ze8, BitVec.toNat_ofNat]
+      have := C.gap.pr d e hpm; omega
+  · obtain ⟨rt, sj, hpr, hrv, hJ1, hJ2, hps⟩ := hspec
+    obtain ⟨_, L70, L74, L78, L7C, Lv⟩ := hP
+    have hgl := hJ1.1; have hsl := hJ2.1
+    have q1n : (Bf + 0x4000 + BitVec.ofNat 32 gp).toNat = Bf.toNat + 0x4000 + gp := by
+      simp only [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.reduceToNat]; omega
+    have q2n : (Bf + 0x4000 + BitVec.ofNat 32 sp').toNat = Bf.toNat + 0x4000 + sp' := by
+      simp only [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.reduceToNat]; omega
+    obtain ⟨n2, e2, t2⟩ := t1.notTaken C1 0x5CC ac_at_5c8 (by decide)
+      (by simp only [branchTaken, s0v, t1.zero, L70, beq_eq_false_iff_ne]
+          exact aco_ne (by rw [q1n]; show _ ≠ 0; omega))
+    have t2' : St n1.mem AC n2 0x5CC (reg n1) := t2
+    have rsp1 : reg n1 sp = acSlot B 0 := by rw [r1 sp (by decide) (by decide), rsp0]
+    obtain ⟨n3, c3, u3⟩ := t2'.block (off' := 0x60E) acoB3 C1 (by decide) (by
+      simp only [BlockOk, BInstr.ok, BInstr.run, acoB3]; simp +decide only [upd, ↓reduceIte, true_and, and_true]
+      rw [rsp1]; aco_simp
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> first | aco_num | exact ⟨by aco_num, by aco_num⟩)
+    have mem3 : n3.mem = memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 n.mem
+        (acSlot B 0x1ED0) (Bf + 0x4000 + BitVec.ofNat 32 gp)) (acSlot B 0x1ED4) (BitVec.ofNat 32 gl))
+        (acSlot B 0x1ED8) (Bf + 0x4000 + BitVec.ofNat 32 sp')) (acSlot B 0x1EDC) (BitVec.ofNat 32 sl))
+        (acSlot B 0x1EE0) (memLoad32 n.mem (acSlot B 0x1880))) (acSlot B 0x1EE4) (memLoad32 n.mem (acSlot B 0x1884)) := by
+      rw [u3.mem]; simp only [runBlock, BInstr.run, acoB3]; simp +decide only [upd, ↓reduceIte]
+      rw [rsp1]; aco_simp
+      rw [M1, s0v, L70, L74, L78, L7C]
+    have F3 : ∀ x, Sep x 1 (acSlot B 0x1ED0) 0x18 → n3.mem x = n.mem x := fun x h => by
+      have S : ∀ c, c + 4 ≤ 0x18 → Sep (acSlot B (0x1ED0 + c)) 4 x 1 := fun c hc => by
+        have := h.subR (c := c) (l := 4) hc; rw [aco_so B _ _ (by omega)] at this; exact this.symm
+      rw [mem3, memStore32_get_sep (S 0x14 (by decide)), memStore32_get_sep (S 0x10 (by decide)),
+        memStore32_get_sep (S 0xC (by decide)), memStore32_get_sep (S 8 (by decide)),
+        memStore32_get_sep (S 4 (by decide)), memStore32_get_sep (S 0 (by decide))]
+    have K3 : AcoKeep B Bf n0.mem n3.mem := K.trans fun x hx => F3 x (aco_wScr hx (by decide) (by decide))
+    have L3 : ∀ k, k + 4 ≤ 0x1ED0 → memLoad32 n3.mem (acSlot B k) = memLoad32 n.mem (acSlot B k) := fun k hk =>
+      memLoad32_congr fun j hj => F3 _ (by aco_num)
+    have D3 : ∀ {q : Word} {l : Nat}, AcoIn Bf q l → memBytes n3.mem q l = memBytes n.mem q l := fun {q l} hq => by
+      have := hq.1; have := hq.2
+      exact memBytes_congr fun j hj => F3 _ (by aco_num)
+    have r3 : ∀ q : Fin 32, acoDK q = true → q.val ≠ 8 → reg n3 q = reg n q := fun q hq h8 => by
+      rw [u3.regs, runBlock_reg _ _ _ q t2'.zero (by simp only [acoB3]; revert hq; revert q; decide),
+        r1 q (by revert hq; revert q; decide) h8]
+    have a0v3 : reg n3 a0 = BitVec.ofNat 32 0x22 := by
+      rw [u3.regs]; simp +decide only [runBlock, BInstr.run, acoB3, upd, ↓reduceIte, aluEval]
+    have a1v3 : reg n3 a1 = 0xFFFFFFFF := by
+      rw [u3.regs]; simp +decide only [runBlock, BInstr.run, acoB3, upd, ↓reduceIte, aluEval]
+    have a2v3 : reg n3 a2 = memLoad32 n.mem (acSlot B 0x24) &&& memLoad32 n.mem (acSlot B 0x20) := by
+      rw [u3.regs]; simp +decide only [runBlock, BInstr.run, acoB3, upd, ↓reduceIte, aluEval]
+      rw [rsp1, M1]; aco_simp
+    have a4v3 : reg n3 a4 = memLoad32 n.mem (acSlot B 0x1880) := by
+      rw [u3.regs]; simp +decide only [runBlock, BInstr.run, acoB3, upd, ↓reduceIte, aluEval]
+      rw [rsp1, M1]; aco_simp
+    have a5v3 : reg n3 a5 = memLoad32 n.mem (acSlot B 0x1884) := by
+      rw [u3.regs]; simp +decide only [runBlock, BInstr.run, acoB3, upd, ↓reduceIte, aluEval]
+      rw [rsp1, M1]; aco_simp
+    have s0v3 : reg n3 (8 : Fin 32) = Bf + 0x4000 + BitVec.ofNat 32 gp := by
+      rw [u3.regs, runBlock_reg _ _ _ _ t2'.zero (by simp only [acoB3]; decide), s0v, L70]
+    have s1v3 : reg n3 (9 : Fin 32) = BitVec.ofNat 32 gl := by
+      rw [u3.regs]; simp +decide only [runBlock, BInstr.run, acoB3, upd, ↓reduceIte, aluEval]
+      rw [rsp1, M1]; aco_simp; exact L74
+    have t3 : St n3.mem AC n3 0x60E (reg n3) := ⟨u3.pc, rfl, fun _ => rfl⟩
+    have C3' := C.code K3
+    have c13 : Steps n n3 := c1.trans ((Steps.single e2).trans c3)
+    by_cases hmax : memLoad32 n.mem (acSlot B 0x24) &&& memLoad32 n.mem (acSlot B 0x20) = 0xFFFFFFFF
+    · obtain ⟨n4, e4, t4⟩ := t3.taken C3' 0x7D4 ac_at_60e (by decide)
+        (by simp only [branchTaken, a2v3, a1v3, hmax, beq_iff_eq])
+      refine aco_pre (c13.trans (.single e4)) (aco_leaf C ⟨t4.pc, rfl, fun _ => rfl⟩
+        (by rw [t4.mem]; exact K3) (fun q hq => ?_) ?_)
+      · rw [t4.regs, r3 q (by revert hq; revert q; decide) (by revert hq; revert q; decide)]; exact KR.a q hq
+      · rw [t4.regs, a0v3]; decide
+    obtain ⟨n4, e4, t4⟩ := t3.notTaken C3' 0x612 ac_at_60e (by decide)
+      (by simp only [branchTaken, a2v3, a1v3, beq_eq_false_iff_ne]; exact hmax)
+    have t4' : St n3.mem AC n4 0x612 (reg n3) := t4
+    obtain ⟨n5, c5, u5⟩ := t4'.block (off' := 0x628) acoB4 C3' (by decide) (by
+      simp only [BlockOk, BInstr.ok, BInstr.run, acoB4]; simp +decide only [upd, ↓reduceIte, true_and, and_true]
+      rw [r3 sp (by decide) (by decide), rsp0]; aco_simp; exact ⟨by aco_num, by aco_num⟩)
+    have rsp3 : reg n3 sp = acSlot B 0 := by rw [r3 sp (by decide) (by decide), rsp0]
+    have hlo : memLoad32 n3.mem (acSlot B 0x24) = memLoad32 n.mem (acSlot B 0x24) := L3 _ (by decide)
+    have hhi : memLoad32 n3.mem (acSlot B 0x20) = memLoad32 n.mem (acSlot B 0x20) := L3 _ (by decide)
+    have a1v5 : reg n5 a1 = ((memLoad32 n.mem (acSlot B 0x24) + 1) ^^^ memLoad32 n.mem (acSlot B 0x1880)) |||
+        ((if (memLoad32 n.mem (acSlot B 0x24) + 1).ult 1 then (1 : Word) else 0) + memLoad32 n.mem (acSlot B 0x20) ^^^
+          memLoad32 n.mem (acSlot B 0x1884)) := by
+      rw [u5.regs]; simp +decide only [runBlock, BInstr.run, acoB4, upd, ↓reduceIte, aluEval]
+      rw [rsp3]; aco_simp; rw [hlo, hhi, a4v3, a5v3]
+    have r5 : ∀ q : Fin 32, acoDK q = true → q.val ≠ 8 → q.val ≠ 19 → q.val ≠ 26 → reg n5 q = reg n q :=
+      fun q hq h8 h19 h26 => by
+        rw [u5.regs, runBlock_reg _ _ _ q t4'.zero (by simp only [acoB4]; revert hq h19 h26; revert q; decide),
+          r3 q hq h8]
+    have a0v5 : reg n5 a0 = BitVec.ofNat 32 0x22 := by
+      rw [u5.regs, runBlock_reg _ _ _ _ t4'.zero (by simp only [acoB4]; decide), a0v3]
+    have s10v5 : reg n5 (26 : Fin 32) = memLoad32 n.mem (acSlot B 0x1880) := by
+      rw [u5.regs]; simp +decide only [runBlock, BInstr.run, acoB4, upd, ↓reduceIte, aluEval]
+      try rw [t4'.zero]
+      rw [show ∀ x : Word, (0 : Word) + x = x from BitVec.zero_add, a4v3]
+    have s3v5 : reg n5 (19 : Fin 32) = memLoad32 n.mem (acSlot B 0x1884) := by
+      rw [u5.regs]; simp +decide only [runBlock, BInstr.run, acoB4, upd, ↓reduceIte, aluEval]
+      try rw [t4'.zero]
+      rw [show ∀ x : Word, (0 : Word) + x = x from BitVec.zero_add, a5v3]
+    have s0v5 : reg n5 (8 : Fin 32) = Bf + 0x4000 + BitVec.ofNat 32 gp := by
+      rw [u5.regs, runBlock_reg _ _ _ _ t4'.zero (by simp only [acoB4]; decide), s0v3]
+    have s1v5 : reg n5 (9 : Fin 32) = BitVec.ofNat 32 gl := by
+      rw [u5.regs, runBlock_reg _ _ _ _ t4'.zero (by simp only [acoB4]; decide), s1v3]
+    have M5 : n5.mem = n3.mem := u5.mem
+    have t5 : St n5.mem AC n5 0x628 (reg n5) := ⟨u5.pc, rfl, fun _ => rfl⟩
+    have C5 : CodeIn n5.mem AC bootMainClosure0Code := by rw [M5]; exact C3'
+    have K5 : AcoKeep B Bf n0.mem n5.mem := by rw [M5]; exact K3
+    have c15 : Steps n n5 := c13.trans ((Steps.single e4).trans c5)
+    by_cases hne : reg n5 a1 ≠ 0
+    · obtain ⟨n6, e6, t6⟩ := t5.taken C5 0x7D4 ac_at_628 (by decide)
+        (by simp only [branchTaken, t5.zero, bne_iff_ne]; exact hne)
+      refine aco_pre (c15.trans (.single e6)) (aco_leaf C ⟨t6.pc, rfl, fun _ => rfl⟩
+        (by rw [t6.mem]; exact K5) (fun q hq => ?_) ?_)
+      · rw [t6.regs, r5 q (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+          (by revert hq; revert q; decide) (by revert hq; revert q; decide)]; exact KR.a q hq
+      · rw [t6.regs, a0v5]; decide
+    obtain ⟨n6, e6, t6⟩ := t5.notTaken C5 0x62C ac_at_628 (by decide)
+      (by simp only [branchTaken, t5.zero, Decidable.not_not.mp hne]; decide)
+    have hver := aco_ver hmax (by rw [← a1v5]; exact Decidable.not_not.mp hne)
+    rw [Lv, hS.ver] at hver
+    have hnv : rt.version = prev.version + 1 := by rw [hrv, hver]
+    have M6 : n6.mem = n3.mem := t6.mem.trans M5
+    have hq1 : AcoIn Bf (Bf + 0x4000 + BitVec.ofNat 32 gp) gl := ⟨by rw [q1n]; omega, by rw [q1n]; omega⟩
+    have hq2 : AcoIn Bf (Bf + 0x4000 + BitVec.ofNat 32 sp') sl := ⟨by rw [q2n]; omega, by rw [q2n]; omega⟩
+    have hj : JVal true (memBytes n6.mem (Bf + 0x4000 + BitVec.ofNat 32 gp) gl) rt.md.signed := by
+      rw [M6, D3 hq1, ← tuf_memBytes_drop_take hgl, hd]; exact hJ1.2
+    have A : ∀ k c, (0x1ED0 + c + 4 ≤ k ∨ k + 4 ≤ 0x1ED0 + c) → k + 4 ≤ 0x2000 → c ≤ 0x14 →
+        Sep (acSlot B (0x1ED0 + c)) 4 (acSlot B k) 4 := by
+      intro k c h hk hc
+      rcases h with h | h <;> apply aco_sepN <;> simp only [acSlot, BitVec.toNat_add, BitVec.toNat_ofNat] <;> omega
+    have s6v : reg n6 (22 : Fin 32) = reg n (22 : Fin 32) := by
+      rw [t6.regs, u5.regs, runBlock_reg _ _ _ _ t4'.zero (by simp only [acoB4]; decide), u3.regs,
+        runBlock_reg _ _ _ _ t2'.zero (by simp only [acoB3]; decide), r1 22 (by decide) (by decide)]
+    refine aco_pre (c15.trans (.single e6)) (aco_C C (n := n6) (next := rt) ⟨t6.pc, rfl, fun _ => rfl⟩
+      (by rw [M6]; exact K3) (fun q hq => ?_) hi ?_ ?_ ?_ hq1 hq2 ?_ ?_ ?_ ?_ ?_ ?_ hj (CanonEncode _ _ hj) ?_ hps
+      (fun h1 h2 => aco_foldStep hi hdi hpf hpr hnv h1 h2) IH)
+    · rw [t6.regs, r5 q (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide)]; exact KR q hq
+    · rw [M6, L3 _ (by decide)]; exact hc
+    · rw [t6.regs, t6.regs, s3v5, s10v5, Lv, hrv]
+    · rw [M6, s6v]; exact aco_stC N hS F3
+    · rw [t6.regs, s0v5]
+    · rw [t6.regs, s1v5]
+    · rw [M6, mem3, memLoad32_store32_sep (A _ 0x14 (by decide) (by decide) (by decide)),
+        memLoad32_store32_sep (A _ 0x10 (by decide) (by decide) (by decide)),
+        memLoad32_store32_sep (A _ 0xC (by decide) (by decide) (by decide)),
+        memLoad32_store32_sep (A _ 8 (by decide) (by decide) (by decide)),
+        memLoad32_store32_sep (A _ 4 (by decide) (by decide) (by decide)), memLoad32_store32_same]
+    · rw [M6, mem3, memLoad32_store32_sep (A _ 0x14 (by decide) (by decide) (by decide)),
+        memLoad32_store32_sep (A _ 0x10 (by decide) (by decide) (by decide)),
+        memLoad32_store32_sep (A _ 0xC (by decide) (by decide) (by decide)),
+        memLoad32_store32_sep (A _ 8 (by decide) (by decide) (by decide)), memLoad32_store32_same]
+    · rw [M6, mem3, memLoad32_store32_sep (A _ 0x14 (by decide) (by decide) (by decide)),
+        memLoad32_store32_sep (A _ 0x10 (by decide) (by decide) (by decide)),
+        memLoad32_store32_sep (A _ 0xC (by decide) (by decide) (by decide)), memLoad32_store32_same]
+    · rw [M6, mem3, memLoad32_store32_sep (A _ 0x14 (by decide) (by decide) (by decide)),
+        memLoad32_store32_sep (A _ 0x10 (by decide) (by decide) (by decide)), memLoad32_store32_same]
+    · rw [M6, D3 hq2, ← tuf_memBytes_drop_take hsl, hd]; exact hJ2.2
+
 end ctx
 
 end C3.RV32.Ac
