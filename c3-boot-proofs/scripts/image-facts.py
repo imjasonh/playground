@@ -16,7 +16,8 @@ regenerated:
   offset.
 
 The bytes come from `Image/Bootloader.lean`, which `extract-functions.py`
-writes from the image, or from `Image/BootloaderV0.lean` for proofs that open
+writes from the image, and `BootloaderReset.lean` beside it, or from
+`Image/BootloaderV0.lean` for proofs that open
 `C3.ImageV0`. Each fact keeps its offset, its chunk's offset and length, or
 its block's instruction count, and gets its instructions or bytes from the
 code there. A fact whose text already says what the code holds is left as it
@@ -346,6 +347,9 @@ def pending_paths():
 class Facts:
     def __init__(self, image):
         self.cur = byte_lists(open(image).read())
+        reset = os.path.join(os.path.dirname(image), 'BootloaderReset.lean')
+        if os.path.exists(reset):
+            self.cur.update(byte_lists(open(reset).read()))
         self.v0 = byte_lists(open(os.path.join(ROOT, 'C3BootProofs/Image/BootloaderV0.lean')).read())
         self.diffs = []
         self.errors = []

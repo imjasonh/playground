@@ -70,7 +70,8 @@ def bmAcc (top : Word) : Word := top - 0x3B0
 /-- **The jump into the application.** The machine `m'` is at the entry
 point of slot `slot`, which `bmDecision` boots at security level `target`:
 `bmcAccept` accepts the slot, the image's header `h` decodes, `target` is at
-most the entry level, `a0` holds the slot, and the memory outside the
+most the eFuse level at the jump, the eFuse level word at the jump is its
+value at entry with some bits set, `a0` holds the slot, and the memory outside the
 `K`-byte stack below `top` and the peripheral registers is what `boot` loads
 from memory `Mb`. `Mb` keeps `M0` outside that stack and holds `h` at
 `bmAcc top`. -/
@@ -80,7 +81,7 @@ def BmJump (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (M0 : W
     (bmDecision flash pinned policy M0).outcome = .boot slot target ∧
     bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t) ∧
     decodeImageHeader (bmcImage flash (BitVec.ofNat 32 (bmSlotNum slot)) mf) mf.image.length = some h ∧
-    target ≤ bmLevel M0 ∧
+    target ≤ bmLevel m'.mem ∧ (∃ X, memLoad32 m'.mem efuseRd = memLoad32 M0 efuseRd ||| X) ∧
     m'.pc = BitVec.ofNat 32 h.entryPoint &&& ~~~1 ∧
     reg m' a0 = BitVec.ofNat 32 (bmSlotNum slot) ∧
     BmKeep M0 Mb (top - BitVec.ofNat 32 K) K ∧ HdrAt Mb (bmAcc top) h ∧
@@ -511,7 +512,7 @@ theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
     rw [sp5]
     exact { code := C.bt.hi hi5 (by decide) (by decide)
             rfw := C.rfw.hi hi5 (by decide) (by decide)
-            epr := C.epr.hi hi5 (by decide) (by decide)
+            epr := C.epr.code fun x h1 _ => hi5 x h1
             panic := bmt_panic C.panic hi5
             rom := C.rom.hi hi5 C.hrb (by have := C.hrl; omega)
             hrb := C.hrb
@@ -531,15 +532,16 @@ theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
   rcases boot_correct (flash := flash) n5 BC X.rom pc5 (by rw [r5 _ (by decide), a0_4])
       (by rw [r5 _ (by decide), a1_4]) (by rw [r5 _ (by decide), a2_4]) (by rw [r5 _ (by decide), a3_4])
       (by rw [r5 _ (by decide), a4_4]) X.log X.suspend X.invalidate X.resume with
-    ⟨m', c6, pc6, a06, lev6, mem6⟩ | hp
-  · refine .inl ⟨m', c1.trans (c2.trans (c3.trans (c4.trans (c5.trans c6)))), slot, target, mf, sv, t, h,
-      n5.mem, hD, hA, hd, ?_, ?_, a06, ?_, ?_, ?_⟩
+    ⟨m', c6, pc6, a06, lev6, ⟨X6, hX6⟩, mem6⟩ | hp
+  · have e5 : memLoad32 n5.mem efuseRd = memLoad32 M0 efuseRd :=
+      bmt_load_congr fun j hj => hi5 _ (by
+        rw [BitVec.toNat_add, BitVec.toNat_ofNat, show efuseRd.toNat = 0x6000883C from rfl]; omega)
+    refine .inl ⟨m', c1.trans (c2.trans (c3.trans (c4.trans (c5.trans c6)))), slot, target, mf, sv, t, h,
+      n5.mem, hD, hA, hd, ?_, ⟨X6, by rw [hX6, e5]⟩, ?_, a06, ?_, ?_, ?_⟩
     · have ht : target < 2 ^ 32 := by omega
-      have e5 : memLoad32 n5.mem efuseRd = memLoad32 M0 efuseRd :=
-        bmt_load_congr fun j hj => hi5 _ (by
-          rw [BitVec.toNat_add, BitVec.toNat_ofNat, show efuseRd.toNat = 0x6000883C from rfl]; omega)
-      rw [e5] at lev6
-      rcases lev6 with e | e <;> exact bmt_ult ht e
+      rcases lev6 with e | ⟨e, ew⟩
+      · exact bmt_ult ht e
+      · rw [bmLevel, ew, e5]; exact bmt_ult ht e
     · rw [pc6, hA5.1]
     · refine hK.step fun x hx => ?_
       rw [mem5, m4]

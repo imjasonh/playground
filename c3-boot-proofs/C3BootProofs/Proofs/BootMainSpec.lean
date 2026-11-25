@@ -580,7 +580,9 @@ theorem BmKeep.step {M0 M M' : Word → BitVec 8} {W : Word} {K : Nat} (h : BmKe
 
 /-- What `boot_main`'s proof assumes of memory `M0` at its entry, with the
 stack pointer at `top`: the code of `boot_main` and every function it
-calls, the stack in data RAM above the image's read-only data, and the
+calls, with an `efuse_program_run` that meets the eFuse controller's
+contract `EfuseCtl` (`eprAt_of_code` gives one from the pinned image's
+code when the controller's registers are plain memory), the stack in data RAM above the image's read-only data, and the
 ROM's flash-chip pointer word-aligned, apart from the read-only data, and
 below the ROM. -/
 structure BmEnv (M0 : Word → BitVec 8) (top : Word) (R romStack stack0 : Nat) (romBase : Word)
@@ -595,7 +597,7 @@ structure BmEnv (M0 : Word → BitVec 8) (top : Word) (R romStack stack0 : Nat) 
   bw : BWCode M0
   c0 : CodeIn M0 (BitVec.ofNat 32 bootMainClosure0Address) bootMainClosure0Code
   bt : CodeIn M0 BT bootFnCode
-  epr : CodeIn M0 (BitVec.ofNat 32 efuseProgramRunAddress) efuseProgramRunCode
+  epr : EprAt M0
   panic : PanicCode M0
   rom : CodeIn M0 romBase romCode
   hrb : 0x40000000 ≤ romBase.toNat

@@ -76,9 +76,15 @@ What is not linked yet:
   a stated obligation.
 - **The whole boot.** Each function's theorem has hypotheses, such as a
   stack layout and argument ranges, that its caller's proof must discharge.
-  Until `boot_main` is proved, the function theorems don't add up to the
-  plan's headline theorem: from reset, the image boots only firmware that
-  passes every check.
+  `reset_correct` (`Proofs/Reset.lean`) states the plan's headline theorem
+  from the ROM's jump to `_start`: the image halts or boots only a slot
+  that `decideBoot` boots. It still assumes the contract of `boot_main`'s
+  first closure (`Closure0Contract`), which holds the signature checks.
+- **Devices.** Stores to the watchdog and clock registers are memory
+  writes, and their effect on the device is outside the theorems. A
+  watchdog reset restarts the ROM. The eFuse controller is the named
+  hypothesis `EfuseCtl`: a burn sets bits or none, and touches only the
+  controller's registers.
 
 ## What's proved
 
