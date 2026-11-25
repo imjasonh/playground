@@ -346,4 +346,103 @@ theorem acb_blkB {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8}
     | (rw [g]; simp only [runBlock, BInstr.run, acbB]; simp +decide only [upd, ↓reduceIte]; rw [rsp, ra0]
        simp (disch := decide) only [Dq.frame_lit, BitVec.reduceToNat, Nat.reduceAdd, rb])
 
+/-- The inclusion proof's arguments. -/
+def acbA4 : List BInstr :=
+  [.aluImm .add a3 x0 0x1, .aluImm .sll a3 a3 0xB, .aluImm .add a0 sp 0x350, .aluImm .add a1 sp 0x7FF,
+   .aluImm .add a1 a1 0x5D1, .aluImm .add a2 x0 0x0]
+
+set_option maxRecDepth 100000 in
+theorem acbA4_end : blockEnd bootMainClosure0Code 0x1932 acbA4 = some 0x1942 := by decide
+
+set_option maxRecDepth 100000 in
+theorem acb_lw1952 : blockEnd bootMainClosure0Code 0x1952 [.lw 22 sp 0x354] = some 0x1956 := by decide
+
+set_option maxRecDepth 100000 in
+theorem acb_and1956 : blockEnd bootMainClosure0Code 0x1956 [.aluImm .and a0 22 0x1F] = some 0x195A := by decide
+
+theorem acb_m32 {w : Word} (h : w &&& 0x1F = 0) : w.toNat % 32 = 0 := by
+  have := congrArg BitVec.toNat h
+  rwa [show (0x1F : Word) = 0x1F#32 from rfl, toNat_and31] at this
+
+/-- `x` is outside the slots of `acbFc` and `acbS`. -/
+theorem acb_FcS {B x : Word} (h : AcbOut acbV B x) : AcbOut acbFc B x ∧ AcbOut acbS B x :=
+  ⟨acb_FcV h, acb_mono (by decide) h⟩
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 2000000 in
+/-- The log index's bytes and the inclusion proof, from 0x1906 to 0x195E. -/
+theorem acb_s3 {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {L q l4 : Nat} {n0 n : Machine}
+    (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) {P : Word} (s : St n.mem AC n 0x1906 (reg n))
+    (ra0 : reg n a0 = P) (r8 : reg n 8 = 5)
+    (hP : ∀ k : Word, k.toNat < 8 → ∀ c : Nat, c + 4 ≤ 0x5A70 → Sep (B + BitVec.ofNat 32 c) 4 (P + k) 1)
+    (R : AcbRd B Bf L q n.mem) (hq : q ≤ L) (hl4 : (memLoad32 n0.mem (Bf + BitVec.ofNat 32 q)).toNat = l4) :
+    AcbOr B n0 n (fun n' => St n'.mem AC n' 0x195E (reg n') ∧ reg n' 18 = Bf + BitVec.ofNat 32 (q + 4) ∧
+      (reg n' 22).toNat = l4 ∧ l4 ≤ 0x800 ∧ l4 % 32 = 0 ∧ q + 4 + l4 ≤ L ∧ AcbRd B Bf L (q + 4 + l4) n'.mem ∧
+      memLoad32 n'.mem (acSlot B 0x30) = (n.mem (P + 4)).zeroExtend 32 ∧
+      memLoad32 n'.mem (acSlot B 0x18) = (n.mem (P + 6)).zeroExtend 32 ∧
+      memLoad32 n'.mem (acSlot B 0x14) = (n.mem (P + 7)).zeroExtend 32 ∧
+      memLoad32 n'.mem (acSlot B 0x1C) = (n.mem (P + 1)).zeroExtend 32 ∧
+      memLoad32 n'.mem (acSlot B 0x2C) = (n.mem (P + 2)).zeroExtend 32 ∧
+      memLoad32 n'.mem (acSlot B 0x28) = (n.mem (P + 3)).zeroExtend 32 ∧
+      reg n' 19 = (n.mem (P + 5)).zeroExtend 32 ∧ reg n' 9 = (n.mem (P + 0)).zeroExtend 32 ∧
+      (∀ x : Fin 32, x.val ∉ [1, 6, 9, 10, 11, 12, 13, 14, 15, 18, 19, 22] → reg n' x = reg n x) ∧
+      ∀ x, AcbOut acbFc B x → AcbOut acbS B x → n'.mem x = n.mem x) := by
+  obtain ⟨n1, c1, K1, s1, fr1, v30, v18, v14, v1C, v2C, v28, r19, r9, rk1⟩ := acb_blkB G K s ra0 hP
+  have hz := s1.zero
+  have R1 : AcbRd B Bf L q n1.mem :=
+    ⟨by rw [acb_ld fr1 (by decide) (by decide) (by decide)]; exact R.ptr,
+     by rw [acb_ld fr1 (by decide) (by decide) (by decide)]; exact R.len,
+     by rw [acb_ld fr1 (by decide) (by decide) (by decide)]; exact R.pos⟩
+  refine acb_pre c1 (acb_bind (acb_fld (lo := 0) (hi := 0x800) (o' := 0x1952) G K1 s1 R1 hq acbA4 acbA4_end
+    (by simp only [BlockOk, BInstr.ok, acbA4, and_self]) (by simp only [runBlock, BInstr.run, acbA4])
+    (by decide) (by simp only [acbA4]; acb_rg; rw [K1.sp]; exact acb_sl B (by decide))
+    (by simp only [acbA4]; acb_rg; rw [K1.sp, acb_dd0]) (by simp only [acbA4]; acb_rg)
+    (by simp only [acbA4]; acb_rg) ac_at_1942 ac_at_1946 (by decide) (by decide) ac_at_194a (by decide)
+    ac_at_194e (by decide) (by decide) (by decide)) ?_)
+  rintro n2 K2 ⟨s2, rk2, r18, w2, b2, -, hi2, R2, f2⟩
+  rw [hl4] at b2 hi2 R2
+  obtain ⟨n3, c3, K3, s3, m3, r3, k3⟩ := acb_lws G K2 s2 acb_lw1952 (c := 0x354) (by decide) (by decide)
+    (by decide) (by decide)
+  obtain ⟨n4, c4, K4, s4, m4, r4, k4⟩ := acb_blk K3 s3 (G.code K3) [.aluImm .and a0 22 0x1F] acb_and1956
+    (by simp only [BlockOk, BInstr.ok, and_self]) (by simp only [runBlock, BInstr.run]) (by decide)
+  have z3 := s3.zero
+  have ra4 : reg n4 a0 = memLoad32 n0.mem (Bf + BitVec.ofNat 32 q) &&& 0x1F := by
+    rw [r4]; simp only [runBlock, BInstr.run]; simp +decide only [upd, ↓reduceIte, aluEval]; rw [r3, w2]
+  have rk : ∀ x : Fin 32, x.val ∉ [1, 6, 9, 10, 11, 12, 13, 14, 15, 18, 19, 22] → reg n4 x = reg n x :=
+    fun x hx => by
+      have aux : x.val ∉ [1, 6, 10, 11, 12, 13, 14, 15] ∧ x ≠ 18 ∧ x ≠ 22 ∧ x ≠ a0 ∧
+          x ∉ acbA4.filterMap BInstr.dst ∧ x.val ∉ [9, 10, 11, 19] := by revert hx; revert x; decide
+      rw [k4 x (by simp only [List.filterMap, BInstr.dst, List.mem_singleton]; exact aux.2.2.2.1),
+        k3 x aux.2.2.1, rk2 x aux.1 aux.2.1, runBlock_reg _ _ _ x hz aux.2.2.2.2.1, rk1 x aux.2.2.2.2.2]
+  by_cases hb : memLoad32 n0.mem (Bf + BitVec.ofNat 32 q) &&& 0x1F = 0
+  · obtain ⟨n5, c5, s5⟩ := s4.notTaken (G.code K4) 0x195E ac_at_195a (by decide) (by
+      rw [ra4, hb]; simp only [branchTaken, x0, s4.zero]; decide)
+    have K5 : AcbK B n0 n5 := K4.regs (l := []) (by rw [s5.mem]) (fun x _ => by rw [s5.regs])
+    have m5 : n5.mem = n2.mem := by rw [s5.mem, m4, m3]
+    have sl : ∀ c, 0x3A64 ≤ 0x3A50 + c → 0x3A50 + c + 4 ≤ 0x3A8C →
+        memLoad32 n5.mem (acSlot B c) = memLoad32 n1.mem (acSlot B c) := fun c h1 h2 => by
+      rw [m5]
+      refine acb_ld f2 ?_ (by omega) (by decide)
+      intro p hp
+      simp only [acbFc, List.mem_cons, List.not_mem_nil, or_false] at hp
+      rcases hp with rfl | rfl | rfl <;> omega
+    refine acb_pre c3 (acb_pre c4 (acb_pre (.cons c5 (.refl _)) (acb_ret K5 ⟨⟨s5.pc, rfl, fun _ => rfl⟩,
+      ?_, ?_, by simpa using hi2, hl4 ▸ acb_m32 hb, b2, by rw [m5]; exact R2, by rw [sl _ (by decide) (by decide), v30],
+      by rw [sl _ (by decide) (by decide), v18], by rw [sl _ (by decide) (by decide), v14],
+      by rw [sl _ (by decide) (by decide), v1C], by rw [sl _ (by decide) (by decide), v2C],
+      by rw [sl _ (by decide) (by decide), v28], ?_, ?_, fun x hx => by rw [s5.regs]; exact rk x hx, ?_⟩)))
+    · rw [s5.regs, k4 18 (by decide), k3 18 (by decide)]; exact r18
+    · rw [s5.regs, k4 22 (by decide), r3, w2, hl4]
+    · rw [s5.regs, k4 19 (by decide), k3 19 (by decide), rk2 19 (by decide) (by decide),
+        runBlock_reg _ _ _ _ hz (by decide)]; exact r19
+    · rw [s5.regs, k4 9 (by decide), k3 9 (by decide), rk2 9 (by decide) (by decide),
+        runBlock_reg _ _ _ _ hz (by decide)]; exact r9
+    · intro x h1 h2; rw [m5, f2 x h1, fr1 x h2]
+  · obtain ⟨n5, c5, s5⟩ := s4.taken (G.code K4) 0x1A6A ac_at_195a (by decide) (by
+      rw [ra4]; simp only [branchTaken, x0, s4.zero]; exact bne_iff_ne.mpr hb)
+    have K5 : AcbK B n0 n5 := K4.regs (l := []) (by rw [s5.mem]) (fun x _ => by rw [s5.regs])
+    refine acb_pre c3 (acb_pre c4 (acb_pre (.cons c5 (.refl _)) ?_))
+    refine acb_x6a K5 ⟨s5.pc, rfl, fun _ => rfl⟩ (G.code K5) ?_
+    rw [s5.regs, rk 8 (by decide), r8]; decide
+
 end C3.RV32.Ac
