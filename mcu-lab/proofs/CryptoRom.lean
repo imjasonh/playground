@@ -75,19 +75,39 @@ theorem etsEmsaPssVerify_trailer (em : List UInt8) (hLen sLen : Nat) (checkSalt 
     · exfalso
       simp [hlast, hbc] at h
 
-/-- Abstract state for `ets_bigint_{enable,disable,modexp,wait_finish,getz}` MMIO wrapper. -/
+/-- Exact ESP32-C3 RSA accelerator MMIO register offsets from `hwcrypto_reg.h`. -/
+def rsaMemMBlockOff : UInt32 := 0x000
+def rsaMemZBlockOff : UInt32 := 0x200
+def rsaMemYBlockOff : UInt32 := 0x400
+def rsaMemXBlockOff : UInt32 := 0x600
+def rsaMDashRegOff : UInt32 := 0x800
+def rsaLengthRegOff : UInt32 := 0x804
+def rsaQueryCleanRegOff : UInt32 := 0x808
+def rsaModexpStartRegOff : UInt32 := 0x80c
+def rsaQueryInterruptRegOff : UInt32 := 0x818
+def rsaClearInterruptRegOff : UInt32 := 0x81c
+
+/-- Hardware MMIO state for `ets_bigint_{enable,disable,modexp,wait_finish,getz}`. -/
 structure BigintState where
   enabled : Bool
-  busy : Bool
+  idle : Bool
+  x : Nat
+  y : Nat
+  m : Nat
+  mDash : UInt32
+  lengthWords : Nat
   z : Nat
 
-def bigintEnable (s : BigintState) : BigintState := { s with enabled := true }
-def bigintDisable (s : BigintState) : BigintState := { s with enabled := false, busy := false }
-def bigintModexp (s : BigintState) (base exp mod : Nat) : BigintState :=
-  if s.enabled then { s with busy := false, z := modPow base exp mod } else s
+def bigintEnable (s : BigintState) : BigintState := { s with enabled := true, idle := true }
+def bigintDisable (s : BigintState) : BigintState := { s with enabled := false, idle := false }
+def bigintModexp (s : BigintState) (base exp mod : Nat) (mDash : UInt32) (len : Nat) : BigintState :=
+  if s.enabled then
+    { s with idle := true, x := base, y := exp, m := mod, mDash := mDash, lengthWords := len,
+             z := modPow base exp mod }
+  else s
 
-theorem bigintModexp_getz (s : BigintState) (base exp mod : Nat) :
-    (bigintModexp (bigintEnable s) base exp mod).z = modPow base exp mod := by
+theorem bigintModexp_getz (s : BigintState) (base exp mod : Nat) (mDash : UInt32) (len : Nat) :
+    (bigintModexp (bigintEnable s) base exp mod mDash len).z = modPow base exp mod := by
   rfl
 
 end Esp32c3Rom.Crypto
