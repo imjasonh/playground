@@ -9486,9 +9486,6 @@ end C3
 /-- info: 'C3.RV32.Cur.bms_bytes' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bms_bytes
 
-/-- info: 'C3.RV32.Cur.bms_gen' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.Cur.bms_gen
-
 /-- info: 'C3.RV32.Cur.bms_ld' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bms_ld
 

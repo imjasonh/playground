@@ -42,19 +42,6 @@ theorem bms_bytes (M : Word → BitVec 8) (out b : Word) (h : bsErr M b = none) 
   · rw [memStore8_ne b75.symm, memStore8_ne b65.symm, memStore8_same]
   · rw [memStore8_ne b7.symm, memStore8_same]
 
-theorem bms_gen (M : Word → BitVec 8) (out b : Word) (h : bsErr M b = none) :
-    memLoad32 (bsMem M out b) out = mw M b 8 := by
-  simp only [bsMem, h]
-  have n : ∀ c d, c < 8 → d < 8 → c ≠ d → out + BitVec.ofNat 32 c ≠ out + BitVec.ofNat 32 d :=
-    fun c d hc hd e => bmr_ne out hc hd e
-  refine (memLoad32_congr fun j hj => ?_).trans (memLoad32_store32_same M out (mw M b 8))
-  have hj8 : j < 8 := Nat.lt_trans hj (by decide)
-  have m7 : out + BitVec.ofNat 32 j ≠ out + 7 := n j 7 hj8 (by decide) (Nat.ne_of_lt (Nat.lt_trans hj (by decide)))
-  have m6 : out + BitVec.ofNat 32 j ≠ out + 6 := n j 6 hj8 (by decide) (Nat.ne_of_lt (Nat.lt_trans hj (by decide)))
-  have m5 : out + BitVec.ofNat 32 j ≠ out + 5 := n j 5 hj8 (by decide) (Nat.ne_of_lt (Nat.lt_trans hj (by decide)))
-  have m4 : out + BitVec.ofNat 32 j ≠ out + 4 := n j 4 hj8 (by decide) (Nat.ne_of_lt hj)
-  rw [memStore8_ne m7, memStore8_ne m6, memStore8_ne m5, memStore8_ne m4]
-
 theorem bms_ld (M : Word → BitVec 8) (a : Word) :
     memLoad32 M a = BitVec.ofNat 32 ((M a).toNat + 256 * (M (a + 1)).toNat + 65536 * (M (a + 2)).toNat +
       16777216 * (M (a + 3)).toNat) := by
