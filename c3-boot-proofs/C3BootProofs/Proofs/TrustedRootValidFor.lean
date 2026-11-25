@@ -980,6 +980,98 @@ theorem TvfCtx.part1 (X : TvfCtx M0 G F out p n g0) {M1 M : Word → BitVec 8} {
   refine WP.branch tvf_at_4c (fun ht => absurd ht (by trsimp; rw [hR6.2.1, e0]; decide)) (fun _ => ?_); wn
   exact X.part2 (by tvf_regs hR6) hI6 e1 e2 hr
 
+
+/-- The six saves of the prologue, into the frame at `F`. -/
+def tvfSave (M : Word → BitVec 8) (F r1 r8 r9 r18 r19 r20 : Word) : Word → BitVec 8 :=
+  memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 M (F + BitVec.ofNat 32 0x3C) r1)
+    (F + BitVec.ofNat 32 0x38) r8) (F + BitVec.ofNat 32 0x34) r9) (F + BitVec.ofNat 32 0x30) r18)
+    (F + BitVec.ofNat 32 0x2C) r19) (F + BitVec.ofNat 32 0x28) r20
+
+theorem tvfSave_spec (M : Word → BitVec 8) (F r1 r8 r9 r18 r19 r20 : Word) :
+    Out M (tvfSave M F r1 r8 r9 r18 r19 r20) F 0x40 ∧
+      memLoad32 (tvfSave M F r1 r8 r9 r18 r19 r20) (F + BitVec.ofNat 32 0x3C) = r1 ∧
+      memLoad32 (tvfSave M F r1 r8 r9 r18 r19 r20) (F + BitVec.ofNat 32 0x38) = r8 ∧
+      memLoad32 (tvfSave M F r1 r8 r9 r18 r19 r20) (F + BitVec.ofNat 32 0x34) = r9 ∧
+      memLoad32 (tvfSave M F r1 r8 r9 r18 r19 r20) (F + BitVec.ofNat 32 0x30) = r18 ∧
+      memLoad32 (tvfSave M F r1 r8 r9 r18 r19 r20) (F + BitVec.ofNat 32 0x2C) = r19 ∧
+      memLoad32 (tvfSave M F r1 r8 r9 r18 r19 r20) (F + BitVec.ofNat 32 0x28) = r20 := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact (((((Out.upK rfl (out_store32 _ _ _) (by decide)).trans (Out.upK rfl (out_store32 _ _ _) (by decide))).trans
+      (Out.upK rfl (out_store32 _ _ _) (by decide))).trans (Out.upK rfl (out_store32 _ _ _) (by decide))).trans
+      (Out.upK rfl (out_store32 _ _ _) (by decide))).trans (Out.upK rfl (out_store32 _ _ _) (by decide))
+  · exact trdc_slot 0x3C 0x28 (by decide) (by decide) (by decide) <|
+      trdc_slot 0x3C 0x2C (by decide) (by decide) (by decide) <|
+      trdc_slot 0x3C 0x30 (by decide) (by decide) (by decide) <|
+      trdc_slot 0x3C 0x34 (by decide) (by decide) (by decide) <|
+      trdc_slot 0x3C 0x38 (by decide) (by decide) (by decide) <| memLoad32_store32_same _ _ _
+  · exact trdc_slot 0x38 0x28 (by decide) (by decide) (by decide) <|
+      trdc_slot 0x38 0x2C (by decide) (by decide) (by decide) <|
+      trdc_slot 0x38 0x30 (by decide) (by decide) (by decide) <|
+      trdc_slot 0x38 0x34 (by decide) (by decide) (by decide) <| memLoad32_store32_same _ _ _
+  · exact trdc_slot 0x34 0x28 (by decide) (by decide) (by decide) <|
+      trdc_slot 0x34 0x2C (by decide) (by decide) (by decide) <|
+      trdc_slot 0x34 0x30 (by decide) (by decide) (by decide) <| memLoad32_store32_same _ _ _
+  · exact trdc_slot 0x30 0x28 (by decide) (by decide) (by decide) <|
+      trdc_slot 0x30 0x2C (by decide) (by decide) (by decide) <| memLoad32_store32_same _ _ _
+  · exact trdc_slot 0x2C 0x28 (by decide) (by decide) (by decide) <| memLoad32_store32_same _ _ _
+  · exact memLoad32_store32_same _ _ _
+
+/-- The whole function, from its entry with `a0 = out`, `a1 = p`, and
+`a2 = n`. -/
+theorem TvfCtx.entry (X : TvfCtx M0 G F out p n g0) (h0 : g0 a0 = out) (h1 : g0 a1 = p)
+    (h2 : g0 a2 = BitVec.ofNat 32 n) :
+    WP trustedRootValidForCode TVF (trPost (tvfMem M0 G out (validForPos (memBytes M0 p n))) g0) M0 0 g0 := by
+  refine WP.aluImm tvf_at_0 ?_; wn
+  rw [show aluEval .add (g0 sp) 0xFFFFFFC0 = F by rw [X.sp0, ev_add, BitVec.add_assoc]; exact BitVec.add_zero F]
+  refine WP.sw tvf_at_2 (by trsimp; exact aligned_add X.fa (k := 0x3C) (by decide))
+    (by trsimp; exact X.flo (c := 0x3C) (by decide)) ?_; wn
+  refine WP.sw tvf_at_4 (by trsimp; exact aligned_add X.fa (k := 0x38) (by decide))
+    (by trsimp; exact X.flo (c := 0x38) (by decide)) ?_; wn
+  refine WP.sw tvf_at_6 (by trsimp; exact aligned_add X.fa (k := 0x34) (by decide))
+    (by trsimp; exact X.flo (c := 0x34) (by decide)) ?_; wn
+  refine WP.sw tvf_at_8 (by trsimp; exact aligned_add X.fa (k := 0x30) (by decide))
+    (by trsimp; exact X.flo (c := 0x30) (by decide)) ?_; wn
+  refine WP.sw tvf_at_a (by trsimp; exact aligned_add X.fa (k := 0x2C) (by decide))
+    (by trsimp; exact X.flo (c := 0x2C) (by decide)) ?_; wn
+  refine WP.sw tvf_at_c (by trsimp; exact aligned_add X.fa (k := 0x28) (by decide))
+    (by trsimp; exact X.flo (c := 0x28) (by decide)) ?_; wn
+  change WP trustedRootValidForCode TVF _ (tvfSave M0 F (g0 ra) (g0 8) (g0 9) (g0 18) (g0 19) (g0 20)) 0xE _
+  obtain ⟨hO1, v1, v2, v3, v4, v5, v6⟩ := tvfSave_spec M0 F (g0 ra) (g0 8) (g0 9) (g0 18) (g0 19) (g0 20)
+  generalize tvfSave M0 F (g0 ra) (g0 8) (g0 9) (g0 18) (g0 19) (g0 20) = M1 at hO1 v1 v2 v3 v4 v5 v6
+  have hI : TvfMemInv M0 G F g0 M1 := ⟨Out.upK X.fg hO1 (by decide), v1, v2, v3, v4, v5, v6⟩
+  refine WP.alu tvf_at_e ?_; wn
+  refine WP.alu tvf_at_10 ?_; wn
+  refine WP.alu tvf_at_12 ?_; wn
+  refine WP.lui tvf_at_14 ?_; wn
+  refine WP.aluImm tvf_at_18 ?_; wn
+  refine WP.aluImm tvf_at_1c ?_; wn
+  refine WP.aluImm tvf_at_1e ?_; wn
+  refine X.callField ⟨by trsimp, by trsimp, by trsimp; exact h1, by trsimp; exact h2, by trsimp; exact h0,
+      fun q hq => by rcases tvf_rest_cases q hq with h | h | h | h | h | h | h | h | h <;> subst h <;> trsimp⟩
+    hI (by trsimp <;> rfl) (by trsimp; exact h1) (by trsimp; exact h2) (by trsimp <;> decide) (by trsimp <;> rfl)
+    (fun _ _ _ hR' hI' hF _ _ => X.part1 hR' hI' hF)
+
 end
+
+theorem trustedRootValidFor_correct (m : Machine) {sp0 out p retAddr : Word} {n : Nat}
+    (hc : TvfCode m.mem) (hpc : m.pc = TVF) (ha0 : reg m a0 = out) (ha1 : reg m a1 = p)
+    (ha2 : reg m a2 = BitVec.ofNat 32 n) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
+    (hsp : reg m sp = sp0) (hsa : sp0.toNat % 4 = 0) (hsl : 0x144 ≤ sp0.toNat) (hsw : sp0.toNat ≤ 0x40000000)
+    (hoa : out.toNat % 4 = 0) (how : out.toNat + 0x18 ≤ 0x40000000) (hpw : p.toNat + n + 4 ≤ 0x40000000)
+    (hp0 : p.toNat ≠ 0) (sOG : Sep out 0x18 (sp0 + 0xFFFFFEBC) 0x144) (sPG : Sep p (n + 4) (sp0 + 0xFFFFFEBC) 0x144)
+    (sRO : Sep (sp0 + 0xFFFFFEBC) 0x144 TVF_RO 0x1400)
+    (hks : memBytes m.mem tvfStartKey 5 = ascii!"start") (hke : memBytes m.mem tvfEndKey 3 = ascii!"end") :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+      (∀ q : Fin 32, q.val ∈ trSaved → reg m' q = reg m q) ∧
+      tvfMem m.mem (sp0 + 0xFFFFFEBC) out (validForPos (memBytes m.mem p n)) m'.mem := by
+  have hG : (sp0 + 0xFFFFFEBC : Word).toNat = sp0.toNat - 0x144 := by
+    rw [BitVec.toNat_add, show (0xFFFFFEBC : Word).toNat = 2 ^ 32 - 0x144 from rfl]; omega
+  have X : TvfCtx m.mem (sp0 + 0xFFFFFEBC) (sp0 + 0xFFFFFEBC + BitVec.ofNat 32 0x104) out p n (reg m) :=
+    { code := hc, fg := rfl, ga := by omega, gw := by omega, oa := hoa, ow := how, og := sOG, pw := hpw,
+      p0 := hp0, pg := sPG, ro := sRO, ks := hks, ke := hke,
+      sp0 := by rw [hsp, BitVec.add_assoc, BitVec.add_assoc]; exact (BitVec.add_zero sp0).symm
+      ret := by rw [hra]; exact hret }
+  obtain ⟨m', hs, hpc', hsp', hk, hR⟩ := WP.run (X.entry ha0 ha1 ha2) (by decide) hc.self hpc
+  exact ⟨m', hs, hpc'.trans hra, hsp'.trans hsp, hk, hR⟩
 
 end C3.RV32

@@ -203,6 +203,7 @@ import C3BootProofs.Proofs.JsonParseOuter
 import C3BootProofs.Proofs.JsonParseEnd
 import C3BootProofs.Proofs.JsonParse
 import C3BootProofs.Proofs.TrustedRootDecode
+import C3BootProofs.Proofs.TrustedRootValidFor
 
 /-!
 # Audit
@@ -9010,3 +9011,6 @@ end C3
 
 /-- info: 'C3.RV32.trustedRootDecode_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.trustedRootDecode_correct
+
+/-- info: 'C3.RV32.trustedRootValidFor_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.trustedRootValidFor_correct
