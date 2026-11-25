@@ -9371,3 +9371,21 @@ end C3
 
 /-- info: 'C3.RV32.Cur.bmd_acc' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bmd_acc
+
+/-- info: 'C3.RV32.Cur.bmd_ffnz' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_ffnz
+
+/-- info: 'C3.RV32.Cur.bmd_room' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_room
+
+/-- info: 'C3.RV32.Cur.bmd_halt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_halt
+
+/-- info: 'C3.RV32.Cur.bmd_oth' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_oth
+
+/-- info: 'C3.RV32.Cur.bmd_rej' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_rej
+
+/-- info: 'C3.RV32.Cur.bmd_main' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmd_main
