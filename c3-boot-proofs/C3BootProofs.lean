@@ -574,6 +574,8 @@ import C3BootProofs.Proofs.AcceptLib
 import C3BootProofs.Proofs.AcceptStages
 import C3BootProofs.Proofs.AcceptExtract
 import C3BootProofs.Proofs.AcceptExtractSeq
+import C3BootProofs.Proofs.AcceptExtractLib
+import C3BootProofs.Proofs.AcceptExtractTail
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
