@@ -393,3 +393,7 @@ import C3BootProofs.Proofs.JsonParse
 import C3BootProofs.Proofs.TufCalls
 import C3BootProofs.Proofs.TufExpires
 import C3BootProofs.Proofs.TufPemSpki
+import C3BootProofs.Proofs.TufParseMetadataAt
+import C3BootProofs.Proofs.TufMetaCalls
+import C3BootProofs.Proofs.TufParseMetadata
+import C3BootProofs.Proofs.TufParseMetadataHead

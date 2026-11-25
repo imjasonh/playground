@@ -871,9 +871,84 @@ theorem pm_body (E : PmEnv M0 M1 s out F g0) {g : Fin 32 → Word} (hgsp : g sp 
         (hfa x (by rw [E.Fc]; exact sep_in hx (by decide)) (sep_in hx (by decide))).trans (hO3 x hx)
       exact pm_members E hO5 (by (try rsimp); exact hgsp) (by (try rsimp); (try simp only [ev0]); exact hg0)
         (by (try rsimp); (try simp only [ev0]); exact hg3)
-        (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact hg4) hKL hSK hC5
+        (by (try rsimp); (try simp only [ev_mv hz]); exact hg4) hKL hSK hC5
         hp0 hpn hSp (by omega) (by keepz E.hz0)
 
 end
+
+/-- `tuf::parse_metadata` from its entry, as a weakest precondition. -/
+theorem pm_wp {M0 : Word → BitVec 8} {s out p KQ : Word} {n KL : Nat} {g0 : Fin 32 → Word}
+    (hg0 : g0 a0 = out) (hg1 : g0 a1 = p) (hg2 : g0 a2 = BitVec.ofNat 32 n) (hg3 : g0 a3 = KQ)
+    (hg4 : g0 a4 = BitVec.ofNat 32 KL) (hsp : g0 sp = s + BitVec.ofNat 32 532) (hret : g0 ra &&& ~~~1 = g0 ra)
+    (hal : s.toNat % 4 = 0) (hsw : s.toNat + 532 ≤ 0x40000000)
+    (hro : Sep s 532 (BitVec.ofNat 32 roWindowAddress) roWindowSize) (halo : out.toNat % 4 = 0)
+    (how : out.toNat + 16 ≤ 0x40000000) (hso : Sep out 16 s 532) (hc : PmCode M0) (hn : n < 2 ^ 31)
+    (hp0 : p.toNat ≠ 0) (hpn : p.toNat + n < 2 ^ 32) (hSp : Sep s 532 p n) (hKL : KL < 2 ^ 32)
+    (hSK : Sep s 532 KQ KL) :
+    WP tufParseMetadataCode TPM (pmQ M0 s out g0 (pmRes p (pmModel (memBytes M0 p n) (memBytes M0 KQ KL))))
+      M0 0 g0 := by
+  refine WP.zero fun hz => ?_
+  refine WP.aluImm pm_at_0 ?_; wn
+  have esp : aluEval .add (g0 sp) 0xFFFFFF80 = s + BitVec.ofNat 32 404 := by
+    rw [hsp, ev_add, BitVec.add_assoc]; rfl
+  rw [esp]
+  generalize hF : s + BitVec.ofNat 32 404 = F
+  obtain ⟨hO1, hv⟩ := tpm_pro M0 F g0
+  have E : PmEnv M0 (pmM1 M0 F g0) s out F g0 :=
+    ⟨hF, hal, hsw, halo, how, hso, hro, hc, Out.upK hF hO1 (by decide), hv,
+      by rw [hsp, ← hF, add_ofNat_assoc], hret, hz⟩
+  refine WP.sw pm_at_2 (by (try rsimp); exact aligned_add E.halF (k := 0x7C) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw pm_at_4 (by (try rsimp); exact aligned_add E.halF (k := 0x78) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw pm_at_6 (by (try rsimp); exact aligned_add E.halF (k := 0x74) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw pm_at_8 (by (try rsimp); exact aligned_add E.halF (k := 0x70) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw pm_at_a (by (try rsimp); exact aligned_add E.halF (k := 0x6C) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw pm_at_c (by (try rsimp); exact aligned_add E.halF (k := 0x68) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw pm_at_e (by (try rsimp); exact aligned_add E.halF (k := 0x64) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw pm_at_10 (by (try rsimp); exact aligned_add E.halF (k := 0x60) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw pm_at_12 (by (try rsimp); exact aligned_add E.halF (k := 0x5C) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw pm_at_14 (by (try rsimp); exact aligned_add E.halF (k := 0x58) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw pm_at_16 (by (try rsimp); exact aligned_add E.halF (k := 0x54) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  refine WP.sw pm_at_18 (by (try rsimp); exact aligned_add E.halF (k := 0x50) (by decide))
+    (by (try rsimp); exact E.lowF (by decide) (by decide) (by decide)) ?_; wn
+  change WP tufParseMetadataCode TPM _ (pmM1 M0 F g0) 0x1A _
+  exact pm_body E (by rsimp) (by (try rsimp); exact hg0) (by (try rsimp); exact hg1) (by (try rsimp); exact hg2)
+    (by (try rsimp); exact hg3) (by (try rsimp); exact hg4) (by (try rsimp); (try exact hz)) (by keepz hz) hn hp0 hpn
+    hSp hKL hSK
+
+/-- `tuf::parse_metadata` from its entry, with `out` in `a0`, the `n`-byte
+document at `p` in `a1` and `a2`, the `KL`-byte type at `KQ` in `a3` and
+`a4`, and the stack the 532 bytes below `sp` (its own 128-byte frame and the
+404 bytes that its callees use). It returns to `ra` with `pmModel` of the
+document and the type at `out`: on success the address and length of
+`signed`, then of `signatures`; otherwise the zero word and the error byte.
+Memory outside the stack and the 16 bytes at `out` is as before, and so is
+every register outside `jClob`. The stack and `out` lie below the code, and
+the stack is apart from the read-only data window, `out`, the document, and
+the type. -/
+theorem tufParseMetadata_correct (m : Machine) {retAddr out s p KQ : Word} {n KL : Nat}
+    (hc : PmCode m.mem) (hpc : m.pc = TPM) (ha0 : reg m a0 = out) (ha1 : reg m a1 = p)
+    (ha2 : reg m a2 = BitVec.ofNat 32 n) (ha3 : reg m a3 = KQ) (ha4 : reg m a4 = BitVec.ofNat 32 KL)
+    (hsp : reg m sp = s + BitVec.ofNat 32 532) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
+    (hal : s.toNat % 4 = 0) (hsw : s.toNat + 532 ≤ 0x40000000)
+    (hro : Sep s 532 (BitVec.ofNat 32 roWindowAddress) roWindowSize) (halo : out.toNat % 4 = 0)
+    (how : out.toNat + 16 ≤ 0x40000000) (hso : Sep out 16 s 532) (hn : n < 2 ^ 31) (hp0 : p.toNat ≠ 0)
+    (hpn : p.toNat + n < 2 ^ 32) (hSp : Sep s 532 p n) (hKL : KL < 2 ^ 32) (hSK : Sep s 532 KQ KL) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
+      PmRes m.mem m'.mem s out (pmRes p (pmModel (memBytes m.mem p n) (memBytes m.mem KQ KL))) ∧
+      ∀ r, r ∉ jClob → reg m' r = reg m r := by
+  obtain ⟨m', st, hpc', hR, hfr⟩ := WP.run (pm_wp ha0 ha1 ha2 ha3 ha4 hsp (by rw [hra]; exact hret) hal hsw hro
+    halo how hso hc hn hp0 hpn hSp hKL hSK) (by decide) hc.self hpc
+  exact ⟨m', st, hpc'.trans hra, hR, hfr⟩
 
 end C3.RV32

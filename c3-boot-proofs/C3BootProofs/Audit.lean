@@ -204,6 +204,7 @@ import C3BootProofs.Proofs.JsonParseEnd
 import C3BootProofs.Proofs.JsonParse
 import C3BootProofs.Proofs.TufExpires
 import C3BootProofs.Proofs.TufPemSpki
+import C3BootProofs.Proofs.TufParseMetadataHead
 
 /-!
 # Audit
@@ -9026,3 +9027,6 @@ end C3
 
 /-- info: 'C3.Json.pemSpkiModel_p384' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.pemSpkiModel_p384
+
+/-- info: 'C3.RV32.tufParseMetadata_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufParseMetadata_correct
