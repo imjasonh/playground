@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-24T10:54:09.726Z",
+  "generatedAt": "2026-11-25T09:50:33.174Z",
   "puzzles": [
     {
       "date": "2005-01-01",
@@ -55986,6 +55986,13 @@
       "solved": true,
       "percentFilled": 100,
       "seconds": 384
+    },
+    {
+      "date": "2026-11-25",
+      "id": 24682,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
     }
   ]
 }
