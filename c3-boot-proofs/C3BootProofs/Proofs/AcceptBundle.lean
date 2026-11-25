@@ -211,4 +211,69 @@ theorem acb_s1 {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {
   · rw [w3, hl2]
   · rw [show 14 + l1 + l2 = 10 + l1 + 4 + l2 by omega]; exact R3
 
+/-- The log index's arguments, and the 8 it checks the length against. -/
+def acbA3 : List BInstr :=
+  [.aluImm .add a0 sp 0x350, .aluImm .add a1 sp 0x7FF, .aluImm .add a1 a1 0x5D1, .aluImm .add a2 x0 0x8,
+   .aluImm .add a3 x0 0x8, .aluImm .add 18 x0 0x8]
+
+set_option maxRecDepth 100000 in
+theorem acbA3_end : blockEnd bootMainClosure0Code 0x18DC acbA3 = some 0x18EC := by decide
+
+set_option maxRecDepth 100000 in
+theorem acb_lw18fc : blockEnd bootMainClosure0Code 0x18FC [.lw a1 sp 0x354] = some 0x1900 := by decide
+
+set_option maxRecDepth 100000 in
+theorem acb_li1900 : blockEnd bootMainClosure0Code 0x1900 [.aluImm .add 8 x0 0x5] = some 0x1902 := by decide
+
+theorem acb_w8 {w : Word} (h1 : (8 : Word).toNat ≤ w.toNat) (h2 : w.toNat ≤ (8 : Word).toNat) : w = 8 :=
+  BitVec.eq_of_toNat_eq (Nat.le_antisymm h2 h1)
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 1000000 in
+/-- The log index's field, from 0x18DC to 0x1906: its pointer in `a0`. -/
+theorem acb_s2 {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {L q : Nat} {n0 n : Machine}
+    (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) (s : St n.mem AC n 0x18DC (reg n))
+    (R : AcbRd B Bf L q n.mem) (hq : q ≤ L) :
+    AcbOr B n0 n (fun n' => St n'.mem AC n' 0x1906 (reg n') ∧ reg n' a0 = Bf + BitVec.ofNat 32 (q + 4) ∧
+      reg n' 8 = 5 ∧
+      (∀ x : Fin 32, x.val ∉ [1, 6, 8, 10, 11, 12, 13, 14, 15, 18] → reg n' x = reg n x) ∧
+      (memLoad32 n0.mem (Bf + BitVec.ofNat 32 q)).toNat = 8 ∧ q + 12 ≤ L ∧ AcbRd B Bf L (q + 12) n'.mem ∧
+      ∀ x, AcbOut acbFc B x → n'.mem x = n.mem x) := by
+  have hz := s.zero
+  refine acb_bind (acb_fld (lo := 8) (hi := 8) (o' := 0x18FC) G K s R hq acbA3 acbA3_end
+    (by simp only [BlockOk, BInstr.ok, acbA3, and_self]) (by simp only [runBlock, BInstr.run, acbA3])
+    (by decide) (by simp only [acbA3]; acb_rg; rw [K.sp]; exact acb_sl B (by decide))
+    (by simp only [acbA3]; acb_rg; rw [K.sp, acb_dd0]) (by simp only [acbA3]; acb_rg)
+    (by simp only [acbA3]; acb_rg) ac_at_18ec ac_at_18f0 (by decide) (by decide) ac_at_18f4 (by decide)
+    ac_at_18f8 (by decide) (by decide) (by decide)) ?_
+  rintro n1 K1 ⟨s1, rk1, r10, w1, b1, lo1, hi1, R1, f1⟩
+  have h8 := acb_w8 lo1 hi1
+  have e8 : (8 : Word).toNat = 8 := rfl
+  rw [h8, e8] at b1 R1
+  have z1 := s1.zero
+  obtain ⟨n2, c2, K2, s2, m2, r2, k2⟩ := acb_lws G K1 s1 acb_lw18fc (c := 0x354) (by decide) (by decide)
+    (by decide) (by decide)
+  obtain ⟨n3, c3, K3, s3, m3, r3, k3⟩ := acb_blk K2 s2 (G.code K2) [.aluImm .add 8 x0 0x5] acb_li1900
+    (by simp only [BlockOk, BInstr.ok, and_self]) (by simp only [runBlock, BInstr.run]) (by decide)
+  have z2 := s2.zero
+  have r18 : reg n1 18 = 8 := by
+    rw [rk1 18 (by decide) (by decide)]; simp only [acbA3]; acb_rg
+  obtain ⟨n4, c4, s4⟩ := s3.notTaken (G.code K3) 0x1906 ac_at_1902 (by decide) (by
+    rw [k3 a1 (by decide), k3 18 (by decide), r2, k2 18 (by decide), r18, w1, h8]
+    simp only [branchTaken]; decide)
+  have K4 : AcbK B n0 n4 := K3.regs (l := []) (by rw [s4.mem]) (fun x _ => by rw [s4.regs])
+  have aux : ∀ x : Fin 32, x.val ∉ [1, 6, 8, 10, 11, 12, 13, 14, 15, 18] →
+      x.val ∉ [1, 6, 10, 11, 12, 13, 14, 15] ∧ x ≠ a0 ∧ x ≠ a1 ∧ x ≠ 8 ∧ x ∉ acbA3.filterMap BInstr.dst := by
+    decide
+  refine acb_pre c2 (acb_pre c3 (acb_pre (.cons c4 (.refl _)) (acb_ret K4 ⟨⟨s4.pc, rfl, fun _ => rfl⟩,
+    ?_, ?_, ?_, by rw [h8]; rfl, by omega, ?_, ?_⟩)))
+  · rw [s4.regs, k3 a0 (by decide), k2 a0 (by decide), r10]
+  · rw [s4.regs, r3]; simp only [runBlock, BInstr.run]; acb_rg; rw [z2]; rfl
+  · intro x hx
+    have ⟨a, b, c, d, e⟩ := aux x hx
+    rw [s4.regs, k3 x (by simp only [List.filterMap, BInstr.dst, List.mem_singleton]; exact d), k2 x c, rk1 x a b, runBlock_reg _ _ _ x hz e]
+  · rw [s4.mem, m3, m2, show q + 12 = q + 4 + 8 by omega]
+    exact R1
+  · intro x hx; rw [s4.mem, m3, m2, f1 x hx]
+
 end C3.RV32.Ac
