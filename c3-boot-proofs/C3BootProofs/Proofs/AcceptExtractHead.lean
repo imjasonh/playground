@@ -203,4 +203,149 @@ theorem ace_d38 {X : AceCtx} (O : X.Ok) {M Mx : Word → BitVec 8} {f : Fin 32 �
   · rw [hrg]; rsimp; simp only [ev_add, R.rsp, acSlot]; bv_omega
   · rw [hrg]; rsimp; simp only [ev_add, R.rsp, acSlot]; bv_omega
 
+/-- A span of the document is apart from the stack frame. -/
+theorem ace_bufSep {X : AceCtx} (O : X.Ok) {c k : Nat} (hc : c + k ≤ 0x5A70) {p : Word} {n : Nat}
+    (h1 : X.D.toNat ≤ p.toNat) (h2 : p.toNat + n ≤ X.D.toNat + X.json.length) :
+    Sep (X.B + BitVec.ofNat 32 c) k p n := by
+  have hlo := O.pre.docLo; have hhi := O.pre.docHi; have hb := O.lay.hi
+  have e : p = X.Bf + BitVec.ofNat 32 (p.toNat - X.Bf.toNat) := by
+    apply BitVec.eq_of_toNat_eq; rw [BitVec.toNat_add, BitVec.toNat_ofNat]; have := p.isLt; omega
+  rw [e]; exact (O.lay.sep.sub hc).subR (by unfold acBufLen at *; omega)
+
+/-- A span of the document in memory that agrees with the head's. -/
+theorem ace_docBytes {X : AceCtx} (O : X.Ok) {M : Word → BitVec 8} (H : AceHM X M) {p : Word} {n : Nat}
+    (h1 : X.D.toNat ≤ p.toNat) (h2 : p.toNat + n ≤ X.D.toNat + X.json.length) :
+    memBytes M p n = slice X.json (p.toNat - X.D.toNat) n := by
+  have hhi := O.pre.docHi; have hb := O.lay.hi
+  have e : p = X.D + BitVec.ofNat 32 (p.toNat - X.D.toNat) := by
+    apply BitVec.eq_of_toNat_eq; rw [BitVec.toNat_add, BitVec.toNat_ofNat]; have := p.isLt; omega
+  have h := tuf_memBytes_drop_take (M := M) (p := X.D) (n := X.json.length) (h := p.toNat - X.D.toNat) (l := n)
+    (by omega)
+  rw [ace_doc O H.mem, ← e] at h
+  exact h.symm
+
+theorem ace_den {d : Bytes} {tp tl a b : Nat} {j : Json} (ht : tp + tl ≤ d.length)
+    (h : JDen false (slice d tp tl) a b j) : JDen false d (tp + a) b j := by
+  obtain ⟨h1, h2⟩ := h
+  have hl : (slice d tp tl).length ≤ tl := by unfold slice; simp only [List.length_take]; omega
+  refine ⟨by omega, ?_⟩
+  rw [← tlm_slice (d := d) (tp := tp) (tl := tl) (by omega)]; exact h2
+
+set_option maxHeartbeats 4000000 in
+/-- From 0xD04: `field` for `certificateAuthorities`, then `elements` on it. -/
+theorem ace_d04 {X : AceCtx} (O : X.Ok) {M : Word → BitVec 8} {f : Fin 32 → Word}
+    (H : AceHM X M) (R : AceHR X f) {jr : Json} {p0 w30 : Word} (hroot : AceRootJ X.json jr)
+    (h26 : f 26 = p0) (h30 : memLoad32 M (acSlot X.B 0x30) = w30) (hobj : AceVal X.D X.json p0 w30.toNat jr)
+    (hz : ∀ i, i < 8 → memLoad32 M (acSlot X.B (0x1ED0 + 0x20 * i)) = 0) :
+    WP bootMainClosure0Code AC (aceHQ X (aceHP X)) M 0xD04 f := by
+  have F := O.lay.fr
+  have hh := F.hi
+  have E := ace_env O H.mem
+  have hobj' := hobj
+  obtain ⟨hD, hn, hJV⟩ := hobj'
+  have hjl := O.pre.docHi
+  have hD0 := O.pre.docLo
+  have hbh := O.lay.hi
+  unfold acBufLen at hbh
+  have e30 : X.B + 0x3A50 + 0x30 = acSlot X.B 0x30 := by simp only [acSlot]; bv_omega
+  refine WP.lui ac_at_d04 ?_; wn
+  refine WP.aluImm ac_at_d08 ?_; wn
+  refine WP.aluImm ac_at_d0c ?_; wn
+  refine WP.aluImm ac_at_d0e ?_; wn
+  refine WP.alu ac_at_d10 ?_; wn
+  refine WP.lw ac_at_d12 (by rsimp; rw [R.rsp, e30]; exact ace_al4 F (by decide) (by decide)) ?_; wn
+  refine WP.callField (tb := BitVec.ofNat 32 jsonFieldAddress) (out := acSlot X.B 0x350)
+    (s := X.B + BitVec.ofNat 32 0x394C) (p := p0) (kq := 0x3FCC47DC) (n := w30.toNat) (kl := 0x16)
+    ac_at_d14 ac_at_d18 (by decide) (by decide) (by decide) E.field
+    (by rsimp; rw [R.rsp]; simp only [ev_add, acSlot]; bv_omega)
+    (by rsimp; simp only [ev_add]; exact (BitVec.zero_add _).trans h26)
+    (by rsimp; rw [R.rsp, e30, h30]; simp)
+    (by rsimp <;> rfl)
+    (by rsimp <;> rfl)
+    (by rsimp; rw [R.rsp]; bv_omega)
+    (ace_al4 F (by decide) (by decide)) (ace_al4 (c := 0x3A50 + 0x350) F (by decide) (by decide))
+    (by rw [F.at _ (by decide)]; omega) (by decide) (by omega) (by omega)
+    (tuf_fieldSep (by rw [F.at _ (by decide)]; omega) (O.lay.ro.sub (by decide)))
+    (ace_bufSep O (by decide) hD (by omega))
+    (tuf_sep_ro (O.lay.ro.sub (by decide)) (by decide) (by decide))
+    (show Sep (X.B + BitVec.ofNat 32 (0x3A50 + 0x350)) 8 _ _ from ace_sepB' F (.inr (by decide)) (by decide) (by decide))
+    (show Sep (X.B + BitVec.ofNat 32 (0x3A50 + 0x350)) 8 _ _ from ace_hs F (by decide) (by decide) (by decide))
+    (ace_cs F (by decide))
+    (show Sep (X.B + BitVec.ofNat 32 (0x3A50 + 0x350)) 8 _ _ from ace_cs F (by decide)) fun m2 hR => ?_
+  rw [ace_docBytes O H hD (by omega), E.kCas] at hR
+  generalize m2.mem = M2 at hR
+  have hOF := ObjField false _ jr (ascii!"certificateAuthorities") hJV
+  obtain ⟨M1, hO1, hF⟩ := hR
+  have hM2 : ∀ x, AceL X.B x → M2 x = M x := fun x hx =>
+    (hF.out x (hx.s350 F (by decide) (by decide))).trans (hO1 x (hx.frame F (by decide) (by decide)))
+  have H2 := H.mono F hM2
+  have e350 : X.B + 0x3A50 + 0x350 = acSlot X.B 0x350 := by simp only [acSlot]; bv_omega
+  have e354 : X.B + 0x3A50 + 0x354 = acSlot X.B 0x350 + 4 := by simp only [acSlot]; bv_omega
+  have e354a : X.B + 0x3A50 + 0x354 = X.B + BitVec.ofNat 32 0x3DA4 := by bv_omega
+  rcases hf : jr.field (ascii!"certificateAuthorities") with _ | jc <;> rw [hf] at hOF
+  · rw [hOF] at hF
+    obtain ⟨-, t0, t4⟩ := hF
+    refine WP.lw ac_at_d1c (by rsimp; rw [R.rsp, e350]; exact ace_al4 (c := 0x3A50 + 0x350) F (by decide) (by decide)) ?_
+    wn
+    refine WP.branch ac_at_d20 (fun _ => ?_) (fun eb => ?_) <;> wn
+    · refine ace_f1A66 O H2.mem (by hr) ?_
+      rw [e354, t4]; decide
+    · rsimp at eb; rw [R.rsp, e350, t0] at eb; exact absurd eb (by decide)
+  obtain ⟨vp, vl, hok, hden⟩ := hOF
+  rw [hok] at hF
+  have hden' := ace_den hn hden
+  have hvb := hden'.1
+  have hsl : (slice X.json (p0.toNat - X.D.toNat) w30.toNat).length = w30.toNat := by
+    simp only [slice, List.length_take, List.length_drop]; omega
+  have hvl : vp + vl ≤ w30.toNat := hsl ▸ hden.1
+  have hq : (p0 + BitVec.ofNat 32 vp).toNat = p0.toNat + vp := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+  obtain ⟨hF0, t0, t4⟩ := hF
+  refine WP.lw ac_at_d1c (by rsimp; rw [R.rsp, e350]; exact ace_al4 (c := 0x3A50 + 0x350) F (by decide) (by decide)) ?_
+  wn
+  refine WP.branch ac_at_d20 (fun eb => ?_) (fun _ => ?_) <;> wn
+  · exfalso; rsimp at eb; rw [R.rsp, e350, t0] at eb
+    have e0 : p0 + BitVec.ofNat 32 vp = 0 := by simpa [branchTaken] using eb
+    rw [e0] at hq; simp at hq; omega
+  refine WP.lw ac_at_d24 (by rsimp; rw [R.rsp, e354a]; exact ace_al4 F (by decide) (by decide)) ?_
+  wn
+  refine WP.lui ac_at_d28 ?_; wn
+  refine WP.aluImm ac_at_d2a ?_; wn
+  refine WP.alu ac_at_d2e ?_; wn
+  have hq1 : X.D.toNat ≤ (p0 + BitVec.ofNat 32 vp).toNat := by omega
+  have hq2 : (p0 + BitVec.ofNat 32 vp).toNat + vl ≤ X.D.toNat + X.json.length := by omega
+  have E2 := ace_env O H2.mem
+  refine WP.callElements (tb := RJE) (out := acSlot X.B 0x1320) (s := X.B + BitVec.ofNat 32 0x3A40)
+    (p := p0 + BitVec.ofNat 32 vp) (n := vl) ac_at_d30 ac_at_d34 (by decide) (by decide) (by decide) E2.elems
+    (by rw [show RJE + 0xFFFFFAB2 = RSW by decide]; exact E2.skipWs)
+    (by rsimp; rw [R.rsp]; simp only [ev_add, acSlot]; bv_omega)
+    (by rsimp; rw [R.rsp, e350, t0])
+    (by rsimp; rw [R.rsp, e354, t4])
+    (by rsimp; rw [R.rsp]; bv_omega)
+    (by omega) (ace_al4 F (by decide) (by decide)) (ace_al4 (c := 0x3A50 + 0x1320) F (by decide) (by decide))
+    (ace_hs F (by decide) (by decide) (by decide)) (ace_hs F (by decide) (by decide) (by decide))
+    (ace_bufSep O (by decide) hq1 hq2)
+    (show Sep (X.B + BitVec.ofNat 32 (0x3A50 + 0x1320)) 12 _ _ from ace_sepB' F (.inr (by decide)) (by decide) (by decide))
+    (show Sep (X.B + BitVec.ofNat 32 (0x3A50 + 0x1320)) 12 _ _ from ace_hs F (by decide) (by decide) (by decide))
+    (ace_cs F (by decide))
+    (show Sep (X.B + BitVec.ofNat 32 (0x3A50 + 0x1320)) 12 _ _ from ace_cs F (by decide)) fun m3 hC => ?_
+  rw [ace_docBytes O H2 hq1 hq2] at hC
+  generalize m3.mem = M3 at hC
+  obtain ⟨M1', hO', hc⟩ := hC
+  have hM3 : ∀ x, AceL X.B x → M3 x = M2 x := fun x hx =>
+    (hc.out x (hx.s1310 F (by decide) (by decide))).trans (hO' x (hx.frame F (by decide) (by decide)))
+  have H3 := H2.mono F hM3
+  have hf2 : ∀ x, Sep x 1 (X.B + BitVec.ofNat 32 (0x3A50 + 0x350)) 8 → Sep x 1 (X.B + BitVec.ofNat 32 0x394C) 260 →
+      M2 x = M x := fun x h1 h2 => (hF0 x h1).trans (hO1 x h2)
+  have hf3 : ∀ x, Sep x 1 (X.B + BitVec.ofNat 32 (0x3A50 + 0x1320)) 12 → Sep x 1 (X.B + BitVec.ofNat 32 0x3A40) 16 →
+      M3 x = M2 x := fun x h1 h2 => (hc.out x h1).trans (hO' x h2)
+  refine ace_d38 O H3 (by hr) hroot (by rsimp; exact h26) ?_ hobj hf
+    ⟨hq1, by rw [hq, show p0.toNat + vp - X.D.toNat = p0.toNat - X.D.toNat + vp by omega]; exact hden'⟩ ?_ hc
+  · rw [ace_ld2 F hf3 (.inl (by decide)) (.inr (by decide)) (by decide) (by decide) (by decide),
+      ace_ld2 F hf2 (.inl (by decide)) (.inr (by decide)) (by decide) (by decide) (by decide), h30]
+  · intro i hi
+    rw [ace_ld2 F hf3 (.inr (by omega)) (.inr (by omega)) (by omega) (by decide) (by decide),
+      ace_ld2 F hf2 (.inr (by omega)) (.inr (by omega)) (by omega) (by decide) (by decide)]
+    exact hz i hi
+
 end C3.RV32.Ac
