@@ -1,12 +1,12 @@
-import C3BootProofs.Proofs.AcceptSpecPin
+import C3BootProofs.Proofs.AcceptSpecIdx
 import C3BootProofs.Proofs.AcceptExtractDup
 
 /-!
 # `boot_main`'s first closure: the specification
 
 `acs_spec` composes the stages from the closure's entry to its return. The
-stages from the entry to 0x4E4 are `AcsFront`; from 0x4E4 on, the pinned-root,
-roots, `targets.json`, extract, bundle, and finish stages run in turn.
+stages from the entry to 0x2A6 are `AcsFront`; from 0x2A6 on, the index,
+pinned-root, roots, `targets.json`, extract, bundle, and finish stages run in turn.
 -/
 
 namespace C3.RV32.Ac
@@ -29,12 +29,12 @@ structure AcsEntry (X : AcsCtx) (m : Machine) : Prop where
   t : reg m (4 : Fin 32) = X.t
   v : ∀ k, k < 13 → reg m (savedReg k) = X.v k
 
-/-- **The stages from the entry to 0x4E4**: the prologue, the read, image,
-and index stages. From the entry, the closure ends as `X.End` says, or
-reaches 0x4E4 where `AcsAt4E4` holds. -/
+/-- **The stages from the entry to 0x2A6**: the prologue, the read and
+image stages. From the entry, the closure ends as `X.End` says, or reaches
+0x2A6 where `AcsAt2A6` holds. -/
 def AcsFront : Prop :=
   ∀ (X : AcsCtx), X.Ok → ∀ m, AcsEntry X m →
-    (∀ n mf header parts, AcsAt4E4 X mf header parts n → X.End n) → X.End m
+    (∀ n mf header, AcsAt2A6 X mf header n → X.End n) → X.End m
 
 /-- **The closure's specification**: from its entry, the closure panics, or
 returns with `AcsRes`: memory kept outside its stack, `Buffers`, and the
@@ -42,7 +42,7 @@ result, and a result that is `None` or a `Some` for the slot that
 `bmcAccept` accepts. -/
 theorem acs_spec (hF : AcsFront) (hNK : AcsTargetsNoKeys) (hC : AceCaStage) (hT : AceTlogStage)
     (hS : AceTsaStage) (hB : AcsBundleStage) (hFx : AcsFinishBad) {X : AcsCtx} (ok : X.Ok) {m : Machine} (e : AcsEntry X m) : X.End m :=
-  hF X ok m e fun _ _ _ _ S => acs_pin hNK (ac_extract_loops hC hT hS ace_dup) hB hFx ok S
+  hF X ok m e fun _ _ _ S => acs_index hNK (ac_extract_loops hC hT hS ace_dup) hB hFx ok S
 
 /-! ## The contract -/
 

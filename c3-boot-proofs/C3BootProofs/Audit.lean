@@ -10481,6 +10481,18 @@ end C3
 /-- info: 'C3.RV32.Ac.acs_pin' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acs_pin
 
+/-- info: 'C3.RV32.Ac.acs_decode_docs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_decode_docs
+
+/-- info: 'C3.RV32.Ac.acs_indexStage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_indexStage
+
+/-- info: 'C3.RV32.Ac.acs_doc_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_doc_at
+
+/-- info: 'C3.RV32.Ac.acs_index' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_index
+
 /-- info: 'C3.RV32.Ac.acs_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acs_spec
 
