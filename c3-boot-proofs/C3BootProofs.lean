@@ -398,3 +398,5 @@ import C3BootProofs.Proofs.TufMetaCalls
 import C3BootProofs.Proofs.TufParseMetadata
 import C3BootProofs.Proofs.TufParseMetadataHead
 import C3BootProofs.Proofs.TufParseRoot
+import C3BootProofs.Proofs.TufRoleKeysReadAt
+import C3BootProofs.Proofs.TufRoleKeys
