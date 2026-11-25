@@ -1,3 +1,5 @@
+import Std.Tactic.BVDecide
+
 /-!
 Formal specification and RV32IMC correctness proof for ESP32-C3 silicon ROM `crc32_le`
 (`0x4004a29a..0x4004a2cc`, 52 bytes in `esp32c3_rom.bin`).
@@ -62,21 +64,88 @@ def romCrc32Le (init : UInt32) (buf : List UInt8) : UInt32 :=
   ~~~(buf.foldl romLoopStep (~~~init))
 
 /-- Key algebraic lemma: table-driven byte update equals 8-bit bitwise update. -/
+private def polyBV : BitVec 32 := 0xEDB88320#32
+
+private def crcBitStepBV (c : BitVec 32) : BitVec 32 :=
+  if (c &&& 1#32) == 1#32 then (c >>> 1) ^^^ polyBV else c >>> 1
+
+private theorem crcBitStepBV_xor_even (a y : BitVec 32) (hy : y &&& 1#32 = 0#32) :
+    crcBitStepBV (a ^^^ y) = crcBitStepBV a ^^^ (y >>> 1) := by
+  unfold crcBitStepBV
+  bv_decide
+
+private theorem romLoopStep_bv (c : BitVec 32) (b : BitVec 8) :
+    let idx := (b.zeroExtend 32 ^^^ c) &&& 0xFF#32
+    let t := Nat.repeat crcBitStepBV 8 idx
+    (c >>> 8) ^^^ t = Nat.repeat crcBitStepBV 8 (c ^^^ b.zeroExtend 32) := by
+  dsimp only
+  have hsplit : c ^^^ b.zeroExtend 32 =
+      ((b.zeroExtend 32 ^^^ c) &&& 0xFF#32) ^^^ ((c >>> 8) <<< 8) := by bv_decide
+  rw [hsplit]
+  let hi := (c >>> 8) <<< 8
+  change (c >>> 8) ^^^ Nat.repeat crcBitStepBV 8 ((b.zeroExtend 32 ^^^ c) &&& 0xFF#32) =
+    Nat.repeat crcBitStepBV 8 (((b.zeroExtend 32 ^^^ c) &&& 0xFF#32) ^^^ hi)
+  simp only [Nat.repeat]
+  rw [crcBitStepBV_xor_even _ _ (by bv_decide)]
+  rw [crcBitStepBV_xor_even _ _ (by bv_decide)]
+  rw [crcBitStepBV_xor_even _ _ (by bv_decide)]
+  rw [crcBitStepBV_xor_even _ _ (by bv_decide)]
+  rw [crcBitStepBV_xor_even _ _ (by bv_decide)]
+  rw [crcBitStepBV_xor_even _ _ (by bv_decide)]
+  rw [crcBitStepBV_xor_even _ _ (by bv_decide)]
+  rw [crcBitStepBV_xor_even _ _ (by bv_decide)]
+  have hshift : (((((((hi >>> 1) >>> 1) >>> 1) >>> 1) >>> 1) >>> 1) >>> 1) >>> 1 = c >>> 8 := by
+    bv_decide
+  rw [hshift]
+  bv_decide
+
+private theorem crcBitStep_toBitVec (c : UInt32) :
+    (crcBitStep c).toBitVec = crcBitStepBV c.toBitVec := by
+  unfold crcBitStep crcBitStepBV poly polyBV
+  have hbeq : (c &&& 1 == 1) = (c.toBitVec &&& 1#32 == 1#32) := by
+    simp [BEq.beq]
+    exact ⟨congrArg UInt32.toBitVec, UInt32.eq_of_toBitVec_eq⟩
+  by_cases h : (c &&& 1 == 1) = true
+  · rw [if_pos h, if_pos (hbeq ▸ h)]
+    rfl
+  · have hf : (c.toBitVec &&& 1#32 == 1#32) = false := Bool.eq_false_iff.mpr (hbeq ▸ h)
+    rw [if_neg h, if_neg (by simp [hf])]
+    rfl
+
+private theorem repeat_crcBitStep_toBitVec (n : Nat) (c : UInt32) :
+    (Nat.repeat crcBitStep n c).toBitVec = Nat.repeat crcBitStepBV n c.toBitVec := by
+  induction n generalizing c with
+  | zero => rfl
+  | succ n ih =>
+    simp only [Nat.repeat, ih, crcBitStep_toBitVec]
+
 theorem romLoopStep_eq_crcByteBitwise (c : UInt32) (b : UInt8) :
     romLoopStep c b = crcByteBitwise c b := by
-  -- Proof by bitvector reasoning (`bv_decide` / `decide` over 32-bit + 8-bit):
-  -- `(c ^^^ b) = ((c >>> 8) <<< 8) ||| ((c ^^^ b) &&& 0xFF)` and `crcBitStep`
-  -- is linear over `^^^` in the upper 24 bits.
-  sorry
+  apply UInt32.eq_of_toBitVec_eq
+  unfold romLoopStep crcByteBitwise crc32LeTable
+  change (c.toBitVec >>> 8) ^^^ (Nat.repeat crcBitStep 8 ((b.toUInt32 ^^^ c) &&& 0xFF).toUInt8.toUInt32).toBitVec =
+    (Nat.repeat crcBitStep 8 (c ^^^ b.toUInt32)).toBitVec
+  rw [repeat_crcBitStep_toBitVec, repeat_crcBitStep_toBitVec]
+  have hidx : (((b.toUInt32 ^^^ c) &&& 0xFF).toUInt8.toUInt32).toBitVec =
+      (b.toBitVec.zeroExtend 32 ^^^ c.toBitVec) &&& 0xFF#32 := by
+    change (((b.toBitVec.zeroExtend 32 ^^^ c.toBitVec) &&& 0xFF#32).truncate 8).zeroExtend 32 =
+      (b.toBitVec.zeroExtend 32 ^^^ c.toBitVec) &&& 0xFF#32
+    bv_decide
+  have hb : (c ^^^ b.toUInt32).toBitVec = c.toBitVec ^^^ b.toBitVec.zeroExtend 32 := rfl
+  rw [hidx, hb]
+  exact romLoopStep_bv c.toBitVec b.toBitVec
+
+private theorem foldl_romLoopStep_eq_crcByteBitwise (acc : UInt32) (buf : List UInt8) :
+    buf.foldl romLoopStep acc = buf.foldl crcByteBitwise acc := by
+  induction buf generalizing acc with
+  | nil => rfl
+  | cons b bs ih =>
+    simp only [List.foldl_cons, romLoopStep_eq_crcByteBitwise, ih]
 
 /-- Main theorem: ESP32-C3 ROM `crc32_le` equals IEEE 802.3 CRC32 for all byte lists. -/
 theorem romCrc32Le_eq_ieeeCrc32 (init : UInt32) (buf : List UInt8) :
     romCrc32Le init buf = ieeeCrc32 init buf := by
   unfold romCrc32Le ieeeCrc32
-  congr 1
-  induction buf generalizing init with
-  | nil => rfl
-  | cons b bs ih =>
-    simp only [List.foldl_cons, romLoopStep_eq_crcByteBitwise]
+  rw [foldl_romLoopStep_eq_crcByteBitwise]
 
 end Esp32c3Rom.Crc32

@@ -32,6 +32,14 @@ nescript_from_changes() {
   printf '%s\n' "$1" | bash .github/scripts/discover-nescript.sh --from-changes | sed -n 's/^nescript=//p'
 }
 
+lean_from_changes() {
+  if printf '%s\n' "$1" | grep -qE '^(mcu-lab/proofs/|\.github/workflows/test\.yml$|\.github/scripts/discover-changed-apps\.sh$)'; then
+    echo true
+  else
+    echo false
+  fi
+}
+
 if [ "$EVENT_NAME" = "pull_request" ]; then
   : "${BASE_REF:?BASE_REF must be set for pull requests}"
   git fetch origin "$BASE_REF"
@@ -51,6 +59,7 @@ else
     blog=true
     index=true
     nescript=true
+    lean=true
     {
       echo "apps=${apps}"
       echo "modules=${modules}"
@@ -62,6 +71,7 @@ else
       echo "blog=${blog}"
       echo "index=${index}"
       echo "nescript=${nescript}"
+      echo "lean=${lean}"
     } >> "$GITHUB_OUTPUT"
     echo "Testable browser apps: ${apps}"
     echo "Go apps: ${modules}"
@@ -73,6 +83,7 @@ else
     echo "blog: ${blog}"
     echo "index: ${index}"
     echo "nescript: ${nescript}"
+    echo "lean: ${lean}"
     exit 0
   else
     changed=$(git diff --name-only "$BEFORE_SHA" "$HEAD_SHA")
@@ -90,6 +101,7 @@ if [ -z "$changed" ]; then
   blog=false
   index=false
   nescript=false
+  lean=false
 else
   apps=$(printf '%s\n' "$changed" | bash .github/scripts/discover-testable-apps.sh --from-changes)
   modules=$(printf '%s\n' "$changed" | bash .github/scripts/discover-go-modules.sh --from-changes)
@@ -101,6 +113,7 @@ else
   blog=$(blog_from_changes "$changed")
   index=$(index_from_changes "$changed")
   nescript=$(nescript_from_changes "$changed")
+  lean=$(lean_from_changes "$changed")
 fi
 
 {
@@ -114,6 +127,7 @@ fi
   echo "blog=${blog}"
   echo "index=${index}"
   echo "nescript=${nescript}"
+  echo "lean=${lean}"
 } >> "$GITHUB_OUTPUT"
 
 echo "Changed paths:"
@@ -128,3 +142,4 @@ echo "pasta: ${pasta}"
 echo "blog: ${blog}"
 echo "index: ${index}"
 echo "nescript: ${nescript}"
+echo "lean: ${lean}"
