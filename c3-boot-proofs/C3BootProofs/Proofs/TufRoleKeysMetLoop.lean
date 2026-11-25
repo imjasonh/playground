@@ -285,6 +285,59 @@ theorem rm_314 (E : RmBase M0 M1 s F R MP SP ML SL g0) {es : List RkEntry} {cs :
   · (try rsimp) <;> (try rw [hz]) <;> rfl
   · (try rsimp) <;> (try rw [hz]) <;> rfl
 
+theorem rm_geN : ∀ n, n ≤ 8 → branchTaken .bgeu (BitVec.ofNat 32 n) (BitVec.ofNat 32 n) = true := by decide
+
+theorem rm_thr {lo hi : Word} {c : Nat} (hc : c ≤ 8)
+    (h : aluEval .and (aluEval .xor (aluEval .sltu (BitVec.ofNat 32 c) lo) 0xFFFFFFFF) (aluEval .sltu hi 1) ≠ 0) :
+    hi.toNat * 2 ^ 32 + lo.toNat ≤ c := by
+  change ((if (BitVec.ofNat 32 c).ult lo then (1 : Word) else 0) ^^^ 0xFFFFFFFF) &&&
+    (if hi.ult 1 then (1 : Word) else 0) ≠ 0 at h
+  by_cases h1 : (BitVec.ofNat 32 c).ult lo = true
+  · rw [if_pos h1] at h; exact absurd h (by split <;> decide)
+  · by_cases h2 : hi.ult 1 = true
+    · rw [BitVec.ult, decide_eq_true_eq] at h1 h2
+      rw [BitVec.toNat_ofNat] at h1
+      have : c % 2 ^ 32 = c := Nat.mod_eq_of_lt (by omega)
+      have : hi.toNat < 1 := h2
+      omega
+    · rw [Bool.not_eq_true] at h2; rw [h2] at h; exact absurd h (by split <;> decide)
+
+/-- The loop's exit, from 0x78 after the last slot: the count against the
+threshold, then the epilogue. -/
+theorem rm_exit (E : RmBase M0 M1 s F R MP SP ML SL g0) {t : Nat} {es : List RkEntry} (hR : RkAt M0 R t es)
+    {cs : List Nat} {Mk : Word → BitVec 8} {g : Fin 32 → Word}
+    (hd : RmHd M0 M1 s F R MP SP ML SL g0 es cs es.length Mk g) :
+    WP tufRoleKeysMetCode TRM
+      (rmQ H M0 s g0 (MetSound (memBytes M0 SP SL) (memBytes M0 MP ML) t (es.map nbE))) Mk 0x78 g := by
+  obtain ⟨hO, hHM, hS, hsp, hz, hfr, h19, h20, h23, -, -, -, -, -, hcj, -⟩ := hd
+  have hn8 := hR.1
+  have hal := E.halR
+  have hw : ∀ c, c + 4 ≤ 0x540 → memLoad32 Mk (R + BitVec.ofNat 32 c) = memLoad32 M0 (R + BitVec.ofNat 32 c) :=
+    fun c hc => memLoad32_congr fun j hj => E.agree hO _ (sep_pt (E.hSR.subR hc) hj)
+  refine WP.alu rkm_at_78 ?_; wn
+  refine WP.branch rkm_at_7a (fun _ => ?_) (fun eb => ?_) <;> wn
+  rotate_left
+  · exfalso; (try rsimp at eb); rw [h23, h20, rm_geN _ hn8] at eb; exact absurd eb (by decide)
+  refine WP.lw rkm_at_354 (by (try rsimp); rw [h19]; exact aligned_add hal (k := 0x310) (by decide)) ?_; wn
+  refine WP.lw rkm_at_358 (by (try rsimp); rw [h19]; exact aligned_add hal (k := 0x314) (by decide)) ?_; wn
+  refine WP.lw rkm_at_35c (by (try rsimp); rw [hsp]; exact E.alF (c := 0x18) (by decide)) ?_; wn
+  refine WP.alu rkm_at_35e ?_; wn
+  refine WP.aluImm rkm_at_362 ?_; wn
+  refine WP.aluImm rkm_at_366 ?_; wn
+  refine WP.alu rkm_at_36a ?_; wn
+  refine rm_epi (by rsimp; exact hsp) (E.saved hO) E.hsp0 E.hret (by have := E.halF; omega) E.hz0
+    (by keepz E.hz0) (E.agree hO) fun _ h26 => ?_
+  refine rm_sound hS ?_
+  (try rsimp at h26)
+  rw [hsp, h19] at h26
+  change aluEval .and (aluEval .xor (aluEval .sltu (memLoad32 Mk (F + BitVec.ofNat 32 0x18))
+    (memLoad32 Mk (R + BitVec.ofNat 32 0x310))) 0xFFFFFFFF)
+    (aluEval .sltu (memLoad32 Mk (R + BitVec.ofNat 32 0x314)) 1) ≠ 0 at h26
+  rw [hHM.2.2.1, hw 0x310 (by decide), hw 0x314 (by decide), ← rk_w32, ← rk_w32] at h26
+  have := rm_thr (by omega) h26
+  rw [hR.2.1] at this
+  exact this
+
 end
 
 end C3.RV32
