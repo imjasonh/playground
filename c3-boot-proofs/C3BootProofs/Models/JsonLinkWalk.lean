@@ -96,61 +96,96 @@ theorem jlw_den {c : Bool} {d r : Bytes} {i f dep : Nat} {j : Json} (hi : i ≤ 
   show parseValue c f dep ((d.drop i).take (jlpEnd d r - i) ++ r) = some (j, r)
   rw [hxl, hs, List.take_left' rfl, ← hs]; exact h
 
-/-- `nextMember` walks the members that the spec reads from position `p`. -/
-theorem jlw_members (c : Bool) (d : Bytes) : ∀ f {dep p : Nat} {ms : List (Bytes × Json)} {r : Bytes},
-    p ≤ d.length → parseMembers c f dep (d.drop p) = some (ms, r) → noCtlMembers ms = true →
-      MembersFrom c d p ms
-  | 0, _, _, _, _, _, h, _ => by rw [jls_pm_zero] at h; cases h
-  | f + 1, dep, p, ms, r, hp, h, hn => by
-    obtain ⟨rest, k, r1, r2, v, r3, hs, hk, hc, hv, ht⟩ := jls_pm_inv h
-    obtain ⟨hpL, hb, hrest⟩ := jlp_drop_cons_inv hs
-    have hn' : k.all (fun b => decide (0x20 ≤ b)) = true ∧ noCtlKeys v = true ∧
-        ∀ more, ms = (k, v) :: more → noCtlMembers more = true := by
-      rcases jls_mt_inv ht with ⟨_, more, _, _, rfl⟩ | ⟨_, rfl⟩
-      · simp only [noCtlMembers, Bool.and_eq_true] at hn
-        exact ⟨hn.1.1, hn.1.2, fun m e => by injection e with _ e; subst e; exact hn.2⟩
-      · simp only [noCtlMembers, Bool.and_eq_true] at hn
-        exact ⟨hn.1.1, hn.1.2, fun m e => by injection e with _ e; subst e; rfl⟩
-    have hst : rest = k ++ 34 :: r1 := jls_str_suf c hk
-    have hl1 := congrArg List.length hs
-    rw [List.length_drop, hst] at hl1
-    simp only [List.length_cons, List.length_append] at hl1
-    have hstr : stringEnd true d p = some (jlpEnd d r1) := by
-      rw [jlp_stringEnd hpL, ← hrest, jlp_ps_true hk]; rfl
-    have he1 : jlpEnd d r1 = p + k.length + 2 := by unfold jlpEnd; omega
-    obtain ⟨b2, t2, hv2, hb2, -⟩ := jlw_pv_head hv
-    have hc' : ws c r1 = 58 :: r2 := jls_readExpect_suf hc
-    have hkey : jlpKey false (d.drop p) = some (k, ws c r2) := by
-      rw [hs, jlp_key_cons, jlp_if_pos rfl, jlp_ps_false (jlp_ps_true hk), jlp_if_pos hn'.1]
+theorem jlw_ws_len (c : Bool) (s : Bytes) : (ws c s).length ≤ s.length := by
+  obtain ⟨x, hx⟩ := jls_ws_suf c s
+  have := congrArg List.length hx
+  rw [List.length_append] at this
+  omega
+
+/-- No key in `ms` has a byte below `0x20`. -/
+def jlwKeysNC (ms : List (Bytes × Json)) : Bool := ms.all fun m => m.1.all fun b => decide (0x20 ≤ b)
+
+/-- One step of `nextMember` over a member that the spec reads at `p`: it
+fails exactly when the key has a control byte. -/
+theorem jlw_mstep {c : Bool} {d rest k r1 r2 r3 : Bytes} {p f dep : Nat} {v : Json} (hp : p ≤ d.length)
+    (hs : d.drop p = 34 :: rest) (hk : parseString c rest = some (k, r1)) (hc : readExpect [58] (ws c r1) = some r2)
+    (hv : parseValue c f dep (ws c r2) = some (v, r3)) :
+    nextMember d p = (if k.all (fun b => decide (0x20 ≤ b)) = true then some (some (p + 1, k.length,
+        jlpEnd d (ws c r2), jlpEnd d r3 - jlpEnd d (ws c r2), (itemTail d (jlpEnd d r3)).2)) else none) ∧
+      slice d (p + 1) k.length = k ∧ JDen c d (jlpEnd d (ws c r2)) (jlpEnd d r3 - jlpEnd d (ws c r2)) v ∧
+      jlpEnd d r3 ≤ d.length ∧ d.drop (jlpEnd d r3) = r3 ∧ p < jlpEnd d r3 := by
+  obtain ⟨hpL, hb, hrest⟩ := jlp_drop_cons_inv hs
+  have hst : rest = k ++ 34 :: r1 := jls_str_suf c hk
+  have hl1 := congrArg List.length hs
+  rw [List.length_drop, hst] at hl1
+  simp only [List.length_cons, List.length_append] at hl1
+  have hstr : stringEnd true d p = some (jlpEnd d r1) := by
+    rw [jlp_stringEnd hpL, ← hrest, jlp_ps_true hk]; rfl
+  have he1 : jlpEnd d r1 = p + k.length + 2 := by unfold jlpEnd; omega
+  obtain ⟨b2, t2, hv2, hb2, -⟩ := jlw_pv_head hv
+  have hc' : ws c r1 = 58 :: r2 := jls_readExpect_suf hc
+  have hw1 := jlw_ws_len c r1
+  have hw2 := jlw_ws_len c r2
+  rw [hc'] at hw1
+  simp only [List.length_cons] at hw1
+  have S0 : jlscSuf d (34 :: rest) := by rw [← hs]; exact jlsc_suf_drop d hp
+  have S1 := (jlsc_suf_cons S0).1
+  rw [hst] at S1
+  have S2 := (jlsc_suf_cons (jlsc_suf_app S1).1).1
+  obtain ⟨-, S3, -, -⟩ := jlsc_wsS (c := c) S2
+  rw [hc'] at S3
+  obtain ⟨-, S5, -, -⟩ := jlsc_wsS (c := c) (jlsc_suf_cons S3).1
+  have hv' : parseValue c f dep (d.drop (jlpEnd d (ws c r2))) = some (v, r3) := by rw [← S5]; exact hv
+  have hvL : jlpEnd d (ws c r2) ≤ d.length := Nat.sub_le _ _
+  have hpv : p < jlpEnd d (ws c r2) := by unfold jlpEnd; omega
+  obtain ⟨hden, hlt, hle, hd3⟩ := jlw_den hvL hv'
+  have hri := jlsc_readItem hvL hv'
+  have hsl : slice d (p + 1) k.length = k := by
+    show (d.drop (p + 1)).take k.length = k
+    rw [← hrest, hst, List.take_left' rfl]
+  refine ⟨?_, hsl, hden, hle, hd3, by omega⟩
+  unfold nextMember
+  rw [jlp_if_neg (fun h' => by rw [hb] at h'; exact absurd h'.2 (by decide)), hstr]
+  show memberTail d p (jlpEnd d r1) = _
+  unfold memberTail
+  rw [he1, jlp_if_neg (fun h' => by rcases h' with h' | h' | h' <;> omega),
+    show p + k.length + 2 - 1 - (p + 1) = k.length by omega]
+  unfold memberKey
+  by_cases hk32 : k.all (fun b => decide (0x20 ≤ b)) = true
+  · have hkey : jlpKey false (d.drop p) = some (k, ws c r2) := by
+      rw [hs, jlp_key_cons, jlp_if_pos rfl, jlp_ps_false (jlp_ps_true hk), jlp_if_pos hk32]
       simp only [Option.bind_some]
       rw [jlw_ws_false hc' rfl, jlp_readExpect_one, jlp_if_pos rfl]
       simp only [Option.map_some]
       rw [jlw_ws_false hv2 hb2, hv2]
     have hkE : keyEnd false d p = some (jlpEnd d (ws c r2)) := by rw [jlp_keyEnd hp, hkey]; rfl
-    have S0 : jlscSuf d (34 :: rest) := by rw [← hs]; exact jlsc_suf_drop d hp
-    have S1 := (jlsc_suf_cons S0).1
-    rw [hst] at S1
-    have S2 := (jlsc_suf_cons (jlsc_suf_app S1).1).1
-    obtain ⟨-, S3, -, -⟩ := jlsc_wsS (c := c) S2
-    rw [hc'] at S3
-    obtain ⟨-, S5, -, -⟩ := jlsc_wsS (c := c) (jlsc_suf_cons S3).1
-    have hv' : parseValue c f dep (d.drop (jlpEnd d (ws c r2))) = some (v, r3) := by rw [← S5]; exact hv
-    have hvL : jlpEnd d (ws c r2) ≤ d.length := Nat.sub_le _ _
-    obtain ⟨hden, hlt, hle, hd3⟩ := jlw_den hvL hv'
-    have hri := jlsc_readItem hvL hv'
-    have hnm : nextMember d p = some (some (p + 1, k.length, jlpEnd d (ws c r2),
-        jlpEnd d r3 - jlpEnd d (ws c r2), (itemTail d (jlpEnd d r3)).2)) := by
-      unfold nextMember
-      rw [jlp_if_neg (fun h' => by rw [hb] at h'; exact absurd h'.2 (by decide)), hstr]
-      show memberTail d p (jlpEnd d r1) = _
-      unfold memberTail
-      rw [he1, jlp_if_neg (fun h' => by rcases h' with h' | h' | h' <;> omega),
-        show p + k.length + 2 - 1 - (p + 1) = k.length by omega]
-      unfold memberKey
-      simp only [hkE, hri, Option.map_some, jlw_itemTail_fst]
-    have hsl : slice d (p + 1) k.length = k := by
-      show (d.drop (p + 1)).take k.length = k
-      rw [← hrest, hst, List.take_left' rfl]
+    rw [jlp_if_pos hk32]
+    simp only [hkE, hri, Option.map_some, jlw_itemTail_fst]
+  · have hkey : jlpKey false (d.drop p) = none := by
+      rw [hs, jlp_key_cons, jlp_if_pos rfl, jlp_ps_false (jlp_ps_true hk), jlp_if_neg hk32]; rfl
+    have hkE : keyEnd false d p = none := by rw [jlp_keyEnd hp, hkey]; rfl
+    rw [jlp_if_neg hk32]
+    simp only [hkE]
+
+theorem jlw_keysNC_cons (k : Bytes) (v : Json) (ms : List (Bytes × Json)) :
+    jlwKeysNC ((k, v) :: ms) = (k.all (fun b => decide (0x20 ≤ b)) && jlwKeysNC ms) := rfl
+
+/-- `nextMember` walks the members that the spec reads from position `p`. -/
+theorem jlw_members (c : Bool) (d : Bytes) : ∀ f {dep p : Nat} {ms : List (Bytes × Json)} {r : Bytes},
+    p ≤ d.length → parseMembers c f dep (d.drop p) = some (ms, r) → jlwKeysNC ms = true →
+      MembersFrom c d p ms
+  | 0, _, _, _, _, _, h, _ => by rw [jls_pm_zero] at h; cases h
+  | f + 1, dep, p, ms, r, hp, h, hn => by
+    obtain ⟨rest, k, r1, r2, v, r3, hs, hk, hc, hv, ht⟩ := jls_pm_inv h
+    obtain ⟨hnm, hsl, hden, hle, hd3, -⟩ := jlw_mstep hp hs hk hc hv
+    have hn' : k.all (fun b => decide (0x20 ≤ b)) = true ∧
+        ∀ more, ms = (k, v) :: more → jlwKeysNC more = true := by
+      rcases jls_mt_inv ht with ⟨_, more, _, _, rfl⟩ | ⟨_, rfl⟩
+      · rw [jlw_keysNC_cons, Bool.and_eq_true] at hn
+        exact ⟨hn.1, fun m e => by injection e with _ e; subst e; exact hn.2⟩
+      · rw [jlw_keysNC_cons, Bool.and_eq_true] at hn
+        exact ⟨hn.1, fun m e => by injection e with _ e; subst e; rfl⟩
+    rw [jlp_if_pos hn'.1] at hnm
     rcases jls_mt_inv ht with ⟨s', more, hw3, hm, rfl⟩ | ⟨hw3, rfl⟩
     · have hq := jlw_skip (d := d) (i := jlpEnd d r3) (by rw [hd3]; exact hw3) rfl
       obtain ⟨hqL, hqb, hqs⟩ := jlp_drop_cons_inv hq
@@ -158,7 +193,8 @@ theorem jlw_members (c : Bool) (d : Bytes) : ∀ f {dep p : Nat} {ms : List (Byt
         unfold itemTail; rw [jlp_if_pos ⟨hqL, hqb⟩]
       obtain ⟨t4, ht4⟩ := jlw_pm_head hm
       have ha := jlw_skip (d := d) (i := skipWs d (jlpEnd d r3) + 1) (by rw [← hqs]; exact ht4) rfl
-      have IH := jlw_members c d f (p := skipWs d (skipWs d (jlpEnd d r3) + 1)) (jlw_skip_le (by omega)) (by rw [ha, ← ht4]; exact hm) (hn'.2.2 more rfl)
+      have IH := jlw_members c d f (p := skipWs d (skipWs d (jlpEnd d r3) + 1)) (jlw_skip_le (by omega))
+        (by rw [ha, ← ht4]; exact hm) (hn'.2 more rfl)
       simp only [MembersFrom]
       exact ⟨_, _, _, _, by rw [hnm, hit], hsl, hden, IH⟩
     · have hq := jlw_skip (d := d) (i := jlpEnd d r3) (by rw [hd3]; exact hw3) rfl
@@ -169,6 +205,13 @@ theorem jlw_members (c : Bool) (d : Bytes) : ∀ f {dep p : Nat} {ms : List (Byt
         simp only [MembersFrom]; unfold nextMember; rw [jlp_if_pos ⟨hqL, hqb⟩]
       simp only [MembersFrom]
       exact ⟨_, _, _, _, by rw [hnm, hit], hsl, hden, hend⟩
+
+theorem jlw_noCtlMembers : ∀ ms : List (Bytes × Json), noCtlMembers ms = true → jlwKeysNC ms = true
+  | [], _ => rfl
+  | (k, v) :: ms, h => by
+    simp only [noCtlMembers, Bool.and_eq_true] at h
+    rw [jlw_keysNC_cons, Bool.and_eq_true]
+    exact ⟨h.1.1, jlw_noCtlMembers ms h.2⟩
 
 /-- `nextElement` walks the items that the spec reads from position `p`. -/
 theorem jlw_elems (c : Bool) (d : Bytes) : ∀ f {dep p : Nat} {js : List Json} {r : Bytes},
@@ -249,7 +292,7 @@ theorem Members : MembersStmt := by
     simp only [MembersFrom]; unfold nextMember; rw [jlp_if_pos ⟨hqL, hqb⟩]
   · obtain ⟨t, ht⟩ := jlw_pm_head hm
     have hq := jlw_skip (d := v) (i := 1) (by rw [h1]; exact ht) rfl
-    exact jlw_members c v f (jlw_skip_le hL) (by rw [hq, ← ht]; exact hm) hn
+    exact jlw_members c v f (jlw_skip_le hL) (by rw [hq, ← ht]; exact hm) (jlw_noCtlMembers ms hn)
 
 theorem Elements : ElementsStmt := by
   intro c v js ⟨fuel, dep, h⟩
