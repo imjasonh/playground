@@ -171,12 +171,6 @@ theorem trb_asArr {j : Json} {js : List Json} (hj : JBytes j) (h : j.asArr = som
   | arr js' => cases h; exact trb_emem (trb_arr.mp hj)
   | _ => cases h
 
-theorem trb_asObj {j : Json} {ms : List (Bytes × Json)} (hj : JBytes j) (h : j.asObj = some ms) :
-    ∀ p ∈ ms, Lt256 p.1 ∧ JBytes p.2 := by
-  cases j with
-  | obj ms' => cases h; exact trb_mmem (trb_obj.mp hj)
-  | _ => cases h
-
 theorem trb_mapM : ∀ {js : List Json} {ids : List Bytes}, (∀ v ∈ js, JBytes v) → js.mapM Json.asStr = some ids →
     ∀ id ∈ ids, Lt256 id
   | [], ids, _, h => by
