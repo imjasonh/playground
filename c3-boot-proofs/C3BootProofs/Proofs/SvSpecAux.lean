@@ -3,6 +3,8 @@ import C3BootProofs.Proofs.SvWinLink
 import C3BootProofs.Proofs.SvCosigLink
 import C3BootProofs.Proofs.SvConstsLink
 import C3BootProofs.Image.BootloaderData6
+import C3BootProofs.Proofs.SvRk
+import C3BootProofs.Proofs.SvRoot
 
 /-!
 # Facts `sv_verify_spec` uses
