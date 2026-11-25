@@ -237,6 +237,7 @@ enum MCULabApp: String, CaseIterable, Identifiable {
     case bench = "bench"
     case maze = "maze"
     case gzipBench = "gzip-bench"
+    case grayscale = "grayscale"
 
     var id: String { rawValue }
 
@@ -246,6 +247,7 @@ enum MCULabApp: String, CaseIterable, Identifiable {
         case .bench: return "Bench (Power / EPD Sim)"
         case .maze: return "Maze Animator"
         case .gzipBench: return "Gzip Bench (OTel)"
+        case .grayscale: return "Grayscale Boids"
         }
     }
 
@@ -255,6 +257,7 @@ enum MCULabApp: String, CaseIterable, Identifiable {
         case .bench: return [.logicProbe]
         case .maze: return [.epd75]
         case .gzipBench: return []
+        case .grayscale: return [.epd75]
         }
     }
 }
