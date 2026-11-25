@@ -141,6 +141,7 @@ import C3BootProofs.Proofs.BootLevel
 import C3BootProofs.Proofs.BootMainContract
 import C3BootProofs.Proofs.Dec384End
 import C3BootProofs.Proofs.Pv384Main
+import C3BootProofs.Proofs.Pv384Np
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Fs256Main
 import C3BootProofs.Proofs.Dec256End
@@ -327,6 +328,7 @@ import C3BootProofs.Models.Ed25519Dec
 import C3BootProofs.Models.Ed25519Bytes2
 import C3BootProofs.Models.Ed25519Compress
 import C3BootProofs.Models.Ed25519Iso
+import C3BootProofs.Proofs.P2vP256Np
 import C3BootProofs.Proofs.P2vP256
 import C3BootProofs.Proofs.SvAt
 import C3BootProofs.Proofs.SvLib

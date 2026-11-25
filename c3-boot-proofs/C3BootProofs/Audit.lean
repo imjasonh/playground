@@ -166,6 +166,7 @@ import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Fs256Main
 import C3BootProofs.Proofs.Dec256End
 import C3BootProofs.Proofs.Pv384Main
+import C3BootProofs.Proofs.Pv384Np
 import C3BootProofs.Image.BootloaderData5
 import C3BootProofs.Image.BootloaderData7
 import C3BootProofs.Proofs.P2vP256
@@ -9001,6 +9002,36 @@ end C3
 
 /-- info: 'C3.RV32.P2v.p256VerifyPrehash_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.P2v.p256VerifyPrehash_correct
+
+/-- info: 'C3.RV32.P2v.p256VerifyPrehash_correct_bound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p256VerifyPrehash_correct_bound
+
+/-- info: 'C3.RV32.P2v.p256VerifyPrehash_correct_np' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p256VerifyPrehash_correct_np
+
+/-- info: 'C3.RV32.P2v.p256_ivf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p256_ivf
+
+/-- info: 'C3.RV32.P2v.p2v_p256_z_np' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p2v_p256_z_np
+
+/-- info: 'C3.RV32.P2v.p2v_p256_z_or' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p2v_p256_z_or
+
+/-- info: 'C3.RV32.P2v.p2vnp_ne' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p2vnp_ne
+
+/-- info: 'C3.RV32.Pv.p384VerifyPrehash_correct_np' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Pv.p384VerifyPrehash_correct_np
+
+/-- info: 'C3.RV32.Pv.pvnp_model' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Pv.pvnp_model
+
+/-- info: 'C3.RV32.Pv.pvnp_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Pv.pvnp_loop
+
+/-- info: 'C3.RV32.Pv.pvnp_mont' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Pv.pvnp_mont
 
 /-- info: 'C3.Models.p256_model_closed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Models.p256_model_closed
