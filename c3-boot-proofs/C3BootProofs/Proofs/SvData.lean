@@ -29,8 +29,8 @@ theorem CodeIn.svData {M M0 : Word → BitVec 8} {B q : Word} {d : List Nat} (FW
 
 theorem SvData.sv {M M0 : Word → BitVec 8} {B : Word} (FW : Fr (B + 0xFFFFEC10) 0x3A50) (D : SvData M0)
     (fR : ∀ x, SvR B x → M x = M0 x) : SvData M :=
-  ⟨D.c.svData FW (by decide) (by decide) fR, D.cms.svData FW (by decide) (by decide) fR,
-    D.ext.svData FW (by decide) (by decide) fR⟩
+  ⟨CodeIn.svData FW (by decide) (by decide) D.c fR, CodeIn.svData FW (by decide) (by decide) D.cms fR,
+    CodeIn.svData FW (by decide) (by decide) D.ext fR⟩
 
 /-- `n` constant bytes at offset `i`. -/
 theorem CodeIn.mbc {M : Word → BitVec 8} {q : Word} {d : List Nat} (D : CodeIn M q d) (hd : ∀ k, k < d.length → d.getD k 0 < 256)

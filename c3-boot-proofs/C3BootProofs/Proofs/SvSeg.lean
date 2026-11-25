@@ -35,6 +35,17 @@ theorem svIter_add {α : Type} {F : α → α} (g : α → Word) {d : Nat} (h : 
   | i + 1, s => by
     rw [svIter_succ, svIter_add g h i (F s), h s, BitVec.add_assoc, BitVec.ofNat_add_ofNat, Nat.succ_mul, Nat.add_comm d]
 
+/-- A search's pointer after `i` steps of 0x20 bytes. -/
+theorem svIter_ptr2 {d : Word} {c q y0 y1 : Word} {i : Nat}
+    (h : (y0, y1) = svIter (fun s => (s.1 + d, s.2 + BitVec.ofNat 32 0x20)) i (c, q)) :
+    y1 = q + BitVec.ofNat 32 (i * 0x20) :=
+  (congrArg Prod.snd h).trans (svIter_add Prod.snd (by intro _; rfl) i (c, q))
+
+theorem svIter_ptr3 {d : Word} {f : Word × Word × Word → Word} {c q w y0 y1 y2 : Word} {i : Nat}
+    (h : (y0, y1, y2) = svIter (fun s => (s.1 + d, s.2.1 + BitVec.ofNat 32 0x20, f s)) i (c, q, w)) :
+    y1 = q + BitVec.ofNat 32 (i * 0x20) :=
+  (congrArg (fun s => s.2.1) h).trans (svIter_add (fun s => s.2.1) (by intro _; rfl) i (c, q, w))
+
 /-- A part of a loop's state that each step lowers by 1. -/
 theorem svIter_dec1 {α : Type} {F : α → α} (g : α → Word) (h : ∀ s, g (F s) = g s + BitVec.ofNat 32 0xFFFFFFFF) :
     ∀ (i : Nat) (s : α), g (svIter F i s) = g s - BitVec.ofNat 32 i
