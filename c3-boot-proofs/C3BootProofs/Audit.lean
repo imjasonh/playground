@@ -1,5 +1,6 @@
 import C3BootProofs.Theorems.Trace
 import C3BootProofs.Theorems.Formats
+import C3BootProofs.Theorems.ImageTake
 import C3BootProofs.Proofs.Crc32
 import C3BootProofs.Proofs.Reader
 import C3BootProofs.Proofs.ReaderArray
@@ -243,6 +244,8 @@ import C3BootProofs.Models.TufLink
 import C3BootProofs.Models.TufLinkMeta
 import C3BootProofs.Models.TufLinkKeys
 import C3BootProofs.Proofs.AcceptStages
+import C3BootProofs.Proofs.AcceptImageSpec
+import C3BootProofs.Proofs.AcceptImage
 
 /-!
 # Audit
@@ -9259,3 +9262,24 @@ end C3
 
 /-- info: 'C3.RV32.Ac.ac_exit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ac_exit
+
+/-- info: 'C3.decodeImageHeader_take' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.decodeImageHeader_take
+
+/-- info: 'C3.aci_imgW_err' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.aci_imgW_err
+
+/-- info: 'C3.aci_imgW_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.aci_imgW_ok
+
+/-- info: 'C3.RV32.Ac.aci_manifest_len' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aci_manifest_len
+
+/-- info: 'C3.RV32.Ac.aci_decode' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.aci_decode
+
+/-- info: 'C3.RV32.Ac.acImagePre_of_read' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acImagePre_of_read
+
+/-- info: 'C3.RV32.Ac.acImage_stage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acImage_stage

@@ -277,6 +277,7 @@ import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats
 import C3BootProofs.Theorems.Trace
+import C3BootProofs.Theorems.ImageTake
 import C3BootProofs.Audit
 import C3BootProofs.Ring.Basic
 import C3BootProofs.Ring.Tactic
@@ -577,6 +578,8 @@ import C3BootProofs.Proofs.AcceptAt
 import C3BootProofs.Proofs.AcceptSlot
 import C3BootProofs.Proofs.AcceptLib
 import C3BootProofs.Proofs.AcceptStages
+import C3BootProofs.Proofs.AcceptImageSpec
+import C3BootProofs.Proofs.AcceptImage
 import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
