@@ -150,6 +150,34 @@ def ActMetSpec : Prop :=
           (reg m' a0 &&& 1 = 0 → reg m' a1 &&& 1 ≠ 0 → thresholdMet md dj role = some true) ∧
           (reg m' a0 &&& 1 ≠ 0 → (reg m' a1 &&& 0xFF).toNat < 0x27)))
 
+/-- `ActMetSpec` with its panic refined: `RoleKeys::met` halts only if an
+inversion bound fails (`rmHI`). `act_metSpec_pi` proves it from
+`tufRoleKeysMet_ret_pi`. -/
+def ActMetSpecPI : Prop :=
+  ∀ (m : Machine) {retAddr s R A MP SP : Word} {ML SL t : Nat}
+    {md : Meta} {dj sj : Json} {role : Bytes} {es : List (Bytes × Option TufKey)},
+    m.pc = TRM → reg m a0 = R → reg m a1 = A → reg m sp = s + BitVec.ofNat 32 0x3920 →
+    reg m ra = retAddr → retAddr &&& ~~~1 = retAddr → s.toNat % 16 = 0 →
+    0x3FC80000 ≤ s.toNat → s.toNat + 0x3920 ≤ 0x3FCE0000 →
+    Sep s 0x3920 (BitVec.ofNat 32 (img% dataWindowAddress)) (img% dataWindowSize) →
+    Sep s 0x3920 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize) →
+    (∀ M : Word → BitVec 8, (∀ x, Sep x 1 s 0x3920 → M x = m.mem x) → RmCode M) →
+    R.toNat % 4 = 0 → R.toNat + 0x540 ≤ 0x40000000 → Sep s 0x3920 R 0x540 →
+    MP.toNat + ML ≤ 0x40000000 → ML < 2 ^ 31 → Sep s 0x3920 MP ML →
+    SP.toNat ≠ 0 → SP.toNat + SL ≤ 0x40000000 → SL < 2 ^ 31 → Sep s 0x3920 SP SL →
+    A.toNat % 4 = 0 → Sep s 0x3920 A 16 → memLoad32 m.mem A = MP →
+    memLoad32 m.mem (A + BitVec.ofNat 32 4) = BitVec.ofNat 32 ML →
+    memLoad32 m.mem (A + BitVec.ofNat 32 8) = SP →
+    memLoad32 m.mem (A + BitVec.ofNat 32 12) = BitVec.ofNat 32 SL →
+    roleKeys dj role = some (t, es) → RkAt m.mem R t (es.map C3.Json.rkTag) →
+    RkWf (es.map C3.Json.rkTag) → RkBytes es → memBytes m.mem MP ML = encode md.signed →
+    JVal true (memBytes m.mem SP SL) sj → (sj.asArr >>= List.mapM sigPair) = some md.sigs →
+    ∃ m', Steps m m' ∧
+      (rmHI m'.pc m'.mem (reg m') ∨
+        (m'.pc = retAddr ∧ (∀ x, Sep x 1 s 0x3920 → m'.mem x = m.mem x) ∧ (∀ r, r ∉ jClob → reg m' r = reg m r) ∧
+          (reg m' a0 &&& 1 = 0 → reg m' a1 &&& 1 ≠ 0 → thresholdMet md dj role = some true) ∧
+          (reg m' a0 &&& 1 ≠ 0 → (reg m' a1 &&& 0xFF).toNat < 0x27)))
+
 /-- **The `targets.json` stage**, from 0x836 to 0xC12, for the callees' code
 and data `AcTargetsEnv` in memory that agrees with `M0` outside the stack
 and `Buffers`. It reaches

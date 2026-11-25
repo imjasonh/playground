@@ -164,11 +164,11 @@ end
 
 /-- **From 0x584**: the roots stage, then the targets stage and the rest,
 end the closure. -/
-theorem acs_roots (hT : AcTargetsStage) (hE : AcExtractStage)
+theorem acs_roots (hT : AcTargetsStagePI) (hE : AcExtractStagePI)
     {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest}
     {header : ImageHeader} {parts : TufParts} {first : TufRoot} (S : AcsAt584 X mf header parts first n) :
     X.End n := by
-  refine acs_stage S.inv (acRootsStage X.flash X.R X.romBase X.romCode ok.rom n X.B X.Bf X.g X.t X.r X.v X.M0
+  refine acs_stage S.inv (acRootsStage_pi X.flash X.R X.romBase X.romCode ok.rom n X.B X.Bf X.g X.t X.r X.v X.M0
     parts.roots first (fun M hM => acs_rootsEnv ok (ok.envs hM)) ok.F ok.sB ok.bfa ok.bfhi'
     (by have := ok.hR; omega) S.st S.inv S.pre) (fun _ => ok.fail)
     fun n' I' hpc ⟨root, hfold, K, KR, _, _, hrt, _, e, hexp, w18, w1C⟩ => ?_

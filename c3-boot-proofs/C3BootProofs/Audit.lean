@@ -9235,6 +9235,18 @@ end C3
 /-- info: 'C3.RV32.tufRoleKeysMet_result' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_result
 
+/-- info: 'C3.RV32.tufRoleKeysMet_ret_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_ret_pi
+
+/-- info: 'C3.RV32.tufRoleKeysMet_correct_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_correct_pi
+
+/-- info: 'C3.RV32.tufRoleKeysMet_spec_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_spec_pi
+
+/-- info: 'C3.RV32.tufRoleKeysMet_result_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_result_pi
+
 /-- info: 'C3.RV32.rmr_okBit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.rmr_okBit
 
@@ -9762,6 +9774,9 @@ end C3
 
 /-- info: 'C3.RV32.Ac.act_metSpec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.act_metSpec
+
+/-- info: 'C3.RV32.Ac.act_metSpec_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.act_metSpec_pi
 
 /-- info: 'C3.RV32.Ac.ActRk.congr' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ActRk.congr
@@ -10827,6 +10842,51 @@ end C3
 
 /-- info: 'C3.RV32.BootMainContract.Closure0ContractPI.weaken' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.BootMainContract.Closure0ContractPI.weaken
+
+/-- info: 'C3.RV32.Ac.AcStagePI.seq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcStagePI.seq
+
+/-- info: 'C3.RV32.Ac.AcStagePI.pre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcStagePI.pre
+
+/-- info: 'C3.RV32.Ac.AcReadStagePI.acStage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcReadStagePI.acStage
+
+/-- info: 'C3.RV32.Ac.AcFinishPostPI.post' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.AcFinishPostPI.post
+
+/-- info: 'C3.RV32.Ac.acceptRead_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acceptRead_pi
+
+/-- info: 'C3.RV32.Ac.acImage_stage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acImage_stage_pi
+
+/-- info: 'C3.RV32.Ac.acIndexStage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acIndexStage_pi
+
+/-- info: 'C3.RV32.Ac.acp_stage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acp_stage_pi
+
+/-- info: 'C3.RV32.Ac.acRootsStage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acRootsStage_pi
+
+/-- info: 'C3.RV32.Ac.act_stage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.act_stage_pi
+
+/-- info: 'C3.RV32.Ac.ac_extract_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_extract_pi
+
+/-- info: 'C3.RV32.Ac.ac_extract_loops_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_extract_loops_pi
+
+/-- info: 'C3.RV32.Ac.acBundleStage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acBundleStage_pi
+
+/-- info: 'C3.RV32.Ac.ac_finish_stage_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.ac_finish_stage_pi
+
+/-- info: 'C3.RV32.Ac.acs_contract_pi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acs_contract_pi
 
 /-- info: 'C3.RV32.Cur.bootMain_correct_boots' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bootMain_correct_boots

@@ -22,11 +22,12 @@ theorem act_slot {B : Word} (F : Fr B 0x5A70) {k : Nat} (hk : 0x3A50 + k ≤ 0x5
     (acSlot B k).toNat = B.toNat + 0x3A50 + k := by
   rw [F.at _ hk]; omega
 
-/-- What the walk ends with: the machine panics, or keeps `AcInv` and
-reaches an exit, or reaches 0xC12 in a state that `P` holds of. -/
+/-- What the walk ends with: the machine halts, and then an inversion bound
+fails, or keeps `AcInv` and reaches an exit, or reaches 0xC12 in a state
+that `P` holds of. -/
 def actQ (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (P : Machine → Prop) : Post :=
   fun pc M f => ∀ m : Machine, m.pc = pc → m.mem = M → reg m = f →
-    Halting m ∨ (AcInv B Bf g t v M0 m ∧ (AcFail B r m ∨ (m.pc = AC + 0xC12 ∧ P m)))
+    (¬ InvBounds ∧ Halting m) ∨ (AcInv B Bf g t v M0 m ∧ (AcFail B r m ∨ (m.pc = AC + 0xC12 ∧ P m)))
 
 theorem act_stop {code : List Nat} {base : Word} {Q : Post} {M : Word → BitVec 8} {off : Nat}
     {f : Fin 32 → Word} (h : Q (base + BitVec.ofNat 32 off) M f) : WP code base Q M off f := fun _ _ m s =>

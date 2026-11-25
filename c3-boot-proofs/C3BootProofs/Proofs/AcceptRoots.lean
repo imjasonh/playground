@@ -30,7 +30,9 @@ byte in `[sp + 0x28]`, its second in `s6`, and the rest at `sp + 0x1322`.
 
 The loop rejects with the error bytes of `parse_root`, `RoleKeys::read`,
 `expires`, and `RoleKeys::met`. `AcceptPinnedErr` and
-`tufRoleKeysMet_result` show that each is a `TufError` code.
+`tufRoleKeysMet_result_pi` show that each is a `TufError` code. The loop
+halts only where `RoleKeys::met` does, so `acRootsStage_pi` halts only if
+an inversion bound fails.
 -/
 
 namespace C3.RV32.Ac
@@ -552,10 +554,11 @@ theorem AcoCtx.ainv (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs fir
 /-- The stage's goal from `n`. -/
 abbrev AcoG (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (docs : List Bytes) (first : TufRoot)
     (n0 n : Machine) : Prop :=
-  AcStage B Bf g t r v M0 n 0x836 (AcRootsPost B Bf docs first n0)
+  AcStagePI B Bf g t r v M0 n 0x836 (AcRootsPost B Bf docs first n0)
 
 theorem aco_pre {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {n n1 : Machine} {o : Nat}
-    {Q : Machine → Prop} (h : Steps n n1) (e : AcStage B Bf g t r v M0 n1 o Q) : AcStage B Bf g t r v M0 n o Q := by
+    {Q : Machine → Prop} (h : Steps n n1) (e : AcStagePI B Bf g t r v M0 n1 o Q) :
+    AcStagePI B Bf g t r v M0 n o Q := by
   obtain ⟨n', s, q⟩ := e
   exact ⟨n', h.trans s, q⟩
 
@@ -960,7 +963,7 @@ theorem aco_met (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n
     (hR : RkAt n.mem (acSlot B kR) tt (es.map C3.Json.rkTag))
     (hmsg : memBytes n.mem q1 l1 = encode md.signed) (hsj : JVal true (memBytes n.mem q2 l2) sj)
     (hps : (sj.asArr >>= List.mapM sigPair) = some md.sigs) :
-    ∃ n', Steps n n' ∧ (Halting n' ∨ AcoMetOut B n n' (off + 8) md dj role) := by
+    ∃ n', Steps n n' ∧ ((¬ InvBounds ∧ Halting n') ∨ AcoMetOut B n n' (off + 8) md dj role) := by
   have N := C.N
   have := N.b0; have := N.b1; have := N.b2; have := N.f0; have := N.bb
   have := hq1.1; have := hq1.2; have := hq2.1; have := hq2.2
@@ -969,7 +972,7 @@ theorem aco_met (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n
   have K1 : AcoKeep B Bf n0.mem n1.mem := by rw [mem1]; exact K
   have sp1 : reg n1 sp = (B + 0x130) + BitVec.ofNat 32 0x3920 := by
     rw [r1 sp (by decide), C.sp KR, BitVec.add_assoc]; rfl
-  obtain ⟨n2, c2, q⟩ := tufRoleKeysMet_result n1 (retAddr := AC + BitVec.ofNat 32 (off + 8)) (s := B + 0x130)
+  obtain ⟨n2, c2, q⟩ := tufRoleKeysMet_result_pi n1 (retAddr := AC + BitVec.ofNat 32 (off + 8)) (s := B + 0x130)
     (MP := q1) (R := acSlot B kR) (A := acSlot B 0x1ED0)
     (SP := q2) (ML := l1) (SL := l2) (md := md) (dj := dj) (sj := sj) (role := role) (es := es) (t := tt)
     pc1 (by rw [r1 a0 (by decide)]; exact ha0) (by rw [r1 a1 (by decide)]; exact ha1) sp1
@@ -2566,12 +2569,18 @@ theorem aco_loop (C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first 
 
 end ctx
 
-/-- **The root-chain stage holds.** -/
-theorem acRootsStage : AcRootsStage := by
+/-- **The root-chain stage holds**, and it halts only if an inversion bound
+fails. -/
+theorem acRootsStage_pi : AcRootsStagePI := by
   intro flash R romBase romCode hrom n B Bf g t r v M0 docs first henv F sB bal bhi hR s inv pre
   have C : AcoCtx flash R romBase romCode B Bf g t r v M0 docs first n :=
     ⟨hrom, henv, F, sB, aco_num F sB bal bhi, hR, inv, pre⟩
   exact aco_loop C _ n 0 rfl s ⟨Nat.zero_le _, fun _ _ => rfl, fun _ _ => rfl, pre.2.2.2.1,
     ⟨first, rfl, pre.2.2.2.2.2.2.1, fun _ => pre.2.2.2.2.2.2.2⟩⟩
+
+/-- **The root-chain stage holds.** -/
+theorem acRootsStage : AcRootsStage :=
+  fun flash R romBase romCode hrom n B Bf g t r v M0 docs first h1 h2 h3 h4 h5 h6 h7 h8 h9 =>
+    (acRootsStage_pi flash R romBase romCode hrom n B Bf g t r v M0 docs first h1 h2 h3 h4 h5 h6 h7 h8 h9).acStage
 
 end C3.RV32.Ac

@@ -11,7 +11,10 @@ precondition describes and ends in one of three ways: it panics, it reaches
 one of the closure's exits (`AcFail`), or it reaches the next stage's offset
 in a state that its postcondition describes. `AcStage` says that, and every
 stage keeps `AcInv`: `sp`, `gp`, `tp`, the prologue's saves, and every byte
-outside the closure's stack and `Buffers`.
+outside the closure's stack and `Buffers`. `AcStagePI` is `AcStage` with the
+panic refined: the stage halts only if an inversion bound fails
+(`InvBounds`). Each stage proves the `AcStagePI` form, and
+`AcStagePI.acStage` gives the `AcStage` form.
 
 `AcceptLib` turns each way into an exit into the closure's `None` return:
 `ac_fail` from 0x166, `ac_none` from 0x16A, `ac_reject` from 0x7D6, and
@@ -19,6 +22,7 @@ outside the closure's stack and `Buffers`.
 
 `AcReadStage` is the first stage, from the prologue's end at 0x32 to 0x1AA:
 the manifest, the image header, the image's SHA-256, and the bundle.
+`AcReadStagePI` is its refined form.
 
 The last stage calls `sigstore::verify`, which writes up to 0x1A0 bytes
 below the frame, so it keeps `AcInvW`, which keeps memory outside the 0x5C10

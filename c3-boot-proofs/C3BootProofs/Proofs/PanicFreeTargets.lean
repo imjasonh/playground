@@ -24,8 +24,12 @@ one is a current theorem's statement with its panic disjunct refined:
 The theorems that prove them are to be named after the theorem they refine
 with the suffix `_pi`, such as `tufRoleKeysMet_ret_pi :
 TufRoleKeysMetRetPI`, and the headline `reset_correct_loaded_np :
-ResetCorrectLoadedNP`. `Sv.SvVerifySpecPI` is stated in `SvSpec.lean`,
-beside `Sv.sv_verify_spec_pi : SvVerifySpecPI`, which proves it.
+ResetCorrectLoadedNP`. Four are stated beside the theorems that prove
+them: `Sv.SvVerifySpecPI` in `SvSpec.lean` (`Sv.sv_verify_spec_pi`),
+`TufRoleKeysMetRetPI` in `TufRoleKeysMet.lean` (`tufRoleKeysMet_ret_pi`),
+`Ac.AcStagePI` in `AcceptStages.lean`, and
+`BootMainContract.Closure0ContractPI` in `AcceptSpec.lean`
+(`Ac.acs_contract_pi`).
 
 `Cur.BootsSlot` is the boot outcome that `bootMain_correct` and
 `reset_correct_loaded` share; `bootMain_correct_boots` and
@@ -34,96 +38,6 @@ weakenings: each refined contract gives the current statement, and
 `resetCorrectLoaded_np_of_pi` gives the headline from
 `ResetCorrectLoadedPI`.
 -/
-
-namespace C3.RV32
-
-open C3.Image C3.Json
-
-/-- `rmH`, the `RoleKeys::met` postcondition's halting case, when some
-inversion bound fails. -/
-abbrev rmHI : Post := fun pc M g => ¬ InvBounds ∧ rmH pc M g
-
-/-- **`tufRoleKeysMet_ret` with its panic refined**: `RoleKeys::met` halts
-only if an inversion bound fails (`rmHI`), or it returns as
-`tufRoleKeysMet_ret` says. `tufRoleKeysMet_correct`, `tufRoleKeysMet_spec`,
-and `tufRoleKeysMet_result` refine the same way. -/
-def TufRoleKeysMetRetPI : Prop :=
-  ∀ (m : Machine) {retAddr s R A MP SP : Word} {ML SL t : Nat} {es : List RkEntry}
-    (_hpc : m.pc = TRM) (_ha0 : reg m a0 = R) (_ha1 : reg m a1 = A) (_hsp : reg m sp = s + BitVec.ofNat 32 0x3920)
-    (_hra : reg m ra = retAddr) (_hret : retAddr &&& ~~~1 = retAddr) (_hal : s.toNat % 16 = 0)
-    (_hlo : 0x3FC80000 ≤ s.toNat) (_hhi : s.toNat + 0x3920 ≤ 0x3FCE0000)
-    (_hds : Sep s 0x3920 (BitVec.ofNat 32 (img% dataWindowAddress)) (img% dataWindowSize))
-    (_hro : Sep s 0x3920 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize))
-    (_hc : ∀ M : Word → BitVec 8, (∀ x, Sep x 1 s 0x3920 → M x = m.mem x) → RmCode M)
-    (_halR : R.toNat % 4 = 0) (_hRw : R.toNat + 0x540 ≤ 0x40000000) (_hSR : Sep s 0x3920 R 0x540)
-    (_hMw : MP.toNat + ML ≤ 0x40000000) (_hML : ML < 2 ^ 31) (_hSM : Sep s 0x3920 MP ML)
-    (_hS0 : SP.toNat ≠ 0) (_hSw : SP.toNat + SL ≤ 0x40000000) (_hSL : SL < 2 ^ 31) (_hSS : Sep s 0x3920 SP SL)
-    (_halA : A.toNat % 4 = 0) (_hSA : Sep s 0x3920 A 16) (_hA0 : memLoad32 m.mem A = MP)
-    (_hA4 : memLoad32 m.mem (A + BitVec.ofNat 32 4) = BitVec.ofNat 32 ML)
-    (_hA8 : memLoad32 m.mem (A + BitVec.ofNat 32 8) = SP)
-    (_hAC : memLoad32 m.mem (A + BitVec.ofNat 32 12) = BitVec.ofNat 32 SL) (_hR : RkAt m.mem R t es) (_hw : RkWf es),
-    ∃ m', Steps m m' ∧
-        (rmHI m'.pc m'.mem (reg m') ∨
-          (m'.pc = retAddr ∧ (∀ x, Sep x 1 s 0x3920 → m'.mem x = m.mem x) ∧ (∀ r, r ∉ jClob → reg m' r = reg m r) ∧
-            (reg m' a0 = 0 → reg m' a1 ≠ 0 →
-              MetSound (memBytes m.mem SP SL) (memBytes m.mem MP ML) t (es.map nbE)) ∧
-            (reg m' a0 = 0 ∨ reg m' a0 = 1) ∧ (reg m' a0 ≠ 0 → (reg m' a1 &&& 0xFF).toNat < 0x27)))
-
-end C3.RV32
-
-namespace C3.RV32.Ac
-
-open C3.Image C3.RV32.P3
-
-/-- **`AcStage` with its halt refined**: from `n0`, the closure halts only
-if an inversion bound fails, reaches an exit, or reaches offset `o'` in a
-state that `Q` holds of. -/
-def AcStagePI (B Bf g t r : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (n0 : Machine) (o' : Nat)
-    (Q : Machine → Prop) : Prop :=
-  ∃ n', Steps n0 n' ∧ ((¬ InvBounds ∧ Halting n') ∨
-    (AcInv B Bf g t v M0 n' ∧ (AcFail B r n' ∨ (n'.pc = AC + BitVec.ofNat 32 o' ∧ Q n'))))
-
-theorem AcStagePI.acStage {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {n0 : Machine}
-    {o' : Nat} {Q : Machine → Prop} (h : AcStagePI B Bf g t r v M0 n0 o' Q) : AcStage B Bf g t r v M0 n0 o' Q :=
-  let ⟨n', c, hn⟩ := h; ⟨n', c, hn.imp_left And.right⟩
-
-end C3.RV32.Ac
-
-namespace C3.RV32.BootMainContract
-
-open C3 C3.Image C3.RV32.Cur
-
-/-- **`Closure0Contract` with its panic refined**: the closure returns as
-`Closure0Contract` says, or it panics, and then some inversion bound
-fails. -/
-def Closure0ContractPI (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romCode : List Nat)
-    (pinned : Bytes) (policy : Policy) (stack : Nat) (E : (Word → BitVec 8) → Prop) : Prop :=
-  RomRead flash R romBase romCode →
-  ∀ (m : Machine) (res bufs slot level : Word),
-    CodeIn m.mem (BitVec.ofNat 32 bootMainClosure0Address) bootMainClosure0Code → E m.mem →
-    m.pc = BitVec.ofNat 32 bootMainClosure0Address → stack ≤ (reg m sp).toNat →
-    reg m a0 = res → reg m a1 = level → reg m a2 = bufs → reg m a3 = slot → slot.toNat < 2 →
-    C0Args stack (reg m sp) res bufs level (reg m ra) →
-    Sep res 0x12C bufs 0xB954 → Sep res 0x12C (reg m sp - BitVec.ofNat 32 stack) stack →
-    Sep bufs 0xB954 (reg m sp - BitVec.ofNat 32 stack) stack →
-    (∃ m', Steps m m' ∧ m'.pc = reg m ra &&& ~~~1 ∧ (∀ q, romKeep q = true → reg m' q = reg m q) ∧
-      (∀ x, Sep (reg m sp - BitVec.ofNat 32 stack) stack x 1 → Sep res 0x12C x 1 →
-        Sep bufs 0xB954 x 1 → m'.mem x = m.mem x) ∧
-      (m'.mem (res + 0xC) = 0xFF ∨
-        ∃ mf sv t, bmcAccept flash pinned policy level.toNat slot = some (mf, sv, t) ∧
-          m'.mem (res + 0xC) ≠ 0xFF ∧ m'.mem (res + 0x128) = BitVec.ofNat 8 sv ∧
-          memLoad32 m'.mem (res + 0x120) = BitVec.ofNat 32 (bmcBase slot + mf.image.offset) ∧
-          AccOk flash slot mf m'.mem res)) ∨
-    PanicIf m
-
-theorem Closure0ContractPI.weaken {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {romCode : List Nat}
-    {pinned : Bytes} {policy : Policy} {stack : Nat} {E : (Word → BitVec 8) → Prop}
-    (h : Closure0ContractPI flash R romBase romCode pinned policy stack E) :
-    Closure0Contract flash R romBase romCode pinned policy stack E :=
-  fun hr m res bufs slot level h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 =>
-    (h hr m res bufs slot level h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13).imp_right PanicIf.panics
-
-end C3.RV32.BootMainContract
 
 namespace C3.RV32.Cur
 

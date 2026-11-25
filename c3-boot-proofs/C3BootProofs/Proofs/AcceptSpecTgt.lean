@@ -65,7 +65,7 @@ theorem acs_aceU64_le {M : Word → BitVec 8} {a : Word} {x : Nat} (h0 : memLoad
   unfold aceU64; rw [h0, h1]; simp only [BitVec.toNat_ofNat]; omega
 
 /-- **From 0x836**: the closure panics or returns with `AcsRes`. -/
-theorem acs_tgt (hT : AcTargetsStage) (hE : AcExtractStage) 
+theorem acs_tgt (hT : AcTargetsStagePI) (hE : AcExtractStagePI) 
     {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest} {header : ImageHeader} {parts : TufParts}
     {root : TufRoot} {re : Nat} (S : AcsAt836 X mf header parts root re n) : X.End n := by
   have E := ok.envsAt S.inv

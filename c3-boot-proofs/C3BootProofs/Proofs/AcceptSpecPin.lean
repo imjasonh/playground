@@ -132,11 +132,11 @@ theorem acs_pinBuf {X : AcsCtx} (ok : X.Ok) {j : Nat} (hj : j < 0x4000) : AcsPin
 
 /-- **From 0x4E4**: the pinned-root stage, then the roots stage and the
 rest, end the closure. -/
-theorem acs_pin (hE : AcExtractStage) 
+theorem acs_pin (hE : AcExtractStagePI) 
     {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest} {header : ImageHeader} {parts : TufParts}
     (S : AcsAt4E4 X mf header parts n) : X.End n := by
   have E := ok.envsAt S.inv
-  refine acs_stage S.inv (acp_stage X.pinned n X.B X.Bf X.g X.t X.r X.v X.M0 (fun M hM => (ok.envs hM).pin)
+  refine acs_stage S.inv (acp_stage_pi X.pinned n X.B X.Bf X.g X.t X.r X.v X.M0 (fun M hM => (ok.envs hM).pin)
     E.ac ok.F (sep_of_le (by simp only [BitVec.toNat_ofNat]; have := ok.blo; omega)
     (by have := ok.bhi; omega)).symm S.st S.inv S.pre) (fun _ => ok.fail)
     fun n' I' hpc ⟨K, KR, h1C, h2C, h28, r22, first, hp, hver, hkr, hkt, hexp⟩ => ?_
@@ -151,7 +151,7 @@ theorem acs_pin (hE : AcExtractStage)
     refine ⟨hver, by rw [h28]; exact acs_ze_lt _, by rw [r22]; exact acs_ze_lt _, ?_,
       acs_src hp E.pin.pin⟩
     rw [h28, r22, acs_tb]; exact acs_rk hkr
-  refine acs_roots act_stage hE ok (first := first)
+  refine acs_roots act_stage_pi hE ok (first := first)
     { st := ⟨hpc, rfl, fun _ => rfl⟩
       inv := I'
       img := A

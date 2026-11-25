@@ -3,8 +3,8 @@ import C3BootProofs.Proofs.AcceptExtract
 /-!
 # The extract stage from its sub-stages
 
-`ac_extract` composes the six sub-stages of `AcceptExtract` into
-`AcExtractStage`. `ace_extract_spec` turns the keys the loops read into
+`ac_extract_pi` composes the six sub-stages of `AcceptExtract` into
+`AcExtractStagePI`, and `ac_extract` weakens it to `AcExtractStage`. `ace_extract_spec` turns the keys the loops read into
 `extractTrustedRoot`'s result, `ace_keys_snoc` is one loop step of the
 spec, and `AceKeysIn.sv` and `AceKeysIn.transfer` hand the arrays to
 `SvRootAt` after later stages copy them.

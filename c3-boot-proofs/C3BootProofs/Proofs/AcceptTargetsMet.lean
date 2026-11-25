@@ -18,13 +18,13 @@ section
 variable {romBase : Word} {romCode : List Nat} {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8}
   {Q : Post} {M M' M'' : Word → BitVec 8} {off : Nat} {f : Fin 32 → Word}
 
-/-- `RoleKeys::met` as `ActMetSpec` describes it, from `tufRoleKeysMet_ret`
-and `tlmr_thresholdMet`: `RoleKeys::met` returns 0 or 1 in `a0`, so bit 0
-of `a0` clear is `Ok`. -/
-theorem act_metSpec : ActMetSpec := by
+/-- `RoleKeys::met` as `ActMetSpecPI` describes it, from
+`tufRoleKeysMet_ret_pi` and `tlmr_thresholdMet`: `RoleKeys::met` returns 0
+or 1 in `a0`, so bit 0 of `a0` clear is `Ok`. -/
+theorem act_metSpec_pi : ActMetSpecPI := by
   intro m retAddr s R A MP SP ML SL t md dj sj role es hpc ha0 ha1 hsp hra hret hal hlo hhi hds hro hc halR hRw hSR
     hMw hML hSM hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hrk hR hw hB hmsg hsj hps
-  obtain ⟨m', st, q⟩ := tufRoleKeysMet_ret m hpc ha0 ha1 hsp hra hret hal hlo hhi hds hro hc halR hRw hSR hMw hML
+  obtain ⟨m', st, q⟩ := tufRoleKeysMet_ret_pi m hpc ha0 ha1 hsp hra hret hal hlo hhi hds hro hc halR hRw hSR hMw hML
     hSM hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hR hw
   refine ⟨m', st, ?_⟩
   rcases q with h | ⟨hp, hM, hr, hS, h01, hE⟩
@@ -38,6 +38,14 @@ theorem act_metSpec : ActMetSpec := by
   rw [hmsg] at S
   exact tlmr_thresholdMet hrk hB (metLookup_spec hsj hps) S
 
+/-- `act_metSpec_pi` with any panic. -/
+theorem act_metSpec : ActMetSpec := by
+  intro m retAddr s R A MP SP ML SL t md dj sj role es hpc ha0 ha1 hsp hra hret hal hlo hhi hds hro hc halR hRw hSR
+    hMw hML hSM hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hrk hR hw hB hmsg hsj hps
+  obtain ⟨m', st, q⟩ := act_metSpec_pi m hpc ha0 ha1 hsp hra hret hal hlo hhi hds hro hc halR hRw hSR hMw hML hSM
+    hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hrk hR hw hB hmsg hsj hps
+  exact ⟨m', st, q.imp_left And.right⟩
+
 /-- A call to `RoleKeys::met(rk, meta)` from the closure, with `rk` at
 `sp + 0x1870` and `meta` at `sp + 0x1860`. -/
 theorem act_met (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
@@ -46,7 +54,7 @@ theorem act_met (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
     (h1 : fetchRel bootMainClosure0Code off = some (.auipc ra hi, 4))
     (h2 : fetchRel bootMainClosure0Code (off + 4) = some (.jalr ra ra lo, 4))
     (htgt : AC + BitVec.ofNat 32 off + hi + lo = TRM) (hev : (off + 8) % 2 = 0)
-    (hQ : ∀ m, Halting m → Q m.pc m.mem (reg m))
+    (hQ : ∀ m, ¬ InvBounds → Halting m → Q m.pc m.mem (reg m))
     (h0 : f a0 = B + BitVec.ofNat 32 0x52C0) (ha1 : f a1 = B + BitVec.ofNat 32 0x52B0)
     (hMw : MP.toNat + ML ≤ 0x40000000) (hML : ML < 2 ^ 31) (hSM : Sep (B + BitVec.ofNat 32 0x130) 0x3920 MP ML)
     (hS0 : SP.toNat ≠ 0) (hSw : SP.toNat + SL ≤ 0x40000000) (hSL : SL < 2 ^ 31)
@@ -67,7 +75,7 @@ theorem act_met (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
   have F := X.F
   have hSb : Sep (B + BitVec.ofNat 32 0x130) 0x3920 AC bootMainClosure0Code.length :=
     X.sc (by decide) (by decide) (by decide)
-  refine WP.callGenP (tb := TRM) (cl := jClob)
+  refine WP.callGenPI (tb := TRM) (cl := jClob)
     (P := fun m2 => (∀ x, Sep x 1 (B + BitVec.ofNat 32 0x130) 0x3920 → m2.mem x = M x) ∧
       (reg m2 a0 &&& 1 = 0 → reg m2 a1 &&& 1 ≠ 0 → thresholdMet md dj role = some true) ∧
       (reg m2 a0 &&& 1 ≠ 0 → (reg m2 a1 &&& 0xFF).toNat < 0x27))
@@ -78,7 +86,7 @@ theorem act_met (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
   have := F.lo
   have := F.hi
   have := F.al
-  obtain ⟨m2, st, h⟩ := act_metSpec m1 (retAddr := AC + BitVec.ofNat 32 (off + 8)) (s := B + BitVec.ofNat 32 0x130)
+  obtain ⟨m2, st, h⟩ := act_metSpec_pi m1 (retAddr := AC + BitVec.ofNat 32 (off + 8)) (s := B + BitVec.ofNat 32 0x130)
     hpc1 (by rw [hreg1]; rsimp; exact h0) (by rw [hreg1]; rsimp; exact ha1)
     (by rw [hreg1]; rsimp; rw [hI.rsp, add_ofNat_assoc]; rfl) (by rw [hreg1]; rsimp)
     (even_clear _ (even_at AC hb _ hev)) (by rw [hlo]; omega) (by rw [hlo]; omega) (by rw [hlo]; omega)
@@ -89,8 +97,8 @@ theorem act_met (X : ActX romBase romCode B Bf M0) (hI : ActI B Bf g t v M0 M f)
     hMw hML hSM hS0 hSw hSL hSS (X.al (by decide) (by decide)) (X.ss (by decide) (by decide) (Or.inl (by decide)))
     (by rw [hmem1]; exact hA0) (by rw [hmem1]; exact hA4) (by rw [hmem1]; exact hA8) (by rw [hmem1]; exact hAC)
     hrk (by rw [hmem1]; exact hR) hw hB (by rw [hmem1]; exact hmsg) (by rw [hmem1]; exact hsj) hps
-  rcases h with hh | ⟨pc2, hfr, hrg, hok, herr⟩
-  · exact .inl ⟨m2, st, hh⟩
+  rcases h with ⟨hni, hh⟩ | ⟨pc2, hfr, hrg, hok, herr⟩
+  · exact .inl ⟨hni, m2, st, hh⟩
   · exact .inr ⟨m2, st, pc2, ⟨fun x hx => by rw [hfr x hx, hmem1], hok, herr⟩, hrg⟩
 
 theorem act_sepIn {x : Word} {c0 n0 d n : Nat} (h : Sep x 1 (B + BitVec.ofNat 32 c0) n0) (h1 : c0 ≤ d)
@@ -340,7 +348,7 @@ theorem act_89a {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R rom
   refine WP.alu ac_at_922 ?_; wn
   refine act_met (MP := S) (ML := sl) (SP := SP) (SL := SL) (md := md) (sj := sj) X
     (hI7.regs (by act_r) (by act_r) (by act_r)) ac_at_924 ac_at_928 (by decide) (by decide)
-    (fun m h m' e1 e2 e3 => .inl (by show rmH _ _ _; rw [e1, e2, e3]; exact h))
+    (fun m hni h m' e1 e2 e3 => .inl ⟨hni, by show rmH _ _ _; rw [e1, e2, e3]; exact h⟩)
     (by act_r; rw [BitVec.add_comm]; exact act_spc hI.rsp _ _ rfl)
     (by act_r; rw [BitVec.add_comm]; exact act_spc hI.rsp _ _ rfl)
     (by omega) (by omega) (hW 0 (by decide)) ?_ (by omega) (by omega)

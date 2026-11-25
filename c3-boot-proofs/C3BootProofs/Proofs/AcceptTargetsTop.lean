@@ -254,8 +254,9 @@ theorem act_836 {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R rom
 
 end
 
-/-- The `targets.json` stage holds. -/
-theorem act_stage : AcTargetsStage := by
+/-- The `targets.json` stage holds, and it halts only if an inversion bound
+fails. -/
+theorem act_stage_pi : AcTargetsStagePI := by
   intro flash R romBase romCode hROM n B Bf g t r v M0 pinned parts root re hE hC F sB sRo sRom sBR bal bhi hR4 hR
     hS hInv hPre
   obtain ⟨hroot, hre, h1318, h131C, hRk, hdT, hdoc, hs4, hr⟩ := hPre
@@ -264,5 +265,12 @@ theorem act_stage : AcTargetsStage := by
   obtain ⟨n', hst, hq⟩ := act_836 hROM hR4 hR X hI hr (Mi := n.mem) (fun _ _ => rfl) hroot hre h1318 h131C
     hRk hdT hdoc hs4 rfl rfl rfl (by decide) hC n hS
   exact ⟨n', hst, hq n' rfl rfl rfl⟩
+
+/-- The `targets.json` stage holds. -/
+theorem act_stage : AcTargetsStage :=
+  fun flash R romBase romCode hROM n B Bf g t r v M0 pinned parts root re h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13
+    h14 =>
+    (act_stage_pi flash R romBase romCode hROM n B Bf g t r v M0 pinned parts root re h1 h2 h3 h4 h5 h6 h7 h8 h9 h10
+      h11 h12 h13 h14).acStage
 
 end C3.RV32.Ac

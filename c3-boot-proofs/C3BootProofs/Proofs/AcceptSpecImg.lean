@@ -40,10 +40,10 @@ theorem acs_lev {l : Word} (h : l.toNat < 256) : (l &&& 0xFF).toNat = l.toNat :=
 
 /-- **From 0x1AA**: the image stage, then the index stage and the rest, end
 the closure. -/
-theorem acs_image (hE : AcExtractStage) 
+theorem acs_image (hE : AcExtractStagePI) 
     {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest} (S : AcsAt1AA X mf n) : X.End n := by
   have E := ok.envsAt S.inv
-  refine acs_stage S.inv (acImage_stage X.flash n X.B X.Bf X.g X.t X.r X.slot X.level X.v X.M0 mf
+  refine acs_stage S.inv (acImage_stage_pi X.flash n X.B X.Bf X.g X.t X.r X.slot X.level X.v X.M0 mf
     (fun M hM => (ok.envs hM).img) E.ac ok.F ok.sB ok.bfhi' S.st S.inv S.pre) (fun _ => ok.fail)
     fun n' I' hpc P => ?_
   obtain ⟨⟨header, hd, hlev, h27, sv, entry, cnt, segs, hh, hout, hcnt, hpos, hkind⟩, -, h20, h21, h23, h24,

@@ -159,7 +159,8 @@ theorem rmv_hfG (s : Word) : hfG (s + BitVec.ofNat 32 0x34F0) = s + BitVec.ofNat
 /-- From 0x23E, the P-384 check: the DER signature decoded by
 `ecdsa_signature::<48>`, the message hashed with SHA-384, and both
 verified with `p384_verify_prehash` against the 97-byte key at `pk`. -/
-theorem rm_p384 (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
+theorem rm_p384 (E : RmEnv M0 M1 s F R MP SP ML SL g0)
+    (hH : ∀ m, ¬ InvBounds → Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
     {G g : Fin 32 → Word} (hK : ∀ x, x ∈ rmSL → g x = G x)
     (hsp : g sp = F) (hz : g 0 = 0) (hfr : ∀ x, x ∉ rkE → g x = g0 x) {pk : Word} (h8 : g 8 = pk)
     (hpk : Sep s 0x3920 pk 0x61) (hpkw : pk.toNat + 0x61 ≤ 0x40000000) {n : Nat} (hn : n ≤ 128)
@@ -293,7 +294,7 @@ theorem rm_p384 (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m �
   refine WP.alu rkm_at_28c ?_; wn
   refine WP.callPvM (B := s + BitVec.ofNat 32 0x1590) (pk := pk) (ph := F + BitVec.ofNat 32 0x18C)
     (rp := F + BitVec.ofNat 32 0x12C) (sq := F + BitVec.ofNat 32 0x15C) rkm_at_28e rkm_at_292 (by decide) (by decide)
-    (fun m _ => hH m) C5.pv E.pvfr (by (try rsimp); rw [hsp]; exact E.pvF) (by (try rsimp); rw [ev0, h8])
+    hH C5.pv E.pvfr (by (try rsimp); rw [hsp]; exact E.pvF) (by (try rsimp); rw [ev0, h8])
     (by (try rsimp); rw [ev_add, hsp]; rfl) (by (try rsimp); (try simp only [ev0]); try rfl)
     (by (try rsimp); rw [ev_add, hsp]; rfl) (by (try rsimp); rw [ev_add, hsp]; rfl)
     (by rw [E.pvlo]; exact (hpk.sub (c := 0x13F0) (l := 0x2340) (by decide)).symm) hpkw
@@ -311,7 +312,8 @@ theorem rm_p384 (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m �
 /-- From 0x2AE, the P-256 check: the DER signature decoded by
 `ecdsa_signature::<32>`, the message hashed with SHA-256, and both
 verified with `p256_verify_prehash` against the 65-byte key at `pk`. -/
-theorem rm_p256 (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
+theorem rm_p256 (E : RmEnv M0 M1 s F R MP SP ML SL g0)
+    (hH : ∀ m, ¬ InvBounds → Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
     {G g : Fin 32 → Word} (hK : ∀ x, x ∈ rmSL → g x = G x)
     (hsp : g sp = F) (hz : g 0 = 0) (hfr : ∀ x, x ∉ rkE → g x = g0 x) {pk : Word} (h8 : g 8 = pk)
     (hpk : Sep s 0x3920 pk 0x41) (hpk0 : 0 < pk.toNat) (hpkw : pk.toNat + 0x41 ≤ 0x40000000) {n : Nat}
@@ -453,7 +455,7 @@ theorem rm_p256 (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m �
   refine WP.alu rkm_at_30a ?_; wn
   refine WP.callP2vM (B := s + BitVec.ofNat 32 0x1A0) (pk := pk) (dg := F + BitVec.ofNat 32 0x18C)
     (rp := F + BitVec.ofNat 32 0x12C) (sq := F + BitVec.ofNat 32 0x15C) rkm_at_30c rkm_at_310 (by decide) (by decide)
-    (fun m _ => hH m) C5.p2v C5.p2k E.p2fr E.p2ro (by (try rsimp); rw [hsp]; exact E.p2F) (by (try rsimp); rw [ev0, h8])
+    hH C5.p2v C5.p2k E.p2fr E.p2ro (by (try rsimp); rw [hsp]; exact E.p2F) (by (try rsimp); rw [ev0, h8])
     (by (try rsimp); rw [ev_add, hsp]; rfl) (by (try rsimp); rw [ev_add, hsp]; rfl)
     (by (try rsimp); rw [ev_add, hsp]; rfl) (hin (by decide)) (hin (by decide))
     ⟨by rw [E.p2lo]; have := (hpk.sub (c := 0) (l := 0x3730) (by decide)).symm; rwa [add_ofNat_zero] at this,
@@ -492,7 +494,8 @@ theorem rm_ok256 {k msg sig bs r s : Bytes} (hp : parseHex sig = some bs) (he : 
 /-- From 0x22A: the check for the slot's tag. The decoded signature `bs`
 of the hex signature `sig` is at `F + 0x48`; `a0` is nonzero at 0x314 only
 when `sig` checks against slot `i`'s key. -/
-theorem rm_ver (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
+theorem rm_ver (E : RmEnv M0 M1 s F R MP SP ML SL g0)
+    (hH : ∀ m, ¬ InvBounds → Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
     {t : Nat} {es : List RkEntry} (hR : RkAt M0 R t es) (hw : RkWf es) {i ti : Nat} {ki : Bytes} (hi8 : i < 8)
     (hki : rmKeyAt es i = some (ti, ki)) {G g : Fin 32 → Word} (hK : ∀ x, x ∈ rmSL → g x = G x)
     (hsp : g sp = F) (hz : g 0 = 0) (hfr : ∀ x, x ∉ rkE → g x = g0 x) (h27 : g 27 = R + BitVec.ofNat 32 (98 * i))

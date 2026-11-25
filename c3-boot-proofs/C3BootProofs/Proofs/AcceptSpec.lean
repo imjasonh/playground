@@ -9,8 +9,46 @@ import C3BootProofs.Proofs.AcceptExtractTlogStage
 
 `acs_spec` composes the stages from the closure's entry to its return: the
 prologue and the read stage (`acs_front`), then the image, index,
-pinned-root, roots, `targets.json`, extract, bundle, and finish stages.
+pinned-root, roots, `targets.json`, extract, bundle, and finish stages. Each
+stage halts only if an inversion bound fails, so `acs_contract_pi` gives
+`Closure0ContractPI`, the contract whose panic carries the failed bound.
 -/
+
+namespace C3.RV32.BootMainContract
+
+open C3 C3.Image C3.RV32.Cur
+
+/-- **`Closure0Contract` with its panic refined**: the closure returns as
+`Closure0Contract` says, or it panics, and then some inversion bound
+fails. -/
+def Closure0ContractPI (flash : Nat → BitVec 8) (R : Nat) (romBase : Word) (romCode : List Nat)
+    (pinned : Bytes) (policy : Policy) (stack : Nat) (E : (Word → BitVec 8) → Prop) : Prop :=
+  RomRead flash R romBase romCode →
+  ∀ (m : Machine) (res bufs slot level : Word),
+    CodeIn m.mem (BitVec.ofNat 32 bootMainClosure0Address) bootMainClosure0Code → E m.mem →
+    m.pc = BitVec.ofNat 32 bootMainClosure0Address → stack ≤ (reg m sp).toNat →
+    reg m a0 = res → reg m a1 = level → reg m a2 = bufs → reg m a3 = slot → slot.toNat < 2 →
+    C0Args stack (reg m sp) res bufs level (reg m ra) →
+    Sep res 0x12C bufs 0xB954 → Sep res 0x12C (reg m sp - BitVec.ofNat 32 stack) stack →
+    Sep bufs 0xB954 (reg m sp - BitVec.ofNat 32 stack) stack →
+    (∃ m', Steps m m' ∧ m'.pc = reg m ra &&& ~~~1 ∧ (∀ q, romKeep q = true → reg m' q = reg m q) ∧
+      (∀ x, Sep (reg m sp - BitVec.ofNat 32 stack) stack x 1 → Sep res 0x12C x 1 →
+        Sep bufs 0xB954 x 1 → m'.mem x = m.mem x) ∧
+      (m'.mem (res + 0xC) = 0xFF ∨
+        ∃ mf sv t, bmcAccept flash pinned policy level.toNat slot = some (mf, sv, t) ∧
+          m'.mem (res + 0xC) ≠ 0xFF ∧ m'.mem (res + 0x128) = BitVec.ofNat 8 sv ∧
+          memLoad32 m'.mem (res + 0x120) = BitVec.ofNat 32 (bmcBase slot + mf.image.offset) ∧
+          AccOk flash slot mf m'.mem res)) ∨
+    PanicIf m
+
+theorem Closure0ContractPI.weaken {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {romCode : List Nat}
+    {pinned : Bytes} {policy : Policy} {stack : Nat} {E : (Word → BitVec 8) → Prop}
+    (h : Closure0ContractPI flash R romBase romCode pinned policy stack E) :
+    Closure0Contract flash R romBase romCode pinned policy stack E :=
+  fun hr m res bufs slot level h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 =>
+    (h hr m res bufs slot level h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13).imp_right PanicIf.panics
+
+end C3.RV32.BootMainContract
 
 namespace C3.RV32.Ac
 
@@ -53,7 +91,7 @@ theorem acs_front : AcsFront := by
       out := fun x hx _ => by
         rw [hm1]; exact acSaves_out (hx.symm.sub (c := 0x5A3C) (l := 0x34) (by decide)) }
   have E1 := ok.envsAt I1
-  refine acs_end_pre c1 g1 t1 (acs_stage I1 (acceptRead X.flash X.R X.romBase X.romCode ok.rom n1 X.B X.Bf
+  refine acs_end_pre c1 g1 t1 (acs_stage I1 (acceptRead_pi X.flash X.R X.romBase X.romCode ok.rom n1 X.B X.Bf
     X.g X.t X.r X.slot X.level X.v X.M0 (fun _ h => (ok.envs h).rd) E1.ac ok.F ok.sB ok.bfa ok.bfhi'
     (by have := ok.hR; omega) E1.idx.rom ok.rb ok.rl ok.hR4 ⟨s1.pc, rfl, fun _ => rfl⟩ I1
     (r19.trans e.a0) (r26.trans e.a1) (r21.trans e.a2) (r8.trans e.a3) (ra3.trans e.a3) r24)
@@ -67,14 +105,14 @@ theorem acs_front : AcsFront := by
       r9 := by rw [h9]; exact acr_on (by omega)
       r20 := h20, bf := h34, len := h38, hL := by omega, bundle := hbun, addr := h44, digest := hdig }
 
-/-- **The closure's specification**: from its entry, the closure panics, or
-returns with `AcsRes`: memory kept outside its stack, `Buffers`, and the
+/-- **The closure's specification**: from its entry, the closure panics,
+and then an inversion bound fails, or returns with `AcsRes`: memory kept outside its stack, `Buffers`, and the
 result, and a result that is `None` or a `Some` for the slot that
 `bmcAccept` accepts. -/
 theorem acs_spec {X : AcsCtx} (ok : X.Ok) {m : Machine}
     (e : AcsEntry X m) : X.End m :=
   acs_front X ok m e fun _ _ S =>
-    acs_image (ac_extract_loops ace_ca_stage acetl_tlog_stage acets_stage ace_dup) ok S
+    acs_image (ac_extract_loops_pi ace_ca_stage acetl_tlog_stage acets_stage ace_dup) ok S
 
 /-! ## The contract -/
 
@@ -109,14 +147,15 @@ theorem acs_keep {m n : Machine} (hsp : reg n sp = reg m sp)
   · exact sv 11 (by decide)
   · exact sv 12 (by decide)
 
-/-- **The closure meets `Closure0Contract`** with a stack of 0x5C10 bytes:
-the frame's 0x5A70 and the 0x1A0 below it that `sigstore::verify` writes. -/
-theorem acs_contract 
+/-- **The closure meets `Closure0ContractPI`** with a stack of 0x5C10 bytes:
+the frame's 0x5A70 and the 0x1A0 below it that `sigstore::verify` writes.
+It panics only if an inversion bound fails. -/
+theorem acs_contract_pi
     {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Word} {romCode : List Nat} {pinned : Bytes}
     {policy : Policy} (log : RomFn romBase romCode 0x40000040 romStack fun _ => True) (hrs : romStack ≤ 0x3A50)
     (hR : R ≤ 0x3A50 - 0x180) (hR4 : R % 4 = 0) (rb : 0x40000000 ≤ romBase.toNat)
     (rl : romBase.toNat + romCode.length ≤ 2 ^ 32) :
-    Closure0Contract flash R romBase romCode pinned policy 0x5C10 (AcsE romBase romCode pinned policy) := by
+    Closure0ContractPI flash R romBase romCode pinned policy 0x5C10 (AcsE romBase romCode pinned policy) := by
   intro rom m res bufs slot level C hE hpc _ h0 h1 h2 h3 hsl A sRB sRS sBS
   have := A.splo; have := A.sphi; have := A.spa; have := A.bufsp; have := A.bufhi
   have hB0 : (reg m sp - BitVec.ofNat 32 0x5A70).toNat = (reg m sp).toNat - 0x5A70 := by
@@ -161,5 +200,15 @@ theorem acs_contract
   · rw [hW] at hs
     exact hm x hs.symm hb.symm hr.symm
   · exact hres
+
+/-- **The closure meets `Closure0Contract`** with a stack of 0x5C10 bytes:
+the frame's 0x5A70 and the 0x1A0 below it that `sigstore::verify` writes. -/
+theorem acs_contract
+    {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Word} {romCode : List Nat} {pinned : Bytes}
+    {policy : Policy} (log : RomFn romBase romCode 0x40000040 romStack fun _ => True) (hrs : romStack ≤ 0x3A50)
+    (hR : R ≤ 0x3A50 - 0x180) (hR4 : R % 4 = 0) (rb : 0x40000000 ≤ romBase.toNat)
+    (rl : romBase.toNat + romCode.length ≤ 2 ^ 32) :
+    Closure0Contract flash R romBase romCode pinned policy 0x5C10 (AcsE romBase romCode pinned policy) :=
+  (acs_contract_pi log hrs hR hR4 rb rl).weaken
 
 end C3.RV32.Ac

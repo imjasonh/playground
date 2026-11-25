@@ -124,10 +124,10 @@ theorem acs_fin {X : AcsCtx} (ok : X.Ok) {n : Machine} {mf : Manifest}
     (hb : decodeBundle (flashBytes X.flash (acBase X.slot + mf.bundle.offset) mf.bundle.length) = some b) :
     X.End n := by
   have E := ok.envsAt I
-  obtain ⟨n', s, h⟩ := ac_finish_stage n X.B X.Bf X.g X.t X.r X.v X.M0 b root ex'
+  obtain ⟨n', s, h⟩ := ac_finish_stage_pi n X.B X.Bf X.g X.t X.r X.v X.M0 b root ex'
     (fun M hM => (ok.envs hM).fin) E.ac ok.F ok.ret I P
   rcases h with h | ⟨FI, h⟩ | ⟨pc, sp', sv, r3, r4, R⟩
-  · exact .inl ⟨n', s, h⟩
+  · exact .inl ⟨h.1, n', s, h.2⟩
   · exact acs_end_pre s (by rw [FI.gp, I.gp]) (by rw [FI.tp, I.tp])
       (ok.failW FI h)
   · refine .inr ⟨n', s, pc, sp', sv, by rw [r3, I.gp], by rw [r4, I.tp], fun x h1 h2 h3 => ?_,
