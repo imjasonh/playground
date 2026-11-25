@@ -415,3 +415,10 @@ import C3BootProofs.Proofs.SvTr4
 import C3BootProofs.Proofs.SvTr5s
 import C3BootProofs.Proofs.SvTr5n
 import C3BootProofs.Proofs.SvTr6
+import C3BootProofs.Proofs.SvTr7
+import C3BootProofs.Proofs.SvTra
+import C3BootProofs.Proofs.SvTrvct
+import C3BootProofs.Proofs.SvTrvmd
+import C3BootProofs.Proofs.SvTrvother
+import C3BootProofs.Proofs.SvTrl
+import C3BootProofs.Proofs.SvTrx
