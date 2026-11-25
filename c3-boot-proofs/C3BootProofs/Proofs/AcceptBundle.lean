@@ -385,6 +385,66 @@ theorem acb_init {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8}
   · rw [m2]; simp (disch := decide) only [acSlot, Nat.reduceAdd, acb_lst, memLoad32_store32_same]
   · rw [m2]; simp (disch := decide) only [acSlot, Nat.reduceAdd, memLoad32_store32_same]; rfl
 
+/-- `AcbK` survives a call that keeps `sp`, `gp`, and `tp`, and the memory
+outside `acbFc`. -/
+theorem AcbK.call {B : Word} {n0 n n' : Machine} {l : List Nat} (K : AcbK B n0 n)
+    (hr : ∀ x : Fin 32, x.val ∉ l → reg n' x = reg n x) (hf : ∀ x, AcbOut acbFc B x → n'.mem x = n.mem x)
+    (h2 : (2 : Nat) ∉ l := by decide) (h3 : (3 : Nat) ∉ l := by decide) (h4 : (4 : Nat) ∉ l := by decide) :
+    AcbK B n0 n' :=
+  ⟨by rw [hr (2 : Fin 32) h2]; exact K.sp, by rw [hr 3 h3]; exact K.gp, by rw [hr 4 h4]; exact K.tp,
+    fun x hx => (hf x (acb_FcV hx)).trans (K.keep x hx)⟩
+
+theorem acb_dd0 (B : Word) : B + 0x3A50 + 0x7FF + 0x5D1 = acSlot B 0xDD0 := by
+  rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
+
+/-- Two steps that set `a0` to `sp + 0x7FF + 0x5D1`, the reader. -/
+theorem acb_rdr {B : Word} {n0 n : Machine} {o : Nat} (K : AcbK B n0 n) (s : St n.mem AC n o (reg n))
+    (C : CodeIn n.mem AC bootMainClosure0Code)
+    (h1 : fetchRel bootMainClosure0Code o = some (.aluImm .add a0 sp 0x7FF, 4))
+    (h2 : fetchRel bootMainClosure0Code (o + 4) = some (.aluImm .add a0 a0 0x5D1, 4))
+    (e1 : BitVec.ofNat 32 o + 4 = BitVec.ofNat 32 (o + 4))
+    (e2 : BitVec.ofNat 32 (o + 4) + 4 = BitVec.ofNat 32 (o + 8)) :
+    ∃ n', Steps n n' ∧ AcbK B n0 n' ∧ St n'.mem AC n' (o + 8) (reg n') ∧ n'.mem = n.mem ∧
+      reg n' a0 = acSlot B 0xDD0 ∧ ∀ x : Fin 32, x ≠ a0 → reg n' x = reg n x := by
+  have hz := s.zero
+  obtain ⟨m1, c1, s1⟩ := s.aluImm C h1 e1
+  obtain ⟨m2, c2, s2⟩ := s1.aluImm C h2 e2
+  have rk : ∀ x : Fin 32, x ≠ a0 → reg m2 x = reg n x := fun x hx => by
+    rw [s2.regs, updz (upd_zero _ _ _) hx, updz hz hx]
+  refine ⟨m2, .cons c1 (.cons c2 (.refl _)), K.regs (l := [10]) s2.mem (fun x hx => rk x (acb_ne hx)),
+    ⟨s2.pc, rfl, fun _ => rfl⟩, s2.mem, ?_, rk⟩
+  rw [s2.regs]; simp +decide only [upd, ↓reduceIte, aluEval]; rw [K.sp, acb_dd0]
+
+set_option maxRecDepth 100000 in
+/-- From the call of `Reader::magic` to the first field: the magic and the
+version. -/
+theorem acb_hdr {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {L : Nat} {n0 n : Machine}
+    (G : AcbG B Bf g t r v M0 L n0) (K : AcbK B n0 n) (s : St n.mem AC n 0x185E (reg n))
+    (ra0 : reg n a0 = acSlot B 0xDD0) (ra1 : reg n a1 = 0x4E423343) (R : AcbRd B Bf L 0 n.mem) :
+    AcbOr B n0 n (fun n' => St n'.mem AC n' 0x1892 (reg n') ∧ AcbRd B Bf L 6 n'.mem ∧ 6 ≤ L ∧
+      memLoad32 n0.mem Bf = 0x4E423343 ∧ (n0.mem (Bf + 4)).toNat + 256 * (n0.mem (Bf + 4 + 1)).toNat = 1) := by
+  obtain ⟨n1, c1, s1, rg1, fr1, res1⟩ :=
+    acb_mcall s (G.code K) (G.env K) G.Y R ac_at_185e ac_at_1862 (by decide) (by decide) K.sp ra0 ra1
+  have K1 : AcbK B n0 n1 := K.call rg1 fr1
+  refine acb_pre c1 (acb_bind (acb_chk (o4 := 0x1874) K1 s1 (G.code K1) ac_at_1866 ac_at_1868 ac_at_186c ac_at_1870
+    (by decide) (by decide) (by decide) (by decide) (by decide) (Or.inl rfl) res1) ?_)
+  rintro n2 K2 ⟨s2, m2, -, h4L, hmag, R4⟩
+  obtain ⟨n3, c3, K3, s3, m3, ra3, -⟩ := acb_rdr K2 s2 (G.code K2) ac_at_1874 ac_at_1878 (by decide) (by decide)
+  have R3 : AcbRd B Bf L 4 n3.mem := by rw [m3, m2]; exact R4
+  obtain ⟨n4, c4, s4, rg4, fr4, res4⟩ :=
+    acb_vcall s3 (G.code K3) (G.env K3) G.Y R3 ac_at_187c ac_at_1880 (by decide) (by decide) K3.sp ra3
+  have K4 : AcbK B n0 n4 := K3.call rg4 fr4
+  refine acb_pre c3 (acb_pre c4 (acb_bind (acb_chk (o4 := 0x1892) K4 s4 (G.code K4) ac_at_1884 ac_at_1886 ac_at_188a
+    ac_at_188e (by decide) (by decide) (by decide) (by decide) (by decide) (Or.inr rfl) res4) ?_))
+  rintro n5 K5 ⟨s5, m5, -, h6L, hver, R6⟩
+  have e5 : Bf + 4 + 1 = Bf + BitVec.ofNat 32 5 := add_ofNat_assoc _ _ _
+  have v4 : n3.mem (Bf + 4) = n0.mem (Bf + 4) := K3.kw _ (acb_buf (by decide) G.Y.hs (j := 4) (by decide))
+  have v5 : n3.mem (Bf + 4 + 1) = n0.mem (Bf + 4 + 1) := by
+    rw [e5]; exact K3.kw _ (acb_buf (by decide) G.Y.hs (by decide))
+  have hm : memLoad32 n.mem Bf = memLoad32 n0.mem Bf := by
+    have := G.buf K (c := 0) (by decide); rwa [add_ofNat_zero] at this
+  refine acb_ret K5 ⟨s5, by rw [m5]; exact R6, h6L, by rw [← hm]; exact hmag, by rw [← v4, ← v5]; exact hver⟩
+
 #exit
 
 end C3.RV32.Ac
