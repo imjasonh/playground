@@ -9,6 +9,8 @@ import C3BootProofs.Proofs.TufRoleKeysBytes
 other side: when `RoleKeys::met` returns `Ok(true)` on the keys that
 `roleKeys` lists for a role, the message `encode md.signed`, and the
 signatures array of `md`, `thresholdMet` holds for that role.
+`tufRoleKeysMet_spec_pi` is the same from `tufRoleKeysMet_correct_pi`, with
+the panic refined to `rmHI`.
 
 Memory holds each byte of a key ID and a key modulo 256, so the lift needs
 the bytes of the listed key IDs and keys to be below 256. They are when the
@@ -83,6 +85,42 @@ namespace C3.RV32
 
 open C3.Image C3.Json
 
+/-- `tufRoleKeysMet_spec` with its panic refined: `RoleKeys::met` halts only
+if an inversion bound fails (`rmHI`), or it returns as
+`tufRoleKeysMet_spec` says. -/
+theorem tufRoleKeysMet_spec_pi (m : Machine) {retAddr s R A MP SP : Word} {ML SL t : Nat}
+    {md : Meta} {dj sj : Json} {role : Bytes} {es : List (Bytes × Option TufKey)}
+    {M : Word → BitVec 8} {DP : Word} {DL : Nat}
+    (hpc : m.pc = TRM) (ha0 : reg m a0 = R) (ha1 : reg m a1 = A) (hsp : reg m sp = s + BitVec.ofNat 32 0x3920)
+    (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hal : s.toNat % 16 = 0)
+    (hlo : 0x3FC80000 ≤ s.toNat) (hhi : s.toNat + 0x3920 ≤ 0x3FCE0000)
+    (hds : Sep s 0x3920 (BitVec.ofNat 32 (img% dataWindowAddress)) (img% dataWindowSize))
+    (hro : Sep s 0x3920 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize))
+    (hc : ∀ M : Word → BitVec 8, (∀ x, Sep x 1 s 0x3920 → M x = m.mem x) → RmCode M)
+    (halR : R.toNat % 4 = 0) (hRw : R.toNat + 0x540 ≤ 0x40000000) (hSR : Sep s 0x3920 R 0x540)
+    (hMw : MP.toNat + ML ≤ 0x40000000) (hML : ML < 2 ^ 31) (hSM : Sep s 0x3920 MP ML)
+    (hS0 : SP.toNat ≠ 0) (hSw : SP.toNat + SL ≤ 0x40000000) (hSL : SL < 2 ^ 31) (hSS : Sep s 0x3920 SP SL)
+    (halA : A.toNat % 4 = 0) (hSA : Sep s 0x3920 A 16) (hA0 : memLoad32 m.mem A = MP)
+    (hA4 : memLoad32 m.mem (A + BitVec.ofNat 32 4) = BitVec.ofNat 32 ML)
+    (hA8 : memLoad32 m.mem (A + BitVec.ofNat 32 8) = SP)
+    (hAC : memLoad32 m.mem (A + BitVec.ofNat 32 12) = BitVec.ofNat 32 SL)
+    (hrk : roleKeys dj role = some (t, es)) (hdj : JVal true (memBytes M DP DL) dj)
+    (hR : RkAt m.mem R t (es.map C3.Json.rkTag)) (hw : RkWf (es.map C3.Json.rkTag)) (hmsg : memBytes m.mem MP ML = encode md.signed)
+    (hsj : JVal true (memBytes m.mem SP SL) sj) (hps : (sj.asArr >>= List.mapM sigPair) = some md.sigs) :
+    ∃ m', Steps m m' ∧
+      (rmHI m'.pc m'.mem (reg m') ∨
+        (m'.pc = retAddr ∧ (∀ x, Sep x 1 s 0x3920 → m'.mem x = m.mem x) ∧ (∀ r, r ∉ jClob → reg m' r = reg m r) ∧
+          (reg m' a0 = 0 → reg m' a1 ≠ 0 → thresholdMet md dj role = some true))) := by
+  obtain ⟨m', st, q⟩ := tufRoleKeysMet_correct_pi m hpc ha0 ha1 hsp hra hret hal hlo hhi hds hro hc halR hRw hSR hMw
+    hML hSM hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hR hw
+  refine ⟨m', st, ?_⟩
+  rcases q with h | ⟨hp, hM, hr, hS⟩
+  · exact .inl h
+  · refine .inr ⟨hp, hM, hr, fun h0 h1 => ?_⟩
+    have hS := hS h0 h1
+    rw [hmsg] at hS
+    exact tlmr_thresholdMet hrk (rkBytes_of_mem hrk hdj) (metLookup_spec hsj hps) hS
+
 /-- `tufRoleKeysMet_correct` against the spec. The `RoleKeys` at `R` holds
 the threshold `t` and the keys `es` that `roleKeys dj role` gives, where
 `dj` is parsed from the bytes at `DP` in some memory `M`. The message is
@@ -111,15 +149,9 @@ theorem tufRoleKeysMet_spec (m : Machine) {retAddr s R A MP SP : Word} {ML SL t 
     ∃ m', Steps m m' ∧
       (rmH m'.pc m'.mem (reg m') ∨
         (m'.pc = retAddr ∧ (∀ x, Sep x 1 s 0x3920 → m'.mem x = m.mem x) ∧ (∀ r, r ∉ jClob → reg m' r = reg m r) ∧
-          (reg m' a0 = 0 → reg m' a1 ≠ 0 → thresholdMet md dj role = some true))) := by
-  obtain ⟨m', st, q⟩ := tufRoleKeysMet_correct m hpc ha0 ha1 hsp hra hret hal hlo hhi hds hro hc halR hRw hSR hMw
-    hML hSM hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hR hw
-  refine ⟨m', st, ?_⟩
-  rcases q with h | ⟨hp, hM, hr, hS⟩
-  · exact .inl h
-  · refine .inr ⟨hp, hM, hr, fun h0 h1 => ?_⟩
-    have hS := hS h0 h1
-    rw [hmsg] at hS
-    exact tlmr_thresholdMet hrk (rkBytes_of_mem hrk hdj) (metLookup_spec hsj hps) hS
+          (reg m' a0 = 0 → reg m' a1 ≠ 0 → thresholdMet md dj role = some true))) :=
+  let ⟨m', st, q⟩ := tufRoleKeysMet_spec_pi m hpc ha0 ha1 hsp hra hret hal hlo hhi hds hro hc halR hRw hSR hMw hML
+    hSM hS0 hSw hSL hSS halA hSA hA0 hA4 hA8 hAC hrk hdj hR hw hmsg hsj hps
+  ⟨m', st, q.imp_left And.right⟩
 
 end C3.RV32

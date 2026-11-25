@@ -346,7 +346,8 @@ theorem rm_exit (E : RmBase M0 M1 s F R MP SP ML SL g0) {t : Nat} {es : List RkE
 /-- From 0xAA, slot `j` with a key and its key ID's length in `s9`: look up
 the ID's signature, check that no counted slot has the same key, decode
 the signature, check it, and count the slot when it checks. -/
-theorem rm_body (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
+theorem rm_body (E : RmEnv M0 M1 s F R MP SP ML SL g0)
+    (hH : ∀ m, ¬ InvBounds → Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
     {t : Nat} {es : List RkEntry} (hR : RkAt M0 R t es) (hw : RkWf es) {cs : List Nat} {j ti : Nat} {ki : Bytes}
     (hj8 : j < 8) (hjn : j < es.length) (hki : rmKeyAt es j = some (ti, ki)) {Mk : Word → BitVec 8}
     {g : Fin 32 → Word} (hO : Out M1 Mk s 0x38EC) (hHM : RmHM Mk F MP SP ML SL cs)
@@ -415,7 +416,8 @@ theorem rm_tag : ∀ t, t < 3 →
     branchTaken .beq (aluEval .add ((BitVec.ofNat 8 t).zeroExtend 32) 0xFFFFFF01) 0 = false := by decide
 
 /-- One pass of the loop from 0x78, for slot `j` before the last. -/
-theorem rm_iter (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
+theorem rm_iter (E : RmEnv M0 M1 s F R MP SP ML SL g0)
+    (hH : ∀ m, ¬ InvBounds → Halting m → rmQ H M0 s g0 S m.pc m.mem (reg m))
     {t : Nat} {es : List RkEntry} (hR : RkAt M0 R t es) (hw : RkWf es) {cs : List Nat} {j : Nat}
     {Mk : Word → BitVec 8} {g : Fin 32 → Word} (hd : RmHd M0 M1 s F R MP SP ML SL g0 es cs j Mk g)
     (hjn : j < es.length)
@@ -481,7 +483,7 @@ theorem rm_loop (E : RmEnv M0 M1 s F R MP SP ML SL g0) {t : Nat} {es : List RkEn
     (hw : RkWf es) (k : Nat) :
     ∀ cs j Mk g, es.length - j = k → RmHd M0 M1 s F R MP SP ML SL g0 es cs j Mk g →
       WP tufRoleKeysMetCode TRM
-        (rmQ rmH M0 s g0 (MetSound (memBytes M0 SP SL) (memBytes M0 MP ML) t (es.map nbE))) Mk 0x78 g := by
+        (rmQ rmHI M0 s g0 (MetSound (memBytes M0 SP SL) (memBytes M0 MP ML) t (es.map nbE))) Mk 0x78 g := by
   induction k with
   | zero =>
     intro cs j Mk g hk hd
@@ -490,7 +492,7 @@ theorem rm_loop (E : RmEnv M0 M1 s F R MP SP ML SL g0) {t : Nat} {es : List RkEn
     exact rm_exit E.toRmBase hR hd
   | succ k ih =>
     intro cs j Mk g hk hd
-    exact rm_iter E rmQ_halt hR hw hd (by omega) fun cs' Mk' g' hd' => ih cs' (j + 1) Mk' g' (by omega) hd'
+    exact rm_iter E rmQ_haltI hR hw hd (by omega) fun cs' Mk' g' hd' => ih cs' (j + 1) Mk' g' (by omega) hd'
 
 end
 

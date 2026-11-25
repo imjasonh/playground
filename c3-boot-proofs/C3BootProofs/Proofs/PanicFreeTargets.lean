@@ -24,7 +24,8 @@ one is a current theorem's statement with its panic disjunct refined:
 The theorems that prove them are to be named after the theorem they refine
 with the suffix `_pi`, such as `tufRoleKeysMet_ret_pi :
 TufRoleKeysMetRetPI`, and the headline `reset_correct_loaded_np :
-ResetCorrectLoadedNP`.
+ResetCorrectLoadedNP`. `TufRoleKeysMetRetPI` is stated in
+`TufRoleKeysMet.lean`, where `tufRoleKeysMet_ret_pi` proves it.
 
 `Cur.BootsSlot` is the boot outcome that `bootMain_correct` and
 `reset_correct_loaded` share; `bootMain_correct_boots` and
@@ -33,42 +34,6 @@ weakenings: each refined contract gives the current statement, and
 `resetCorrectLoaded_np_of_pi` gives the headline from
 `ResetCorrectLoadedPI`.
 -/
-
-namespace C3.RV32
-
-open C3.Image C3.Json
-
-/-- `rmH`, the `RoleKeys::met` postcondition's halting case, when some
-inversion bound fails. -/
-abbrev rmHI : Post := fun pc M g => ¬ InvBounds ∧ rmH pc M g
-
-/-- **`tufRoleKeysMet_ret` with its panic refined**: `RoleKeys::met` halts
-only if an inversion bound fails (`rmHI`), or it returns as
-`tufRoleKeysMet_ret` says. `tufRoleKeysMet_correct`, `tufRoleKeysMet_spec`,
-and `tufRoleKeysMet_result` refine the same way. -/
-def TufRoleKeysMetRetPI : Prop :=
-  ∀ (m : Machine) {retAddr s R A MP SP : Word} {ML SL t : Nat} {es : List RkEntry}
-    (_hpc : m.pc = TRM) (_ha0 : reg m a0 = R) (_ha1 : reg m a1 = A) (_hsp : reg m sp = s + BitVec.ofNat 32 0x3920)
-    (_hra : reg m ra = retAddr) (_hret : retAddr &&& ~~~1 = retAddr) (_hal : s.toNat % 16 = 0)
-    (_hlo : 0x3FC80000 ≤ s.toNat) (_hhi : s.toNat + 0x3920 ≤ 0x3FCE0000)
-    (_hds : Sep s 0x3920 (BitVec.ofNat 32 (img% dataWindowAddress)) (img% dataWindowSize))
-    (_hro : Sep s 0x3920 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize))
-    (_hc : ∀ M : Word → BitVec 8, (∀ x, Sep x 1 s 0x3920 → M x = m.mem x) → RmCode M)
-    (_halR : R.toNat % 4 = 0) (_hRw : R.toNat + 0x540 ≤ 0x40000000) (_hSR : Sep s 0x3920 R 0x540)
-    (_hMw : MP.toNat + ML ≤ 0x40000000) (_hML : ML < 2 ^ 31) (_hSM : Sep s 0x3920 MP ML)
-    (_hS0 : SP.toNat ≠ 0) (_hSw : SP.toNat + SL ≤ 0x40000000) (_hSL : SL < 2 ^ 31) (_hSS : Sep s 0x3920 SP SL)
-    (_halA : A.toNat % 4 = 0) (_hSA : Sep s 0x3920 A 16) (_hA0 : memLoad32 m.mem A = MP)
-    (_hA4 : memLoad32 m.mem (A + BitVec.ofNat 32 4) = BitVec.ofNat 32 ML)
-    (_hA8 : memLoad32 m.mem (A + BitVec.ofNat 32 8) = SP)
-    (_hAC : memLoad32 m.mem (A + BitVec.ofNat 32 12) = BitVec.ofNat 32 SL) (_hR : RkAt m.mem R t es) (_hw : RkWf es),
-    ∃ m', Steps m m' ∧
-        (rmHI m'.pc m'.mem (reg m') ∨
-          (m'.pc = retAddr ∧ (∀ x, Sep x 1 s 0x3920 → m'.mem x = m.mem x) ∧ (∀ r, r ∉ jClob → reg m' r = reg m r) ∧
-            (reg m' a0 = 0 → reg m' a1 ≠ 0 →
-              MetSound (memBytes m.mem SP SL) (memBytes m.mem MP ML) t (es.map nbE)) ∧
-            (reg m' a0 = 0 ∨ reg m' a0 = 1) ∧ (reg m' a0 ≠ 0 → (reg m' a1 &&& 0xFF).toNat < 0x27)))
-
-end C3.RV32
 
 namespace C3.RV32.Sv
 
