@@ -243,6 +243,9 @@ import C3BootProofs.Models.TufLink
 import C3BootProofs.Models.TufLinkMeta
 import C3BootProofs.Models.TufLinkKeys
 import C3BootProofs.Proofs.AcceptStages
+import C3BootProofs.Proofs.BootMainRecord
+import C3BootProofs.Proofs.BootMainContract
+import C3BootProofs.Proofs.BootMainSpec
 
 /-!
 # Audit
@@ -9238,3 +9241,30 @@ end C3
 
 /-- info: 'C3.RV32.Ac.ac_exit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.ac_exit
+
+/-- info: 'C3.RV32.Cur.bmr_read' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmr_read
+
+/-- info: 'C3.RV32.Cur.bmr_enc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bmr_enc
+
+/-- info: 'C3.RV32.BootMainContract.bmc_decode' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.BootMainContract.bmc_decode
+
+/-- info: 'C3.RV32.BootMainContract.bmc_hdr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.BootMainContract.bmc_hdr
+
+/-- info: 'C3.RV32.BootMainContract.bmc_accept' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.BootMainContract.bmc_accept
+
+/-- info: 'C3.RV32.Cur.BmKeep.step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.BmKeep.step
+
+/-- info: 'C3.RV32.Cur.BmKeep.out' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.BmKeep.out
+
+/-- info: 'C3.RV32.Cur.BmKeep.codeIn' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.BmKeep.codeIn
+
+/-- info: 'C3.RV32.Cur.bm_romcall' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bm_romcall
