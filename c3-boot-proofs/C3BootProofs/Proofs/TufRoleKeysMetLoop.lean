@@ -470,6 +470,23 @@ theorem rm_iter (E : RmEnv M0 M1 s F R MP SP ML SL g0) (hH : ∀ m, Halting m �
     (by rsimp) ?_ (by rsimp) (by rsimp; exact h13) (by rsimp; exact h12) IH
   rsimp; rw [h14, eA, hw4 _ (by omega), hIL]
 
+
+/-- The loop from 0x78 with `k` slots left, to the return. -/
+theorem rm_loop (E : RmEnv M0 M1 s F R MP SP ML SL g0) {t : Nat} {es : List RkEntry} (hR : RkAt M0 R t es)
+    (hw : RkWf es) (k : Nat) :
+    ∀ cs j Mk g, es.length - j = k → RmHd M0 M1 s F R MP SP ML SL g0 es cs j Mk g →
+      WP tufRoleKeysMetCode TRM
+        (rmQ rmH M0 s g0 (MetSound (memBytes M0 SP SL) (memBytes M0 MP ML) t (es.map nbE))) Mk 0x78 g := by
+  induction k with
+  | zero =>
+    intro cs j Mk g hk hd
+    have hjn := hd.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+    obtain rfl : j = es.length := by omega
+    exact rm_exit E.toRmBase hR hd
+  | succ k ih =>
+    intro cs j Mk g hk hd
+    exact rm_iter E rmQ_halt hR hw hd (by omega) fun cs' Mk' g' hd' => ih cs' (j + 1) Mk' g' (by omega) hd'
+
 end
 
 end C3.RV32
