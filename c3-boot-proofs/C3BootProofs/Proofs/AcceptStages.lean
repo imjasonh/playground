@@ -94,7 +94,8 @@ def AcReadStage (E : (Word → BitVec 8) → Prop) : Prop :=
     (∀ M, (∀ x, Sep x 1 B 0x5A70 → Sep x 1 Bf acBufLen → M x = M0 x) → E M) →
     CodeIn n.mem AC bootMainClosure0Code → Fr B 0x5A70 → Sep B 0x5A70 Bf acBufLen →
     Bf.toNat % 4 = 0 → Bf.toNat + acBufLen ≤ 0x40000000 → R ≤ 0x3A50 - 0x150 →
-    St n.mem AC n 0x32 (reg n) → AcInv B Bf g t v M0 n →
+    CodeIn n.mem romBase romCode → 0x40000000 ≤ romBase.toNat → romBase.toNat + romCode.length ≤ 2 ^ 32 →
+    R % 4 = 0 → St n.mem AC n 0x32 (reg n) → AcInv B Bf g t v M0 n →
     reg n (19 : Fin 32) = r → reg n (26 : Fin 32) = level → reg n (21 : Fin 32) = Bf →
     reg n (8 : Fin 32) = slot → reg n a3 = slot → reg n (24 : Fin 32) = 0x210000 →
     AcStage B Bf g t r v M0 n 0x1AA fun n' =>
