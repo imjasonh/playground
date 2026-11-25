@@ -18,6 +18,11 @@ outside the closure's stack and `Buffers`.
 
 `AcReadStage` is the first stage, from the prologue's end at 0x32 to 0x1AA:
 the manifest, the image header, the image's SHA-256, and the bundle.
+
+The last stage calls `sigstore::verify`, which writes up to 0x1A0 bytes
+below the frame, so it keeps `AcInvW`, which keeps memory outside the 0x5C10
+bytes from `B + 0xFFFFFE60`. `AcInv.wide` turns `AcInv` into `AcInvW`, and
+`ac_exit_wide` is `ac_exit` from `AcInvW`.
 -/
 
 namespace C3.RV32.Ac
@@ -130,5 +135,56 @@ theorem ac_exit {romBase : Word} {romCode : List Nat} {romStack : Nat}
       (by rw [q19]; exact sRS)
     rw [q19, M1] at h
     exact AcRet.pre c1 (q 3 (by decide)) (q 4 (by decide)) h
+
+/-! ### The stack below the frame
+
+`sigstore::verify` writes up to 0x1A0 bytes below `B`, so the closure's stack
+is the 0x5C10 bytes from `B + 0xFFFFFE60`, not the frame's 0x5A70 from `B`.
+A stage that calls it keeps `AcInvW` instead of `AcInv`. -/
+
+/-- `AcInv`, with memory kept outside the 0x5C10 bytes from `B + 0xFFFFFE60`:
+the frame and the 0x1A0 bytes below it. -/
+structure AcInvW (B Bf g t : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (n : Machine) : Prop where
+  sp : reg n sp = B + 0x3A50
+  gp : reg n (3 : Fin 32) = g
+  tp : reg n (4 : Fin 32) = t
+  saves : ∀ k, k < 13 → memLoad32 n.mem (B + BitVec.ofNat 32 (0x5A6C - 4 * k)) = v k
+  out : ∀ x, Sep x 1 (B + 0xFFFFFE60) 0x5C10 → Sep x 1 Bf acBufLen → n.mem x = M0 x
+
+/-- A byte outside the closure's whole stack is outside its frame. -/
+theorem acw_frame {B x : Word} (h : Sep x 1 (B + 0xFFFFFE60) 0x5C10) : Sep x 1 B 0x5A70 := by
+  have := h.subR (c := 0x1A0) (l := 0x5A70) (by decide)
+  have e : B + 0xFFFFFE60 + BitVec.ofNat 32 0x1A0 = B := by
+    rw [BitVec.add_assoc]
+    exact (congrArg (B + ·) (by decide : (0xFFFFFE60 : Word) + BitVec.ofNat 32 0x1A0 = 0)).trans (BitVec.add_zero B)
+  rwa [e] at this
+
+/-- `AcInv` gives `AcInvW`, so a stage that keeps `AcInvW` can follow one
+that keeps `AcInv`. -/
+theorem AcInv.wide {B Bf g t : Word} {v : Nat → Word} {M0 : Word → BitVec 8} {n : Machine}
+    (I : AcInv B Bf g t v M0 n) : AcInvW B Bf g t v M0 n :=
+  ⟨I.sp, I.gp, I.tp, I.saves, fun x hw hb => I.out x (acw_frame hw) hb⟩
+
+/-- What the `None` exit leaves after a stage that keeps `AcInvW`: 0xFF at
+`r + 0xC`, and memory outside the closure's whole stack, `Buffers`, and
+`r + 0xC` as it was in `M0`. -/
+abbrev AcNoneW (B Bf r : Word) (M0 M' : Word → BitVec 8) : Prop :=
+  M' (r + 0xC) = 0xFF ∧
+    ∀ x, Sep x 1 (B + 0xFFFFFE60) 0x5C10 → Sep x 1 Bf acBufLen → Sep x 1 (r + 0xC) 1 → M' x = M0 x
+
+/-- **`ac_exit` from `AcInvW`**: every way into an exit returns `None`, with
+memory as `AcNoneW` says. -/
+theorem ac_exit_wide {romBase : Word} {romCode : List Nat} {romStack : Nat}
+    (log : RomFn romBase romCode 0x40000040 romStack fun _ => True) (hrs : romStack ≤ 0x3A50)
+    {n : Machine} {B Bf g t r : Word} {v : Nat → Word} {M0 : Word → BitVec 8}
+    (C : CodeIn n.mem AC bootMainClosure0Code) (CR : CodeIn n.mem romBase romCode)
+    (T : CodeIn n.mem (BitVec.ofNat 32 acRejectTableAddress) acRejectTableData)
+    (sRB : Sep B 0x5A70 romBase romCode.length) (F : Fr B 0x5A70) (hret : v 0 &&& ~~~1 = v 0)
+    (sRC : Sep (r + 0xC) 1 AC bootMainClosure0Code.length) (sRS : Sep (r + 0xC) 1 B 0x5A70)
+    (I : AcInvW B Bf g t v M0 n) (h : AcFail B r n) :
+    AcRet B v n (AcNoneW B Bf r M0) :=
+  (ac_exit (Bf := Bf) (g := reg n (3 : Fin 32)) (t := reg n (4 : Fin 32)) (M0 := n.mem) log hrs C CR T sRB F hret
+    sRC sRS ⟨I.sp, rfl, rfl, I.saves, fun _ _ _ => rfl⟩ h).mono
+    fun _ ⟨hF, hK⟩ => ⟨hF, fun x hw hb hr => (hK x (acw_frame hw) hr).trans (I.out x hw hb)⟩
 
 end C3.RV32.Ac
