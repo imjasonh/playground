@@ -412,3 +412,6 @@ import C3BootProofs.Proofs.SvTr1
 import C3BootProofs.Proofs.SvTr2
 import C3BootProofs.Proofs.SvTr3
 import C3BootProofs.Proofs.SvTr4
+import C3BootProofs.Proofs.SvTr5s
+import C3BootProofs.Proofs.SvTr5n
+import C3BootProofs.Proofs.SvTr6
