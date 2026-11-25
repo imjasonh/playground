@@ -9133,6 +9133,27 @@ end C3
 /-- info: 'C3.RV32.tufRoleKeysMet_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufRoleKeysMet_spec
 
+/-- info: 'C3.Json.parseValue_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.parseValue_bytes
+
+/-- info: 'C3.Json.JVal_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.JVal_bytes
+
+/-- info: 'C3.Json.parseJson_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.parseJson_bytes
+
+/-- info: 'C3.Json.parseHex_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.parseHex_lt
+
+/-- info: 'C3.Json.decodeKey_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.decodeKey_lt
+
+/-- info: 'C3.Json.rkBytes_of_roleKeys' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.rkBytes_of_roleKeys
+
+/-- info: 'C3.Json.rkBytes_of_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Json.rkBytes_of_mem
+
 /-- info: 'C3.RV32.trustedRootDecode_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.trustedRootDecode_correct
 

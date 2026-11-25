@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.TufRoleKeysMet
 import C3BootProofs.Models.TufLinkMet
+import C3BootProofs.Proofs.TufRoleKeysBytes
 
 /-!
 # `tufRoleKeysMet` against `Spec/Tuf.lean`
@@ -10,7 +11,8 @@ other side: when `RoleKeys::met` returns `Ok(true)` on the keys that
 signatures array of `md`, `thresholdMet` holds for that role.
 
 Memory holds each byte of a key ID and a key modulo 256, so the lift needs
-the bytes of the listed key IDs and keys to be below 256.
+the bytes of the listed key IDs and keys to be below 256. They are when the
+delegator `dj` is parsed from memory (`rkBytes_of_roleKeys`).
 -/
 
 namespace C3.Json
@@ -36,6 +38,35 @@ theorem tlmr_nbE {es : List (Bytes × Option TufKey)} (h : RkBytes es) : (es.map
   · show (nb id, some ((keyTag k).1, nb (keyTag k).2)) = (id, some (keyTag k))
     rw [tlmr_nb h1, tlmr_nb (h2 k rfl)]
 
+/-- The key IDs and keys that `roleKeys` lists for a role of a value whose
+strings and keys are bytes below 256 are bytes below 256. -/
+theorem rkBytes_of_roleKeys {dj : Json} {role : Bytes} {t : Nat} {es : List (Bytes × Option TufKey)}
+    (hr : roleKeys dj role = some (t, es)) (hj : JBytes dj) : RkBytes es := by
+  unfold roleKeys at hr
+  obtain ⟨r, hr0, h⟩ := Option.bind_eq_some_iff.mp hr
+  obtain ⟨_, -, h⟩ := Option.bind_eq_some_iff.mp h
+  obtain ⟨_, -, h⟩ := Option.bind_eq_some_iff.mp h
+  obtain ⟨keys, -, h⟩ := Option.bind_eq_some_iff.mp h
+  obtain ⟨items, hi, h⟩ := Option.bind_eq_some_iff.mp h
+  obtain ⟨ids, hids, h⟩ := Option.bind_eq_some_iff.mp h
+  obtain ⟨_, -, h⟩ := Option.bind_eq_some_iff.mp h
+  cases h
+  obtain ⟨roles, h1, h2⟩ := Option.bind_eq_some_iff.mp hr0
+  have hrj := trb_field (trb_field hj h1) h2
+  obtain ⟨kj, h3, h4⟩ := Option.bind_eq_some_iff.mp hi
+  have hid := trb_mapM (trb_asArr (trb_field hrj h3) h4) hids
+  intro e he
+  obtain ⟨id, hm, rfl⟩ := List.mem_map.mp he
+  refine ⟨hid id hm, fun k hk => ?_⟩
+  obtain ⟨_, -, hd⟩ := Option.bind_eq_some_iff.mp hk
+  exact decodeKey_lt hd
+
+/-- `rkBytes_of_roleKeys` for a delegator parsed from memory. -/
+theorem rkBytes_of_mem {M : Word → BitVec 8} {D : Word} {L : Nat} {dj : Json} {role : Bytes} {t : Nat}
+    {es : List (Bytes × Option TufKey)} (hr : roleKeys dj role = some (t, es))
+    (hd : JVal true (C3.RV32.memBytes M D L) dj) : RkBytes es :=
+  rkBytes_of_roleKeys hr (JVal_bytes hd C3.RV32.memBytes_mem_lt)
+
 /-- `MetSound` on the listed keys of `roleKeys` gives `thresholdMet`. -/
 theorem tlmr_thresholdMet {md : Meta} {dj : Json} {role a : Bytes} {t : Nat} {es : List (Bytes × Option TufKey)}
     (hr : roleKeys dj role = some (t, es)) (hB : RkBytes es)
@@ -53,13 +84,14 @@ namespace C3.RV32
 open C3.Image C3.Json
 
 /-- `tufRoleKeysMet_correct` against the spec. The `RoleKeys` at `R` holds
-the threshold `t` and the keys `es` that `roleKeys dj role` gives, with the
-bytes of their key IDs and keys below 256. The message is
+the threshold `t` and the keys `es` that `roleKeys dj role` gives, where
+`dj` is parsed from the bytes at `DP` in some memory `M`. The message is
 `encode md.signed`, and the signatures array is the JSON value `sj` whose
 items `sigPair` reads as `md.sigs`. When `RoleKeys::met` returns `Ok(true)`,
 `thresholdMet md dj role` is `some true`. -/
 theorem tufRoleKeysMet_spec (m : Machine) {retAddr s R A MP SP : Word} {ML SL t : Nat}
     {md : Meta} {dj sj : Json} {role : Bytes} {es : List (Bytes × Option TufKey)}
+    {M : Word → BitVec 8} {DP : Word} {DL : Nat}
     (hpc : m.pc = TRM) (ha0 : reg m a0 = R) (ha1 : reg m a1 = A) (hsp : reg m sp = s + BitVec.ofNat 32 0x3920)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hal : s.toNat % 16 = 0)
     (hlo : 0x3FC80000 ≤ s.toNat) (hhi : s.toNat + 0x3920 ≤ 0x3FCE0000)
@@ -73,8 +105,8 @@ theorem tufRoleKeysMet_spec (m : Machine) {retAddr s R A MP SP : Word} {ML SL t 
     (hA4 : memLoad32 m.mem (A + BitVec.ofNat 32 4) = BitVec.ofNat 32 ML)
     (hA8 : memLoad32 m.mem (A + BitVec.ofNat 32 8) = SP)
     (hAC : memLoad32 m.mem (A + BitVec.ofNat 32 12) = BitVec.ofNat 32 SL)
-    (hrk : roleKeys dj role = some (t, es)) (hB : RkBytes es) (hR : RkAt m.mem R t (es.map C3.Json.rkTag))
-    (hw : RkWf (es.map C3.Json.rkTag)) (hmsg : memBytes m.mem MP ML = encode md.signed)
+    (hrk : roleKeys dj role = some (t, es)) (hdj : JVal true (memBytes M DP DL) dj)
+    (hR : RkAt m.mem R t (es.map C3.Json.rkTag)) (hw : RkWf (es.map C3.Json.rkTag)) (hmsg : memBytes m.mem MP ML = encode md.signed)
     (hsj : JVal true (memBytes m.mem SP SL) sj) (hps : (sj.asArr >>= List.mapM sigPair) = some md.sigs) :
     ∃ m', Steps m m' ∧
       (rmH m'.pc m'.mem (reg m') ∨
@@ -88,6 +120,6 @@ theorem tufRoleKeysMet_spec (m : Machine) {retAddr s R A MP SP : Word} {ML SL t 
   · refine .inr ⟨hp, hM, hr, fun h0 h1 => ?_⟩
     have hS := hS h0 h1
     rw [hmsg] at hS
-    exact tlmr_thresholdMet hrk hB (metLookup_spec hsj hps) hS
+    exact tlmr_thresholdMet hrk (rkBytes_of_mem hrk hdj) (metLookup_spec hsj hps) hS
 
 end C3.RV32
