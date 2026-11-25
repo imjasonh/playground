@@ -856,6 +856,130 @@ theorem TvfCtx.part3 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f :
       exact X.okCA hr' (by tvf_regs hR6) hI6 (by trsimp; rw [k19]; trsimp; rw [g19]; trsimp; exact h19)
         (by trsimp; rw [k20]; trsimp; rw [g20]; trsimp; exact h20) (by trsimp; rw [hR6.2.1, e1]) (by trsimp; rw [hR6.2.1, e2])
 
+
+/-- From 0x4E: `start`'s time `t` is at `F + 0x18`. Moves it into `s3`/`s4`,
+looks up `end`, and finishes. -/
+theorem TvfCtx.part2 (X : TvfCtx M0 G F out p n g0) {M : Word → BitVec 8} {f : Fin 32 → Word} {t : Nat}
+    {r : Except Nat (Nat × Nat)} (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
+    (h18 : memLoad32 M (F + 0x18) = BitVec.ofNat 32 (t % 2 ^ 32))
+    (h1c : memLoad32 M (F + 0x1C) = BitVec.ofNat 32 (t / 2 ^ 32))
+    (hr : r = tvfRest (memBytes M0 p n) t) :
+    WP trustedRootValidForCode TVF (trPost (tvfMem M0 G out r) g0) M 0x4E f := by
+  refine WP.lw tvf_at_4e (by rw [hR.2.1]; exact aligned_add X.fa (k := 0x18) (by decide)) ?_; wn
+  refine WP.lw tvf_at_50 (by trsimp; rw [hR.2.1]; exact aligned_add X.fa (k := 0x1C) (by decide)) ?_; wn
+  refine WP.lui tvf_at_52 ?_; wn
+  refine WP.aluImm tvf_at_56 ?_; wn
+  refine WP.aluImm tvf_at_5a ?_; wn
+  refine WP.aluImm tvf_at_5c ?_; wn
+  refine WP.alu tvf_at_5e ?_; wn
+  refine WP.alu tvf_at_60 ?_; wn
+  refine X.callGet (by tvf_regs hR) hI (by trsimp; rw [ev_add, hR.2.1]) (by trsimp; exact hR.2.2.1)
+    (by trsimp; exact hR.2.2.2.1) (by trsimp <;> decide) (by trsimp)
+    (fun M1 M5 f5 hR5 hI5 g g19 g20 => ?_)
+  have k19 : f5 19 = BitVec.ofNat 32 (t % 2 ^ 32) := by rw [g19]; trsimp; rw [hR.2.1]; exact h18
+  have k20 : f5 20 = BitVec.ofNat 32 (t / 2 ^ 32) := by rw [g20]; trsimp; rw [hR.2.1]; exact h1c
+  rcases hg : objGet (memBytes M0 p n) (ascii!"end") with e | _ | ⟨a, l⟩ <;> rw [hg] at g
+  · obtain ⟨-, e0, e1⟩ := g
+    have e1' : M5 (F + 0x11) = BitVec.ofNat 8 e := by rw [BitVec.add_assoc] at e1; exact e1
+    have hr' : r = .error e := by rw [hr]; unfold tvfRest; rw [hg]
+    refine WP.lbu tvf_at_6a ?_; wn
+    refine WP.branch tvf_at_6e (fun ht => absurd ht (by trsimp; rw [hR5.2.1, e0]; decide)) (fun _ => ?_); wn
+    exact X.err70 hr' (by tvf_regs hR5) hI5 e1'
+  · obtain ⟨-, e0, e1⟩ := g
+    have e1' : memLoad32 M5 (F + 0x14) = 0 := by rw [BitVec.add_assoc] at e1; exact e1
+    have hr' : r = .ok (t, 2 ^ 64 - 1) := by rw [hr]; unfold tvfRest; rw [hg]
+    refine WP.lbu tvf_at_6a ?_; wn
+    refine WP.branch tvf_at_6e (fun _ => ?_) (fun hf => absurd hf (by trsimp; rw [hR5.2.1, e0]; decide)); wn
+    refine WP.lw tvf_at_7c (by trsimp; rw [hR5.2.1]; exact aligned_add X.fa (k := 0x14) (by decide)) ?_; wn
+    refine WP.branch tvf_at_7e (fun _ => ?_) (fun hf => absurd hf (by trsimp; rw [hR5.2.1, e1']; decide)); wn
+    exact X.noneC6 hr' (by tvf_regs hR5) hI5 (by trsimp; exact k19) (by trsimp; exact k20)
+  · obtain ⟨-, e0, e1, e2⟩ := g
+    have e1' : memLoad32 M5 (F + 0x14) = p + BitVec.ofNat 32 a := by rw [BitVec.add_assoc] at e1; exact e1
+    have e2' : memLoad32 M5 (F + 0x18) = BitVec.ofNat 32 l := by rw [BitVec.add_assoc] at e2; exact e2
+    have hv := objGet_val hg
+    rw [X.dlen] at hv
+    refine WP.lbu tvf_at_6a ?_; wn
+    refine WP.branch tvf_at_6e (fun _ => ?_) (fun hf => absurd hf (by trsimp; rw [hR5.2.1, e0]; decide)); wn
+    exact X.part3 (by tvf_regs hR5) hI5 (by trsimp; exact k19) (by trsimp; exact k20) e1' e2' hv.2
+      (by rw [hr]; unfold tvfRest; rw [hg])
+
+
+/-- From 0x28: `field(.., "start")`'s result is at `F + 0x20`. -/
+theorem TvfCtx.part1 (X : TvfCtx M0 G F out p n g0) {M1 M : Word → BitVec 8} {f : Fin 32 → Word}
+    (hR : TvfRegs F out p n g0 f) (hI : TvfMemInv M0 G F g0 M)
+    (hF : FieldRes M1 M (F + 0x20) (fieldRes p (objField (memBytes M0 p n) (ascii!"start")))) :
+    WP trustedRootValidForCode TVF (trPost (tvfMem M0 G out (validForPos (memBytes M0 p n))) g0) M 0x28 f := by
+  have pw := X.pw
+  have p0 := X.p0
+  rcases hf : objField (memBytes M0 p n) (ascii!"start") with e | ⟨a, l⟩ <;> rw [hf] at hF
+  · obtain ⟨-, e0, e1⟩ := hF
+    have e1' : M (F + 0x24) = BitVec.ofNat 8 e := by rw [BitVec.add_assoc] at e1; exact e1
+    have hr : validForPos (memBytes M0 p n) = .error e := by unfold validForPos; rw [hf]
+    refine WP.lw tvf_at_28 (by rw [hR.2.1]; exact aligned_add X.fa (k := 0x20) (by decide)) ?_; wn
+    refine WP.branch tvf_at_2a (fun _ => ?_) (fun hb => absurd hb (by trsimp; rw [hR.2.1, e0]; decide)); wn
+    exact X.errA8 hr (by tvf_regs hR) hI e1'
+  obtain ⟨-, e0, e1⟩ := hF
+  have e1' : memLoad32 M (F + 0x24) = BitVec.ofNat 32 l := by rw [BitVec.add_assoc] at e1; exact e1
+  have hv := tvf_field_val hf
+  rw [X.dlen] at hv
+  have hqn := X.pa (a := a) (by omega)
+  have hq1 : (p + BitVec.ofNat 32 a + 1).toNat = p.toNat + a + 1 := by
+    rw [BitVec.toNat_add, hqn, show (1 : Word).toNat = 1 from rfl]; omega
+  obtain ⟨hv', hvM⟩ := X.slice hI.1 hv.2
+  refine WP.lw tvf_at_28 (by rw [hR.2.1]; exact aligned_add X.fa (k := 0x20) (by decide)) ?_; wn
+  refine WP.branch tvf_at_2a (fun ht => absurd ht (by
+    trsimp; rw [hR.2.1, e0, tvf_beqF (x := p + BitVec.ofNat 32 a) (tvf_ne0 (by omega))]; decide)) (fun _ => ?_); wn
+  refine WP.lw tvf_at_2c (by trsimp; rw [hR.2.1]; exact aligned_add X.fa (k := 0x24) (by decide)) ?_; wn
+  refine WP.aluImm tvf_at_2e ?_; wn
+  refine X.callStr (off := 0x30) (c := 8) (q := p + BitVec.ofNat 32 a) (l := l) tvf_at_30 tvf_at_34 (by decide)
+    (by decide) (by tvf_regs hR) hI (by decide) (by decide) (by trsimp; rw [ev_add, hR.2.1] <;> rfl)
+    (by trsimp; rw [hR.2.1, e0]) (by trsimp; rw [hR.2.1, e1']) (by omega)
+    (fun M5 f5 hR5 hI5 hS5 _ _ => ?_)
+  rw [hvM] at hS5
+  rcases tvf_strCase M0 (p + BitVec.ofNat 32 a) l with ⟨hs, hsr⟩ | ⟨hl2, hs, hsr⟩
+  · rw [hsr] at hS5
+    have s0 : memLoad32 M5 (F + 8) = 0 := hS5.2.1
+    have s1 : M5 (F + 0xC) = BitVec.ofNat 8 0x21 := by
+      have := hS5.2.2; rw [BitVec.add_assoc] at this; exact this
+    have hr : validForPos (memBytes M0 p n) = .error 0x21 := by
+      unfold validForPos; rw [hf]; simp only [hv', tvfTime, hs]
+    refine WP.lw tvf_at_38 (by rw [hR5.2.1]; exact aligned_add X.fa (k := 8) (by decide)) ?_; wn
+    refine WP.branch tvf_at_3a (fun _ => ?_) (fun hb => absurd hb (by trsimp; rw [hR5.2.1, s0]; decide)); wn
+    exact X.err76 hr (by tvf_regs hR5) hI5 s1
+  rw [hsr] at hS5
+  have s0 : memLoad32 M5 (F + 8) = p + BitVec.ofNat 32 a + 1 := hS5.2.1
+  have s1 : memLoad32 M5 (F + 0xC) = BitVec.ofNat 32 (l - 2) := by
+    have := hS5.2.2; rw [BitVec.add_assoc] at this; exact this
+  have hs' : memBytes M5 (p + BitVec.ofNat 32 a + 1) (l - 2) = memBytes M0 (p + BitVec.ofNat 32 a + 1) (l - 2) := by
+    have e : p + BitVec.ofNat 32 a + 1 = p + BitVec.ofNat 32 (a + 1) := add_ofNat_assoc p a 1
+    rw [e]; exact hI5.1.bytes (X.pg.sub (c := a + 1) (l := l - 2) (by omega)).symm
+  refine WP.lw tvf_at_38 (by rw [hR5.2.1]; exact aligned_add X.fa (k := 8) (by decide)) ?_; wn
+  refine WP.branch tvf_at_3a (fun ht => absurd ht (by
+    trsimp; rw [hR5.2.1, s0, tvf_beqF (tvf_ne0 (by omega))]; decide)) (fun _ => ?_); wn
+  refine WP.lw tvf_at_3c (by trsimp; rw [hR5.2.1]; exact aligned_add X.fa (k := 0xC) (by decide)) ?_; wn
+  refine WP.aluImm tvf_at_3e ?_; wn
+  refine X.callRfc (off := 0x40) (q := p + BitVec.ofNat 32 a + 1) (l := l - 2) tvf_at_40 tvf_at_44 (by decide)
+    (by decide) (by tvf_regs hR5) hI5 (by trsimp; rw [ev_add, hR5.2.1])
+    (by trsimp; rw [hR5.2.1, s0]) (by trsimp; rw [hR5.2.1, s1]) (by omega)
+    (by
+      have e : p + BitVec.ofNat 32 a + 1 = p + BitVec.ofNat 32 (a + 1) := add_ofNat_assoc p a 1
+      rw [e]; exact X.pg.sub (by omega))
+    (fun M6 f6 hR6 hI6 ok6 err6 _ _ => ?_)
+  rw [hs'] at ok6 err6
+  rcases hrf : rfc3339 (memBytes M0 (p + BitVec.ofNat 32 a + 1) (l - 2)) with _ | t
+  · obtain ⟨e0, e1⟩ := err6 hrf
+    have hr : validForPos (memBytes M0 p n) = .error 0x19 := by
+      unfold validForPos; rw [hf]; simp only [hv', tvfTime, hs, hrf]
+    refine WP.lbu tvf_at_48 ?_; wn
+    refine WP.branch tvf_at_4c (fun _ => ?_) (fun hb => absurd hb (by trsimp; rw [hR6.2.1, e0]; decide)); wn
+    exact X.err70 hr (by tvf_regs hR6) hI6 e1
+  obtain ⟨-, e0, e1, e2⟩ := ok6 t hrf
+  have hr : validForPos (memBytes M0 p n) = tvfRest (memBytes M0 p n) t := by
+    unfold validForPos; rw [hf]; simp only [hv', tvfTime, hs, hrf]
+  refine WP.lbu tvf_at_48 ?_; wn
+  refine WP.branch tvf_at_4c (fun ht => absurd ht (by trsimp; rw [hR6.2.1, e0]; decide)) (fun _ => ?_); wn
+  exact X.part2 (by tvf_regs hR6) hI6 e1 e2 hr
+
 end
 
 end C3.RV32
