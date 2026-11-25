@@ -437,5 +437,10 @@ import C3BootProofs.Proofs.SvTt4ns
 import C3BootProofs.Proofs.SvTt5s
 import C3BootProofs.Proofs.SvTt5n
 import C3BootProofs.Proofs.SvTt6s
-import C3BootProofs.Proofs.SvTpv
 import C3BootProofs.Proofs.SvTt6n
+import C3BootProofs.Proofs.SvTsv
+import C3BootProofs.Proofs.SvTlmiss
+import C3BootProofs.Proofs.SvTlhit
+import C3BootProofs.Proofs.SvTlend
+import C3BootProofs.Proofs.SvTsig
+import C3BootProofs.Proofs.SvTpv

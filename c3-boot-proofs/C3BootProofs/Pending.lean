@@ -95,9 +95,6 @@ import C3BootProofs.Proofs.SvSpec
 import C3BootProofs.Proofs.SvSpecAux
 import C3BootProofs.Proofs.SvTLoop
 import C3BootProofs.Proofs.SvTSearch
-import C3BootProofs.Proofs.SvTlend
-import C3BootProofs.Proofs.SvTlhit
-import C3BootProofs.Proofs.SvTlmiss
 import C3BootProofs.Proofs.SvTop
 import C3BootProofs.Proofs.SvTp
 import C3BootProofs.Proofs.SvTs
@@ -117,7 +114,6 @@ import C3BootProofs.Proofs.SvTsavct
 import C3BootProofs.Proofs.SvTsavmd
 import C3BootProofs.Proofs.SvTsavother
 import C3BootProofs.Proofs.SvTsax
-import C3BootProofs.Proofs.SvTsig
 import C3BootProofs.Proofs.SvTst1
 import C3BootProofs.Proofs.SvTst2
 import C3BootProofs.Proofs.SvTst3
@@ -139,7 +135,6 @@ import C3BootProofs.Proofs.SvTst5s
 import C3BootProofs.Proofs.SvTst6
 import C3BootProofs.Proofs.SvTst6n
 import C3BootProofs.Proofs.SvTst6s
-import C3BootProofs.Proofs.SvTsv
 import C3BootProofs.Proofs.SvVerify
 import C3BootProofs.Proofs.SvVerifyAt
 import C3BootProofs.Proofs.SvWin0

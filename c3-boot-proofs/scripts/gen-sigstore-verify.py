@@ -1240,7 +1240,7 @@ class Gen:
         k = self.k = self.k + 1
         self.call_head(k, off, "sv_sha256F", f"(oc := 0x{oc:X}) (nl := {nl})",
                        [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"D{k}", f"fr{k}"])
-        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) KS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    FW E{k-1} (S2.sv FW RS fR{k-1}) RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
         self.emit(f"    {self.reg_is(k - 1, 10, oc)} g{k-1}_11 {ha2} (by decide) {inp} {hn}")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [sv_mbRo FW fR{k-1} {inp}] at D{k}")
@@ -1286,7 +1286,7 @@ class Gen:
         k = self.k = self.k + 1
         self.call_head(k, off, "sv_sha256P2F", f"(oc := 0x{oc:X}) (pc := 0x{pc:X}) (l0 := {l0}) (l1 := {l1})",
                        [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"D{k}", f"fr{k}"])
-        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) KS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    FW E{k-1} (S2.sv FW RS fR{k-1}) RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
         self.emit(f"    {self.reg_is(k - 1, 10, oc)} {self.reg_is(k - 1, 11, pc)} g{k-1}_12 (by decide) (by decide) (by decide)")
         self.emit(f"    w{k-1}_{pc:x} {hl0} w{k-1}_{pc + 8:x} {hl1} {r0} {r1} {hn0} {hn1}")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
@@ -6721,286 +6721,8 @@ def stage_tst5(tag, present):
     return g, info
 
 
-TSV_BINDERS = ("{B out bp x21 x26 dg dp x8 : Word} {sr ss : Bytes} "
-               + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
-
-
-def stage_tsv():
-    """From 0x29AA to the TSA loop at 0x2A40: the parsed timestamp's fields."""
-    g = Gen("Tsv")
-    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
-            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
-            25: ("U", "(BitVec.ofNat 8 (sr.getD 0 0)).zeroExtend 32", "BitVec.ofNat 8 (sr.getD 0 0)"),
-            8: ("U", "x8"), 20: ("S", 0x1320), 22: ("U", "dp")}
-    words = {e: f"w{e:x}" for e in TST_WORDS}
-    params = start(g, regs, words, {})
-    g.ranges[0x1020] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")
-    g.ranges[0x104F] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
-    params += ["(q0_1020 : ∀ j, j < 47 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0))",
-               "(q0_104f : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x104F + j)) = BitVec.ofNat 8 (ss.getD j 0))",
-               "(h70 : w70 ≠ 0)"]
-    g.block(0x29AA, 0x29BE)
-    g.mc(0x29BE, 0x1480, 0x1020, 0x5F)
-    g.load(0x29C6, "lw")
-    g.branch(0x29C8, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f h70")
-    g.block(0x29CA, 0x29D6)
-    k = g.k
-    g.emit(f"  rw [shr_shr] at g{k}_11 g{k}_12")
-    g.regs[11] = ("U", "(x21) >>> (8 + 8)")
-    g.regs[12] = ("U", "(x21) >>> (8 + 16)")
-    for o in (0x29D6, 0x29DA, 0x29DE):
-        g.store(o, "sb")
-    g.load(0x29E2, "lw")
-    g.block(0x29E4, 0x29E6)
-    g.store(0x29E6, "sw")
-    g.block(0x29E8, 0x29F0)
-    for o in (0x29F0, 0x29F4, 0x29F8):
-        g.load(o, "lw")
-        g.store(o + 2, "sw")
-    g.store(0x29FC, "sb")
-    g.block(0x2A00, 0x2A14)
-    g.mc(0x2A14, 0xA41, 0x1480, 0x5F)
-    g.store(0x2A1C, "sw")
-    g.store(0x2A20, "sw")
-    g.load(0x2A24, "lw")
-    g.store(0x2A26, "sw")
-    g.store(0x2A28, "sb")
-    k = g.k
-    for e, sh in ((0xA25, 8), (0xA26, 16), (0xA27, 24)):
-        val = f"((x21) >>> {sh}).extractLsb' 0 8"
-        g.emit(f"  have bs{k}_{e:x} : {g.byte_stmt(k, e, val)} := b{k}_{e:x}")
-    g.emit(f"  have w{k}_a24 : {g.word_stmt(k, 0xA24, ('U', 'x21'))} := ld_of_shr_bytes b{k}_a24")
-    for i in (1, 2, 3):
-        g.emit(f"    (by rw [show {fa(0xA24)} + {i} = {fa(0xA24 + i)} by sv_addr]; exact bs{k}_{0xA24 + i:x})")
-    g.words[0xA24] = ("U", "x21")
-    for i in range(4):
-        g.bytes.pop(0xA24 + i, None)
-    for o in (0x2A2C, 0x2A30):
-        g.load(o, "lw")
-        g.store(o + 2, "sw")
-    g.load(0x2A34, "lw")
-    g.block(0x2A36, 0x2A3A)
-    g.store(0x2A3A, "sw")
-    g.block(0x2A3C, 0x2A40)
-    stmt, proof = finish(g, 0x2A40, [2, 3, 4, 9, 18, 19, 21, 22, 23, 24, 26, 27], set(g.words), set(g.bytes))
-    info = {"name": "sv_tsv", "title": "the parsed timestamp",
-            "doc": "From 0x29AA to the TSA loop at 0x2A40: `sigstore::verify` copies the timestamp's fields, with "
-            "the signature's `r` and `s`, into its `Timestamp` at offset 0xA20 of the frame, and points the "
-            "loop at the trust root's TSA keys.",
-            "params": params, "stmt": stmt, "proof": proof, "binders": TSV_BINDERS, "start": 0x29AA,
-            "import": "C3BootProofs.Proofs.SvGt"}
-    return g, info
-
-
 TL_STRUCT = {0xA20: "w70", 0xA24: "x21", 0xA28: "w5c", 0xA2C: "w48", 0xA30: "w44", 0xA34: "w60", 0xA38: "w3c",
              0xA3C: "w78", 0xAA0: "dp", 0xAA4: "dg"}
-TL_BINDERS = ("{B out bp x21 x26 dg dp c q sid slen : Word} {sr ss : Bytes} "
-              + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
-TL_KEEP_REGS = [2, 3, 4, 9, 18, 19, 21, 22, 23, 24, 26, 27]
-
-
-def tl_start(g):
-    """The TSA loop's head at 0x2A40: `s1` counts down the bytes of entries
-    left, and the word at 0x74 points 0x20 bytes before the next entry."""
-    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
-            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
-            22: ("U", "dp"), 23: ("S", 0xA40), 9: ("U", "c")}
-    words = {e: f"w{e:x}" for e in TST_WORDS}
-    words.update({0x74: "q"})
-    words.update(TL_STRUCT)
-    params = start(g, regs, words, {})
-    g.bytes[0xA40] = "BitVec.ofNat 8 (sr.getD 0 0)"
-    g.ranges[0xA41] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")
-    g.ranges[0xA70] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
-    params += ["(b0_a40 : n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (sr.getD 0 0))",
-               "(q0_a41 : ∀ j, j < 47 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA41 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0))",
-               "(q0_a70 : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA70 + j)) = BitVec.ofNat 8 (ss.getD j 0))"]
-    return params
-
-
-TL_PARAMS = ["(hc : c ≠ 0)", "(hsid : memLoad32 M0 (q + 0x20) = sid)",
-             "(hslen : memLoad32 M0 (q + 0x24) = slen)", "(es_in : SvIn B (q + 0x20) 4)",
-             "(el_in : SvIn B (q + 0x24) 4)",
-             "(a_sid : (q + 0x20).toNat % 4 = 0)", "(a_slen : (q + 0x24).toNat % 4 = 0)",
-             "(s_in : sid ≠ 0 → SvIn B sid slen.toNat)", "(i_in : SvIn B w5c w48.toNat)"]
-TL_EQ = "memBytes M0 sid slen.toNat = memBytes M0 w5c w48.toNat"
-
-
-def tl_entry(g):
-    """From 0x2A40 to the comparison at 0x2A5A, for an entry with a signer ID."""
-    g.branch(0x2A40, False, f"by rw [g{g.k}_9, s{g.k}.zero]; exact br_beq_f hc")
-    g.load(0x2A42, "lw")
-    g.load_mem(0x2A44, "sid", "hsid", "es_in", "a_sid")
-    hz = f"hz_{g.k}"
-
-    def null(sub):
-        sub.branch(0x2A48, True, f"by rw [g{sub.k}_20, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not {hz})")
-        sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_2a82")
-    g.prop_check("sid ≠ 0", hz, null)
-    g.pinned.add(hz)
-    g.s_in = f"(s_in {hz})"
-    g.branch(0x2A48, False, f"by rw [g{g.k}_20, s{g.k}.zero]; exact br_beq_f {hz}")
-    g.load(0x2A4C, "lw")
-    g.load_mem(0x2A4E, "slen", "hslen", "el_in", "a_slen")
-    g.block(0x2A52, 0x2A56)
-    g.load(0x2A56, "lw")
-    g.load(0x2A58, "lw")
-    return g.seqeq(0x2A5A, "sid", "slen.toNat", "w5c", "w48.toNat", f"(.inl {g.s_in})", "(.inl i_in)",
-                   f"(by rw [g{g.k}_13, ofNat_toNat_self])", f"(by rw [g{g.k}_11, ofNat_toNat_self])")
-
-
-def stage_tl(kind):
-    """The TSA loop at 0x2A40: an entry whose signer ID isn't the timestamp's
-    ("miss", back to 0x2A40), the entry that is ("hit", to 0x2A94), or no
-    entries left ("end")."""
-    g = Gen("Tl" + kind)
-    params = tl_start(g)
-    if kind == "end":
-        params.append("(hc : c = 0)")
-
-        def none(sub):
-            sub.branch(0x2A40, True, f"by rw [g{sub.k}_9, s{sub.k}.zero]; exact br_beq_t hc")
-            sub.fail(sub.fail_proof(("prop", "hf")), "sv_fail_2a82")
-        g.prop_check("False", "hf", none)
-        stmt, _ = finish(g, 0x2A40, [2], set(), set())
-        g.emit("  exact hf.elim")
-        proof = ""
-        title, doc = "no TSA key left", ("The TSA loop at 0x2A40 with no entries left: no listed TSA key has the "
-                                          "timestamp's signer ID, and `sigstore::verify` fails.")
-    else:
-        params += TL_PARAMS + [f"(hm : {'¬ ' if kind == 'miss' else ''}{TL_EQ})"]
-        ke = tl_entry(g)
-        g.set_a0(ke, 0 if kind == "miss" else 1, f"ite_eq_{'right' if kind == 'miss' else 'left'} hm")
-        g.block(0x2A62, 0x2A64)
-        g.block(0x2A64, 0x2A68)
-        g.store(0x2A68, "sw")
-        if kind == "miss":
-            g.branch(0x2A6A, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-            end, keep_regs = 0x2A40, TL_KEEP_REGS
-            title, doc = "a TSA key that didn't sign the timestamp", (
-                "One pass of the TSA loop, from 0x2A40 back to it, for a listed TSA key whose signer ID isn't the "
-                "timestamp's.")
-        else:
-            g.branch(0x2A6A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-            g.load(0x2A6C, "lw")
-            g.load(0x2A6E, "lw")
-            g.block(0x2A70, 0x2A74)
-            kn = g.sne(0x2A74, "w5c", "w48.toNat", "sid", "slen.toNat", "(.inl i_in)", f"(.inl {g.s_in})",
-                       f"(by rw [g{g.k}_11, ofNat_toNat_self])", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
-            g.set_a0(kn, 0, "ite_eq_left hm.symm")
-            g.branch(0x2A7C, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-            end, keep_regs = 0x2A94, TL_KEEP_REGS + [8, 20, 25]
-            title, doc = "the TSA key that signed the timestamp", (
-                "The TSA loop's end, from 0x2A40 to 0x2A94, at a listed TSA key whose signer ID is the timestamp's.")
-        stmt, proof = finish(g, end, sorted(keep_regs), set(g.words), set(g.bytes))
-    info = {"name": "sv_tl" + kind, "title": title, "doc": doc,
-            "params": params, "stmt": stmt, "proof": proof, "binders": TL_BINDERS, "start": 0x2A40,
-            "import": "C3BootProofs.Proofs.SvGt"}
-    return g, info
-
-
-TSIG_BINDERS = TL_BINDERS.replace("c q sid slen : Word}", "q sid slen : Word}")
-
-
-def tsig_start(g):
-    """After the TSA loop's hit at 0x2A94: the word at 0x74 points at the
-    entry, and `s4` and `s9` hold its signer ID."""
-    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
-            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
-            22: ("U", "dp"), 23: ("S", 0xA40)}
-    words = {e: f"w{e:x}" for e in TST_WORDS}
-    words.update({0x74: "q"})
-    words.update(TL_STRUCT)
-    params = start(g, regs, words, {})
-    g.bytes[0xA40] = "BitVec.ofNat 8 (sr.getD 0 0)"
-    g.ranges[0xA41] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")
-    g.ranges[0xA70] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
-    params += ["(b0_a40 : n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (sr.getD 0 0))",
-               "(q0_a41 : ∀ j, j < 47 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA41 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0))",
-               "(q0_a70 : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA70 + j)) = BitVec.ofNat 8 (ss.getD j 0))",
-               "(S2 : SvSha2Code M0)", "(KS : SvK2Sep B)",
-               "(tst_in : SvIn B w70 x21.toNat)", "(dg_in : SvIn B dg 32)", "(sig_in : SvIn B w68 w64.toNat)",
-               "(dp_in : SvIn B dp 32)", "(sa_in : SvIn B w44 w60.toNat)"]
-    return params
-
-
-def stage_tsig():
-    """From 0x2A94 to the TSA's signature check at 0x2B16: the token's
-    digests, and the hash of its signed attributes."""
-    g = Gen("Tsig")
-    params = tsig_start(g)
-    g.load(0x2A94, "lw")
-    g.block(0x2A98, 0x2A9C)
-    g.load(0x2A9C, "lw")
-    g.sha256(0x2A9E, 0x420, "w70", "(x21).toNat", "(.inl tst_in)", f"(by rw [g{g.k}_12, ofNat_toNat_self])",
-             "(by have := tst_in.lo; omega)")
-    g.block(0x2AA6, 0x2AAC)
-    g.carry_digest()
-    ka = g.a32ne(0x2AAC, 0x420, "dg", "(.inl dg_in)")
-    eq1 = "sha256 (memBytes M0 (w70) (x21).toNat) = memBytes M0 dg 32"
-
-    def bad_tst(sub):
-        sub.set_a0(ka, 1, "ite_eq_right htd")
-        sub.block(0x2AB4, 0x2AB6)
-        sub.branch(0x2AB6, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
-        sub.fail(sub.fail_proof(("prop", "htd")), "sv_fail_2c60")
-    g.prop_check(eq1, "htd", bad_tst)
-    g.set_a0(ka, 0, "ite_eq_left htd")
-    g.block(0x2AB4, 0x2AB6)
-    g.branch(0x2AB6, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    g.block(0x2ABA, 0x2ABE)
-    g.load(0x2ABE, "lw")
-    g.load(0x2AC0, "lw")
-    g.sha256(0x2AC2, 0x420, "w68", "(w64).toNat", "(.inl sig_in)", f"(by rw [g{g.k}_12, ofNat_toNat_self])",
-             "(by have := sig_in.lo; omega)")
-    g.block(0x2ACA, 0x2AD0)
-    g.carry_digest()
-    kb = g.a32ne(0x2AD0, 0x420, "dp", "(.inl dp_in)")
-    eq2 = "sha256 (memBytes M0 (w68) (w64).toNat) = memBytes M0 dp 32"
-
-    def bad_imprint(sub):
-        sub.set_a0(kb, 1, "ite_eq_right him")
-        sub.branch(0x2AD8, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
-        sub.fail(sub.fail_proof(("prop", "him")), "sv_fail_2c60")
-    g.prop_check(eq2, "him", bad_imprint)
-    g.set_a0(kb, 0, "ite_eq_left him")
-    g.branch(0x2AD8, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    g.load(0x2ADC, "lw")
-
-    def empty_attrs(sub):
-        sub.branch(0x2ADE, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hsa)")
-        sub.block(0x2C5A, 0x2C5C)
-        sub.jump(0x2C5C)
-        sub.fail(sub.fail_proof(("prop", "hsa")), "sv_fail_2c60")
-    g.prop_check("w60 ≠ 0", "hsa", empty_attrs)
-    g.branch(0x2ADE, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hsa")
-    g.pinned.add("hsa")
-    g.load(0x2AE2, "lw")
-    g.block(0x2AE4, 0x2AE6)
-    g.load(0x2AE6, "lw")
-    g.block(0x2AE8, 0x2AEA)
-    g.block(0x2AEA, 0x2AF2)
-    g.block(0x2AF2, 0x2AF8)
-    for o in (0x2AF8, 0x2AFA, 0x2AFC, 0x2AFE):
-        g.store(o, "sw")
-    g.block(0x2B00, 0x2B0E)
-    p1 = lean_val(g.words[0x1028])
-    l1w = lean_val(g.words[0x102C])
-    g.parts2(0x2B0E, 0x420, 0x1020, "BitVec.ofNat 32 (img% svConstAddress + 0x55)", "1", "(.inr ⟨by decide, by decide⟩)",
-             p1, f"({l1w}).toNat", "(sa_drop1 sa_in hsa)",
-             f"w{g.k}_1024", f"(by rw [w{g.k}_102c, ofNat_toNat_self])", "(by decide)", "(sa_drop1_lt sa_in hsa)")
-    kd, oc, ex = g.digest
-    g.extra.append((f"memBytes n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x{oc:X}) 32 = {ex}", f"D{kd}"))
-    stmt, proof = finish(g, 0x2B16, TL_KEEP_REGS, set(g.words), set(g.bytes))
-    info = {"name": "sv_tsig", "title": "the timestamp's digests",
-            "doc": "From 0x2A94 to 0x2B16: SHA-256 of the TSTInfo is the signed `messageDigest`, SHA-256 of the "
-            "image signature is the TSTInfo's message imprint, the signed attributes aren't empty, and the "
-            "frame at offset 0x420 holds SHA-256 of the signed attributes with their first byte replaced by 0x31.",
-            "params": params, "stmt": stmt, "proof": proof, "binders": TSIG_BINDERS, "start": 0x2A94,
-            "import": "C3BootProofs.Proofs.SvSha2"}
-    return g, info
-
-
 CK_BINDERS = ("{B out bp x21 x26 dg dp pv q ckp ckl : Word} "
               + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
 
@@ -9688,6 +9410,250 @@ def stage_tt5(tag, present):
             "present and well formed" if present else "absent") + ", and nothing follows."
     return g, tt_opt_info(f"sv_tt{5 if tag == 0xA0 else 6}" + ("s" if present else "n"), present, title,
                           f"From 0x{start_:X} to 0x{end:X}: {doc}", params, stmt, proof, start_)
+
+
+TV_WORDS = {0x74: "tp", 0x78: "tl", 0x4C: "w4c", 0x48: "w48", 0x44: "w44", 0x50: "w50", 0x64: "dg",
+            0x3C: "w3c", 0x7C: "w7c"}
+TV_BINDERS = ("{B out bp x20 x21 x22 x23 x24 x26 x27 : Word} {sr ss : Bytes} {"
+              + " ".join(TV_WORDS.values()) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def stage_tsv():
+    """From 0x12BE to the TSA loop at 0x1344: the parsed timestamp's fields."""
+    g = Gen("Tsv")
+    regs = t_regs0()
+    regs[25] = ("U", "(BitVec.ofNat 8 (sr.getD 0 0)).zeroExtend 32", "BitVec.ofNat 8 (sr.getD 0 0)")
+    params = start(g, regs, dict(TV_WORDS), {})
+    g.ranges[0x380] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")
+    g.ranges[0x3AF] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
+    params += ["(q0_380 : ∀ j, j < 47 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x380 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0))",
+               "(q0_3af : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x3AF + j)) = BitVec.ofNat 8 (ss.getD j 0))",
+               "(h74 : tp ≠ 0)"]
+    g.block(0x12BE, 0x12C6)
+    g.mc(0x12C6, 0x1FC, 0x380, 0x5F)
+    g.load(0x12CE, "lw")
+    g.branch(0x12D0, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f h74")
+    g.load(0x12D2, "lw")
+    g.block(0x12D4, 0x12E0)
+    k = g.k
+    g.emit(f"  rw [shr_shr] at g{k}_11 g{k}_12")
+    g.regs[11] = ("U", "(tl) >>> (8 + 8)")
+    g.regs[12] = ("U", "(tl) >>> (8 + 16)")
+    for o in (0x12E0, 0x12E4, 0x12E8):
+        g.store(o, "sb")
+    g.load(0x12EC, "lw")
+    g.store(0x12EE, "sw")
+    g.block(0x12F2, 0x12F6)
+    for o in (0x12F6, 0x12FC, 0x1302):
+        g.load(o, "lw")
+        g.store(o + 2, "sw")
+    g.store(0x1308, "sb")
+    g.block(0x130C, 0x1316)
+    g.mc(0x1316, 0x191, 0x1FC, 0x5F)
+    g.block(0x131E, 0x1320)
+    g.store(0x1320, "sw")
+    g.load(0x1324, "lw")
+    g.store(0x1326, "sw")
+    g.load(0x1328, "lw")
+    g.store(0x132A, "sw")
+    g.store(0x132E, "sb")
+    k = g.k
+    for e, sh in ((0x175, 8), (0x176, 16), (0x177, 24)):
+        val = f"((tl) >>> {sh}).extractLsb' 0 8"
+        g.emit(f"  have bs{k}_{e:x} : {g.byte_stmt(k, e, val)} := b{k}_{e:x}")
+    g.emit(f"  have w{k}_174 : {g.word_stmt(k, 0x174, ('U', 'tl'))} := ld_of_shr_bytes b{k}_174")
+    for i in (1, 2, 3):
+        g.emit(f"    (by rw [show {fa(0x174)} + {i} = {fa(0x174 + i)} by sv_addr]; exact bs{k}_{0x174 + i:x})")
+    g.words[0x174] = ("U", "tl")
+    for i in range(4):
+        g.bytes.pop(0x174 + i, None)
+    for o in (0x1332, 0x1336):
+        g.load(o, "lw")
+        g.store(o + 2, "sw")
+    g.block(0x133A, 0x133E)
+    g.store(0x133E, "sw")
+    g.block(0x1340, 0x1344)
+    stmt, proof = finish(g, 0x1344, T_REGS + [8], set(g.words), set(g.bytes))
+    info = {"name": "sv_tsv", "title": "the parsed timestamp",
+            "doc": "From 0x12BE to the TSA loop at 0x1344: `sigstore::verify` copies the timestamp's fields, with "
+            "the signature's `r` and `s`, into its `Timestamp` at offset 0x170 of the frame, and points the "
+            "loop at the trust root's TSA keys.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": TV_BINDERS, "start": 0x12BE,
+            "import": "C3BootProofs.Proofs.SvGt\nimport C3BootProofs.Proofs.SvSha2"}
+    return g, info
+
+
+TL_BINDERS = "{B out bp x20 x21 x22 x23 x24 x25 x26 x27 c q sid slen w4c w48 : Word} {v : Nat → Word} {n0 : Machine}"
+TL_PARAMS = ["(hc : c ≠ 0)", "(hsid : memLoad32 M0 (q + 0x20) = sid)",
+             "(hslen : memLoad32 M0 (q + 0x24) = slen)", "(es_in : SvIn B (q + 0x20) 4)",
+             "(el_in : SvIn B (q + 0x24) 4)",
+             "(a_sid : (q + 0x20).toNat % 4 = 0)", "(a_slen : (q + 0x24).toNat % 4 = 0)",
+             "(s_in : sid ≠ 0 → SvIn B sid slen.toNat)", "(i_in : SvIn B w4c w48.toNat)"]
+TL_EQ = "memBytes M0 sid slen.toNat = memBytes M0 w4c w48.toNat"
+
+
+def tl_entry(g):
+    """From 0x1344 to the comparison at 0x135E, for an entry with a signer ID."""
+    g.branch(0x1344, False, f"by rw [g{g.k}_8, s{g.k}.zero]; exact br_beq_f hc")
+    g.load(0x1346, "lw")
+    g.load_mem(0x1348, "sid", "hsid", "es_in", "a_sid")
+    hz = f"hz_{g.k}"
+
+    def null(sub):
+        sub.branch(0x134C, True, f"by rw [g{sub.k}_24, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not {hz})")
+        sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_1388")
+    g.prop_check("sid ≠ 0", hz, null)
+    g.pinned.add(hz)
+    g.s_in = f"(s_in {hz})"
+    g.branch(0x134C, False, f"by rw [g{g.k}_24, s{g.k}.zero]; exact br_beq_f {hz}")
+    g.load(0x1350, "lw")
+    g.load_mem(0x1352, "slen", "hslen", "el_in", "a_slen")
+    g.block(0x1356, 0x135A)
+    g.load(0x135A, "lw")
+    g.load(0x135C, "lw")
+    return g.seqeq(0x135E, "sid", "slen.toNat", "w4c", "w48.toNat", f"(.inl {g.s_in})", "(.inl i_in)",
+                   f"(by rw [g{g.k}_13, ofNat_toNat_self])", f"(by rw [g{g.k}_11, ofNat_toNat_self])")
+
+
+def stage_tl(kind):
+    """The TSA loop at 0x1344: an entry whose signer ID isn't the timestamp's
+    ("miss", back to 0x1344), the entry that is ("hit", to 0x139C), or no
+    entries left ("end")."""
+    g = Gen("Tl" + kind)
+    regs = t_regs0()
+    regs[8] = ("U", "c")
+    params = start(g, regs, {0x78: "q", 0x4C: "w4c", 0x48: "w48"}, {})
+    if kind == "end":
+        params.append("(hc : c = 0)")
+
+        def none(sub):
+            sub.branch(0x1344, True, f"by rw [g{sub.k}_8, s{sub.k}.zero]; exact br_beq_t hc")
+            sub.fail(sub.fail_proof(("prop", "hf")), "sv_fail_1388")
+        g.prop_check("False", "hf", none)
+        stmt, _ = finish(g, 0x1344, [2], set(), set())
+        g.emit("  exact hf.elim")
+        proof = ""
+        title, doc = "no TSA key left", ("The TSA loop at 0x1344 with no entries left: no listed TSA key has the "
+                                          "timestamp's signer ID, and `sigstore::verify` fails.")
+    else:
+        params += TL_PARAMS + [f"(hm : {'¬ ' if kind == 'miss' else ''}{TL_EQ})"]
+        ke = tl_entry(g)
+        g.set_a0(ke, 0 if kind == "miss" else 1, f"ite_eq_{'right' if kind == 'miss' else 'left'} hm")
+        g.block(0x1366, 0x1368)
+        g.block(0x1368, 0x136C)
+        g.store(0x136C, "sw")
+        if kind == "miss":
+            g.branch(0x136E, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            end, keep_regs = 0x1344, T_REGS + [8]
+            title, doc = "a TSA key that didn't sign the timestamp", (
+                "One pass of the TSA loop, from 0x1344 back to it, for a listed TSA key whose signer ID isn't the "
+                "timestamp's.")
+        else:
+            g.branch(0x136E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            g.load(0x1370, "lw")
+            g.load(0x1372, "lw")
+            g.block(0x1374, 0x1378)
+            kn = g.sne(0x1378, "w4c", "w48.toNat", "sid", "slen.toNat", "(.inl i_in)", f"(.inl {g.s_in})",
+                       f"(by rw [g{g.k}_11, ofNat_toNat_self])", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
+            g.set_a0(kn, 0, "ite_eq_left hm.symm")
+            g.branch(0x1380, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            end, keep_regs = 0x139C, T_REGS
+            title, doc = "the TSA key that signed the timestamp", (
+                "The TSA loop's end, from 0x1344 to 0x139C, at a listed TSA key whose signer ID is the timestamp's.")
+        stmt, proof = finish(g, end, sorted(keep_regs), set(g.words), set(g.bytes))
+    info = {"name": "sv_tl" + kind, "title": title, "doc": doc,
+            "params": params, "stmt": stmt, "proof": proof, "binders": TL_BINDERS, "start": 0x1344,
+            "import": "C3BootProofs.Proofs.SvSha2"}
+    return g, info
+
+
+TSIG_WORDS = {0x74: "tp", 0x174: "tl", 0x64: "dg", 0x70: "w70", 0x68: "w68", 0x50: "w50", 0x44: "w44", 0x78: "q"}
+TSIG_BINDERS = ("{B out bp x20 x21 x22 x23 x24 x25 x27 : Word} {"
+                + " ".join(TSIG_WORDS.values()) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def stage_tsig():
+    """From 0x139C to the TSA's signature check at 0x1416: the token's
+    digests, and the hash of its signed attributes."""
+    g = Gen("Tsig")
+    regs = t_regs0()
+    regs[26] = ("S", 0x190)
+    params = start(g, regs, dict(TSIG_WORDS), {})
+    params += ["(S2 : SvSha2Code M0)", "(RS : SvRoSep B)",
+               "(tst_in : SvIn B tp tl.toNat)", "(dg_in : SvIn B dg 32)", "(sig_in : SvIn B w70 w68.toNat)",
+               "(dp_in : SvIn B x27 32)", "(sa_in : SvIn B w44 w50.toNat)"]
+    g.load(0x139C, "lw")
+    g.block(0x13A0, 0x13A4)
+    g.load(0x13A4, "lw")
+    g.sha256(0x13A6, 0x420, "tp", "(tl).toNat", "(.inl tst_in)", f"(by rw [g{g.k}_12, ofNat_toNat_self])",
+             "(by have := tst_in.lo; omega)")
+    g.block(0x13AE, 0x13B2)
+    g.carry_digest()
+    g.load(0x13B2, "lw")
+    g.carry_digest()
+    ka = g.a32ne(0x13B4, 0x420, "dg", "(.inl dg_in)")
+    eq1 = "sha256 (memBytes M0 (tp) (tl).toNat) = memBytes M0 dg 32"
+
+    def bad_tst(sub):
+        sub.set_a0(ka, 1, "ite_eq_right htd")
+        sub.block(0x13BC, 0x13BE)
+        sub.branch(0x13BE, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.fail(sub.fail_proof(("prop", "htd")))
+    g.prop_check(eq1, "htd", bad_tst)
+    g.set_a0(ka, 0, "ite_eq_left htd")
+    g.block(0x13BC, 0x13BE)
+    g.branch(0x13BE, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0x13C2, 0x13C6)
+    g.load(0x13C6, "lw")
+    g.load(0x13C8, "lw")
+    g.sha256(0x13CA, 0x420, "w70", "(w68).toNat", "(.inl sig_in)", f"(by rw [g{g.k}_12, ofNat_toNat_self])",
+             "(by have := sig_in.lo; omega)")
+    g.block(0x13D2, 0x13D8)
+    g.carry_digest()
+    kb = g.a32ne(0x13D8, 0x420, "x27", "(.inl dp_in)")
+    eq2 = "sha256 (memBytes M0 (w70) (w68).toNat) = memBytes M0 x27 32"
+
+    def bad_imprint(sub):
+        sub.set_a0(kb, 1, "ite_eq_right him")
+        sub.branch(0x13E0, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.fail(sub.fail_proof(("prop", "him")))
+    g.prop_check(eq2, "him", bad_imprint)
+    g.set_a0(kb, 0, "ite_eq_left him")
+    g.branch(0x13E0, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.load(0x13E4, "lw")
+
+    def empty_attrs(sub):
+        sub.branch(0x13E6, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hsa)")
+        sub.block(0x1552, 0x1554)
+        sub.jump(0x1554)
+        sub.fail(sub.fail_proof(("prop", "hsa")))
+    g.prop_check("w50 ≠ 0", "hsa", empty_attrs)
+    g.branch(0x13E6, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hsa")
+    g.pinned.add("hsa")
+    g.load(0x13EA, "lw")
+    g.block(0x13EC, 0x13EE)
+    g.load(0x13EE, "lw")
+    g.block(0x13F0, 0x13F2)
+    g.block(0x13F2, 0x13FA)
+    g.block(0x13FA, 0x13FE)
+    for o in (0x13FE, 0x1400, 0x1402, 0x1404):
+        g.store(o, "sw")
+    g.block(0x1406, 0x140E)
+    p1 = lean_val(g.words[0x388])
+    l1w = lean_val(g.words[0x38C])
+    g.parts2(0x140E, 0x420, 0x380, "BitVec.ofNat 32 (img% svConstCmsAddress + 0x14)", "1",
+             "(.inr ⟨by decide, by decide⟩)", p1, f"({l1w}).toNat", "(sa_drop1 sa_in hsa)",
+             f"w{g.k}_384", f"(by rw [w{g.k}_38c, ofNat_toNat_self])", "(by decide)", "(sa_drop1_lt sa_in hsa)")
+    kd, oc, ex = g.digest
+    g.extra.append((f"memBytes n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x{oc:X}) 32 = {ex}", f"D{kd}"))
+    stmt, proof = finish(g, 0x1416, T_REGS, set(g.words), set(g.bytes))
+    info = {"name": "sv_tsig", "title": "the timestamp's digests",
+            "doc": "From 0x139C to 0x1416: SHA-256 of the TSTInfo is the signed `messageDigest`, SHA-256 of the "
+            "image signature is the TSTInfo's message imprint, the signed attributes aren't empty, and the "
+            "frame at offset 0x420 holds SHA-256 of the signed attributes with their first byte replaced by 0x31.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": TSIG_BINDERS, "start": 0x139C,
+            "import": "C3BootProofs.Proofs.SvSha2"}
+    return g, info
 
 
 def stages():
