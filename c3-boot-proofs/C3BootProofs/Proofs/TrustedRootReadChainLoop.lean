@@ -77,7 +77,7 @@ theorem rc_strBd {p b : Word} {d : Bytes} {bl : Nat} (h : strRes p d = some (b, 
 def rcDecStep (M0 : Word → BitVec 8) (fp : Word) (fl : Nat) (b : Word) (bl after : Nat) (s : RcSt) :
     Except (Option Nat) RcSt :=
   match trDecodeRes (base64Decode (memBytes M0 b bl)) (fl - s.dec.length) with
-  | none => .error none
+  | none => .error (some (bdiErr (memBytes M0 b bl) (fl - s.dec.length)))
   | some bs =>
     match rcParse bs (fp + BitVec.ofNat 32 s.dec.length) with
     | .error e => .error e
@@ -223,13 +223,15 @@ theorem RcCtx.pDec (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitVec 8
   refine X.callDec (o := dec.length) (fl' := fl - dec.length) (by rc_r hR) hI (by trsimp; rw [hR.2.1]; rfl)
     (by trsimp; exact ha1) (by trsimp; rw [hR.2.1]; exact h64)
     (by trsimp; (try rw [rc_x0 hR.1]); exact hR.2.2.2.1) hB.2.1 hB.2.2.1 (by omega) (by omega) (X.inG hb)
-    (X.inFp hb) (X.inM hI hb) (fun m2 hI2 hD => ?_)
+    (X.inFp hb) (X.inM hI hb) (fun m2 hI2 hDE => ?_)
+  obtain ⟨hD, hDe⟩ := hDE
   rcases hdr : trDecodeRes (base64Decode (memBytes M0 b bl)) (fl - dec.length) with _ | bs
   · rw [hdr] at hD
     have hD0 : memLoad32 m2.mem (F + 0xD0) = 0 := hD.1.1
     refine WP.lw trc_at_148 (by trsimp; rw [hR.2.1]; exact X.fal (c := 0xD0) (by decide)) ?_; wn
     refine WP.branch trc_at_14a (fun _ => ?_) (fun hf => absurd hf (by trsimp; rw [hR.2.1, hD0]; decide)); wn
-    exact X.e4c2 (by rw [hr]; simp only [rcDecStep, hdr]; rfl) (by rc_r hR) hI2 (fun _ hb => by cases hb)
+    exact X.e4c2 (by rw [hr]; simp only [rcDecStep, hdr]; rfl) (by rc_r hR) hI2 (fun _ hb => by
+      cases hb; exact hDe hdr)
   · rw [hdr] at hD
     have hl := rc_decLe hdr
     have hFL : RcFL F M m2.mem := X.flDec (o := dec.length) (fl' := fl - dec.length) (by omega) hD.2

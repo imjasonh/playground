@@ -616,9 +616,9 @@ end
 
 
 /-- `time::read_time`'s result at `o` for the reader `r` at `d`: the time
-and the reader over the bytes it leaves. -/
+and the reader over the bytes it leaves, or tag 1 and `readTimeErr`'s byte. -/
 def RcTimeOut (M : Word → BitVec 8) (o d b : Word) (L : Bytes) (r : RcRd) : Option (Nat × Bytes) → Prop
-  | none => M o = 1
+  | none => M o = 1 ∧ M (o + 1) = BitVec.ofNat 8 (readTimeErr (rcView L r))
   | some (t, r1) => t < 2 ^ 64 ∧ M o = 0 ∧ memLoad32 M (o + 8) = BitVec.ofNat 32 (t % 2 ^ 32) ∧
       memLoad32 M (o + 0xC) = BitVec.ofNat 32 (t / 2 ^ 32) ∧ r1.length ≤ r.2 ∧
       RcRdAt M d b L (r.1 + (r.2 - r1.length), r1.length)
@@ -682,7 +682,7 @@ theorem RcCtx.callTime (X : RcCtx M0 G F out fr fp fl p n g0) {M : Word → BitV
   refine ⟨m2, c2, pc2, ⟨X.keepOf ⟨hoc.1, hoc.2.1⟩ ⟨hdc.1, hdc.2.1⟩ hF, hF, ?_⟩, by rw [hsp2, hsp1], fun q hq => hk2 q (rcd_time_saved q hq)⟩
   · rw [← hV]
     rcases hT : readTime (memBytes m1.mem (b + BitVec.ofNat 32 r.1) r.2) with _ | ⟨t, r1⟩
-    · exact hnone hT
+    · exact ⟨(hnone hT).1, (hnone hT).2.trans (by rw [hV])⟩
     · obtain ⟨h64, h0, h8, hC, j, hj, hd8, hdC, hr1'⟩ := hsome t r1 hT
       have hl : r1.length = r.2 - j := by rw [hr1', memBytes_length]
       refine ⟨h64, h0, h8, hC, by omega, ?_, ?_, ?_⟩

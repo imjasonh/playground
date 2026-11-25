@@ -243,7 +243,7 @@ theorem sv_b64F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
     rwa [sv_lo B 0x50 (by decide)] at this
   refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, sp2,
     fun q hq => by rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)],
-    fun e he hL => ?_, fun bs hd hl => ?_, bad2, fun x hx => f2 x (hfS x hx) (svR_hi hx ho2) (svR_hi hx hr2)⟩
+    fun e he hL => ?_, fun bs hd hl => ?_, fun h => (bad2 h).1, fun x hx => f2 x (hfS x hx) (svR_hi hx ho2) (svR_hi hx hr2)⟩
   · have h1 := hL _ List.mem_cons_self
     have h2 := hL _ (List.mem_cons_of_mem _ (List.mem_singleton_self _))
     simp only at h1 h2

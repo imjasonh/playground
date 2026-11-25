@@ -711,6 +711,7 @@ import C3BootProofs.Proofs.TrustedRootReadChainRec
 import C3BootProofs.Proofs.TrustedRootReadChainLoop
 import C3BootProofs.Proofs.TrustedRootReadChainFin
 import C3BootProofs.Proofs.TrustedRootReadChainHead
+import C3BootProofs.Proofs.TrustedRootReadChainErr
 import C3BootProofs.Proofs.TrustedRootReadChain
 import C3BootProofs.Proofs.TrustedRootLift
 import C3BootProofs.Proofs.TrustedRootLiftDer

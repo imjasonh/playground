@@ -5,6 +5,7 @@ import C3BootProofs.Proofs.DerAlgorithm
 import C3BootProofs.Proofs.DerReaders
 import C3BootProofs.Proofs.DerOptional
 import C3BootProofs.Proofs.X509ReadTime
+import C3BootProofs.Proofs.Base64Decode
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Spec.TrustedRoot
 
@@ -25,8 +26,8 @@ of the 97-byte point of a P-384 key on the curve, or 0 for any other key.
 `readChainPos` is `read_chain` on the entry's bytes, with the decoded
 certificates at `fp`.
 
-An error's byte is `none` where the callee's theorem leaves it open: the
-`Err` of `time::read_time` and of `trusted_root::decode`.
+Every error carries the `Error` or `TufError` byte that the machine writes:
+`readTimeErr` for `time::read_time` and `bdiErr` for `trusted_root::decode`.
 -/
 
 namespace C3.RV32
@@ -143,10 +144,10 @@ def rcSubj (L : Bytes) (p : Word) (sr ir : RcRd) (nb na : Nat) (t : RcRd) : Exce
 `tbsCertificate` at `t`. -/
 def rcTimes (L : Bytes) (p : Word) (sr ir v t : RcRd) : Except (Option Nat) RcCert :=
   match readTime (rcView L v) with
-  | none => .error none
+  | none => .error (some (readTimeErr (rcView L v)))
   | some (nb, r1) =>
     match readTime (rcView L (v.1 + (v.2 - r1.length), r1.length)) with
-    | none => .error none
+    | none => .error (some (readTimeErr (rcView L (v.1 + (v.2 - r1.length), r1.length))))
     | some (na, r2) => if r2.length ≠ 0 then .error (some 1) else rcSubj L p sr ir nb na t
 
 /-- From the serial number: the serial number, signature algorithm,
@@ -218,7 +219,7 @@ def rcStep (M0 : Word → BitVec 8) (fp : Word) (fl : Nat) (q : Word) (l after :
     | none => .error (some 0x21)
     | some (b, bl) =>
       match trDecodeRes (base64Decode (memBytes M0 b bl)) (fl - s.dec.length) with
-      | none => .error none
+      | none => .error (some (bdiErr (memBytes M0 b bl) (fl - s.dec.length)))
       | some bs =>
         match rcParse bs (fp + BitVec.ofNat 32 s.dec.length) with
         | .error e => .error e
@@ -279,7 +280,7 @@ def readChainPos (M0 : Word → BitVec 8) (p : Word) (n : Nat) (fp : Word) (fl :
 
 /-- `Result<(Cert, Window), TufError>` at `out`, and the scratch slice at
 `fr`. An `Err` is a null serial pointer, the niche, and the error byte at
-`out + 4` when the model names it. An `Ok` is the `Cert` in the first 0x2C
+`out + 4`. An `Ok` is the `Cert` in the first 0x2C
 bytes and the window in the four words from `out + 0x30`; the scratch
 slice then starts after the decoded certificates, which the buffer
 holds. -/

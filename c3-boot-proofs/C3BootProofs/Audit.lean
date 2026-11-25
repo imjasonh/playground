@@ -230,6 +230,7 @@ import C3BootProofs.Proofs.TrustedRootReadChainRec
 import C3BootProofs.Proofs.TrustedRootReadChainLoop
 import C3BootProofs.Proofs.TrustedRootReadChainFin
 import C3BootProofs.Proofs.TrustedRootReadChainHead
+import C3BootProofs.Proofs.TrustedRootReadChainErr
 import C3BootProofs.Proofs.TrustedRootReadChain
 import C3BootProofs.Proofs.TrustedRootLift
 import C3BootProofs.Proofs.TrustedRootLiftDer
@@ -9203,6 +9204,8 @@ end C3
 
 /-- info: 'C3.RV32.trustedRootReadChain_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.trustedRootReadChain_correct
+/-- info: 'C3.RV32.rce_readChainPos' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.rce_readChainPos
 /-- info: 'C3.RV32.validForPos_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.validForPos_spec
 /-- info: 'C3.RV32.trustedRootValidFor_spec' depends on axioms: [propext, Quot.sound] -/
@@ -10438,6 +10441,9 @@ end C3
 
 /-- info: 'C3.RV32.Cur.reset_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.reset_correct
+
+/-- info: 'C3.RV32.Ac.acets_rcErr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Ac.acets_rcErr
 
 /-- info: 'C3.RV32.Ac.acets_stage' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Ac.acets_stage

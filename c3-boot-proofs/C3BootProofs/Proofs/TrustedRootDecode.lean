@@ -159,6 +159,8 @@ def trDecMem (M0 : Word → BitVec 8) (G out fr fp : Word) (fl : Nat) (r : Optio
 
 theorem trdc_ev_sub (a b : Word) : aluEval .sub a b = a - b := rfl
 
+theorem trdc_zx8 : ∀ b : BitVec 8, (b.zeroExtend 32).extractLsb' 0 8 = b := by decide
+
 theorem trdc_slot {M : Word → BitVec 8} {s v w : Word} (c d : Nat) (h : c + 4 ≤ d ∨ d + 4 ≤ c)
     (hc : c + 4 ≤ 2 ^ 32) (hd : d + 4 ≤ 2 ^ 32) (k : memLoad32 M (s + BitVec.ofNat 32 c) = w) :
     memLoad32 (memStore32 M (s + BitVec.ofNat 32 d) v) (s + BitVec.ofNat 32 c) = w :=
@@ -268,7 +270,9 @@ theorem trdc_wp (h0 : f a0 = out) (h1 : f a1 = t) (h2 : f a2 = BitVec.ofNat 32 n
     (sOG : Sep out 8 G 0x70) (sFG : Sep fr 8 G 0x70) (sBG : Sep fp fl G 0x70) (sTG : Sep t n G 0x70)
     (sTB : Sep t n fp fl) (sOB : Sep out 8 fp fl) (sFB : Sep fr 8 fp fl) (sOF : Sep out 8 fr 8) :
     WP trustedRootDecodeCode TRDC
-      (trPost (trDecMem M0 G out fr fp fl (trDecodeRes (base64Decode (memBytes M0 t n)) fl)) f) M0 0 f := by
+      (trPost (fun M => trDecMem M0 G out fr fp fl (trDecodeRes (base64Decode (memBytes M0 t n)) fl) M ∧
+        (trDecodeRes (base64Decode (memBytes M0 t n)) fl = none →
+          M (out + 4) = BitVec.ofNat 8 (bdiErr (memBytes M0 t n) fl))) f) M0 0 f := by
   refine WP.zero fun hz => ?_
   have hGc : ∀ c, c ≤ 0x70 → (G + BitVec.ofNat 32 c).toNat = G.toNat + c := fun c hc => by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
@@ -361,7 +365,8 @@ theorem trdc_wp (h0 : f a0 = out) (h1 : f a1 = t) (h2 : f a2 = BitVec.ofNat 32 n
       · rw [hF4]
         exact sep_offsets G (c := 0x54) (n := 8) (d := 0x50 + c + j) (k := 1) (Or.inl (by omega)) (by omega)
           (by omega)
-    have hcase : (trDecodeRes (base64Decode (memBytes M0 t n)) fl = none ∧ M2 (F + 4) = 1) ∨
+    have hcase : (trDecodeRes (base64Decode (memBytes M0 t n)) fl = none ∧ M2 (F + 4) = 1 ∧
+          M2 (F + 4 + 1) = BitVec.ofNat 8 (bdiErr (memBytes M0 t n) fl)) ∨
         ∃ bs, trDecodeRes (base64Decode (memBytes M0 t n)) fl = some bs ∧ bs.length ≤ fl ∧ M2 (F + 4) = 0 ∧
           memLoad32 M2 (F + 4 + 4) = BitVec.ofNat 32 bs.length ∧ memBytes M2 fp bs.length = bs := by
       rcases hdd : base64Decode (memBytes M0 t n) with _ | bs
@@ -383,7 +388,7 @@ theorem trdc_wp (h0 : f a0 = out) (h1 : f a1 = t) (h2 : f a2 = BitVec.ofNat 32 n
       fun hG hB => tr_load2 hM2 hG hB
     have hsp0 : f sp = F + BitVec.ofNat 32 0x20 := by rw [hsp, ← hF, add_ofNat_assoc]
     have hfl32 : fl < 2 ^ 32 := by omega
-    rcases hcase with ⟨hr, hb1⟩ | ⟨bs, hr, hl, hb0, hlen, hbytes⟩
+    rcases hcase with ⟨hr, hb1, hbe⟩ | ⟨bs, hr, hl, hb0, hlen, hbytes⟩
     · rw [hr]
       refine WP.lbu trdc_at_24 ?_; wn
       refine WP.branch trdc_at_28 (fun ht => ?_) (fun _ => ?_)
@@ -404,12 +409,13 @@ theorem trdc_wp (h0 : f a0 = out) (h1 : f a1 = t) (h2 : f a2 = BitVec.ofNat 32 n
         ((hslot hOe' 0x10 (by decide) (by decide)).trans v4) ((hslot hOe' 0xC (by decide) (by decide)).trans v5)
         hsp0 hret hFa (fun q hq => by
           rcases trdc_rest_cases q hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> trsimp)
-        ⟨⟨he0, ?_, ?_⟩, fun x sG sO sF sB => (hOe x sO.symm).trans (hM2 x sG.symm sB.symm)⟩
+        ⟨⟨⟨he0, ?_, ?_⟩, fun x sG sO sF sB => (hOe x sO.symm).trans (hM2 x sG.symm sB.symm)⟩, fun _ => ?_⟩
       · rw [Out.load32 hOe (trSepR sOF (by decide)), hM2l (sep_low sFG (by decide)).symm
           (sep_low sFB (by decide)).symm, hfp]
       · refine (Out.load32 hOe (a := fr + 4) (sOF.subR (c := 4) (l := 4) (by decide))).trans ?_
         exact (hM2l (a := fr + 4) (sFG.sub (c := 4) (l := 4) (by decide)).symm
           (sFB.sub (c := 4) (l := 4) (by decide)).symm).trans hfl
+      · rw [memStore8_same, ← hb, trdc_zx8, ← hbe, show F + 4 + 1 = F + 5 by rw [BitVec.add_assoc]; rfl]
     · rw [hr]
       have hbs : bs.length < 2 ^ 32 := by omega
       refine WP.lbu trdc_at_24 ?_; wn
@@ -455,7 +461,8 @@ theorem trdc_wp (h0 : f a0 = out) (h1 : f a1 = t) (h2 : f a2 = BitVec.ofNat 32 n
         ((hslot hM7 0x10 (by decide) (by decide)).trans v4) ((hslot hM7 0xC (by decide) (by decide)).trans v5)
         hsp0 hret hFa (fun q hq => by
           rcases trdc_rest_cases q hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> trsimp)
-        ⟨⟨hc1, hc2, ?_, ?_, ?_⟩, fun x sG sO sF sB => (hM7 x sO.symm sF.symm).trans (hM2 x sG.symm sB.symm)⟩
+        ⟨⟨⟨hc1, hc2, ?_, ?_, ?_⟩, fun x sG sO sF sB => (hM7 x sO.symm sF.symm).trans (hM2 x sG.symm sB.symm)⟩,
+          fun h => by cases h⟩
       · rw [hOc.load32 (trSepR sOF (by decide)), hb1]
       · exact (hOc.load32 (a := fr + 4) (sOF.subR (c := 4) (l := 4) (by decide))).trans hb2
       · rw [hOc.bytes (trSepR sOB hl), hO5.bytes (trSepR sFB hl), hbytes]
@@ -468,7 +475,7 @@ in `a3`, which holds the `fl` bytes at `fp`. It returns with the callee-saved
 registers kept, its result at `out` and the rest of the scratch slice at
 `fr`, as `trDecMem` says: the decoded bytes, written to the start of the
 scratch buffer, when the text decodes and fits; otherwise `Err`, with `fr`
-unchanged. Below `sp` it uses 0x70 bytes, 0x20 of its own and 0x50 for
+unchanged and the error byte that `bdiErr` names at `out + 4`. Below `sp` it uses 0x70 bytes, 0x20 of its own and 0x50 for
 `base64::decode_into`. -/
 theorem trustedRootDecode_correct (m : Machine) {sp0 out t fr fp retAddr : Word} {n fl : Nat}
     (hc : TrDecCode m.mem) (hpc : m.pc = TRDC) (ha0 : reg m a0 = out) (ha1 : reg m a1 = t)
@@ -483,7 +490,9 @@ theorem trustedRootDecode_correct (m : Machine) {sp0 out t fr fp retAddr : Word}
     (sTB : Sep t n fp fl) (sOB : Sep out 8 fp fl) (sFB : Sep fr 8 fp fl) (sOF : Sep out 8 fr 8) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
       (∀ q : Fin 32, q.val ∈ trSaved → reg m' q = reg m q) ∧
-      trDecMem m.mem (sp0 + 0xFFFFFF90) out fr fp fl (trDecodeRes (base64Decode (memBytes m.mem t n)) fl) m'.mem := by
+      trDecMem m.mem (sp0 + 0xFFFFFF90) out fr fp fl (trDecodeRes (base64Decode (memBytes m.mem t n)) fl) m'.mem ∧
+      (trDecodeRes (base64Decode (memBytes m.mem t n)) fl = none →
+        m'.mem (out + 4) = BitVec.ofNat 8 (bdiErr (memBytes m.mem t n) fl)) := by
   have hG : (sp0 + 0xFFFFFF90 : Word).toNat = sp0.toNat - 0x70 := by
     rw [BitVec.toNat_add, show (0xFFFFFF90 : Word).toNat = 2 ^ 32 - 0x70 from rfl]; omega
   obtain ⟨m', hs, hpc', hsp', hk, hR⟩ := WP.run (trdc_wp (f := reg m) (M0 := m.mem) (G := sp0 + 0xFFFFFF90)

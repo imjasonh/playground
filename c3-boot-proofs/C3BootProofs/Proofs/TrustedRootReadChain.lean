@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.TrustedRootReadChainHead
+import C3BootProofs.Proofs.TrustedRootReadChainErr
 
 /-!
 # `read_chain`
@@ -118,7 +119,8 @@ end
 `fl` bytes at `fp`, it returns to `ra` with `sp` and the saved registers
 restored, `readChainPos` at `out` and in the scratch slice, and no change
 outside the 0x740 bytes below `sp`, `out`'s 0x40 bytes, the scratch slice,
-and the buffer. -/
+and the buffer. When it fails, the error byte at `out + 4` is the model's
+byte `b`, and `b` is below 0x27. -/
 theorem trustedRootReadChain_correct (m : Machine) {sp0 out p fr fp retAddr : Word} {n fl : Nat}
     (hc : RcCode m.mem) (hpc : m.pc = TRC) (ha0 : reg m a0 = out) (ha1 : reg m a1 = p)
     (ha2 : reg m a2 = BitVec.ofNat 32 n) (ha3 : reg m a3 = fr) (hra : reg m ra = retAddr)
@@ -137,7 +139,9 @@ theorem trustedRootReadChain_correct (m : Machine) {sp0 out p fr fp retAddr : Wo
     (sPR : Sep p n fr 8) (sPB : Sep p n fp fl) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
       (∀ q : Fin 32, q.val ∈ trSaved → reg m' q = reg m q) ∧
-      rcMem m.mem (sp0 + 0xFFFFF8C0) out fr fp fl (readChainPos m.mem p n fp fl) m'.mem := by
+      rcMem m.mem (sp0 + 0xFFFFF8C0) out fr fp fl (readChainPos m.mem p n fp fl) m'.mem ∧
+      ∀ e, readChainPos m.mem p n fp fl = .error e →
+        ∃ b, b < 0x27 ∧ e = some b ∧ m'.mem (out + 4) = BitVec.ofNat 8 b := by
   have hG : (sp0 + 0xFFFFF8C0 : Word).toNat = sp0.toNat - 0x740 := by
     rw [BitVec.toNat_add, show (0xFFFFF8C0 : Word).toNat = 2 ^ 32 - 0x740 from rfl]; omega
   have X : RcCtx m.mem (sp0 + 0xFFFFF8C0) (sp0 + 0xFFFFF8C0 + BitVec.ofNat 32 0x5C0) out fr fp fl p n (reg m) :=
@@ -148,6 +152,10 @@ theorem trustedRootReadChain_correct (m : Machine) {sp0 out p fr fp retAddr : Wo
       sp0 := by rw [hsp, add_ofNat_assoc, BitVec.add_assoc]; exact (BitVec.add_zero sp0).symm
       ret := by rw [hra]; exact hret }
   obtain ⟨m', hs, hpc', hsp', hk, hR⟩ := WP.run (X.entry ha0 ha1 ha2 ha3) (by decide) hc.self hpc
-  exact ⟨m', hs, hpc'.trans hra, hsp'.trans hsp, hk, hR⟩
+  refine ⟨m', hs, hpc'.trans hra, hsp'.trans hsp, hk, hR, fun e he => ?_⟩
+  obtain ⟨b, rfl, hb⟩ := rce_readChainPos he
+  have hO := hR.1
+  rw [he] at hO
+  exact ⟨b, hb, rfl, hO.2 b rfl⟩
 
 end C3.RV32

@@ -19,10 +19,10 @@ and the three arrays. `acets_p1` to `acets_p5` and `acets_back` prove one
 pass, from 0x123A back to 0x123A or out to 0x1434, and `acets_loop` proves
 `AceTsaStage` by induction on the items left.
 
-`read_chain`'s theorem leaves the error byte unconstrained when the model's
-error carries no code (a decoded chain that overflows the buffer, or a
-`validFor` time that doesn't parse), so `acets_stage` takes that byte's
-bound as the hypothesis `AcetsRcErr`.
+The closure's rejection exit indexes a table of 7 entries with
+`read_chain`'s error byte, so the loop needs that byte below 0x27.
+`AcetsRcErr` states `read_chain` with that bound, and `acets_rcErr` proves
+it from `trustedRootReadChain_correct`.
 -/
 
 namespace C3.RV32.Ac
@@ -767,8 +767,7 @@ theorem acets_tsaSome {t : Json} {c : CertInfo} {w : Window} {k : Bytes} (h : re
   unfold aceTsa; rw [h]; dsimp only [bind, Option.bind]; rw [hk]; dsimp only; rw [List.length_append, hd]; rfl
 
 /-- `trustedRootReadChain_correct`, with the error byte that `read_chain`
-leaves at `out + 4` below 0x27 when it fails. The model names that byte
-only when the error has a code. -/
+leaves at `out + 4` below 0x27 when it fails. -/
 def AcetsRcErr : Prop :=
   ∀ (m : Machine) {sp0 out p fr fp retAddr : Word} {n fl : Nat},
     RcCode m.mem → m.pc = TRC → reg m a0 = out → reg m a1 = p → reg m a2 = BitVec.ofNat 32 n →
@@ -788,6 +787,18 @@ def AcetsRcErr : Prop :=
       (∀ q : Fin 32, q.val ∈ trSaved → reg m' q = reg m q) ∧
       rcMem m.mem (sp0 + 0xFFFFF8C0) out fr fp fl (readChainPos m.mem p n fp fl) m'.mem ∧
       ∀ e, readChainPos m.mem p n fp fl = .error e → (m'.mem (out + 4)).toNat < 0x27
+
+/-- `AcetsRcErr` holds: `read_chain`'s error byte is the model's, which is
+below 0x27. -/
+theorem acets_rcErr : AcetsRcErr := by
+  intro m sp0 out p fr fp retAddr n fl hc hpc ha0 ha1 ha2 ha3 hra hret hsp hsa hsl hsw h384 sRO hoa how sOG sOR
+    sOB hfa hfw sRG sRR sRB hbw hb0 sBG sBR hfp hfl hpw hp0 sPG sPR sPB
+  obtain ⟨m', hs, hpc', hsp', hk, hR, hE⟩ := trustedRootReadChain_correct m hc hpc ha0 ha1 ha2 ha3 hra hret hsp
+    hsa hsl hsw h384 sRO hoa how sOG sOR sOB hfa hfw sRG sRR sRB hbw hb0 sBG sBR hfp hfl hpw hp0 sPG sPR sPB
+  refine ⟨m', hs, hpc', hsp', hk, hR, fun e he => ?_⟩
+  obtain ⟨b, hb, -, hm⟩ := hE e he
+  rw [hm, BitVec.toNat_ofNat]
+  exact Nat.lt_of_le_of_lt (Nat.mod_le _ _) hb
 
 /-- The call to `read_chain` at 0x127E, with `out` at `sp + 0x1320` and
 `fr` at `sp + 0x1FDC`, on the `l` bytes at `q` in the document. -/
@@ -1871,7 +1882,7 @@ theorem acets_loop (H : AcetsRcErr) {rest : List Json} :
 
 end Loop
 
-/-- `AceTsaStage`, given `AcetsRcErr`. -/
-theorem acets_stage (H : AcetsRcErr) : AceTsaStage := fun _ O _ _ _ _ _ _ _ A I => acets_loop O H A I
+/-- The timestamp authorities' loop, from 0x123A to 0x1434. -/
+theorem acets_stage : AceTsaStage := fun _ O _ _ _ _ _ _ _ A I => acets_loop O acets_rcErr A I
 
 end C3.RV32.Ac

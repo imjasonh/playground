@@ -232,7 +232,7 @@ theorem WP.callB64 {hi lo sp0 res t out : Word} {n L : Nat}
     (even_clear _ (even_at base hb _ hev)) (by rw [hreg1]; rsimp; exact hsp) hsa hsl hsw hres hra4 hdw htw
     sOG sTG sRG sTO sRO
   rw [hmem1] at hok herr hfr
-  refine ⟨m2, c2, pc2, ⟨hok, herr, fun x h1 h2 h3 => hfr x h1 h2 h3⟩, fun x hx => ?_⟩
+  refine ⟨m2, c2, pc2, ⟨hok, fun h => (herr h).1, fun x h1 h2 h3 => hfr x h1 h2 h3⟩, fun x hx => ?_⟩
   have hsp1 : reg m1 sp = sp0 := by rw [hreg1]; rsimp; exact hsp
   by_cases hx0 : x.val = 0
   · simp only [reg, hx0, ↓reduceIte]
