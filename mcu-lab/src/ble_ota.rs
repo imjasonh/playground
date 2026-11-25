@@ -26,7 +26,7 @@ use esp_idf_svc::sys::{
 use log::{info, warn};
 use sha2::{Digest, Sha256};
 
-use crate::photo::validate_photo_album_magic;
+use crate::photo::{validate_photo_album_magic, PhotoAlbumHeader, PHOTO_HEADER_LEN};
 use crate::profiler::{create_profile_char, now_us, update_profile_char, ProfileCharHandle};
 use crate::protocol::{
     decode_ota_chunk_frame, encode_blob_frames, encode_mfg_data, format_ota_status,
@@ -162,8 +162,8 @@ struct OtaWriterState {
     written: u32,
     /// Wire payload bytes accepted so far (equals `written` when uncompressed).
     wire_written: u32,
-    /// First 14 uncompressed bytes buffered for `esp_image_header_t` or `MCUP` magic validation.
-    header_buf: [u8; 14],
+    /// First 20 uncompressed bytes buffered for `esp_image_header_t` (14 B) or `MCUP` header (20 B).
+    header_buf: [u8; PHOTO_HEADER_LEN],
     header_len: usize,
     deflate: Option<OtaDeflateDecoder>,
     next_notify_at: u32,
@@ -188,7 +188,7 @@ impl OtaWriterState {
             compression: OtaCompression::None,
             written: 0,
             wire_written: 0,
-            header_buf: [0u8; 14],
+            header_buf: [0u8; PHOTO_HEADER_LEN],
             header_len: 0,
             deflate: None,
             next_notify_at: 0,
@@ -361,6 +361,16 @@ impl OtaWriterState {
                 }
                 ActiveSession::DataBlob { .. } => {
                     validate_photo_album_magic(&self.header_buf[..self.header_len])?;
+                    if self.header_len >= PHOTO_HEADER_LEN {
+                        let hdr = PhotoAlbumHeader::parse(&self.header_buf)?;
+                        if hdr.total_bytes() != self.expected_size as usize {
+                            return Err(format!(
+                                "photo album size mismatch: header={}B, begin={}B",
+                                hdr.total_bytes(),
+                                self.expected_size
+                            ));
+                        }
+                    }
                 }
             }
         }

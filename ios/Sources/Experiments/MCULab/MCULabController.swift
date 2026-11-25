@@ -80,14 +80,17 @@ final class MCULabController: NSObject, ObservableObject {
     var selectedFirmwareTarget: MCULabFirmwareTarget {
         MCULabFirmwareTarget(board: selectedBoard, app: selectedApp)
     }
+    enum TransferKind: Equatable {
+        case firmware
+        case dataBlob
+    }
+
     @Published var otaPhase: OTAPhase = .idle
+    @Published var otaTransferKind: TransferKind = .firmware
     @Published var stagedFirmwareData: Data?
     @Published var stagedFirmwareName = ""
     @Published var stagedFirmwareSHA256 = ""
     @Published var otaStatusText = "Choose a board and app to pull from GHCR (or pick a .bin) to arm an update."
-    @Published var lastOTAReport: MCULabOTAReport?
-
-    // Declarative app coa board and app to pull from GHCR (or pick a .bin) to arm an update."
     @Published var lastOTAReport: MCULabOTAReport?
     private var otaTargetBoard: MCULabBoard?
 
@@ -309,6 +312,8 @@ final class MCULabController: NSObject, ObservableObject {
         stagedFirmwareData = data
         stagedFirmwareName = name
         stagedFirmwareSHA256 = sha
+        otaTransferKind = .firmware
+        otaTargetBoard = nil
         otaPhase = .idle
         otaStatusText = "Staged \(name) (\(data.count) B, sha256 \(sha.prefix(12))…)."
     }
@@ -497,6 +502,37 @@ final class MCULabController: NSObject, ObservableObject {
             otaStatusText = "Staged image does not match \(selectedFirmwareTarget.displayName): \(err)"
             return
         }
+        otaTransferKind = .firmware
+        otaTargetBoard = nil
+        prepareAndArmTransfer(
+            statusMessage: "Armed (\(data.count) B). Waiting for the next \(selectedFirmwareTarget.displayName) wake burst to connect…"
+        )
+    }
+
+    /// Stage and arm a `MCUP` photo album (or other app data blob) for BLE `BEGIN_DATA` transfer
+    /// to `targetBoard`'s inactive OTA partition, after which the board restarts and displays it.
+    func armDataBlobUpload(
+        data: Data,
+        name: String,
+        targetBoard: MCULabBoard = .waveshareEPD75
+    ) {
+        guard !data.isEmpty, UInt32(data.count) <= MCULabProtocol.otaSlotBytes else {
+            otaPhase = .failed("Data size (\(data.count) B) exceeds slot (\(MCULabProtocol.otaSlotBytes) B).")
+            otaStatusText = "Photo album size exceeds available flash slot."
+            return
+        }
+        let sha = MCULabProtocol.sha256Hex(data)
+        stagedFirmwareData = data
+        stagedFirmwareName = name
+        stagedFirmwareSHA256 = sha
+        otaTransferKind = .dataBlob
+        otaTargetBoard = targetBoard
+        prepareAndArmTransfer(
+            statusMessage: "Armed \(name) (\(data.count / 1024) KB). Waiting for \(targetBoard.displayName) wake burst…"
+        )
+    }
+
+    private func prepareAndArmTransfer(statusMessage: String) {
         // Tear down any lingering profile or prior OTA connection before arming.
         if let profileP = profilePeripheral {
             finishProfileOnlyConnectionIfNeeded(for: profileP, fallbackForward: true)
@@ -518,7 +554,7 @@ final class MCULabController: NSObject, ObservableObject {
             otaStatusChar = nil
         }
         otaPhase = .armed
-        otaStatusText = "Armed (\(data.count) B). Waiting for the next \(selectedFirmwareTarget.displayName) wake burst to connect…"
+        otaStatusText = statusMessage
         if !isScanning, isBluetoothUsable {
             startScan()
         }
@@ -548,7 +584,7 @@ final class MCULabController: NSObject, ObservableObject {
         otaDataChar = nil
         otaStatusChar = nil
         otaPhase = .idle
-        otaStatusText = "OTA update cancelled."
+        otaStatusText = otaTransferKind == .dataBlob ? "Photo transfer cancelled." : "OTA update cancelled."
     }
 
     /// Simulate a complete BLE OTA transfer (used when tapping Simulate Wake while OTA is armed).
@@ -567,8 +603,8 @@ final class MCULabController: NSObject, ObservableObject {
         let now = Date()
         let startMv = latestSample?.metrics.batteryMv ?? 3_840
         let report = MCULabOTAReport(
-            board: selectedBoard,
-            app: selectedApp,
+            board: activeTransferBoard,
+            app: otaTransferKind == .dataBlob ? .photo : selectedApp,
             imageName: stagedFirmwareName,
             sha256: sha,
             compression: useDeflate ? .deflate : .none,
@@ -592,7 +628,11 @@ final class MCULabController: NSObject, ObservableObject {
         lastOTAReport = report
         otaPhase = .streaming(written: total, total: total)
         otaPhase = .completed(sha256: sha)
-        otaStatusText = "Installed \(stagedFirmwareName) (\(total) B, sha256 \(sha.prefix(12))…)."
+        if otaTransferKind == .dataBlob {
+            otaStatusText = "Sent \(stagedFirmwareName) (\(total) B, sha256 \(sha.prefix(12))…)."
+        } else {
+            otaStatusText = "Installed \(stagedFirmwareName) (\(total) B, sha256 \(sha.prefix(12))…)."
+        }
         if forwardingEnabled {
             forwardOTAReportToOtel(report, deviceId: simulatedDeviceId)
         }
@@ -1566,27 +1606,6 @@ final class MCULabController: NSObject, ObservableObject {
     }
 
     private func ensureBackendAttested(api: AppAttestAPI, baseURL: URL) async throws -> String {
-        let hostKey = baseURL.absoluteString
-        if defaults.string(forKey: Self.registeredHostDefaultsKey) == hostKey,
-           let existingKey = attestStore.keyId,
-           !existingKey.isEmpty
-        {
-            return existingKey
-        }
-
-        let challenge = try await api.fetchChallenge()
-        let userId = attestStore.userId.isEmpty ? "xiao-ios-\(attestStore.deviceId)" : attestStore.userId
-        let clientData = AppAttestClientData(
-            challenge: challenge.challenge,
-            userId: userId,
-            deviceId: attestStore.deviceId
-        )
-        let clientJSON = try clientData.jsonBytes()
-        let registered: AppAttestRegisterResponse
-        if attestKeys.isSupported {
-            let hash = AppAttestHashing.sha256(clientJSON)
-            // DCAppAttestService.attestKey is a one-time operation per keyId: calling it on a
- ensureBackendAttested(api: AppAttestAPI, baseURL: URL) async throws -> String {
         let hostKey = baseURL.absoluteString
         if defaults.string(forKey: Self.registeredHostDefaultsKey) == hostKey,
            let existingKey = attestStore.keyId,
