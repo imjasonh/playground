@@ -77,7 +77,7 @@ enum MCULabSenseServerAddress {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let withScheme: String
-        if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
+        if trimmed.contains("://") {
             withScheme = trimmed
         } else {
             withScheme = "http://\(trimmed)"

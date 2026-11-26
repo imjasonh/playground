@@ -148,7 +148,11 @@ pub fn parse_byte_range(header: &str, total_size: u64) -> Option<ByteRange> {
     if total_size == 0 {
         return None;
     }
-    let spec = header.trim().strip_prefix("bytes=")?.trim();
+    let (unit, rest) = header.trim().split_once('=')?;
+    if !unit.trim().eq_ignore_ascii_case("bytes") {
+        return None;
+    }
+    let spec = rest.trim();
     if spec.contains(',') {
         return None;
     }
@@ -254,6 +258,14 @@ impl<W: Write + Seek> MovMuxer<W> {
             video_samples: Vec::new(),
             audio_chunks: Vec::new(),
         })
+    }
+
+    /// Update the video track dimensions from the actual captured JPEG frame header.
+    pub fn set_dimensions(&mut self, width: u16, height: u16) {
+        if width > 0 && height > 0 {
+            self.width = width;
+            self.height = height;
+        }
     }
 
     /// Append one JPEG video frame to `mdat`.
@@ -912,6 +924,10 @@ mod tests {
     fn byte_range_parsing_handles_standard_cases() {
         assert_eq!(
             parse_byte_range("bytes=0-1", 1000),
+            Some(ByteRange { start: 0, end: 1 })
+        );
+        assert_eq!(
+            parse_byte_range("BYTES=0-1", 1000),
             Some(ByteRange { start: 0, end: 1 })
         );
         assert_eq!(

@@ -230,8 +230,19 @@ impl<B: Board + HasSenseAV> App<B> for RecorderApp {
     ) -> Result<StepOutput> {
         match cmd_id {
             "toggle_record" => {
-                let prev = self.shared.recording.fetch_xor(true, Ordering::AcqRel);
-                let next = !prev;
+                let can_record = {
+                    let st = self.shared.state.lock().unwrap_or_else(|e| e.into_inner());
+                    st.sd_mounted && (st.camera_ready || st.mic_ready)
+                };
+                let next = if self.shared.recording.load(Ordering::Acquire) {
+                    self.shared.recording.store(false, Ordering::Release);
+                    false
+                } else if can_record {
+                    self.shared.recording.store(true, Ordering::Release);
+                    true
+                } else {
+                    false
+                };
                 info!("recorder: BLE toggle_record -> recording={next}");
                 ctx.record_attr("sense.recording", if next { "true" } else { "false" });
             }
@@ -385,6 +396,9 @@ fn recorder_worker(
 
             if let Some(ref mut cam) = camera {
                 if let Some(frame) = cam.capture() {
+                    if muxer.video_frame_count() == 0 {
+                        muxer.set_dimensions(frame.width(), frame.height());
+                    }
                     let now = Instant::now();
                     let delta_ms = now
                         .saturating_duration_since(last_frame_at)
@@ -420,6 +434,17 @@ fn recorder_worker(
         if write_failed {
             drop(muxer);
             let _ = fs::remove_file(&tmp_path);
+            // Force-evict the oldest clip in case free space was above nominal headroom yet
+            // a high-bitrate clip still hit ENOSPC.
+            if let Some(oldest) = scan_clips().first() {
+                let path = PathBuf::from(CLIPS_DIR).join(&oldest.name);
+                if fs::remove_file(&path).is_ok() {
+                    warn!(
+                        "recorder-worker: force-evicted oldest clip {} after write error",
+                        oldest.name
+                    );
+                }
+            }
             evict_oldest_clips_if_needed(&shared);
         } else {
             match muxer.finalize() {
@@ -543,7 +568,13 @@ fn start_http_server(shared: Arc<RecorderShared>) -> Result<EspHttpServer<'stati
             "/api/record/start",
             Method::Post,
             move |req| -> Result<()> {
-                shared.recording.store(true, Ordering::Release);
+                let can_record = {
+                    let st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
+                    st.sd_mounted && (st.camera_ready || st.mic_ready)
+                };
+                if can_record {
+                    shared.recording.store(true, Ordering::Release);
+                }
                 let st = shared.status_snapshot();
                 let json = format_status_json(&st);
                 let mut resp =
@@ -598,9 +629,14 @@ fn start_http_server(shared: Arc<RecorderShared>) -> Result<EspHttpServer<'stati
                 resp.write_all(br#"{"error":"clip not found"}"#)?;
                 return Ok(());
             }
+            let space = sd_space_info().ok();
             {
                 let mut st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
                 st.clips.retain(|c| c.name != name);
+                if let Some((total, free)) = space {
+                    st.sd_total_bytes = total;
+                    st.sd_free_bytes = free;
+                }
             }
             let body = format!(r#"{{"deleted":"{name}"}}"#);
             let mut resp =

@@ -23,14 +23,14 @@ struct MCULabSensePanel: View {
     @State private var streamingClip: StreamingClipItem?
 
     /// If a connected BLE XIAO ESP32-S3 Sense advertised its HTTP URL in `WakeProfile.attrs`,
-    /// surface a quick one-tap fill button.
+    /// surface a quick one-tap fill button (checking history too when multiple boards are nearby).
     private var discoveredBleURL: String? {
-        guard let url = controller.latestSample?.profile?.attrs?["sense.http_url"],
-              !url.isEmpty
-        else {
-            return nil
+        if let url = controller.latestSample?.profile?.attrs?["sense.http_url"], !url.isEmpty {
+            return url
         }
-        return url
+        return controller.history
+            .compactMap { $0.profile?.attrs?["sense.http_url"] }
+            .first { !$0.isEmpty }
     }
 
     var body: some View {
