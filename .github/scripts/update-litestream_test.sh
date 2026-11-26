@@ -127,6 +127,13 @@ reset_repo
 expect "someone else's branch" skipped "$(pull)"
 expect "someone else's branch stays on main" main "$(git branch --show-current)"
 
+# Once that branch is merged into main (even without deleting the remote
+# branch), the next run is not skipped.
+git merge -q --no-ff -m "Merge conflict resolution" "origin/$branch"
+git push -q origin main
+reset_repo
+expect "merged branch is not skipped" unchanged "$(pull)"
+
 if [[ "$failures" -ne 0 ]]; then
   echo "$failures failure(s)" >&2
   exit 1

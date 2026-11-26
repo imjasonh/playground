@@ -139,49 +139,72 @@ func (m *Main) Run(ctx context.Context, args []string) (err error) {
 		cmd, args = args[0], args[1:]
 	}
 
-	switch cmd {
-	case "databases":
+	switch {
+	case cmd == "":
+		m.Usage()
+		return flag.ErrHelp
+	case cmd == "databases":
 		return (&DatabasesCommand{}).Run(ctx, args)
-	case "replicate":
+	case cmd == "replicate":
 		return m.runReplicate(ctx, args)
 
-	case "start":
+	case cmd == "start":
 		return (&StartCommand{}).Run(ctx, args)
-	case "stop":
+	case cmd == "stop":
 		return (&StopCommand{}).Run(ctx, args)
-	case "register":
+	case cmd == "register":
 		return (&RegisterCommand{}).Run(ctx, args)
-	case "unregister":
+	case cmd == "unregister":
 		return (&UnregisterCommand{}).Run(ctx, args)
-	case "reset":
+	case cmd == "reset":
 		return (&ResetCommand{}).Run(ctx, args)
-	case "restore":
+	case cmd == "restore":
 		return (&RestoreCommand{}).Run(ctx, args)
-	case "status":
+	case cmd == "status":
 		return (&StatusCommand{}).Run(ctx, args)
-	case "sync":
+	case cmd == "sync":
 		return (&SyncCommand{}).Run(ctx, args)
-	case "list":
+	case cmd == "list":
 		return (&ListCommand{}).Run(ctx, args)
-	case "info":
+	case cmd == "info":
 		return (&InfoCommand{}).Run(ctx, args)
-	case "version":
+	case cmd == "version":
 		return (&VersionCommand{}).Run(ctx, args)
-	case "ltx":
+	case cmd == "ltx":
 		return (&LTXCommand{}).Run(ctx, args)
-	case "wal":
+	case cmd == "wal":
 		// Deprecated: Keep for backward compatibility
 		fmt.Fprintln(os.Stderr, "Warning: 'wal' command is deprecated, please use 'ltx' instead")
 		return (&LTXCommand{}).Run(ctx, args)
+
+	// Handle help and invalid input after dispatching commands.
+	case cmd == "help", cmd == "-h", cmd == "-help", cmd == "--help":
+		m.Usage()
+		return nil
+	case strings.HasPrefix(cmd, "-"):
+		return misplacedFlagError(cmd)
 	default:
-		if cmd == "help" || cmd == "-h" || cmd == "-help" || cmd == "--help" {
-			m.Usage()
-			return nil
-		} else if cmd == "" || strings.HasPrefix(cmd, "-") {
-			m.Usage()
-			return flag.ErrHelp
-		}
 		return fmt.Errorf("litestream %s: unknown command", cmd)
+	}
+}
+
+// misplacedFlagError returns a usage error for a flag that appears before the
+// subcommand, e.g. "litestream -config c.yml databases". Only the subcommands
+// parse flags, so the hint shows where the flag belongs rather than guessing
+// the intended command. Shell aliases that lead with -config are pointed at
+// LITESTREAM_CONFIG, which works in any position.
+func misplacedFlagError(arg string) error {
+	name := strings.TrimLeft(strings.SplitN(arg, "=", 2)[0], "-")
+	if name == "config" {
+		return &usageError{
+			message: "flags must come after the subcommand",
+			hint: "litestream <command> -config PATH\n" +
+				" or: LITESTREAM_CONFIG=PATH litestream <command>",
+		}
+	}
+	return &usageError{
+		message: "flags must come after the subcommand",
+		hint:    "litestream <command> [flags]",
 	}
 }
 
@@ -593,6 +616,20 @@ func ReadConfigFile(filename string, expandEnv bool) (Config, error) {
 	return ParseConfig(f, expandEnv)
 }
 
+// stdinConfigPath is the -config value that reads the configuration from STDIN.
+const stdinConfigPath = "-"
+
+// ReadConfig unmarshals config from configPath. If configPath is blank then the
+// default config path is used. If configPath is "-" then config is read from STDIN.
+// If expandEnv is true then environment variables are expanded in the config.
+func ReadConfig(configPath string, expandEnv bool) (Config, error) {
+	configPath, _ = resolveConfigPath(configPath)
+	if configPath == stdinConfigPath {
+		return ParseConfig(os.Stdin, expandEnv)
+	}
+	return ReadConfigFile(configPath, expandEnv)
+}
+
 // ParseConfig unmarshals config from a reader.
 // If expandEnv is true then environment variables are expanded in the config.
 func ParseConfig(r io.Reader, expandEnv bool) (_ Config, err error) {
@@ -690,6 +727,23 @@ func ParseConfig(r io.Reader, expandEnv bool) (_ Config, err error) {
 	}
 	if logOutput != os.Stderr {
 		internal.InitLog(logOutput, config.Logging.Level, config.Logging.Type, config.Logging.Source)
+	}
+
+	// The lenient decode above silently drops keys that do not map to a Config
+	// field, so a misspelled or nonexistent setting looks like it took effect.
+	// Decode again in strict mode into a scratch value purely for diagnostics:
+	// yaml.UnmarshalStrict reports both unrecognized and duplicate mapping keys.
+	// These are warnings rather than errors so that existing deployments with a
+	// stray key keep starting.
+	var strictConfig Config
+	if err := yaml.UnmarshalStrict(buf, &strictConfig); err != nil {
+		var typeErr *yaml.TypeError
+		if !errors.As(err, &typeErr) {
+			return config, fmt.Errorf("strictly decode config: %w", err)
+		}
+		for _, detail := range typeErr.Errors {
+			slog.Warn("configuration contains unrecognized or duplicate key", "detail", detail)
+		}
 	}
 
 	return config, nil
@@ -791,6 +845,19 @@ func NewDBFromConfig(dbc *DBConfig) (*litestream.DB, error) {
 	db.Replica = r
 
 	return db, nil
+}
+
+// newDBsFromConfig instantiates the databases for a configuration entry. A
+// directory entry expands to every database found in the directory.
+func newDBsFromConfig(dbc *DBConfig) ([]*litestream.DB, error) {
+	if dbc.Dir != "" {
+		return NewDBsFromDirectoryConfig(dbc)
+	}
+	db, err := NewDBFromConfig(dbc)
+	if err != nil {
+		return nil, err
+	}
+	return []*litestream.DB{db}, nil
 }
 
 // NewDBsFromDirectoryConfig scans a directory and creates DB instances for all SQLite databases found.
@@ -1411,9 +1478,9 @@ func newFileReplicaClientFromConfig(c *ReplicaConfig, r *litestream.Replica) (_ 
 	}
 
 	// Parse configPath from URL, if specified.
-	configPath := c.Path
+	configPath, legacyPath := c.Path, ""
 	if c.URL != "" {
-		if _, _, configPath, err = litestream.ParseReplicaURL(c.URL); err != nil {
+		if configPath, legacyPath, err = litestream.ParseFileReplicaURL(c.URL); err != nil {
 			return nil, err
 		}
 	}
@@ -1426,6 +1493,20 @@ func newFileReplicaClientFromConfig(c *ReplicaConfig, r *litestream.Replica) (_ 
 	// Expand home prefix and return absolute path.
 	if configPath, err = expand(configPath); err != nil {
 		return nil, err
+	}
+
+	if legacyPath != "" {
+		if legacyPath, err = expand(legacyPath); err != nil {
+			return nil, err
+		}
+		logger := slog.Default()
+		if r != nil && r.DB() != nil {
+			logger = r.DB().Logger
+		}
+		logger = logger.With("replica", file.ReplicaClientType)
+		if configPath, err = litestream.ResolveLegacyFileReplicaPath(logger, configPath, legacyPath); err != nil {
+			return nil, err
+		}
 	}
 
 	// Instantiate replica and apply time fields, if set.
@@ -2093,14 +2174,24 @@ func (c *ReplicaConfig) ReplicaType() string {
 
 // DefaultConfigPath returns the default config path.
 func DefaultConfigPath() string {
-	if v := os.Getenv("LITESTREAM_CONFIG"); v != "" {
-		return v
+	path, _ := resolveConfigPath("")
+	return path
+}
+
+// resolveConfigPath returns the config path to read for flagPath and reports
+// whether it was explicitly selected by the flag or by LITESTREAM_CONFIG.
+func resolveConfigPath(flagPath string) (path string, explicit bool) {
+	if flagPath != "" {
+		return flagPath, true
 	}
-	return defaultConfigPath
+	if v := os.Getenv("LITESTREAM_CONFIG"); v != "" {
+		return v, true
+	}
+	return defaultConfigPath, false
 }
 
 func registerConfigFlag(fs *flag.FlagSet) (configPath *string, noExpandEnv *bool) {
-	return fs.String("config", "", "config path"),
+	return fs.String("config", "", "config path, or \"-\" to read from stdin"),
 		fs.Bool("no-expand-env", false, "do not expand env vars in config")
 }
 

@@ -5,18 +5,32 @@ Litestream
 [![Docker Pulls](https://img.shields.io/docker/pulls/litestream/litestream.svg?maxAge=604800)](https://hub.docker.com/r/litestream/litestream/)
 ==========
 
-Litestream is a standalone disaster recovery tool for SQLite. It runs as a
-background process and safely replicates changes incrementally to another file
-or S3. Litestream only communicates with SQLite through the SQLite API so it
-will not corrupt your database.
+Litestream is a standalone disaster recovery tool for SQLite. It runs in the background, tracks changes in the SQLite write-ahead log, and replicates them incrementally to a local file or a supported remote storage backend.
 
 If you need support or have ideas for improving Litestream, please visit
 [GitHub Issues](https://github.com/benbjohnson/litestream/issues).
 Please visit the [Litestream web site](https://litestream.io) for installation
 instructions and documentation.
 
+For optional service confinement, see the [systemd hardening guide](docs/SYSTEMD.md).
+
 If you find this project interesting, please consider starring the project on
 GitHub.
+
+File replica URLs
+-----------------
+
+File replica URLs use URL path escaping. For example,
+`file:///backups/daily%20backup` refers to `/backups/daily backup`. Unicode paths
+are supported as well. Encode a literal percent sign as `%25`: a directory
+named `/backups/daily%20backup` is addressed by
+`file:///backups/daily%2520backup`.
+
+Earlier versions wrote file replicas to the escaped form of the path, such as
+`/backups/daily%20backup`. If that directory exists and the decoded path does
+not, Litestream keeps using it and logs a warning with the command to rename
+it. If both directories exist, Litestream returns an error until one is merged
+or removed.
 
 Source database changes
 -----------------------

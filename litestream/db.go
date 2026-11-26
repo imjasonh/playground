@@ -10,6 +10,7 @@ import (
 	"hash/crc64"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1109,6 +1110,10 @@ func (db *DB) setPersistWAL(ctx context.Context) error {
 	})
 }
 
+func sqliteFileURI(path string) string {
+	return "file:" + url.PathEscape(path)
+}
+
 // init initializes the connection to the database.
 // Skipped if already initialized or if the database file does not exist.
 func (db *DB) init(ctx context.Context) (err error) {
@@ -1132,8 +1137,8 @@ func (db *DB) init(ctx context.Context) (err error) {
 	}
 	db.dirInfo = fi
 
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=wal_autocheckpoint(0)",
-		db.path, db.BusyTimeout.Milliseconds())
+	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(%d)&_pragma=wal_autocheckpoint(0)",
+		sqliteFileURI(db.path), db.BusyTimeout.Milliseconds())
 
 	if db.db, err = sql.Open("sqlite", dsn); err != nil {
 		return err
@@ -1924,6 +1929,41 @@ func (db *DB) verifyWithExecutor(ctx context.Context, exec *syncExecutor) (info 
 	return info, nil
 }
 
+func (db *DB) walIndexMaxFrame(ctx context.Context, salt1, salt2 uint32) (int, error) {
+	const maxAttempts = 10
+	var err error
+	for attempt := range maxAttempts {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-time.After(time.Millisecond):
+			}
+		}
+		var busy, n, backfill int
+		err = db.db.QueryRowContext(ctx, `PRAGMA main.wal_checkpoint(NOOP)`).Scan(&busy, &n, &backfill)
+		if err != nil {
+			if isSQLiteBusyError(err) {
+				continue
+			}
+			return 0, fmt.Errorf("query committed WAL frames: %w", err)
+		} else if busy != 0 {
+			err = fmt.Errorf("SQLITE_BUSY: committed WAL boundary unavailable")
+			continue
+		} else if n < 0 {
+			return 0, fmt.Errorf("committed WAL boundary unavailable: frames=%d", n)
+		}
+		hdr, err := readWALHeader(db.WALPath())
+		if err != nil {
+			return 0, fmt.Errorf("verify WAL generation: %w", err)
+		} else if binary.BigEndian.Uint32(hdr[16:]) != salt1 || binary.BigEndian.Uint32(hdr[20:]) != salt2 {
+			return 0, fmt.Errorf("WAL generation changed while reading committed boundary")
+		}
+		return n, nil
+	}
+	return 0, fmt.Errorf("query committed WAL frames after %d attempts: %w", maxAttempts, err)
+}
+
 // lastPageMatch checks if the last page read in the WAL exists in the last LTX file.
 func (db *DB) lastPageMatch(ctx context.Context, dec *ltx.Decoder, prevWALOffset, frameSize int64) (bool, error) {
 	if prevWALOffset <= WALHeaderSize {
@@ -2178,6 +2218,13 @@ func (db *DB) sync(ctx context.Context, checkpointing bool, exec *syncExecutor, 
 		}
 	}
 
+	// Never read past the last frame committed to the wal-index.
+	n, err := db.walIndexMaxFrame(ctx, rd.salt1, rd.salt2)
+	if err != nil {
+		return result, fmt.Errorf("read committed wal boundary: %w", err)
+	}
+	rd.SetEnd(WALHeaderSize + int64(n)*int64(db.pageSize+WALFrameHeaderSize))
+
 	// Build a mapping of changed page numbers and their latest content.
 	db.setSyncDiagPhase(diagPhaseSyncPageMap,
 		func(s *diagState) {
@@ -2188,7 +2235,7 @@ func (db *DB) sync(ctx context.Context, checkpointing bool, exec *syncExecutor, 
 	if info.snapshotting {
 		maxSyncWALBytes = 0
 	}
-	pageMap, maxOffset, walCommit, limited, err := rd.pageMap(ctx, maxSyncWALBytes)
+	pageMap, maxOffset, walCommit, limited, err := rd.pageMap(ctx, maxSyncWALBytes, 0)
 	if err != nil {
 		return result, fmt.Errorf("page map: %w", err)
 	}
@@ -2886,12 +2933,8 @@ func (db *DB) snapshotPosition(ctx context.Context) (*snapshotReadPosition, erro
 }
 
 // snapshotWALEndOffset returns the WAL offset a snapshot may read up to for
-// the given position. db.syncState is read without db.mu because every writer
-// mutates it while holding execSem, which the caller also holds.
+// the given position.
 func (db *DB) snapshotWALEndOffset(pos ltx.Pos) (int64, error) {
-	if db.syncState.lastSyncedWALOffset > 0 {
-		return db.syncState.lastSyncedWALOffset, nil
-	}
 	if pos.TXID == 0 {
 		return WALHeaderSize, nil
 	}
@@ -2955,13 +2998,14 @@ func (db *DB) snapshotReader(ctx context.Context, pos *snapshotReadPosition) (io
 			return
 		}
 
-		// Build a mapping of changed page numbers and their latest content.
-		maxBytes := pos.walEndOffset - WALHeaderSize
+		// Map each changed page to the WAL offset of its latest committed version.
+		// Only include transactions committed within the snapshot's advertised WAL
+		// range, so later writes cannot change the state represented by this snapshot.
 		pageMap := make(map[uint32]int64)
 		var maxOffset int64
 		var walCommit uint32
-		if maxBytes > 0 {
-			pageMap, maxOffset, walCommit, _, err = rd.pageMap(ctx, maxBytes)
+		if pos.walEndOffset > WALHeaderSize {
+			pageMap, maxOffset, walCommit, _, err = rd.pageMap(ctx, 0, pos.walEndOffset)
 			if err != nil {
 				pw.CloseWithError(fmt.Errorf("page map: %w", err))
 				return

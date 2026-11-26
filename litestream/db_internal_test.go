@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -1031,7 +1032,7 @@ func TestWALReaderPageMapLimitStopsAtCommittedFrame(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pageMap, maxOffset, commit, limited, err := r.pageMap(context.Background(), 1)
+	pageMap, maxOffset, commit, limited, err := r.pageMap(context.Background(), 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1046,6 +1047,176 @@ func TestWALReaderPageMapLimitStopsAtCommittedFrame(t *testing.T) {
 	}
 	if got, want := len(pageMap), 2; got != want {
 		t.Fatalf("len(pageMap)=%d, want %d", got, want)
+	}
+}
+
+func TestWALReaderPageMapEndOffsetStopsBeforeStraddlingTransaction(t *testing.T) {
+	// The fixture has two transactions ending at offsets 8272 and 12392.
+	b, err := os.ReadFile("testdata/wal-reader/ok/wal")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("MidTransaction", func(t *testing.T) {
+		r, err := NewWALReader(bytes.NewReader(b), slog.Default())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		pageMap, maxOffset, commit, limited, err := r.pageMap(context.Background(), 0, 4152)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !limited {
+			t.Fatal("expected page map to stop at end offset")
+		}
+		if got, want := maxOffset, int64(0); got != want {
+			t.Fatalf("maxOffset=%d, want %d", got, want)
+		}
+		if got, want := commit, uint32(0); got != want {
+			t.Fatalf("commit=%d, want %d", got, want)
+		}
+		if got, want := len(pageMap), 0; got != want {
+			t.Fatalf("len(pageMap)=%d, want %d", got, want)
+		}
+	})
+
+	t.Run("AtCommitBoundary", func(t *testing.T) {
+		r, err := NewWALReader(bytes.NewReader(b), slog.Default())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		pageMap, maxOffset, commit, limited, err := r.pageMap(context.Background(), 0, 8272)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !limited {
+			t.Fatal("expected page map to stop at end offset")
+		}
+		if got, want := maxOffset, int64(8272); got != want {
+			t.Fatalf("maxOffset=%d, want %d", got, want)
+		}
+		if got, want := commit, uint32(2); got != want {
+			t.Fatalf("commit=%d, want %d", got, want)
+		}
+		if got, want := len(pageMap), 2; got != want {
+			t.Fatalf("len(pageMap)=%d, want %d", got, want)
+		}
+	})
+}
+
+func TestDB_SnapshotReaderStaleWALOffset(t *testing.T) {
+	for _, restart := range []bool{false, true} {
+		t.Run(fmt.Sprintf("Restart=%t", restart), func(t *testing.T) {
+			dbPath := filepath.Join(t.TempDir(), "db")
+			db := NewDB(dbPath)
+			db.MonitorInterval = 0
+			db.Replica = NewReplica(db)
+			db.Replica.Client = &testReplicaClient{dir: t.TempDir()}
+			db.Replica.MonitorEnabled = false
+			if err := db.Open(); err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := db.Close(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			}()
+
+			sqldb, err := sql.Open("sqlite", dbPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer sqldb.Close()
+			for _, query := range []string{
+				"PRAGMA journal_mode = wal",
+				"CREATE TABLE t (id INTEGER PRIMARY KEY, data BLOB)",
+				"INSERT INTO t(data) VALUES (zeroblob(100))",
+			} {
+				if _, err := sqldb.Exec(query); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := db.Sync(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := sqldb.Exec("INSERT INTO t(data) VALUES (zeroblob(8000))"); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Sync(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			syncedPos, err := db.Pos()
+			if err != nil {
+				t.Fatal(err)
+			}
+			frameSize := int64(WALFrameHeaderSize) + int64(db.PageSize())
+			wantEndOffset := db.syncState.lastSyncedWALOffset
+			if restart {
+				if err := db.releaseReadLock(); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := sqldb.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+					t.Fatal(err)
+				}
+				if err := db.acquireReadLock(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				for _, query := range []string{
+					"UPDATE t SET data = zeroblob(200) WHERE id = 1",
+					"INSERT INTO t(data) VALUES (zeroblob(80000))",
+				} {
+					if _, err := sqldb.Exec(query); err != nil {
+						t.Fatal(err)
+					}
+				}
+				wantEndOffset = WALHeaderSize
+			} else {
+				db.syncState.lastSyncedWALOffset -= frameSize
+			}
+			wal, err := os.ReadFile(db.WALPath())
+			if err != nil {
+				t.Fatal(err)
+			}
+			staleOffset := db.syncState.lastSyncedWALOffset
+			if commit := binary.BigEndian.Uint32(wal[staleOffset-frameSize+4:]); commit != 0 {
+				t.Fatalf("precondition: stale offset %d must land inside a transaction", staleOffset)
+			}
+
+			pos, r, err := db.SnapshotReader(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close()
+			var restored bytes.Buffer
+			dec := ltx.NewDecoder(r)
+			if err := dec.DecodeDatabaseTo(&restored); err != nil {
+				t.Fatal(err)
+			}
+			if pos.TXID != syncedPos.TXID || dec.Header().MaxTXID != syncedPos.TXID {
+				t.Fatalf("snapshot TXID=%s, header=%s, want %s", pos.TXID, dec.Header().MaxTXID, syncedPos.TXID)
+			}
+			if got := dec.Header().WALOffset + dec.Header().WALSize; got != wantEndOffset {
+				t.Fatalf("snapshot WAL end=%d, want %d", got, wantEndOffset)
+			}
+			restoredPath := filepath.Join(t.TempDir(), "restored.db")
+			if err := os.WriteFile(restoredPath, restored.Bytes(), 0600); err != nil {
+				t.Fatal(err)
+			}
+			restoredDB, err := sql.Open("sqlite", restoredPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer restoredDB.Close()
+			var count, size int
+			if err := restoredDB.QueryRow("SELECT COUNT(*), SUM(length(data)) FROM t").Scan(&count, &size); err != nil {
+				t.Fatal(err)
+			}
+			if count != 2 || size != 8100 {
+				t.Fatalf("snapshot restored %d rows, %d blob bytes; want 2 rows, 8100 bytes", count, size)
+			}
+		})
 	}
 }
 
@@ -5188,6 +5359,111 @@ func TestDB_CheckpointPassive_CachesLastLTXPage(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertCached()
+		})
+	}
+}
+
+func TestDB_WALIndexMaxFrame(t *testing.T) {
+	for _, name := range []string{"committed", "canceled", "closed", "no WAL", "generation changed", "missing WAL", "busy"} {
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			path := filepath.Join(t.TempDir(), "db")
+			sqldb, err := sql.Open("sqlite", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := sqldb.Close(); err != nil {
+					t.Error(err)
+				}
+			}()
+			db := &DB{db: sqldb, path: path}
+			if name == "no WAL" {
+				if _, err := db.walIndexMaxFrame(ctx, 0, 0); err == nil {
+					t.Fatal("expected unavailable boundary error")
+				}
+				return
+			}
+			if _, err := sqldb.ExecContext(ctx, `PRAGMA journal_mode=WAL; CREATE TABLE t (id INTEGER PRIMARY KEY); INSERT INTO t VALUES (1)`); err != nil {
+				t.Fatal(err)
+			}
+			hdr, err := readWALHeader(path + "-wal")
+			if err != nil {
+				t.Fatal(err)
+			}
+			salt1, salt2 := binary.BigEndian.Uint32(hdr[16:]), binary.BigEndian.Uint32(hdr[20:])
+			switch name {
+			case "canceled":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			case "closed":
+				if err := sqldb.Close(); err != nil {
+					t.Fatal(err)
+				}
+			case "generation changed":
+				salt1++
+			case "missing WAL":
+				db.path = filepath.Join(t.TempDir(), "missing")
+			case "busy":
+				conn, err := sqldb.Conn(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var busy, frames, backfill int
+				queryErr := sqldb.QueryRowContext(ctx, `PRAGMA main.wal_checkpoint(NOOP)`).Scan(&busy, &frames, &backfill)
+				if err := errors.Join(queryErr, conn.Close()); err != nil {
+					t.Fatal(err)
+				}
+				tx, err := sqldb.BeginTx(ctx, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() {
+					if err := tx.Rollback(); err != nil {
+						t.Error(err)
+					}
+				}()
+				if _, err := tx.ExecContext(ctx, `INSERT INTO t VALUES (2)`); err != nil {
+					t.Fatal(err)
+				}
+				headerPath := filepath.Join(t.TempDir(), "header")
+				cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestDB_WriterKilledBeforeWALIndexUpdate$", "--", "save", path+"-shm", headerPath)
+				if output, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("save SHM: %v\n%s", err, output)
+				}
+				defer func() {
+					cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^TestDB_WriterKilledBeforeWALIndexUpdate$", "--", "restore", path+"-shm", headerPath)
+					if output, err := cmd.CombinedOutput(); err != nil {
+						t.Errorf("restore SHM: %v\n%s", err, output)
+					}
+				}()
+				invalidPath := filepath.Join(t.TempDir(), "invalid")
+				if err := os.WriteFile(invalidPath, make([]byte, 96), 0600); err != nil {
+					t.Fatal(err)
+				}
+				cmd = exec.CommandContext(ctx, os.Args[0], "-test.run=^TestDB_WriterKilledBeforeWALIndexUpdate$", "--", "restore", path+"-shm", invalidPath)
+				if output, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("invalidate SHM: %v\n%s", err, output)
+				}
+			}
+			n, err := db.walIndexMaxFrame(ctx, salt1, salt2)
+			if name == "committed" {
+				if err != nil || n != 3 {
+					t.Fatalf("frames=%d, error=%v; want 3, nil", n, err)
+				}
+			} else if err == nil {
+				t.Fatal("expected boundary error")
+			}
+			if name == "busy" && !isSQLiteBusyError(err) {
+				t.Fatalf("got %v, want recognizable SQLITE_BUSY", err)
+			}
+			if name == "canceled" && !errors.Is(err, context.Canceled) {
+				t.Fatalf("got %v, want context.Canceled", err)
+			}
+			if name == "missing WAL" && !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("got %v, want os.ErrNotExist", err)
+			}
 		})
 	}
 }

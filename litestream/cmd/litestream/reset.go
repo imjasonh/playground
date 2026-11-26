@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -43,24 +44,24 @@ func (c *ResetCommand) Run(ctx context.Context, args []string) (err error) {
 		}
 	}
 
-	// Load configuration to find the database (if config exists)
-	var dbConfig *DBConfig
-	if *configPath != "" {
-		config, configErr := ReadConfigFile(*configPath, !*noExpandEnv)
-		if configErr != nil {
-			return fmt.Errorf("cannot read config: %w", configErr)
-		}
+	// A missing config file is tolerated only when the path is the implicit default.
+	resolvedConfigPath, explicitConfig := resolveConfigPath(*configPath)
 
-		// Find database config
-		for _, dbc := range config.DBs {
-			expandedPath := dbc.Path
-			if !filepath.IsAbs(expandedPath) {
-				expandedPath, _ = filepath.Abs(expandedPath)
-			}
-			if expandedPath == dbPath {
-				dbConfig = dbc
-				break
-			}
+	var dbConfig *DBConfig
+	config, configErr := ReadConfig(resolvedConfigPath, !*noExpandEnv)
+	if configErr != nil && (explicitConfig || !errors.Is(configErr, ErrConfigFileNotFound)) {
+		return fmt.Errorf("cannot read config: %w", configErr)
+	}
+
+	// Find database config
+	for _, dbc := range config.DBs {
+		expandedPath := dbc.Path
+		if !filepath.IsAbs(expandedPath) {
+			expandedPath, _ = filepath.Abs(expandedPath)
+		}
+		if expandedPath == dbPath {
+			dbConfig = dbc
+			break
 		}
 	}
 
@@ -163,7 +164,7 @@ Usage:
 Arguments:
 
 	-config PATH
-	    Specifies the configuration file.
+	    Specifies the configuration file. Use "-" to read from standard input.
 	    Defaults to %s
 
 	-no-expand-env
@@ -182,6 +183,9 @@ Examples:
 
 	# Reset using a specific configuration file
 	litestream reset -config /etc/litestream.yml /path/to/database.db
+
+	# Reset using configuration from standard input
+	cat /etc/litestream.yml | litestream reset -config - /path/to/database.db
 
 `[1:],
 		DefaultConfigPath(),

@@ -2,14 +2,15 @@ package litestream
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -594,6 +595,16 @@ func (r *Replica) CalcRestoreTarget(ctx context.Context, opt RestoreOptions) (up
 	return updatedAt, nil
 }
 
+// newRestoreDecoder returns an LTX decoder for paths that materialize a
+// database file and never read the decoder's page index. Retaining the index
+// would build a map with one entry per page, which dominates peak memory when
+// restoring large databases (#1486). Close still validates the index either way.
+func newRestoreDecoder(r io.Reader) *ltx.Decoder {
+	dec := ltx.NewDecoder(r)
+	dec.SetRetainPageIndex(false)
+	return dec
+}
+
 // Replica restores the database from a replica based on the options given.
 // This method will restore into opt.OutputPath, if specified, or into the
 // DB's original database path. It can optionally restore from a specific
@@ -605,7 +616,17 @@ func (r *Replica) CalcRestoreTarget(ctx context.Context, opt RestoreOptions) (up
 // compares snapshots from both formats and uses whichever has the better backup:
 // - With timestamp: uses the format with the most recent snapshot before timestamp
 // - Without timestamp: uses the format with the most recent backup overall
-func (r *Replica) Restore(ctx context.Context, opt RestoreOptions) (err error) {
+func (r *Replica) Restore(ctx context.Context, opt RestoreOptions) error {
+	return r.restore(ctx, opt, nil)
+}
+
+func (r *Replica) RestoreWithTXID(ctx context.Context, opt RestoreOptions) (ltx.TXID, error) {
+	var txid ltx.TXID
+	err := r.restore(ctx, opt, &txid)
+	return txid, err
+}
+
+func (r *Replica) restore(ctx context.Context, opt RestoreOptions, restoredTXID *ltx.TXID) (err error) {
 	// Validate options.
 	if opt.OutputPath == "" {
 		return fmt.Errorf("output path required")
@@ -700,37 +721,6 @@ func (r *Replica) Restore(ctx context.Context, opt RestoreOptions) (err error) {
 		return fmt.Errorf("cannot calc restore plan: %w", err)
 	}
 
-	r.Logger().Debug("restore plan", "n", len(infos), "txid", infos[len(infos)-1].MaxTXID, "timestamp", infos[len(infos)-1].CreatedAt)
-
-	rdrs := make([]io.Reader, 0, len(infos))
-	defer func() {
-		for _, rd := range rdrs {
-			if closer, ok := rd.(io.Closer); ok {
-				_ = closer.Close()
-			}
-		}
-	}()
-
-	for _, info := range infos {
-		// Validate file size - must be at least header size to be readable
-		if info.Size < ltx.HeaderSize {
-			return fmt.Errorf("invalid ltx file: level=%d min=%s max=%s has size %d bytes (minimum %d)",
-				info.Level, info.MinTXID, info.MaxTXID, info.Size, ltx.HeaderSize)
-		}
-	}
-
-	readers, err := r.openRestoreFiles(ctx, infos)
-	if err != nil {
-		return err
-	}
-	for _, rd := range readers {
-		rdrs = append(rdrs, rd)
-	}
-
-	if len(rdrs) == 0 {
-		return fmt.Errorf("no matching backup files available")
-	}
-
 	// Create parent directory if it doesn't exist.
 	var dirInfo os.FileInfo
 	if db := r.DB(); db != nil {
@@ -742,7 +732,7 @@ func (r *Replica) Restore(ctx context.Context, opt RestoreOptions) (err error) {
 
 	// Output to temp file & atomically rename.
 	tmpOutputPath := opt.OutputPath + ".tmp"
-	r.Logger().Debug("compacting into database", "path", tmpOutputPath, "n", len(rdrs))
+	r.Logger().Debug("compacting into database", "path", tmpOutputPath, "n", len(infos))
 	defer func() { _ = os.Remove(tmpOutputPath) }()
 
 	f, err := os.Create(tmpOutputPath)
@@ -751,21 +741,40 @@ func (r *Replica) Restore(ctx context.Context, opt RestoreOptions) (err error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	pr, pw := io.Pipe()
-
-	go func() {
-		c, err := ltx.NewCompactor(pw, rdrs)
-		if err != nil {
-			pw.CloseWithError(fmt.Errorf("new ltx compactor: %w", err))
-			return
+	targetTXID := infos[len(infos)-1].MaxTXID
+	for attempt := 0; ; attempt++ {
+		err := r.restorePlan(ctx, f, infos)
+		if err == nil {
+			break
 		}
-		c.HeaderFlags = ltx.HeaderFlagNoChecksum
-		_ = pw.CloseWithError(c.Compact(ctx))
-	}()
-
-	dec := ltx.NewDecoder(pr)
-	if err := dec.DecodeDatabaseTo(f); err != nil {
-		return fmt.Errorf("decode database: %w", err)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if attempt >= 3 {
+			return fmt.Errorf("restore plan retries exhausted for txid %s: %w", targetTXID, err)
+		}
+		r.Logger().Debug("restore file disappeared, recalculating plan", "target", targetTXID, "attempt", attempt+1, "error", err)
+		replanTXID := targetTXID
+		if opt.TXID == 0 && opt.Timestamp.IsZero() {
+			replanTXID = 0
+		}
+		infos, err = CalcRestorePlan(ctx, r.Client, replanTXID, time.Time{}, r.Logger())
+		if err != nil {
+			if replanTXID != 0 && errors.Is(err, ErrTxNotAvailable) {
+				return fmt.Errorf("restore target txid %s is no longer available: %w", targetTXID, err)
+			}
+			return fmt.Errorf("cannot recalculate restore plan for txid %s: %w", targetTXID, err)
+		}
+		targetTXID = infos[len(infos)-1].MaxTXID
+		if err := f.Truncate(0); err != nil {
+			return err
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
 	}
 
 	if err := f.Sync(); err != nil {
@@ -797,18 +806,15 @@ func (r *Replica) Restore(ctx context.Context, opt RestoreOptions) (err error) {
 
 	// Enter follow mode if enabled, continuously applying new LTX files.
 	if opt.Follow {
-		for _, rd := range rdrs {
-			if closer, ok := rd.(io.Closer); ok {
-				_ = closer.Close()
-			}
-		}
-		rdrs = nil
-
 		maxTXID := infos[len(infos)-1].MaxTXID
 		if err := WriteTXIDFile(opt.OutputPath, maxTXID); err != nil {
 			return fmt.Errorf("write initial txid file: %w", err)
 		}
 		return r.follow(ctx, opt.OutputPath, maxTXID, opt.FollowInterval)
+	}
+
+	if restoredTXID != nil {
+		*restoredTXID = targetTXID
 	}
 
 	return nil
@@ -847,6 +853,93 @@ func (r *Replica) openRestoreFiles(ctx context.Context, infos []*ltx.FileInfo) (
 	}
 	wg.Wait()
 	return readers, nil
+}
+
+func newRestoreCompactor(w io.Writer, rdrs []io.Reader, spillDir string) (*ltx.Compactor, error) {
+	if len(rdrs) == 0 {
+		return nil, fmt.Errorf("at least one input reader required")
+	}
+
+	last := len(rdrs) - 1
+	finalHeader, replay, err := ltx.PeekHeader(rdrs[last])
+	if err != nil {
+		return nil, fmt.Errorf("peek final input header: %w", err)
+	}
+	if closer, ok := rdrs[last].(io.Closer); ok {
+		rdrs[last] = internal.NewReadCloser(replay, closer)
+	} else {
+		rdrs[last] = replay
+	}
+
+	c, err := ltx.NewCompactor(w, rdrs)
+	if err != nil {
+		return nil, err
+	}
+	c.SetSpillDir(spillDir)
+	if finalHeader.NoChecksum() {
+		c.HeaderFlags = ltx.HeaderFlagNoChecksum
+	}
+	return c, nil
+}
+
+func (r *Replica) restorePlan(ctx context.Context, f *os.File, infos []*ltx.FileInfo) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	r.Logger().Debug("restore plan", "n", len(infos), "txid", infos[len(infos)-1].MaxTXID, "timestamp", infos[len(infos)-1].CreatedAt)
+
+	rdrs := make([]io.Reader, 0, len(infos))
+	defer func() {
+		for _, rd := range rdrs {
+			if closer, ok := rd.(io.Closer); ok {
+				_ = closer.Close()
+			}
+		}
+	}()
+
+	for _, info := range infos {
+		// Validate file size - must be at least header size to be readable
+		if info.Size < ltx.HeaderSize {
+			return fmt.Errorf("invalid ltx file: level=%d min=%s max=%s has size %d bytes (minimum %d)",
+				info.Level, info.MinTXID, info.MaxTXID, info.Size, ltx.HeaderSize)
+		}
+	}
+
+	readers, err := r.openRestoreFiles(ctx, infos)
+	if err != nil {
+		return err
+	}
+	for _, rd := range readers {
+		rdrs = append(rdrs, rd)
+	}
+
+	if len(rdrs) == 0 {
+		return fmt.Errorf("no matching backup files available")
+	}
+
+	pr, pw := io.Pipe()
+	done := make(chan struct{})
+	defer func() {
+		cancel()
+		_ = pr.Close()
+		<-done
+	}()
+	go func() {
+		defer close(done)
+		c, err := newRestoreCompactor(pw, rdrs, filepath.Dir(f.Name()))
+		if err != nil {
+			_ = pw.CloseWithError(fmt.Errorf("new ltx compactor: %w", err))
+			return
+		}
+		err = c.Compact(ctx)
+		if cleanupErr := c.Cleanup(); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("cleanup compactor: %w", cleanupErr))
+		}
+		_ = pw.CloseWithError(err)
+	}()
+	if err := newRestoreDecoder(pr).DecodeDatabaseTo(f); err != nil {
+		return fmt.Errorf("decode database: %w", err)
+	}
+	return nil
 }
 
 // follow enters a continuous restore loop, polling for new LTX files and
@@ -916,8 +1009,11 @@ func (r *Replica) follow(ctx context.Context, outputPath string, lastTXID ltx.TX
 func (r *Replica) applyNewLTXFiles(ctx context.Context, f *os.File, afterTXID ltx.TXID, pageSize uint32) (ltx.TXID, error) {
 	currentTXID := afterTXID
 
-	// Poll level 0 for the most recent incremental files.
-	itr, err := r.Client.LTXFiles(ctx, 0, currentTXID+1, false)
+	// Poll level 0 for the most recent incremental files. Level 0 files hold
+	// a single TXID, so seeking from currentTXID also returns the last applied
+	// file while it still exists. Seeing it means level 0 has not been
+	// compacted past us, so an idle tick doesn't need to search higher levels.
+	itr, err := r.Client.LTXFiles(ctx, 0, currentTXID, false)
 	if err != nil {
 		return currentTXID, fmt.Errorf("list level 0 ltx files: %w", err)
 	}
@@ -992,8 +1088,8 @@ func (r *Replica) applyNewLTXFiles(ctx context.Context, f *os.File, afterTXID lt
 // To prevent concurrent SQLite readers from seeing partial updates, we acquire
 // an exclusive file lock before writing. We also rewrite the SQLite header
 // (bytes 18-19) to indicate DELETE journal mode instead of WAL mode, and
-// randomize the schema change counter (bytes 24-27) to invalidate cached
-// schemas in other connections.
+// increment the file change counter (bytes 24-27) to invalidate cached
+// pages in other connections.
 func (r *Replica) applyLTXFile(ctx context.Context, f *os.File, info *ltx.FileInfo, pageSize uint32) error {
 	rc, err := r.Client.OpenLTXFile(ctx, info.Level, info.MinTXID, info.MaxTXID, 0, 0)
 	if err != nil {
@@ -1001,7 +1097,7 @@ func (r *Replica) applyLTXFile(ctx context.Context, f *os.File, info *ltx.FileIn
 	}
 	defer rc.Close()
 
-	dec := ltx.NewDecoder(rc)
+	dec := newRestoreDecoder(rc)
 	if err := dec.DecodeHeader(); err != nil {
 		return fmt.Errorf("decode header: %w", err)
 	}
@@ -1012,6 +1108,12 @@ func (r *Replica) applyLTXFile(ctx context.Context, f *os.File, info *ltx.FileIn
 		return fmt.Errorf("acquire exclusive lock: %w", err)
 	}
 	defer internal.UnlockFile(f)
+
+	var counter [4]byte
+	if n, err := f.ReadAt(counter[:], 24); err != nil && !(err == io.EOF && n == 0) {
+		return fmt.Errorf("read change counter: %w", err)
+	}
+	binary.BigEndian.PutUint32(counter[:], binary.BigEndian.Uint32(counter[:])+1)
 
 	for {
 		var phdr ltx.PageHeader
@@ -1024,7 +1126,6 @@ func (r *Replica) applyLTXFile(ctx context.Context, f *os.File, info *ltx.FileIn
 
 		if phdr.Pgno == 1 && len(data) >= 28 {
 			data[18], data[19] = 0x01, 0x01
-			_, _ = rand.Read(data[24:28])
 		}
 
 		off := int64(phdr.Pgno-1) * int64(pageSize)
@@ -1034,6 +1135,18 @@ func (r *Replica) applyLTXFile(ctx context.Context, f *os.File, info *ltx.FileIn
 	}
 
 	if hdr.Commit > 0 {
+		var size [4]byte
+		binary.BigEndian.PutUint32(size[:], hdr.Commit)
+		if _, err := f.WriteAt(size[:], 28); err != nil {
+			return fmt.Errorf("write database size: %w", err)
+		}
+		if _, err := f.WriteAt(counter[:], 24); err != nil {
+			return fmt.Errorf("write change counter: %w", err)
+		}
+		if _, err := f.WriteAt(counter[:], 92); err != nil {
+			return fmt.Errorf("write version-valid-for: %w", err)
+		}
+
 		if err := f.Sync(); err != nil {
 			return fmt.Errorf("sync before truncate: %w", err)
 		}
@@ -1369,7 +1482,7 @@ func (r *Replica) appendWALSegmentV3(ctx context.Context, client ReplicaClientV3
 
 // checkpointV3 checkpoints the WAL file into the database.
 func checkpointV3(dbPath string) error {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", sqliteFileURI(dbPath))
 	if err != nil {
 		return err
 	}
@@ -1385,7 +1498,7 @@ func checkIntegrity(ctx context.Context, dbPath string, mode IntegrityCheckMode)
 		return nil
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", sqliteFileURI(dbPath))
 	if err != nil {
 		return fmt.Errorf("open database for integrity check: %w", err)
 	}
@@ -1573,6 +1686,7 @@ func CalcRestorePlan(ctx context.Context, client ReplicaClient, txID ltx.TXID, t
 	// Start with latest snapshot before target TXID or timestamp.
 	// Pass useMetadata flag to enable accurate timestamp fetching for timestamp-based restore.
 	var snapshot *ltx.FileInfo
+	var nearestAfter ltx.TXID
 	snapshotItr, err := client.LTXFiles(ctx, SnapshotLevel, 0, !timestamp.IsZero())
 	if err != nil {
 		return nil, err
@@ -1581,6 +1695,9 @@ func CalcRestorePlan(ctx context.Context, client ReplicaClient, txID ltx.TXID, t
 		info := snapshotItr.Item()
 		logger.Debug("finding snapshot before target TXID or timestamp", "snapshot", info.MaxTXID)
 		if txID != 0 && info.MaxTXID > txID {
+			if nearestAfter == 0 || info.MaxTXID < nearestAfter {
+				nearestAfter = info.MaxTXID
+			}
 			continue
 		}
 		if !timestamp.IsZero() && !info.CreatedAt.Before(timestamp) {
@@ -1659,28 +1776,165 @@ func CalcRestorePlan(ctx context.Context, client ReplicaClient, txID ltx.TXID, t
 		}
 	}
 
-	if len(infos) > 0 && txID == 0 && timestamp.IsZero() {
-		for _, cursor := range cursors {
-			if err := cursor.ensureCurrent(); err != nil {
-				return nil, err
-			}
-			if cursor.current != nil && cursor.current.MinTXID > currentMax+1 {
-				return nil, fmt.Errorf("non-contiguous ltx files: have up to %s but next file starts at %s", currentMax, cursor.current.MinTXID)
-			}
+	if len(infos) > 0 && txID == 0 {
+		if err := checkRestoreContiguity(ctx, client, cursors, currentMax, timestamp); err != nil {
+			return nil, err
 		}
 	}
 
-	if len(infos) == 0 {
-		return nil, ErrTxNotAvailable
+	if txID != 0 && currentMax < txID {
+		for _, cursor := range cursors {
+			if cursor.nearestAfter != 0 && (nearestAfter == 0 || cursor.nearestAfter < nearestAfter) {
+				nearestAfter = cursor.nearestAfter
+			}
+		}
+		before, after := "none", "none"
+		if currentMax != 0 {
+			before = currentMax.String()
+		}
+		if nearestAfter != 0 {
+			after = nearestAfter.String()
+		}
+		return nil, fmt.Errorf("txid %s unavailable (nearest covered TXIDs: before=%s, after=%s): %w", txID, before, after, ErrTxNotAvailable)
 	}
-	if txID != 0 && infos.MaxTXID() < txID {
+	if len(infos) == 0 {
 		return nil, ErrTxNotAvailable
 	}
 
 	return infos, nil
 }
 
+// checkRestoreContiguity verifies that no missing-TXID gap exists in the replica
+// up to the restore target. For latest restores (timestamp.IsZero()), any remaining
+// file starting past currentMax+1 is a gap. For timestamp restores, physical coverage
+// is tracked separately from the selected plan (via coveredMax) so compacted files
+// excluded because CreatedAt >= timestamp still bridge retained lower-level files,
+// while real gaps at or before timestamp still fail.
+func checkRestoreContiguity(ctx context.Context, client ReplicaClient, cursors []*restoreLevelCursor, currentMax ltx.TXID, timestamp time.Time) error {
+	if timestamp.IsZero() {
+		var nextGapTXID ltx.TXID
+		for _, cursor := range cursors {
+			if err := cursor.ensureCurrent(); err != nil {
+				return err
+			}
+			if cursor.current == nil || cursor.current.MinTXID <= currentMax+1 {
+				continue
+			}
+			if nextGapTXID == 0 || cursor.current.MinTXID < nextGapTXID {
+				nextGapTXID = cursor.current.MinTXID
+			}
+		}
+		if nextGapTXID != 0 {
+			return fmt.Errorf("non-contiguous ltx files: have up to %s but next file starts at %s", currentMax, nextGapTXID)
+		}
+		return nil
+	}
+
+	var lookahead [SnapshotLevel]*restoreLevelCursor
+	coveredMax := currentMax
+	for _, cursor := range cursors {
+		coveredMax = max(coveredMax, cursor.skippedAfterTimestampMax)
+	}
+
+	for {
+		// Extend physical coverage across any contiguous or overlapping files at or
+		// before timestamp. Stop each cursor as soon as CreatedAt > timestamp
+		// to avoid draining future storage pages.
+		for {
+			advanced := false
+			for _, cursor := range cursors {
+				if err := cursor.ensureCurrent(); err != nil {
+					return err
+				}
+				for cursor.current != nil &&
+					cursor.current.MinTXID <= coveredMax+1 &&
+					!cursor.current.CreatedAt.After(timestamp) {
+					coveredMax = max(coveredMax, cursor.current.MaxTXID)
+					cursor.current = nil
+					advanced = true
+					if err := cursor.ensureCurrent(); err != nil {
+						return err
+					}
+				}
+			}
+			if !advanced {
+				break
+			}
+		}
+
+		canBridge := slices.ContainsFunc(cursors, func(c *restoreLevelCursor) bool {
+			return c.current != nil && c.current.MinTXID <= coveredMax+1
+		})
+		var nextGapTXID ltx.TXID
+		for _, cursor := range cursors {
+			if cursor.current == nil || cursor.current.MinTXID <= coveredMax+1 {
+				continue
+			}
+			scan := cursor
+			if canBridge && cursor.current.CreatedAt.After(timestamp) {
+				level := cursor.current.Level
+				if lookahead[level] == nil {
+					itr, err := client.LTXFiles(ctx, level, cursor.current.MinTXID, true)
+					if err != nil {
+						return err
+					}
+					defer itr.Close()
+					lookahead[level] = &restoreLevelCursor{itr: itr}
+				}
+				scan = lookahead[level]
+			}
+			for {
+				if err := scan.ensureCurrent(); err != nil {
+					return err
+				}
+				if scan.current == nil || (nextGapTXID != 0 && scan.current.MinTXID >= nextGapTXID) {
+					break
+				}
+				if scan.current.MinTXID > coveredMax+1 && !scan.current.CreatedAt.After(timestamp) {
+					nextGapTXID = scan.current.MinTXID
+					break
+				}
+				scan.current = nil
+			}
+		}
+		if nextGapTXID == 0 {
+			return nil
+		}
+
+		// Before reporting a gap at nextGapTXID, check whether future-dated
+		// higher-level files (CreatedAt > timestamp, whose timestamp reflects
+		// MaxTXID) bridge coveredMax+1 toward nextGapTXID.
+		bridged := false
+		for coveredMax+1 < nextGapTXID {
+			extended := false
+			for _, cursor := range cursors {
+				for cursor.current != nil &&
+					cursor.current.MinTXID <= coveredMax+1 &&
+					coveredMax+1 < nextGapTXID {
+					coveredMax = max(coveredMax, cursor.current.MaxTXID)
+					cursor.current = nil
+					extended = true
+					bridged = true
+					if err := cursor.ensureCurrent(); err != nil {
+						return err
+					}
+				}
+			}
+			if !extended {
+				break
+			}
+		}
+		if !bridged {
+			return fmt.Errorf("non-contiguous ltx files: have up to %s but next file starts at %s", coveredMax, nextGapTXID)
+		}
+	}
+}
+
 type restoreLevelCursor struct {
+	nearestAfter ltx.TXID
+	// skippedAfterTimestampMax tracks the highest MaxTXID among contiguous files
+	// skipped solely because their CreatedAt was not before the target timestamp.
+	skippedAfterTimestampMax ltx.TXID
 	// itr streams LTX file infos for a single level in filename order.
 	itr ltx.FileIterator
 	// current holds the last item read from itr but not yet evaluated.
@@ -1719,9 +1973,13 @@ func (c *restoreLevelCursor) refresh(currentMax, txID ltx.TXID, timestamp time.T
 			continue
 		}
 		if txID != 0 && info.MaxTXID > txID {
+			if c.nearestAfter == 0 || info.MaxTXID < c.nearestAfter {
+				c.nearestAfter = info.MaxTXID
+			}
 			continue
 		}
 		if !timestamp.IsZero() && !info.CreatedAt.Before(timestamp) {
+			c.skippedAfterTimestampMax = max(c.skippedAfterTimestampMax, info.MaxTXID)
 			continue
 		}
 
