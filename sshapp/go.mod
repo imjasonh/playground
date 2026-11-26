@@ -3,17 +3,17 @@ module github.com/imjasonh/playground/sshapp
 go 1.27.0
 
 require (
-	charm.land/bubbletea/v2 v2.1.2
+	charm.land/bubbletea/v2 v2.1.3
 	charm.land/ssh v0.4.3
-	charm.land/wish/v2 v2.0.5
-	cloud.google.com/go/storage v1.71.0
+	charm.land/wish/v2 v2.0.6
+	cloud.google.com/go/storage v1.71.1
 	github.com/chainguard-dev/clog v1.8.1
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/sethvargo/go-envconfig v1.4.3
 	golang.org/x/crypto v0.59.0
-	k8s.io/api v0.37.2
-	k8s.io/apimachinery v0.37.2
-	k8s.io/client-go v0.37.2
+	k8s.io/api v0.37.3
+	k8s.io/apimachinery v0.37.3
+	k8s.io/client-go v0.37.3
 )
 
 require (
@@ -31,7 +31,7 @@ require (
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/keygen v0.5.4 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20261119151026-8ecbcf0e188c // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20261125122737-8ed499892fb4 // indirect
 	github.com/charmbracelet/x/ansi v0.11.10 // indirect
 	github.com/charmbracelet/x/conpty v0.2.0 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect

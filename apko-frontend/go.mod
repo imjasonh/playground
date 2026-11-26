@@ -16,7 +16,7 @@ require (
 
 require (
 	chainguard.dev/go-grpc-kit v0.21.0 // indirect
-	chainguard.dev/sdk v0.2.28 // indirect
+	chainguard.dev/sdk v0.3.7 // indirect
 	cloud.google.com/go/auth v0.24.5 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.3.1 // indirect
 	cloud.google.com/go/compute/metadata v0.10.0 // indirect
@@ -122,6 +122,6 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/ini.v1 v1.68.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	k8s.io/apimachinery v0.37.2 // indirect
+	k8s.io/apimachinery v0.37.3 // indirect
 	sigs.k8s.io/release-utils v0.12.5 // indirect
 )
