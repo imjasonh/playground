@@ -108,9 +108,6 @@ func (c *RestoreCommand) Run(ctx context.Context, args []string) (err error) {
 			return err
 		}
 	} else {
-		if *configPath == "" {
-			*configPath = DefaultConfigPath()
-		}
 		if r, err = c.loadFromConfig(ctx, fs.Arg(0), *configPath, !*noExpandEnv, *ifDBNotExists, &opt); errors.Is(err, errSkipDBExists) {
 			slog.Info("database already exists, skipping")
 			return nil
@@ -122,7 +119,7 @@ func (c *RestoreCommand) Run(ctx context.Context, args []string) (err error) {
 	if *dryRun {
 		plan, err := c.dryRunPlan(ctx, fs.Arg(0), r, opt)
 		if errors.Is(err, litestream.ErrTxNotAvailable) {
-			return fmt.Errorf("no matching backup files available")
+			return fmt.Errorf("no matching backup files available: %w", err)
 		} else if err != nil {
 			return err
 		}
@@ -144,25 +141,18 @@ func (c *RestoreCommand) Run(ctx context.Context, args []string) (err error) {
 		}
 	}
 
-	txid := c.restoreTXID(ctx, r, opt)
-	start := time.Now()
-	if err := r.Restore(ctx, opt); errors.Is(err, litestream.ErrTxNotAvailable) {
+	result, err := c.restore(ctx, r, opt, *integrityCheck)
+	if errors.Is(err, litestream.ErrTxNotAvailable) {
 		if *ifReplicaExists {
 			slog.Info("no matching backups found")
 			return nil
 		}
-		return fmt.Errorf("no matching backup files available")
+		return fmt.Errorf("no matching backup files available: %w", err)
 	} else if err != nil {
 		return err
 	}
 	if *jsonOutput {
-		output, err := json.MarshalIndent(RestoreResult{
-			DBPath:         opt.OutputPath,
-			Replica:        r.Client.Type(),
-			TXID:           txid,
-			DurationMS:     time.Since(start).Milliseconds(),
-			IntegrityCheck: *integrityCheck,
-		}, "", "  ")
+		output, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to format response: %w", err)
 		}
@@ -255,44 +245,52 @@ func (c *RestoreCommand) printDryRunPlan(plan RestorePlan) {
 	}
 }
 
-func (c *RestoreCommand) restoreTXID(ctx context.Context, r *litestream.Replica, opt litestream.RestoreOptions) string {
-	if opt.TXID != 0 {
-		return opt.TXID.String()
+func (c *RestoreCommand) restore(ctx context.Context, r *litestream.Replica, opt litestream.RestoreOptions, integrityCheck string) (RestoreResult, error) {
+	start := time.Now()
+	txid, err := r.RestoreWithTXID(ctx, opt)
+	if err != nil {
+		return RestoreResult{}, err
 	}
-	if opt.Follow {
-		return ""
+	result := RestoreResult{
+		DBPath:         opt.OutputPath,
+		Replica:        r.Client.Type(),
+		DurationMS:     time.Since(start).Milliseconds(),
+		IntegrityCheck: integrityCheck,
 	}
-	infos, err := litestream.CalcRestorePlan(ctx, r.Client, opt.TXID, opt.Timestamp, r.Logger())
-	if err != nil || len(infos) == 0 {
-		return ""
+	if txid != 0 {
+		result.TXID = txid.String()
 	}
-	return infos[len(infos)-1].MaxTXID.String()
+	return result, nil
 }
 
 func (c *RestoreCommand) prepareOutputPath(path string, force bool) error {
+	var removePaths []string
 	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return nil
-	} else if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("cannot access output path: %w", err)
 	}
-	if info.IsDir() {
-		return fmt.Errorf("cannot restore, output path is a directory: %s", path)
-	}
-
-	if info.Size() > 0 && !force {
-		return fmt.Errorf("cannot restore, output path already exists and is not empty: %s. Use -force to overwrite", path)
+	if info != nil {
+		if info.IsDir() {
+			return fmt.Errorf("cannot restore, output path is a directory: %s", path)
+		}
+		if info.Size() > 0 && !force {
+			return fmt.Errorf("cannot restore, output path already exists and is not empty: %s. Use -force to overwrite", path)
+		}
+		removePaths = append(removePaths, path)
 	}
 
 	for _, sidecarPath := range []string{path + "-wal", path + "-shm", path + "-journal"} {
-		if _, err := os.Stat(sidecarPath); err == nil && !force {
-			return fmt.Errorf("cannot restore, SQLite sidecar path already exists: %s. Use -force to overwrite", sidecarPath)
-		} else if err != nil && !os.IsNotExist(err) {
+		if _, err := os.Lstat(sidecarPath); os.IsNotExist(err) {
+			continue
+		} else if err != nil {
 			return fmt.Errorf("cannot access SQLite sidecar path: %w", err)
+		} else if !force {
+			return fmt.Errorf("cannot restore, SQLite sidecar path already exists: %s. Use -force to overwrite", sidecarPath)
 		}
+		removePaths = append(removePaths, sidecarPath)
 	}
 
-	for _, removePath := range []string{path, path + "-wal", path + "-shm", path + "-journal"} {
+	for _, removePath := range removePaths {
 		if err := os.Remove(removePath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove existing output path: %w", err)
 		}
@@ -331,7 +329,7 @@ func (c *RestoreCommand) loadFromURL(ctx context.Context, replicaURL string, ifD
 // loadFromConfig returns a replica & updates the restore options from a DB reference.
 func (c *RestoreCommand) loadFromConfig(_ context.Context, dbPath, configPath string, expandEnv, ifDBNotExists bool, opt *litestream.RestoreOptions) (*litestream.Replica, error) {
 	// Load configuration.
-	config, err := ReadConfigFile(configPath, expandEnv)
+	config, err := ReadConfig(configPath, expandEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +374,7 @@ Usage:
 Arguments:
 
 	-config PATH
-	    Specifies the configuration file.
+	    Specifies the configuration file. Use "-" to read from standard input.
 	    Defaults to %s
 
 	-no-expand-env
@@ -405,6 +403,7 @@ Arguments:
 
 	-force
 	    Overwrite an existing output database and SQLite sidecar files.
+	    Required to remove sidecar files even when the output database is absent.
 
 	-json
 	    Output raw JSON summary on successful restore.
@@ -433,6 +432,9 @@ Examples:
 
 	# Restore latest replica for database to original location.
 	$ litestream restore /path/to/db
+
+	# Restore latest replica using configuration from standard input.
+	$ cat /path/to/litestream.yml | litestream restore -config - /path/to/db
 
 	# Restore replica for database to a given point in time.
 	$ litestream restore -timestamp 2020-01-01T00:00:00Z /path/to/db

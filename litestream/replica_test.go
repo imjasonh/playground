@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -275,6 +276,360 @@ func TestReplica_RestoreRetriesInitialLTXOpenError(t *testing.T) {
 	if got, want := client.openCount, 3; got < want {
 		t.Fatalf("OpenLTXFile() count=%d, want at least %d", got, want)
 	}
+}
+
+func TestReplica_Restore_ChecksumTracked(t *testing.T) {
+	const pageSize = 512
+
+	page1 := bytes.Repeat([]byte{0x11}, pageSize)
+	page2 := bytes.Repeat([]byte{0x22}, pageSize)
+	updatedPage2 := bytes.Repeat([]byte{0x33}, pageSize)
+
+	snapshotChecksum := ltx.ChecksumFlag
+	snapshotChecksum = ltx.ChecksumFlag | (snapshotChecksum ^ ltx.ChecksumPage(1, page1))
+	snapshotChecksum = ltx.ChecksumFlag | (snapshotChecksum ^ ltx.ChecksumPage(2, page2))
+	updatedChecksum := ltx.ChecksumFlag | (snapshotChecksum ^ ltx.ChecksumPage(2, page2) ^ ltx.ChecksumPage(2, updatedPage2))
+	tests := []struct {
+		name                  string
+		snapshotNoChecksum    bool
+		incrementalNoChecksum bool
+	}{
+		{name: "tracked chain"},
+		{name: "tracked snapshot and legacy incremental", incrementalNoChecksum: true},
+		{name: "legacy snapshot and tracked incremental", snapshotNoChecksum: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := file.NewReplicaClient(t.TempDir())
+			snapshotHeader := ltx.Header{
+				Version:   ltx.Version,
+				PageSize:  pageSize,
+				Commit:    2,
+				MinTXID:   1,
+				MaxTXID:   1,
+				Timestamp: 1000,
+			}
+			snapshotPostChecksum := snapshotChecksum
+			if tt.snapshotNoChecksum {
+				snapshotHeader.Flags = ltx.HeaderFlagNoChecksum
+				snapshotPostChecksum = 0
+			}
+			writeRestoreLTXFile(t, client, litestream.SnapshotLevel, snapshotHeader, []uint32{1, 2}, [][]byte{page1, page2}, snapshotPostChecksum)
+
+			incrementalHeader := ltx.Header{
+				Version:          ltx.Version,
+				PageSize:         pageSize,
+				Commit:           2,
+				MinTXID:          2,
+				MaxTXID:          2,
+				Timestamp:        2000,
+				PreApplyChecksum: snapshotChecksum,
+			}
+			incrementalPostChecksum := updatedChecksum
+			if tt.incrementalNoChecksum {
+				incrementalHeader.Flags = ltx.HeaderFlagNoChecksum
+				incrementalHeader.PreApplyChecksum = 0
+				incrementalPostChecksum = 0
+			}
+			writeRestoreLTXFile(t, client, 0, incrementalHeader, []uint32{2}, [][]byte{updatedPage2}, incrementalPostChecksum)
+
+			r := litestream.NewReplicaWithClient(nil, client)
+			restorePath := filepath.Join(t.TempDir(), "restored.db")
+			if err := r.Restore(context.Background(), litestream.RestoreOptions{OutputPath: restorePath}); err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := os.ReadFile(restorePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := append(append([]byte(nil), page1...), updatedPage2...)
+			if !bytes.Equal(got, want) {
+				t.Fatalf("restored database mismatch: got %d bytes, want %d bytes", len(got), len(want))
+			}
+		})
+	}
+}
+
+func writeRestoreLTXFile(t testing.TB, client litestream.ReplicaClient, level int, hdr ltx.Header, pgnos []uint32, pages [][]byte, postApplyChecksum ltx.Checksum) {
+	t.Helper()
+
+	var buf bytes.Buffer
+	enc, err := ltx.NewEncoder(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := enc.EncodeHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	for i, pgno := range pgnos {
+		if err := enc.EncodePage(ltx.PageHeader{Pgno: pgno}, pages[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	enc.SetPostApplyChecksum(postApplyChecksum)
+	if err := enc.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	data := append([]byte(nil), buf.Bytes()...)
+	if err := ltx.NewDecoder(bytes.NewReader(data)).Verify(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.WriteLTXFile(context.Background(), level, hdr.MinTXID, hdr.MaxTXID, bytes.NewReader(data)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReplica_RestoreReplansDeletedFile(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		duringRead bool
+		txid       ltx.TXID
+		timestamp  time.Time
+	}{
+		{name: "initial_open"},
+		{name: "mid_read", duringRead: true},
+		{name: "txid", duringRead: true, txid: 2},
+		{name: "timestamp", duringRead: true, timestamp: time.Now().Add(time.Hour)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := &deletingRestoreClient{ReplicaClient: file.NewReplicaClient(t.TempDir()), duringRead: tc.duringRead}
+			snapshot := restoreReplanLTX(t, 1, 1, 1)
+			delta := restoreReplanLTX(t, 2, 2, 2)
+			later := restoreReplanLTX(t, 3, 3, 3)
+			if _, err := client.WriteLTXFile(ctx, litestream.SnapshotLevel, 1, 1, bytes.NewReader(snapshot)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := client.WriteLTXFile(ctx, 0, 2, 2, bytes.NewReader(delta)); err != nil {
+				t.Fatal(err)
+			}
+			client.promote = func() error {
+				if _, err := client.WriteLTXFile(ctx, 1, 2, 2, bytes.NewReader(delta)); err != nil {
+					return err
+				}
+				if _, err := client.WriteLTXFile(ctx, 0, 3, 3, bytes.NewReader(later)); err != nil {
+					return err
+				}
+				return client.DeleteLTXFiles(ctx, []*ltx.FileInfo{{Level: 0, MinTXID: 2, MaxTXID: 2}})
+			}
+			r := litestream.NewReplicaWithClient(nil, client)
+			output := filepath.Join(t.TempDir(), "restore.db")
+			if err := r.Restore(ctx, litestream.RestoreOptions{OutputPath: output, TXID: tc.txid, Timestamp: tc.timestamp}); err != nil {
+				t.Fatal(err)
+			}
+			if !client.deleted || !client.openedHigher {
+				t.Fatalf("deletion=%t higher-level read=%t", client.deleted, client.openedHigher)
+			}
+			wantValue := byte(2)
+			if tc.txid == 0 && tc.timestamp.IsZero() {
+				wantValue = 3
+			} else if client.openedLater {
+				t.Fatal("restore advanced beyond the original target")
+			}
+			if tc.duringRead && client.reopenOffset <= ltx.HeaderSize {
+				t.Fatalf("reopen offset=%d, expected a partial page read", client.reopenOffset)
+			}
+			data, err := os.ReadFile(output)
+			if err != nil || !bytes.Equal(data, bytes.Repeat([]byte{wantValue}, 4096)) {
+				t.Fatalf("restored data mismatch: size=%d err=%v", len(data), err)
+			}
+		})
+	}
+}
+
+func restoreReplanLTX(t *testing.T, minTXID, maxTXID ltx.TXID, value byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	enc, err := ltx.NewEncoder(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := enc.EncodeHeader(ltx.Header{Version: ltx.Version, Flags: ltx.HeaderFlagNoChecksum, PageSize: 4096, Commit: 1, MinTXID: minTXID, MaxTXID: maxTXID, Timestamp: time.Now().UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := enc.EncodePage(ltx.PageHeader{Pgno: 1}, bytes.Repeat([]byte{value}, 4096)); err != nil {
+		t.Fatal(err)
+	}
+	if err := enc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestReplica_RestoreReplanPastTarget(t *testing.T) {
+	for _, layout := range []string{"compacted_delta", "replacement_snapshot"} {
+		for _, duringRead := range []bool{false, true} {
+			for _, mode := range []string{"latest", "txid", "timestamp"} {
+				t.Run(fmt.Sprintf("%s/read=%t/%s", layout, duringRead, mode), func(t *testing.T) {
+					ctx := context.Background()
+					client := &deletingRestoreClient{ReplicaClient: file.NewReplicaClient(t.TempDir()), duringRead: duringRead}
+					createTestLTXFile(t, client, litestream.SnapshotLevel, 1, 1)
+					createTestLTXFile(t, client, 0, 2, 2)
+					level, minTXID := 1, ltx.TXID(2)
+					before := "0000000000000001"
+					if layout == "replacement_snapshot" {
+						level, minTXID = litestream.SnapshotLevel, 1
+						before = "none"
+					}
+					compacted := restoreReplanLTX(t, minTXID, 3, 3)
+					client.promote = func() error {
+						if _, err := client.WriteLTXFile(ctx, level, minTXID, 3, bytes.NewReader(compacted)); err != nil {
+							return err
+						}
+						deleted := []*ltx.FileInfo{{Level: 0, MinTXID: 2, MaxTXID: 2}}
+						if layout == "replacement_snapshot" {
+							deleted = append(deleted, &ltx.FileInfo{Level: litestream.SnapshotLevel, MinTXID: 1, MaxTXID: 1})
+						}
+						return client.DeleteLTXFiles(ctx, deleted)
+					}
+					output := filepath.Join(t.TempDir(), "restore.db")
+					opt := litestream.RestoreOptions{OutputPath: output}
+					switch mode {
+					case "txid":
+						opt.TXID = 2
+					case "timestamp":
+						opt.Timestamp = time.Now().Add(time.Hour)
+					}
+					restoredTXID, err := litestream.NewReplicaWithClient(nil, client).RestoreWithTXID(ctx, opt)
+					if mode == "latest" {
+						if restoredTXID != 3 {
+							t.Fatalf("restored TXID=%s, want 3", restoredTXID)
+						}
+						if err != nil {
+							t.Fatal(err)
+						}
+						data, err := os.ReadFile(output)
+						if err != nil || !bytes.Equal(data, bytes.Repeat([]byte{3}, 4096)) {
+							t.Fatalf("restored data mismatch: size=%d err=%v", len(data), err)
+						}
+					} else {
+						if restoredTXID != 0 {
+							t.Fatalf("failed restore reported TXID %s", restoredTXID)
+						}
+						if !errors.Is(err, litestream.ErrTxNotAvailable) {
+							t.Fatalf("error=%v, want unavailable target", err)
+						}
+						for _, text := range []string{"txid 0000000000000002 is no longer available", "before=" + before, "after=0000000000000003"} {
+							if !strings.Contains(err.Error(), text) {
+								t.Errorf("error=%v, want %q", err, text)
+							}
+						}
+						if _, err := os.Stat(output); !os.IsNotExist(err) {
+							t.Fatalf("partial output remains: %v", err)
+						}
+					}
+					if _, err := os.Stat(output + ".tmp"); !os.IsNotExist(err) {
+						t.Fatalf("temporary output remains: %v", err)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestReplica_RestoreReplanBounded(t *testing.T) {
+	for _, failure := range []error{os.ErrNotExist, context.Canceled, errors.New("invalid input")} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			client := file.NewReplicaClient(t.TempDir())
+			createTestLTXFile(t, client, litestream.SnapshotLevel, 1, 1)
+			var c mock.ReplicaClient
+			c.LTXFilesFunc = client.LTXFiles
+			opens := 0
+			c.OpenLTXFileFunc = func(context.Context, int, ltx.TXID, ltx.TXID, int64, int64) (io.ReadCloser, error) {
+				opens++
+				if errors.Is(failure, os.ErrNotExist) || errors.Is(failure, context.Canceled) {
+					return nil, failure
+				}
+				return io.NopCloser(bytes.NewReader(bytes.Repeat([]byte{0xff}, ltx.HeaderSize))), nil
+			}
+			output := filepath.Join(t.TempDir(), "restore.db")
+			err := litestream.NewReplicaWithClient(nil, &c).Restore(context.Background(), litestream.RestoreOptions{OutputPath: output})
+			if err == nil {
+				t.Fatal("expected failure")
+			}
+			want := 1
+			if errors.Is(failure, os.ErrNotExist) {
+				want = 8
+			} else if errors.Is(failure, context.Canceled) {
+				want = 2
+			}
+			if opens != want {
+				t.Fatalf("opens=%d, want %d", opens, want)
+			}
+			if errors.Is(failure, os.ErrNotExist) && !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("missing not-exist cause: %v", err)
+			}
+			for _, path := range []string{output, output + ".tmp"} {
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Fatalf("partial output remains: %s: %v", path, err)
+				}
+			}
+		})
+	}
+}
+
+type deletingRestoreClient struct {
+	litestream.ReplicaClient
+	duringRead   bool
+	deleted      bool
+	openedHigher bool
+	openedLater  bool
+	reopenOffset int64
+	promote      func() error
+}
+
+func (c *deletingRestoreClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
+	if level == 1 {
+		c.openedHigher = true
+	}
+	if maxTXID > 2 {
+		c.openedLater = true
+	}
+	if level != 0 || minTXID != 2 {
+		return c.ReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
+	}
+	if offset > 0 {
+		c.reopenOffset = offset
+	}
+	if c.deleted {
+		return c.ReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
+	}
+	if !c.duringRead {
+		c.deleted = true
+		if err := c.promote(); err != nil {
+			return nil, err
+		}
+		return nil, os.ErrNotExist
+	}
+	rc, err := c.ReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
+	if err != nil {
+		return nil, err
+	}
+	return &deletingRestoreReader{ReadCloser: rc, remaining: ltx.HeaderSize + 16, client: c}, nil
+}
+
+type deletingRestoreReader struct {
+	io.ReadCloser
+	remaining int
+	client    *deletingRestoreClient
+}
+
+func (r *deletingRestoreReader) Read(p []byte) (int, error) {
+	if r.remaining == 0 {
+		r.client.deleted = true
+		if err := r.client.promote(); err != nil {
+			return 0, err
+		}
+		return 0, io.ErrUnexpectedEOF
+	}
+	if len(p) > r.remaining {
+		p = p[:r.remaining]
+	}
+	n, err := r.ReadCloser.Read(p)
+	r.remaining -= n
+	return n, err
 }
 
 type transientOpenFailureClient struct {
@@ -566,6 +921,527 @@ func TestReplica_CalcRestorePlan(t *testing.T) {
 			t.Fatalf("expected ErrTxNotAvailable, got %v", err)
 		}
 	})
+
+	t.Run("TimestampGapFails", func(t *testing.T) {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		var c mock.ReplicaClient
+		r := litestream.NewReplicaWithClient(db, &c)
+		c.LTXFilesFunc = func(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+			switch level {
+			case litestream.SnapshotLevel:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: litestream.SnapshotLevel, MinTXID: 1, MaxTXID: 1, CreatedAt: base},
+				}), nil
+			case 0:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: 0, MinTXID: 1, MaxTXID: 1, CreatedAt: base},
+					{Level: 0, MinTXID: 2, MaxTXID: 2, CreatedAt: base.Add(1 * time.Minute)},
+					{Level: 0, MinTXID: 3, MaxTXID: 3, CreatedAt: base.Add(2 * time.Minute)},
+					{Level: 0, MinTXID: 4, MaxTXID: 4, CreatedAt: base.Add(3 * time.Minute)},
+					// TXID 5 missing
+					{Level: 0, MinTXID: 6, MaxTXID: 6, CreatedAt: base.Add(5 * time.Minute)},
+					{Level: 0, MinTXID: 7, MaxTXID: 7, CreatedAt: base.Add(6 * time.Minute)},
+					{Level: 0, MinTXID: 8, MaxTXID: 8, CreatedAt: base.Add(7 * time.Minute)},
+				}), nil
+			default:
+				return ltx.NewFileInfoSliceIterator(nil), nil
+			}
+		}
+
+		for _, target := range []time.Time{base.Add(7 * time.Minute), base.Add(10 * time.Minute)} {
+			_, err := litestream.CalcRestorePlan(t.Context(), r.Client, 0, target, r.Logger())
+			if err == nil {
+				t.Fatalf("expected non-contiguous error for timestamp %v, got nil", target)
+			}
+			want := "non-contiguous ltx files: have up to 0000000000000004 but next file starts at 0000000000000006"
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("err=%q, want substring %q", err.Error(), want)
+			}
+		}
+	})
+
+	t.Run("TimestampGapSingleFileAtExactTimestampFails", func(t *testing.T) {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		var c mock.ReplicaClient
+		r := litestream.NewReplicaWithClient(db, &c)
+		c.LTXFilesFunc = func(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+			switch level {
+			case litestream.SnapshotLevel:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: litestream.SnapshotLevel, MinTXID: 1, MaxTXID: 1, CreatedAt: base},
+				}), nil
+			case 0:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: 0, MinTXID: 2, MaxTXID: 2, CreatedAt: base.Add(1 * time.Minute)},
+					{Level: 0, MinTXID: 3, MaxTXID: 3, CreatedAt: base.Add(2 * time.Minute)},
+					{Level: 0, MinTXID: 4, MaxTXID: 4, CreatedAt: base.Add(3 * time.Minute)},
+					// TXID 5 missing; TXID 6 exists at exact target timestamp.
+					{Level: 0, MinTXID: 6, MaxTXID: 6, CreatedAt: base.Add(5 * time.Minute)},
+				}), nil
+			default:
+				return ltx.NewFileInfoSliceIterator(nil), nil
+			}
+		}
+
+		_, err := litestream.CalcRestorePlan(t.Context(), r.Client, 0, base.Add(5*time.Minute), r.Logger())
+		if err == nil {
+			t.Fatal("expected non-contiguous error, got nil")
+		}
+		want := "non-contiguous ltx files: have up to 0000000000000004 but next file starts at 0000000000000006"
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err=%q, want substring %q", err.Error(), want)
+		}
+	})
+
+	t.Run("TimestampHealthyStopBeforeFutureFiles", func(t *testing.T) {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		var c mock.ReplicaClient
+		r := litestream.NewReplicaWithClient(db, &c)
+		c.LTXFilesFunc = func(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+			switch level {
+			case litestream.SnapshotLevel:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: litestream.SnapshotLevel, MinTXID: 1, MaxTXID: 1, CreatedAt: base},
+				}), nil
+			case 0:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: 0, MinTXID: 2, MaxTXID: 2, CreatedAt: base.Add(1 * time.Minute)},
+					{Level: 0, MinTXID: 3, MaxTXID: 3, CreatedAt: base.Add(2 * time.Minute)},
+					{Level: 0, MinTXID: 4, MaxTXID: 4, CreatedAt: base.Add(3 * time.Minute)},
+					{Level: 0, MinTXID: 5, MaxTXID: 5, CreatedAt: base.Add(4 * time.Minute)},
+					{Level: 0, MinTXID: 6, MaxTXID: 6, CreatedAt: base.Add(5 * time.Minute)},
+				}), nil
+			default:
+				return ltx.NewFileInfoSliceIterator(nil), nil
+			}
+		}
+
+		plan, err := litestream.CalcRestorePlan(t.Context(), r.Client, 0, base.Add(2*time.Minute+30*time.Second), r.Logger())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got, want := len(plan), 3; got != want {
+			t.Fatalf("len(plan)=%d, want %d", got, want)
+		}
+		if got, want := plan[len(plan)-1].MaxTXID, ltx.TXID(3); got != want {
+			t.Fatalf("maxTXID=%s, want %s", got, want)
+		}
+	})
+
+	t.Run("TimestampGapAfterTargetSucceeds", func(t *testing.T) {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		var c mock.ReplicaClient
+		r := litestream.NewReplicaWithClient(db, &c)
+		c.LTXFilesFunc = func(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+			switch level {
+			case litestream.SnapshotLevel:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: litestream.SnapshotLevel, MinTXID: 1, MaxTXID: 1, CreatedAt: base},
+				}), nil
+			case 0:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: 0, MinTXID: 2, MaxTXID: 2, CreatedAt: base.Add(1 * time.Minute)},
+					{Level: 0, MinTXID: 3, MaxTXID: 3, CreatedAt: base.Add(2 * time.Minute)},
+					{Level: 0, MinTXID: 4, MaxTXID: 4, CreatedAt: base.Add(3 * time.Minute)},
+					// TXID 5 missing
+					{Level: 0, MinTXID: 6, MaxTXID: 6, CreatedAt: base.Add(5 * time.Minute)},
+				}), nil
+			default:
+				return ltx.NewFileInfoSliceIterator(nil), nil
+			}
+		}
+
+		// Target before TXID 4 (gap is strictly after target).
+		plan, err := litestream.CalcRestorePlan(t.Context(), r.Client, 0, base.Add(2*time.Minute+30*time.Second), r.Logger())
+		if err != nil {
+			t.Fatalf("unexpected error before gap: %v", err)
+		}
+		if got, want := plan[len(plan)-1].MaxTXID, ltx.TXID(3); got != want {
+			t.Fatalf("maxTXID=%s, want %s", got, want)
+		}
+
+		// Target after TXID 4 but strictly before TXID 6.
+		plan, err = litestream.CalcRestorePlan(t.Context(), r.Client, 0, base.Add(4*time.Minute), r.Logger())
+		if err != nil {
+			t.Fatalf("unexpected error between TXID 4 and TXID 6: %v", err)
+		}
+		if got, want := plan[len(plan)-1].MaxTXID, ltx.TXID(4); got != want {
+			t.Fatalf("maxTXID=%s, want %s", got, want)
+		}
+	})
+
+	t.Run("TimestampBridgedByCompactedLevelAfterL0Retention", func(t *testing.T) {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		var c mock.ReplicaClient
+		r := litestream.NewReplicaWithClient(db, &c)
+		c.LTXFilesFunc = func(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+			switch level {
+			case litestream.SnapshotLevel:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: litestream.SnapshotLevel, MinTXID: 1, MaxTXID: 1, CreatedAt: base},
+				}), nil
+			case 1:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: 1, MinTXID: 2, MaxTXID: 4, CreatedAt: base.Add(3 * time.Minute)},
+					// L1 covers 5..8, created after target timestamp.
+					{Level: 1, MinTXID: 5, MaxTXID: 8, CreatedAt: base.Add(8 * time.Minute)},
+				}), nil
+			case 0:
+				// L0(5) expired via EnforceL0Retention while L0(6..7) are still retained.
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: 0, MinTXID: 6, MaxTXID: 6, CreatedAt: base.Add(5 * time.Minute)},
+					{Level: 0, MinTXID: 7, MaxTXID: 7, CreatedAt: base.Add(6 * time.Minute)},
+				}), nil
+			default:
+				return ltx.NewFileInfoSliceIterator(nil), nil
+			}
+		}
+
+		plan, err := litestream.CalcRestorePlan(t.Context(), r.Client, 0, base.Add(7*time.Minute), r.Logger())
+		if err != nil {
+			t.Fatalf("unexpected error on healthy compacted replica: %v", err)
+		}
+		if got, want := len(plan), 2; got != want {
+			t.Fatalf("len(plan)=%d, want %d", got, want)
+		}
+		if got, want := plan[len(plan)-1].MaxTXID, ltx.TXID(4); got != want {
+			t.Fatalf("maxTXID=%s, want %s", got, want)
+		}
+	})
+
+	t.Run("TimestampBridgedByConsecutiveAndOverlappingCompactedLevels", func(t *testing.T) {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		for _, tc := range []struct {
+			name string
+			l2   []*ltx.FileInfo
+			l1   []*ltx.FileInfo
+			l0   []*ltx.FileInfo
+		}{
+			{
+				name: "ConsecutiveHigherLevelFiles",
+				l1: []*ltx.FileInfo{
+					{Level: 1, MinTXID: 5, MaxTXID: 8, CreatedAt: base.Add(7 * time.Minute)},
+					{Level: 1, MinTXID: 9, MaxTXID: 12, CreatedAt: base.Add(8 * time.Minute)},
+				},
+				l0: []*ltx.FileInfo{
+					// L0(5..9) purged by retention; L0(10) retained at exact target timestamp.
+					{Level: 0, MinTXID: 10, MaxTXID: 10, CreatedAt: base.Add(7 * time.Minute)},
+				},
+			},
+			{
+				name: "OverlappingHigherLevelFiles",
+				l2: []*ltx.FileInfo{
+					{Level: 2, MinTXID: 5, MaxTXID: 8, CreatedAt: base.Add(8 * time.Minute)},
+				},
+				l1: []*ltx.FileInfo{
+					{Level: 1, MinTXID: 6, MaxTXID: 12, CreatedAt: base.Add(8 * time.Minute)},
+				},
+				l0: []*ltx.FileInfo{
+					{Level: 0, MinTXID: 10, MaxTXID: 10, CreatedAt: base.Add(7 * time.Minute)},
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var c mock.ReplicaClient
+				r := litestream.NewReplicaWithClient(db, &c)
+				c.LTXFilesFunc = func(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+					switch level {
+					case litestream.SnapshotLevel:
+						return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+							{Level: litestream.SnapshotLevel, MinTXID: 1, MaxTXID: 4, CreatedAt: base},
+						}), nil
+					case 2:
+						return ltx.NewFileInfoSliceIterator(tc.l2), nil
+					case 1:
+						return ltx.NewFileInfoSliceIterator(tc.l1), nil
+					case 0:
+						return ltx.NewFileInfoSliceIterator(tc.l0), nil
+					default:
+						return ltx.NewFileInfoSliceIterator(nil), nil
+					}
+				}
+
+				plan, err := litestream.CalcRestorePlan(t.Context(), r.Client, 0, base.Add(7*time.Minute), r.Logger())
+				if err != nil {
+					t.Fatalf("unexpected error on healthy bridged replica: %v", err)
+				}
+				if got, want := len(plan), 1; got != want {
+					t.Fatalf("len(plan)=%d, want %d", got, want)
+				}
+				if got, want := plan[0].MaxTXID, ltx.TXID(4); got != want {
+					t.Fatalf("maxTXID=%s, want %s", got, want)
+				}
+			})
+		}
+	})
+
+	t.Run("TimestampGapBeyondCompactedRangeFails", func(t *testing.T) {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		for _, tc := range []struct {
+			name     string
+			l1       []*ltx.FileInfo
+			l0       []*ltx.FileInfo
+			targetTS time.Time
+			wantErr  string
+		}{
+			{
+				name: "SkewedTimestampsAfterMissingTXID",
+				l0: []*ltx.FileInfo{
+					{Level: 0, MinTXID: 6, MaxTXID: 6, CreatedAt: base.Add(10 * time.Minute)},
+					{Level: 0, MinTXID: 7, MaxTXID: 7, CreatedAt: base.Add(6 * time.Minute)},
+					{Level: 0, MinTXID: 8, MaxTXID: 8, CreatedAt: base.Add(7 * time.Minute)},
+				},
+				targetTS: base.Add(7 * time.Minute),
+				wantErr:  "non-contiguous ltx files: have up to 0000000000000004 but next file starts at 0000000000000007",
+			},
+			{
+				name: "SkewedTimestampsAfterFutureCompactedBridge",
+				l1: []*ltx.FileInfo{
+					{Level: 1, MinTXID: 5, MaxTXID: 6, CreatedAt: base.Add(8 * time.Minute)},
+					{Level: 1, MinTXID: 7, MaxTXID: 8, CreatedAt: base.Add(9 * time.Minute)},
+				},
+				l0: []*ltx.FileInfo{
+					{Level: 0, MinTXID: 9, MaxTXID: 9, CreatedAt: base.Add(10 * time.Minute)},
+					{Level: 0, MinTXID: 11, MaxTXID: 11, CreatedAt: base.Add(7 * time.Minute)},
+				},
+				targetTS: base.Add(7 * time.Minute),
+				wantErr:  "non-contiguous ltx files: have up to 0000000000000009 but next file starts at 000000000000000b",
+			},
+			{
+				name: "FileAtExactTargetTimestamp",
+				l1: []*ltx.FileInfo{
+					{Level: 1, MinTXID: 5, MaxTXID: 8, CreatedAt: base.Add(8 * time.Minute)},
+				},
+				l0: []*ltx.FileInfo{
+					{Level: 0, MinTXID: 6, MaxTXID: 6, CreatedAt: base.Add(5 * time.Minute)},
+					{Level: 0, MinTXID: 10, MaxTXID: 10, CreatedAt: base.Add(8 * time.Minute)},
+				},
+				targetTS: base.Add(8 * time.Minute),
+				wantErr:  "non-contiguous ltx files: have up to 0000000000000008 but next file starts at 000000000000000a",
+			},
+			{
+				name: "MetadataFallbackOrClockSkewFileBeforeTargetTimestamp",
+				l1: []*ltx.FileInfo{
+					{Level: 1, MinTXID: 5, MaxTXID: 8, CreatedAt: base.Add(8 * time.Minute)},
+				},
+				l0: []*ltx.FileInfo{
+					{Level: 0, MinTXID: 6, MaxTXID: 6, CreatedAt: base.Add(5 * time.Minute)},
+					{Level: 0, MinTXID: 10, MaxTXID: 10, CreatedAt: base.Add(6 * time.Minute)},
+				},
+				targetTS: base.Add(7 * time.Minute),
+				wantErr:  "non-contiguous ltx files: have up to 0000000000000008 but next file starts at 000000000000000a",
+			},
+			{
+				name: "ContiguousFileAtBoundaryFollowedByGapAtTargetTimestamp",
+				l1: []*ltx.FileInfo{
+					{Level: 1, MinTXID: 5, MaxTXID: 8, CreatedAt: base.Add(7 * time.Minute)},
+				},
+				l0: []*ltx.FileInfo{
+					{Level: 0, MinTXID: 9, MaxTXID: 9, CreatedAt: base.Add(7 * time.Minute)},
+					// TXID 10 missing across all levels; TXID 11 at target timestamp.
+					{Level: 0, MinTXID: 11, MaxTXID: 11, CreatedAt: base.Add(7 * time.Minute)},
+				},
+				targetTS: base.Add(7 * time.Minute),
+				wantErr:  "non-contiguous ltx files: have up to 0000000000000009 but next file starts at 000000000000000b",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var c mock.ReplicaClient
+				r := litestream.NewReplicaWithClient(db, &c)
+				c.LTXFilesFunc = func(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+					switch level {
+					case litestream.SnapshotLevel:
+						return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+							{Level: litestream.SnapshotLevel, MinTXID: 1, MaxTXID: 4, CreatedAt: base},
+						}), nil
+					case 1:
+						return ltx.NewFileInfoSliceIterator(tc.l1), nil
+					case 0:
+						return ltx.NewFileInfoSliceIterator(tc.l0), nil
+					default:
+						return ltx.NewFileInfoSliceIterator(nil), nil
+					}
+				}
+
+				_, err := litestream.CalcRestorePlan(t.Context(), r.Client, 0, tc.targetTS, r.Logger())
+				if err == nil {
+					t.Fatalf("expected non-contiguous error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err=%q, want substring %q", err.Error(), tc.wantErr)
+				}
+			})
+		}
+	})
+
+	t.Run("TimestampGapAcrossLevelsReportsLowestNextTXID", func(t *testing.T) {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		var c mock.ReplicaClient
+		r := litestream.NewReplicaWithClient(db, &c)
+		c.LTXFilesFunc = func(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+			switch level {
+			case litestream.SnapshotLevel:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: litestream.SnapshotLevel, MinTXID: 1, MaxTXID: 1, CreatedAt: base},
+				}), nil
+			case 1:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: 1, MinTXID: 10, MaxTXID: 12, CreatedAt: base.Add(8 * time.Minute)},
+				}), nil
+			case 0:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: 0, MinTXID: 2, MaxTXID: 4, CreatedAt: base.Add(3 * time.Minute)},
+					// TXID 5 missing across all levels.
+					{Level: 0, MinTXID: 6, MaxTXID: 6, CreatedAt: base.Add(5 * time.Minute)},
+				}), nil
+			default:
+				return ltx.NewFileInfoSliceIterator(nil), nil
+			}
+		}
+
+		_, err := litestream.CalcRestorePlan(t.Context(), r.Client, 0, base.Add(9*time.Minute), r.Logger())
+		if err == nil {
+			t.Fatal("expected non-contiguous error, got nil")
+		}
+		want := "non-contiguous ltx files: have up to 0000000000000004 but next file starts at 0000000000000006"
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err=%q, want substring %q", err.Error(), want)
+		}
+	})
+
+	t.Run("TimestampDoesNotDrainFuturePages", func(t *testing.T) {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		var l0NextCalls int
+		l0Files := make([]*ltx.FileInfo, 0, 100)
+		for i := range 100 {
+			txid := ltx.TXID(6 + i)
+			l0Files = append(l0Files, &ltx.FileInfo{
+				Level:     0,
+				MinTXID:   txid,
+				MaxTXID:   txid,
+				CreatedAt: base.Add(time.Duration(8+i) * time.Minute),
+			})
+		}
+
+		var c mock.ReplicaClient
+		r := litestream.NewReplicaWithClient(db, &c)
+		c.LTXFilesFunc = func(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+			switch level {
+			case litestream.SnapshotLevel:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: litestream.SnapshotLevel, MinTXID: 1, MaxTXID: 4, CreatedAt: base},
+				}), nil
+			case 1:
+				return ltx.NewFileInfoSliceIterator([]*ltx.FileInfo{
+					{Level: 1, MinTXID: 5, MaxTXID: 105, CreatedAt: base.Add(110 * time.Minute)},
+				}), nil
+			case 0:
+				return &countingFileIterator{
+					FileIterator: ltx.NewFileInfoSliceIterator(l0Files),
+					nextCalls:    &l0NextCalls,
+				}, nil
+			default:
+				return ltx.NewFileInfoSliceIterator(nil), nil
+			}
+		}
+
+		plan, err := litestream.CalcRestorePlan(t.Context(), r.Client, 0, base.Add(7*time.Minute), r.Logger())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got, want := len(plan), 1; got != want {
+			t.Fatalf("len(plan)=%d, want %d", got, want)
+		}
+		if l0NextCalls > 1 {
+			t.Fatalf("l0 iterator drained %d items after target timestamp, want <= 1", l0NextCalls)
+		}
+	})
+}
+
+type countingFileIterator struct {
+	ltx.FileIterator
+	nextCalls *int
+}
+
+func (c *countingFileIterator) Next() bool {
+	*c.nextCalls++
+	return c.FileIterator.Next()
+}
+
+func TestReplica_Restore_MissingLTXFile(t *testing.T) {
+	ctx := t.Context()
+	c := file.NewReplicaClient(t.TempDir())
+
+	dbPath := filepath.Join(t.TempDir(), "db")
+	sqldb := testingutil.MustOpenSQLDB(t, dbPath)
+	defer testingutil.MustCloseSQLDB(t, sqldb)
+
+	db := testingutil.NewDB(t, dbPath)
+	db.MonitorInterval = 0
+	db.Replica = litestream.NewReplicaWithClient(db, c)
+	db.Replica.MonitorEnabled = false
+	if err := db.Open(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close(ctx) }()
+
+	if _, err := sqldb.Exec(`CREATE TABLE t (id INTEGER)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 8; i++ {
+		if _, err := sqldb.Exec(`INSERT INTO t VALUES (?)`, i); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Sync(ctx); err != nil {
+			t.Fatal(err)
+		} else if err := db.Replica.Sync(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 {
+			if _, err := db.Snapshot(ctx); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	// Remove TXID 5 (only L0 holds it).
+	if err := c.DeleteLTXFiles(ctx, []*ltx.FileInfo{{Level: 0, MinTXID: 5, MaxTXID: 5}}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		opt     litestream.RestoreOptions
+		wantErr string
+	}{
+		{
+			name:    "latest",
+			opt:     litestream.RestoreOptions{},
+			wantErr: "non-contiguous ltx files: have up to 0000000000000004 but next file starts at 0000000000000006",
+		},
+		{
+			name:    "txid",
+			opt:     litestream.RestoreOptions{TXID: 8},
+			wantErr: "txid 0000000000000008 unavailable",
+		},
+		{
+			name:    "timestamp",
+			opt:     litestream.RestoreOptions{Timestamp: time.Now().Add(time.Hour)},
+			wantErr: "non-contiguous ltx files: have up to 0000000000000004 but next file starts at 0000000000000006",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opt := tc.opt
+			opt.OutputPath = filepath.Join(t.TempDir(), "restored.db")
+			err := litestream.NewReplicaWithClient(nil, c).Restore(ctx, opt)
+			if err == nil {
+				t.Fatalf("restore (%s) succeeded across missing LTX file, want error", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("restore (%s) err=%q, want substring %q", tc.name, err.Error(), tc.wantErr)
+			}
+		})
+	}
 }
 
 func TestReplica_TimeBounds(t *testing.T) {
@@ -1208,15 +2084,32 @@ func TestReplica_RestoreV3(t *testing.T) {
 		c := file.NewReplicaClient(replicaDir)
 		r := litestream.NewReplicaWithClient(nil, c)
 
-		outputPath := tmpDir + "/restored.db"
+		filename := "restored#%23.db"
+		if runtime.GOOS != "windows" {
+			filename = "restored?#%23.db"
+		}
+		outputPath := filepath.Join(tmpDir, filename)
 		err := r.RestoreV3(ctx, litestream.RestoreOptions{
-			OutputPath: outputPath,
+			OutputPath:     outputPath,
+			IntegrityCheck: litestream.IntegrityCheckFull,
 		})
 		if err != nil {
 			t.Fatalf("RestoreV3 failed: %v", err)
 		}
 
-		verifyRestoredDB(t, outputPath)
+		readPath := filepath.Join(tmpDir, "verify.db")
+		if err := os.Rename(outputPath, readPath); err != nil {
+			t.Fatal(err)
+		}
+		restored := testingutil.MustOpenSQLDB(t, readPath)
+		defer testingutil.MustCloseSQLDB(t, restored)
+		var count int
+		if err := restored.QueryRowContext(ctx, `SELECT count(DISTINCT value) FROM test WHERE value IN ('wal0','wal1')`).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 2 {
+			t.Fatalf("restored %d distinct WAL rows, want 2", count)
+		}
 	})
 
 	t.Run("MissingWALIndex", func(t *testing.T) {

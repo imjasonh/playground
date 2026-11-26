@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,6 +115,53 @@ func TestReplica_ApplyNewLTXFiles_LevelZeroEmptyFallsBackToCompaction(t *testing
 	}
 	if got != 12 {
 		t.Fatalf("txid=%s, want %s", got, ltx.TXID(12))
+	}
+}
+
+func TestReplica_ApplyNewLTXFiles_IdleSkipsHigherLevels(t *testing.T) {
+	// The follower is caught up: level 0 still holds the file it applied last
+	// and nothing newer. Higher levels must not be listed on such a tick.
+	l0Info := &ltx.FileInfo{Level: 0, MinTXID: 10, MaxTXID: 10}
+	compactedInfo := &ltx.FileInfo{Level: 1, MinTXID: 1, MaxTXID: 10}
+
+	listed := make(map[int]int)
+	client := &followTestReplicaClient{}
+	client.LTXFilesFunc = func(_ context.Context, level int, seek ltx.TXID, _ bool) (ltx.FileIterator, error) {
+		listed[level]++
+
+		var all []*ltx.FileInfo
+		switch level {
+		case 0:
+			all = []*ltx.FileInfo{l0Info}
+		case 1:
+			all = []*ltx.FileInfo{compactedInfo}
+		}
+
+		infos := make([]*ltx.FileInfo, 0, len(all))
+		for _, info := range all {
+			if info.MinTXID >= seek {
+				infos = append(infos, info)
+			}
+		}
+		return ltx.NewFileInfoSliceIterator(infos), nil
+	}
+	client.OpenLTXFileFunc = func(_ context.Context, _ int, _, _ ltx.TXID, _, _ int64) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("unexpected open")
+	}
+
+	r := NewReplicaWithClient(nil, client)
+	f := mustCreateWritableDBFile(t)
+	defer func() { _ = f.Close() }()
+
+	got, err := r.applyNewLTXFiles(context.Background(), f, 10, 4096)
+	if err != nil {
+		t.Fatalf("apply new ltx files: %v", err)
+	}
+	if got != 10 {
+		t.Fatalf("txid=%s, want %s", got, ltx.TXID(10))
+	}
+	if len(listed) != 1 || listed[0] != 1 {
+		t.Fatalf("listings per level=%v, want only level 0 once", listed)
 	}
 }
 
@@ -418,6 +467,23 @@ func TestCheckIntegrity_None_Skips(t *testing.T) {
 	}
 }
 
+func TestCheckIntegrity_LiteralFilename(t *testing.T) {
+	dir := t.TempDir()
+	filename := "restored#%23.db"
+	if runtime.GOOS != "windows" {
+		filename = "restored?#%23.db"
+	}
+	path := filepath.Join(dir, filename)
+	if err := os.WriteFile(path, []byte("invalid SQLite database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []IntegrityCheckMode{IntegrityCheckQuick, IntegrityCheckFull} {
+		if err := checkIntegrity(t.Context(), path, mode); err == nil {
+			t.Errorf("integrity check mode %d passed for corrupt database %q", mode, filename)
+		}
+	}
+}
+
 func TestCheckIntegrity_CorruptDB(t *testing.T) {
 	dbPath := mustCreateValidSQLiteDB(t)
 
@@ -455,6 +521,149 @@ func TestCheckIntegrity_CorruptDB(t *testing.T) {
 	err = checkIntegrity(context.Background(), dbPath, IntegrityCheckFull)
 	if err == nil {
 		t.Fatal("expected integrity check to fail on corrupt database")
+	}
+}
+
+func TestApplyLTXFile_ChangeCounter(t *testing.T) {
+	const pageSize = 4096
+	for _, withPage1 := range []bool{false, true} {
+		for _, counter := range []uint32{41, ^uint32(0)} {
+			t.Run(fmt.Sprintf("page1=%t/counter=%d", withPage1, counter), func(t *testing.T) {
+				header := newSQLiteHeaderPage(pageSize)
+				binary.BigEndian.PutUint32(header[24:28], counter)
+				f := mustCreateWritableDBFile(t)
+				defer f.Close()
+				if _, err := f.WriteAt(header, 0); err != nil {
+					t.Fatal(err)
+				}
+				info := &ltx.FileInfo{Level: 0, MinTXID: 2, MaxTXID: 2}
+				data := mustBuildIncrementalLTX(t, 2, 2, pageSize, 2, 0xCD)
+				if withPage1 {
+					incoming := newSQLiteHeaderPage(pageSize)
+					incoming[18], incoming[19] = 2, 2
+					binary.BigEndian.PutUint32(incoming[24:28], counter-1)
+					data = mustBuildSnapshotLTX(t, 2, 2, pageSize, [][]byte{incoming, make([]byte, pageSize)})
+				}
+				client := &followTestReplicaClient{}
+				client.OpenLTXFileFunc = func(context.Context, int, ltx.TXID, ltx.TXID, int64, int64) (io.ReadCloser, error) {
+					return io.NopCloser(bytes.NewReader(data)), nil
+				}
+				r := NewReplicaWithClient(nil, client)
+				for i := uint32(1); i <= 2; i++ {
+					if err := r.applyLTXFile(context.Background(), f, info, pageSize); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := f.ReadAt(header, 0); err != nil {
+						t.Fatal(err)
+					}
+					if got := binary.BigEndian.Uint32(header[24:28]); got != counter+i {
+						t.Fatalf("change counter=%d, want %d", got, counter+i)
+					}
+					if got := binary.BigEndian.Uint32(header[92:96]); got != counter+i {
+						t.Fatalf("version-valid-for=%d, want %d", got, counter+i)
+					}
+					if got := binary.BigEndian.Uint32(header[28:32]); got != 2 {
+						t.Fatalf("database size=%d, want 2", got)
+					}
+					if header[18] != 1 || header[19] != 1 {
+						t.Fatal("expected DELETE journal mode")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestApplyLTXFile_OpenConnection(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "source.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`PRAGMA page_size=4096; PRAGMA journal_mode=WAL; CREATE TABLE test (value TEXT); INSERT INTO test VALUES ('before'); PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := mustCreateWritableDBFile(t)
+	defer f.Close()
+	replicaData := bytes.Clone(before)
+	replicaData[18], replicaData[19] = 1, 1
+	if _, err := f.WriteAt(replicaData, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(int64(len(replicaData))); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := sql.Open("sqlite", f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	conn, err := reader.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var value string
+	if err := conn.QueryRowContext(ctx, "SELECT value FROM test").Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+	if value != "before" {
+		t.Fatalf("value=%q, want before", value)
+	}
+	if _, err := db.Exec(`UPDATE test SET value='after!'; PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before[:4096], after[:4096]) {
+		t.Fatal("update unexpectedly changed page 1")
+	}
+	var buf bytes.Buffer
+	enc, err := ltx.NewEncoder(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := enc.EncodeHeader(ltx.Header{Version: ltx.Version, Flags: ltx.HeaderFlagNoChecksum, PageSize: 4096, Commit: uint32(len(after) / 4096), MinTXID: 2, MaxTXID: 2}); err != nil {
+		t.Fatal(err)
+	}
+	var changed int
+	for off := 4096; off < len(after); off += 4096 {
+		if bytes.Equal(before[off:off+4096], after[off:off+4096]) {
+			continue
+		}
+		changed++
+		if err := enc.EncodePage(ltx.PageHeader{Pgno: uint32(off/4096 + 1)}, after[off:off+4096]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if changed == 0 {
+		t.Fatal("update did not change any pages")
+	}
+	if err := enc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	client := &followTestReplicaClient{}
+	client.OpenLTXFileFunc = func(context.Context, int, ltx.TXID, ltx.TXID, int64, int64) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
+	}
+	r := NewReplicaWithClient(nil, client)
+	if err := r.applyLTXFile(ctx, f, &ltx.FileInfo{MinTXID: 2, MaxTXID: 2}, 4096); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.QueryRowContext(ctx, "SELECT value FROM test").Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+	if value != "after!" {
+		t.Fatalf("value=%q, want after!", value)
 	}
 }
 
@@ -542,4 +751,276 @@ func TestApplyLTXFile_MultiplePages(t *testing.T) {
 			t.Fatalf("page %d data mismatch", i+1)
 		}
 	}
+}
+
+func TestNewRestoreDecoder(t *testing.T) {
+	const pageSize = 4096
+	pages := [][]byte{
+		newSQLiteHeaderPage(pageSize),
+		bytes.Repeat([]byte{0xC3}, pageSize),
+		bytes.Repeat([]byte{0xD4}, pageSize),
+	}
+	data := mustBuildSnapshotLTX(t, 1, 5, pageSize, pages)
+
+	t.Run("DoesNotRetainPageIndex", func(t *testing.T) {
+		dec := newRestoreDecoder(bytes.NewReader(data))
+		var db bytes.Buffer
+		if err := dec.DecodeDatabaseTo(&db); err != nil {
+			t.Fatal(err)
+		}
+		if dec.PageIndex() != nil {
+			t.Fatalf("expected nil page index, got %d entries", len(dec.PageIndex()))
+		}
+		if got, want := db.Len(), len(pages)*pageSize; got != want {
+			t.Fatalf("decoded database size=%d, want %d", got, want)
+		}
+		for i, page := range pages {
+			if got := db.Bytes()[i*pageSize : (i+1)*pageSize]; !bytes.Equal(got, page) {
+				t.Fatalf("page %d data mismatch", i+1)
+			}
+		}
+	})
+
+	t.Run("DefaultDecoderRetainsPageIndex", func(t *testing.T) {
+		dec := ltx.NewDecoder(bytes.NewReader(data))
+		var db bytes.Buffer
+		if err := dec.DecodeDatabaseTo(&db); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := len(dec.PageIndex()), len(pages); got != want {
+			t.Fatalf("page index entries=%d, want %d", got, want)
+		}
+	})
+
+	t.Run("StillValidatesCorruptPageIndex", func(t *testing.T) {
+		corrupt := bytes.Clone(data)
+		corrupt[len(corrupt)-ltx.TrailerSize-1] ^= 0xFF
+		dec := newRestoreDecoder(bytes.NewReader(corrupt))
+		if err := dec.DecodeDatabaseTo(io.Discard); err == nil {
+			t.Fatal("expected error decoding LTX file with corrupt page index")
+		}
+	})
+
+	// Overwrite the first index entry's page number so the index no longer
+	// matches the decoded pages. This is rejected by the structural index
+	// validation in Close, which runs before any checksum comparison, so a
+	// pass here proves validation is not skipped when retention is off.
+	t.Run("StillValidatesIndexStructure", func(t *testing.T) {
+		sizeField := binary.BigEndian.Uint64(data[len(data)-ltx.TrailerSize-8:])
+		indexStart := len(data) - ltx.TrailerSize - 8 - int(sizeField)
+		if got := data[indexStart]; got != 0x01 {
+			t.Fatalf("expected first index entry pgno varint 0x01 at offset %d, got %#x", indexStart, got)
+		}
+
+		corrupt := bytes.Clone(data)
+		corrupt[indexStart] = 0x03
+
+		dec := newRestoreDecoder(bytes.NewReader(corrupt))
+		err := dec.DecodeDatabaseTo(io.Discard)
+		if err == nil {
+			t.Fatal("expected error decoding LTX file with out-of-order page index")
+		}
+		if !strings.Contains(err.Error(), "page index") {
+			t.Fatalf("expected structural page index error, got: %v", err)
+		}
+
+		retainDec := ltx.NewDecoder(bytes.NewReader(corrupt))
+		retainErr := retainDec.DecodeDatabaseTo(io.Discard)
+		if retainErr == nil {
+			t.Fatal("expected error from retaining decoder on same corrupt input")
+		}
+		if err.Error() != retainErr.Error() {
+			t.Fatalf("validation parity broken: retain=false err %q, retain=true err %q", err, retainErr)
+		}
+	})
+
+	t.Run("StillValidatesPostApplyChecksum", func(t *testing.T) {
+		valid := mustBuildChecksummedSnapshotLTX(t, pageSize, pages, 0)
+		dec := newRestoreDecoder(bytes.NewReader(valid))
+		var db bytes.Buffer
+		if err := dec.DecodeDatabaseTo(&db); err != nil {
+			t.Fatal(err)
+		}
+		if dec.PageIndex() != nil {
+			t.Fatal("expected nil page index for checksummed snapshot")
+		}
+
+		invalid := mustBuildChecksummedSnapshotLTX(t, pageSize, pages, 1<<1)
+		dec = newRestoreDecoder(bytes.NewReader(invalid))
+		err := dec.DecodeDatabaseTo(io.Discard)
+		if err == nil {
+			t.Fatal("expected error decoding snapshot with wrong post-apply checksum")
+		}
+		if !strings.Contains(err.Error(), "post-apply checksum") {
+			t.Fatalf("expected post-apply checksum error, got: %v", err)
+		}
+	})
+}
+
+// mustBuildChecksummedSnapshotLTX encodes a snapshot LTX file with checksum
+// tracking enabled, XORing xor into the post-apply checksum so callers can
+// produce an otherwise-valid file whose post-apply checksum is wrong.
+func mustBuildChecksummedSnapshotLTX(tb testing.TB, pageSize uint32, pages [][]byte, xor uint64) []byte {
+	tb.Helper()
+
+	var buf bytes.Buffer
+	enc, err := ltx.NewEncoder(&buf)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	hdr := ltx.Header{
+		Version:   ltx.Version,
+		PageSize:  pageSize,
+		Commit:    uint32(len(pages)),
+		MinTXID:   1,
+		MaxTXID:   1,
+		Timestamp: time.Now().UnixMilli(),
+	}
+	if err := enc.EncodeHeader(hdr); err != nil {
+		tb.Fatal(err)
+	}
+
+	chksum := ltx.ChecksumFlag
+	for i, page := range pages {
+		pgno := uint32(i + 1)
+		if err := enc.EncodePage(ltx.PageHeader{Pgno: pgno}, page); err != nil {
+			tb.Fatal(err)
+		}
+		chksum = ltx.ChecksumFlag | (chksum ^ ltx.ChecksumPage(pgno, page))
+	}
+
+	enc.SetPostApplyChecksum(ltx.ChecksumFlag | (chksum ^ ltx.Checksum(xor)))
+	if err := enc.Close(); err != nil {
+		tb.Fatal(err)
+	}
+
+	return buf.Bytes()
+}
+
+func TestNewRestoreCompactor(t *testing.T) {
+	const pageSize = 4096
+	pages := [][]byte{newSQLiteHeaderPage(pageSize), bytes.Repeat([]byte{0xE5}, pageSize)}
+	snapshot := mustBuildSnapshotLTX(t, 1, 1, pageSize, pages)
+	update := mustBuildIncrementalLTX(t, 2, 2, pageSize, 2, 0xF6)
+	spillDir := t.TempDir()
+	var output bytes.Buffer
+	writer := &spillObservingWriter{Writer: &output, dir: spillDir}
+	c, err := newRestoreCompactor(writer, []io.Reader{bytes.NewReader(snapshot), bytes.NewReader(update)}, spillDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := c.Cleanup(); err != nil {
+			t.Error(err)
+		}
+	})
+	c.SetSpillThreshold(1)
+	if err := c.Compact(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !writer.observed {
+		t.Fatal("compactor never created a spill file in the configured directory")
+	}
+	dec := newRestoreDecoder(bytes.NewReader(output.Bytes()))
+	var db bytes.Buffer
+	if err := dec.DecodeDatabaseTo(&db); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := db.Len(), len(pages)*pageSize; got != want {
+		t.Fatalf("decoded database size=%d, want %d", got, want)
+	}
+	if !bytes.Equal(db.Bytes()[pageSize:], bytes.Repeat([]byte{0xF6}, pageSize)) {
+		t.Fatal("page 2 does not contain compacted update")
+	}
+	if err := c.Cleanup(); err != nil {
+		t.Fatal(err)
+	}
+	ents, err := os.ReadDir(spillDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ents) != 0 {
+		t.Fatalf("spill dir not empty after cleanup: %d entries", len(ents))
+	}
+}
+
+func TestNewRestoreCompactor_ConsumerAbort(t *testing.T) {
+	const pageSize = 4096
+	pages := [][]byte{newSQLiteHeaderPage(pageSize), bytes.Repeat([]byte{0xA7}, pageSize)}
+	snapshot := mustBuildSnapshotLTX(t, 1, 1, pageSize, pages)
+	spillDir := t.TempDir()
+	pr, pw := io.Pipe()
+	abortErr := errors.New("consumer aborted")
+	writer := &spillObservingWriter{Writer: pw, dir: spillDir, onSpill: func() { _ = pr.CloseWithError(abortErr) }}
+	c, err := newRestoreCompactor(writer, []io.Reader{bytes.NewReader(snapshot)}, spillDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.SetSpillThreshold(1)
+	done := make(chan error, 1)
+	go func() { err := c.Compact(t.Context()); _ = pw.CloseWithError(err); done <- err }()
+	_, _ = io.Copy(io.Discard, pr)
+	select {
+	case err := <-done:
+		if !errors.Is(err, abortErr) {
+			t.Fatalf("expected consumer abort, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("compactor still blocked after pipe reader closed")
+	}
+	if !writer.observed {
+		t.Fatal("consumer aborted without an existing spill file")
+	}
+	if err := c.Cleanup(); err != nil {
+		t.Fatal(err)
+	}
+	ents, err := os.ReadDir(spillDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ents) != 0 {
+		t.Fatalf("spill dir not empty after cleanup: %d entries", len(ents))
+	}
+}
+
+func TestNewRestoreCompactor_InvalidSpillDir(t *testing.T) {
+	const pageSize = 4096
+	snapshot := mustBuildSnapshotLTX(t, 1, 1, pageSize, [][]byte{newSQLiteHeaderPage(pageSize), make([]byte, pageSize)})
+	c, err := newRestoreCompactor(io.Discard, []io.Reader{bytes.NewReader(snapshot)}, filepath.Join(t.TempDir(), "missing"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := c.Cleanup(); err != nil {
+			t.Error(err)
+		}
+	})
+	c.SetSpillThreshold(1)
+	if err := c.Compact(t.Context()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected spill directory error, got %v", err)
+	}
+}
+
+type spillObservingWriter struct {
+	io.Writer
+	dir      string
+	observed bool
+	onSpill  func()
+}
+
+func (w *spillObservingWriter) Write(p []byte) (int, error) {
+	if !w.observed {
+		entries, err := os.ReadDir(w.dir)
+		if err != nil {
+			return 0, err
+		}
+		if len(entries) > 0 {
+			w.observed = true
+			if w.onSpill != nil {
+				w.onSpill()
+			}
+		}
+	}
+	return w.Writer.Write(p)
 }
