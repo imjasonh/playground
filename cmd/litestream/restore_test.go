@@ -1,16 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/superfly/ltx"
 
 	litestream "github.com/benbjohnson/litestream"
 	"github.com/benbjohnson/litestream/file"
@@ -102,7 +107,7 @@ func TestRestoreCommand_RunSuggestedOutputArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty replica")
 	}
-	if err.Error() != "no matching backup files available" {
+	if !strings.HasPrefix(err.Error(), "no matching backup files available") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -251,6 +256,40 @@ func TestRestoreCommand_RunRequiresForceForExistingJournal(t *testing.T) {
 	}
 }
 
+func TestRestoreCommand_RunOrphanedSidecars(t *testing.T) {
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		t.Run(suffix, func(t *testing.T) {
+			ctx := t.Context()
+			replicaPath, restorePath := createRestoreCommandTestData(t, ctx)
+			sidecarPath := restorePath + suffix
+			if err := os.WriteFile(sidecarPath, []byte("existing"), 0600); err != nil {
+				t.Fatal(err)
+			}
+
+			cmd := &RestoreCommand{}
+			err := cmd.Run(ctx, []string{"-o", restorePath, "file://" + replicaPath})
+			want := "cannot restore, SQLite sidecar path already exists: " + sidecarPath + ". Use -force to overwrite"
+			if err == nil || err.Error() != want {
+				t.Fatalf("restore without -force: got %v, want %q", err, want)
+			}
+			if _, err := os.Stat(restorePath); !os.IsNotExist(err) {
+				t.Fatalf("expected no restored database, stat err=%v", err)
+			}
+			if buf, err := os.ReadFile(sidecarPath); err != nil || string(buf) != "existing" {
+				t.Fatalf("sidecar was changed: content=%q, err=%v", buf, err)
+			}
+
+			if err := cmd.Run(ctx, []string{"-force", "-o", restorePath, "file://" + replicaPath}); err != nil {
+				t.Fatalf("restore with -force: %v", err)
+			}
+			if _, err := os.Stat(sidecarPath); !os.IsNotExist(err) {
+				t.Fatalf("expected orphaned sidecar to be removed, stat err=%v", err)
+			}
+			assertRestoreCommandDB(t, restorePath)
+		})
+	}
+}
+
 func TestRestoreCommand_RunAllowsEmptyOutput(t *testing.T) {
 	ctx := context.Background()
 	replicaPath, restorePath := createRestoreCommandTestData(t, ctx)
@@ -391,5 +430,126 @@ func TestRestoreCommand_ParallelismDeprecated(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestRestoreCommand_RunUnavailableTarget(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		t.Run(fmt.Sprint(dryRun), func(t *testing.T) {
+			ctx := context.Background()
+			path := t.TempDir()
+			client := file.NewReplicaClient(path)
+			var buf bytes.Buffer
+			enc, err := ltx.NewEncoder(&buf)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := enc.EncodeHeader(ltx.Header{Version: ltx.Version, Flags: ltx.HeaderFlagNoChecksum, PageSize: 4096, Commit: 1, MinTXID: 1, MaxTXID: 3}); err != nil {
+				t.Fatal(err)
+			}
+			if err := enc.EncodePage(ltx.PageHeader{Pgno: 1}, make([]byte, 4096)); err != nil {
+				t.Fatal(err)
+			}
+			if err := enc.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := client.WriteLTXFile(ctx, litestream.SnapshotLevel, 1, 3, &buf); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"-txid", "0000000000000002", "-o", filepath.Join(t.TempDir(), "restore.db")}
+			if dryRun {
+				args = append(args, "-dry-run")
+			}
+			args = append(args, "file://"+path)
+			err = (&RestoreCommand{}).Run(ctx, args)
+			if !errors.Is(err, litestream.ErrTxNotAvailable) {
+				t.Fatalf("error=%v, want unavailable target", err)
+			}
+			for _, want := range []string{"txid 0000000000000002 unavailable", "before=none", "after=0000000000000003"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error=%v, want %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestRestoreCommand_RunIfReplicaExists(t *testing.T) {
+	err := (&RestoreCommand{}).Run(context.Background(), []string{"-if-replica-exists", "-o", filepath.Join(t.TempDir(), "restore.db"), "file://" + t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRestoreCommand_RestoreReportsAdvancedTXID(t *testing.T) {
+	ctx := context.Background()
+	client := &advancingRestoreCommandClient{ReplicaClient: file.NewReplicaClient(t.TempDir())}
+	for _, txid := range []ltx.TXID{1, 2} {
+		client.writeLTX(t, ctx, 1, txid)
+	}
+	client.advance = func() {
+		client.writeLTX(t, ctx, 1, 3)
+		if err := client.DeleteLTXFiles(ctx, []*ltx.FileInfo{{Level: litestream.SnapshotLevel, MinTXID: 1, MaxTXID: 2}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "restore.db")
+	result, err := (&RestoreCommand{}).restore(ctx, litestream.NewReplicaWithClient(nil, client), litestream.RestoreOptions{OutputPath: path}, "none")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, bytes.Repeat([]byte{3}, 4096)) {
+		t.Fatal("restored database does not contain TXID 3 data")
+	}
+	output, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got RestoreResult
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.TXID != "0000000000000003" {
+		t.Fatalf("reported TXID=%s, want 0000000000000003", got.TXID)
+	}
+}
+
+type advancingRestoreCommandClient struct {
+	*file.ReplicaClient
+	advance func()
+}
+
+func (c *advancingRestoreCommandClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
+	if maxTXID == 2 && c.advance != nil {
+		advance := c.advance
+		c.advance = nil
+		advance()
+		return nil, os.ErrNotExist
+	}
+	return c.ReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
+}
+
+func (c *advancingRestoreCommandClient) writeLTX(t *testing.T, ctx context.Context, minTXID, maxTXID ltx.TXID) {
+	t.Helper()
+	var buf bytes.Buffer
+	enc, err := ltx.NewEncoder(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := enc.EncodeHeader(ltx.Header{Version: ltx.Version, Flags: ltx.HeaderFlagNoChecksum, PageSize: 4096, Commit: 1, MinTXID: minTXID, MaxTXID: maxTXID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := enc.EncodePage(ltx.PageHeader{Pgno: 1}, bytes.Repeat([]byte{byte(maxTXID)}, 4096)); err != nil {
+		t.Fatal(err)
+	}
+	if err := enc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.WriteLTXFile(ctx, litestream.SnapshotLevel, minTXID, maxTXID, &buf); err != nil {
+		t.Fatal(err)
 	}
 }

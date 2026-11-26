@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -56,10 +57,10 @@ func TestMain_RunHelp(t *testing.T) {
 		}
 	})
 
-	t.Run("UnknownFlag", func(t *testing.T) {
+	t.Run("MisplacedFlag", func(t *testing.T) {
 		err := main.NewMain().Run(context.Background(), []string{"-config", "litestream.yml"})
-		if !errors.Is(err, flag.ErrHelp) {
-			t.Fatalf("Run returned error %v, want %v", err, flag.ErrHelp)
+		if err == nil || err.Error() != "flags must come after the subcommand" {
+			t.Fatalf("Run returned error %v, want misplaced flag error", err)
 		}
 	})
 }
@@ -98,6 +99,83 @@ func TestOpenConfigFile(t *testing.T) {
 			t.Error("expected error for nonexistent file")
 		} else if !errors.Is(err, main.ErrConfigFileNotFound) {
 			t.Errorf("expected ErrConfigFileNotFound, got: %v", err)
+		}
+	})
+}
+
+func TestReadConfig(t *testing.T) {
+	t.Run("ReadsFromStdin", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "db")
+		t.Setenv("LITESTREAM_STDIN_DB", dbPath)
+		withStdin(t, `
+dbs:
+  - path: $LITESTREAM_STDIN_DB
+    replicas:
+      - url: file:///tmp/replica
+`[1:])
+
+		config, err := main.ReadConfig("-", true)
+		if err != nil {
+			t.Fatal(err)
+		} else if got, want := len(config.DBs), 1; got != want {
+			t.Fatalf("len(DBs)=%v, want %v", got, want)
+		} else if got, want := config.DBs[0].Path, dbPath; got != want {
+			t.Fatalf("DB.Path=%v, want %v", got, want)
+		} else if got, want := config.DBs[0].Replicas[0].URL, "file:///tmp/replica"; got != want {
+			t.Fatalf("Replica.URL=%v, want %v", got, want)
+		}
+	})
+
+	t.Run("ReadsFromStdinSelectedByEnv", func(t *testing.T) {
+		t.Setenv("LITESTREAM_CONFIG", "-")
+		withStdin(t, "dbs:\n  - path: /tmp/env-stdin-db\n")
+
+		config, err := main.ReadConfig("", true)
+		if err != nil {
+			t.Fatal(err)
+		} else if got, want := len(config.DBs), 1; got != want {
+			t.Fatalf("len(DBs)=%v, want %v", got, want)
+		} else if got, want := config.DBs[0].Path, "/tmp/env-stdin-db"; got != want {
+			t.Fatalf("DB.Path=%v, want %v", got, want)
+		}
+	})
+
+	t.Run("ReadsFromFile", func(t *testing.T) {
+		configPath := filepath.Join(t.TempDir(), "litestream.yml")
+		if err := os.WriteFile(configPath, []byte("dbs:\n  - path: /tmp/db\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		config, err := main.ReadConfig(configPath, true)
+		if err != nil {
+			t.Fatal(err)
+		} else if got, want := len(config.DBs), 1; got != want {
+			t.Fatalf("len(DBs)=%v, want %v", got, want)
+		} else if got, want := config.DBs[0].Path, "/tmp/db"; got != want {
+			t.Fatalf("DB.Path=%v, want %v", got, want)
+		}
+	})
+}
+
+func withStdin(t *testing.T, s string) {
+	t.Helper()
+
+	oldStdin := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteString(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		if err := r.Close(); err != nil {
+			t.Fatal(err)
 		}
 	})
 }
@@ -209,6 +287,150 @@ dbs:
 	})
 }
 
+// Ensure keys the decoder cannot map to a config field, and duplicate mapping
+// keys, are reported as warnings while the configuration still parses.
+func TestParseConfig_StrictWarnings(t *testing.T) {
+	const warnMsg = `msg="configuration contains unrecognized or duplicate key"`
+
+	for _, tt := range []struct {
+		name   string
+		config string
+		want   []string
+	}{
+		{
+			name: "TopLevel",
+			config: `
+definitely-not-a-setting: true
+dbs:
+  - path: /tmp/x.db
+    replica:
+      path: /tmp/xrep
+`,
+			want: []string{"line 2: field definitely-not-a-setting not found in type main.Config"},
+		},
+		{
+			name: "UnrecognizedKey",
+			config: `
+dbs:
+  - path: /tmp/x.db
+    replica:
+      path: /tmp/xrep
+      retention: 72h
+`,
+			want: []string{"line 6: field retention not found in type main.ReplicaConfig"},
+		},
+		{
+			name: "LevelsRetention",
+			config: `
+levels:
+  - interval: 5m
+    retention: 1h
+  - interval: 1h
+dbs:
+  - path: /tmp/x.db
+    replica:
+      path: /tmp/xrep
+`,
+			want: []string{"line 4: field retention not found in type main.CompactionLevelConfig"},
+		},
+		{
+			name: "MultipleNested",
+			config: `
+dbs:
+  - path: /tmp/x.db
+    snapshot:
+      intervall: 1h
+    replica:
+      path: /tmp/xrep
+  - path: /tmp/y.db
+    replicas:
+      - path: /tmp/yrep
+        typo-here: 1
+logging:
+  lvl: debug
+`,
+			want: []string{
+				"line 5: field intervall not found in type main.SnapshotConfig",
+				"line 11: field typo-here not found in type main.ReplicaConfig",
+				"line 13: field lvl not found in type internal.LoggingConfig",
+			},
+		},
+		{
+			name: "DuplicateKey",
+			config: `
+dbs:
+  - path: /tmp/x.db
+    replica:
+      path: /tmp/xrep
+      path: /tmp/other
+`,
+			want: []string{"line 6: field path already set in type main.ReplicaConfig"},
+		},
+		{
+			// Strict decoding's failure mode is warning about keys that are
+			// in fact valid, so this exercises the shapes the decoder has to
+			// resolve itself: an inline struct, a custom unmarshaler
+			// (part-size), and a nested anonymous struct (age).
+			name: "Valid",
+			config: `
+access-key-id: XXX
+sync-interval: 5s
+levels:
+  - interval: 5m
+snapshot:
+  interval: 1h
+  retention: 24h
+logging:
+  level: info
+dbs:
+  - path: /tmp/x.db
+    snapshot:
+      interval: 2h
+    replica:
+      url: s3://foo/bar
+      part-size: 5MB
+      age:
+        identities: []
+`,
+			want: nil,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var config main.Config
+			output := captureStdout(t, func() {
+				// Unrecognized and duplicate keys warn; they are never errors.
+				var err error
+				if config, err = main.ParseConfig(strings.NewReader(tt.config), false); err != nil {
+					t.Fatalf("ParseConfig: %v", err)
+				}
+			})
+
+			// Parsing continues, so the rest of the config is still applied.
+			if got, want := config.DBs[0].Path, "/tmp/x.db"; got != want {
+				t.Fatalf("DBs[0].Path=%v, want %v", got, want)
+			}
+
+			var got []string
+			for _, line := range strings.Split(output, "\n") {
+				if !strings.Contains(line, warnMsg) {
+					continue
+				}
+				_, detail, ok := strings.Cut(line, " detail=")
+				if !ok {
+					t.Fatalf("warning has no detail attribute: %s", line)
+				}
+				if unquoted, err := strconv.Unquote(detail); err == nil {
+					detail = unquoted
+				}
+				got = append(got, detail)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("warned details=%q, want %q\noutput:\n%s", got, tt.want, output)
+			}
+		})
+	}
+}
+
 func TestNewDBFromConfig_MetaPathExpansion(t *testing.T) {
 	u, err := user.Current()
 	if err != nil {
@@ -281,6 +503,36 @@ func TestNewFileReplicaFromConfig(t *testing.T) {
 		t.Fatal("unexpected replica type")
 	} else if got, want := client.Path(), "/foo"; got != want {
 		t.Fatalf("Path=%s, want %s", got, want)
+	}
+}
+
+func TestNewFileReplicaFromConfig_LegacyEscapedURLPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file URLs in this test use POSIX paths")
+	}
+
+	dir := t.TempDir()
+	decoded := filepath.Join(dir, "daily backup")
+	legacy := filepath.Join(dir, "daily%20backup")
+	if err := os.Mkdir(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := main.NewReplicaFromConfig(&main.ReplicaConfig{URL: "file://" + decoded}, nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if got := r.Client.(*file.ReplicaClient).Path(); got != legacy {
+		t.Fatalf("Path=%s, want %s", got, legacy)
+	}
+
+	if err := os.Rename(legacy, decoded); err != nil {
+		t.Fatal(err)
+	}
+	r, err = main.NewReplicaFromConfig(&main.ReplicaConfig{URL: "file://" + decoded}, nil)
+	if err != nil {
+		t.Fatal(err)
+	} else if got := r.Client.(*file.ReplicaClient).Path(); got != decoded {
+		t.Fatalf("Path=%s, want %s", got, decoded)
 	}
 }
 

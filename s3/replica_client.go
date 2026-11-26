@@ -93,6 +93,7 @@ type ReplicaClient struct {
 	// AWS authentication keys.
 	AccessKeyID     string
 	SecretAccessKey string
+	SessionToken    string
 
 	// S3 bucket information
 	Region              string
@@ -244,6 +245,9 @@ func NewReplicaClientFromURL(scheme, host, urlPath string, query url.Values, use
 		client.SecretAccessKey = v
 	} else if v := os.Getenv("LITESTREAM_SECRET_ACCESS_KEY"); v != "" {
 		client.SecretAccessKey = v
+	}
+	if v := os.Getenv("AWS_SESSION_TOKEN"); v != "" {
+		client.SessionToken = v
 	}
 
 	if endpoint == "" {
@@ -397,17 +401,22 @@ func (c *ReplicaClient) Init(ctx context.Context) (err error) {
 	// Always configure custom HTTP Transport with controlled keepalive settings
 	// to reduce idle CPU usage from default transport's aggressive keepalives.
 	// See: https://github.com/benbjohnson/litestream/issues/992
+	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 	httpClient.Transport = &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			conn, err := dialer.DialContext(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			return &writeTimeoutConn{Conn: conn}, nil
+		},
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
+		ResponseHeaderTimeout: responseHeaderTimeout,
 	}
 
 	// Configure TLS to skip verification if requested
@@ -435,7 +444,7 @@ func (c *ReplicaClient) Init(ctx context.Context) (err error) {
 	// - Web Identity Token credentials (for EKS)
 	if c.AccessKeyID != "" && c.SecretAccessKey != "" {
 		configOpts = append(configOpts, config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(c.AccessKeyID, c.SecretAccessKey, ""),
+			credentials.NewStaticCredentialsProvider(c.AccessKeyID, c.SecretAccessKey, c.SessionToken),
 		))
 	}
 
@@ -631,7 +640,7 @@ func (c *ReplicaClient) findBucketRegion(ctx context.Context, bucket string) (st
 	// Add static credentials if provided
 	if c.AccessKeyID != "" && c.SecretAccessKey != "" {
 		configOpts = append(configOpts, config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(c.AccessKeyID, c.SecretAccessKey, ""),
+			credentials.NewStaticCredentialsProvider(c.AccessKeyID, c.SecretAccessKey, c.SessionToken),
 		))
 	}
 

@@ -27,10 +27,7 @@ func (c *StatusCommand) Run(ctx context.Context, args []string) (err error) {
 	}
 
 	// Load configuration.
-	if *configPath == "" {
-		*configPath = DefaultConfigPath()
-	}
-	config, err := ReadConfigFile(*configPath, !*noExpandEnv)
+	config, err := ReadConfig(*configPath, !*noExpandEnv)
 	if err != nil {
 		return err
 	}
@@ -44,17 +41,19 @@ func (c *StatusCommand) Run(ctx context.Context, args []string) (err error) {
 	statuses := make([]DBStatus, 0, len(config.DBs))
 
 	for _, dbConfig := range config.DBs {
-		db, err := NewDBFromConfig(dbConfig)
+		dbs, err := newDBsFromConfig(dbConfig)
 		if err != nil {
 			return err
 		}
 
-		// Filter if path specified.
-		if filterPath != "" && db.Path() != filterPath {
-			continue
-		}
+		for _, db := range dbs {
+			// Filter if path specified.
+			if filterPath != "" && db.Path() != filterPath {
+				continue
+			}
 
-		statuses = append(statuses, c.getDBStatus(db))
+			statuses = append(statuses, c.getDBStatus(db))
+		}
 	}
 
 	if *jsonOutput {
@@ -140,7 +139,7 @@ Usage:
 Arguments:
 
 	-config PATH
-	    Specifies the configuration file.
+	    Specifies the configuration file. Use "-" to read from standard input.
 	    Defaults to %s
 
 	-json
@@ -166,6 +165,7 @@ Examples:
 	$ litestream status
 	$ litestream status /path/to/db
 	$ litestream status -json
+	$ cat /path/to/litestream.yml | litestream status -config -
 
 `[1:],
 		DefaultConfigPath(),
