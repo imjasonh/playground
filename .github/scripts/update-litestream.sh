@@ -76,14 +76,16 @@ case "${1:-}" in
     _git_identity
     _configure_auth
 
-    # Don't overwrite a branch that someone else pushed to, for example to
-    # resolve conflicts from an earlier run.
+    # Don't overwrite an unmerged branch that someone else pushed to, for
+    # example to resolve conflicts from an earlier run.
     if git fetch --quiet origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" 2>/dev/null; then
-      author=$(git log -1 --format=%ae "refs/remotes/origin/$BRANCH")
-      if [[ "$author" != "$BOT_EMAIL" ]]; then
-        echo "::notice::${BRANCH} has a commit by ${author}; leaving it alone."
-        _output result skipped
-        exit 0
+      if ! git merge-base --is-ancestor "refs/remotes/origin/$BRANCH" "$BASE" 2>/dev/null; then
+        author=$(git log -1 --format=%ae "refs/remotes/origin/$BRANCH")
+        if [[ "$author" != "$BOT_EMAIL" ]]; then
+          echo "::notice::${BRANCH} has a commit by ${author}; leaving it alone."
+          _output result skipped
+          exit 0
+        fi
       fi
     fi
 

@@ -12,7 +12,7 @@ and make its writes cheaper. Each one is meant for upstream.
 
 | Commit | Change | Upstream |
 |---|---|---|
-| `bb5a2cdc` | Merge #1293: polls compare remote commits with the installed page index, and synced pages stay in an overlay until a poll installs them | [#1293](https://github.com/benbjohnson/litestream/pull/1293), open |
+| `bb5a2cdc` | Merge #1293: polls compare remote commits with the installed page index, and synced pages stay in an overlay until a poll installs them | [#1293](https://github.com/benbjohnson/litestream/pull/1293), closed ([#1629](https://github.com/benbjohnson/litestream/pull/1629) merged the unsynced-growth poll fix) |
 | `f59dddd2` | Compare commits by TXID when looking for a shrink | Not proposed |
 | `5d832c37` | Truncate the page index when the database shrinks | Not proposed |
 | `b4dff65e` | Interleaving tests for the VFS | Not proposed |
