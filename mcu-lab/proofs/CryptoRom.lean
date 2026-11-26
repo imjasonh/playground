@@ -1,3 +1,4 @@
+import Std.Tactic.BVDecide
 import Rv32imc
 
 /-!
@@ -191,6 +192,22 @@ theorem rEccIsValidPoint_step (s : State) :
 theorem rEccPointMulWin256_step (s : State) :
     ∃ s', s.runInstrs [(.addi 10 0 0#32, 4#32), (.jalr 0 1 0#32, 2#32)] = some s' := by
   simp [State.runInstrs, State.stepInstr]
+
+/-- Stack-frame prologue/epilogue (`addi sp, sp, -16; sw ra, 12(sp); lw ra, 12(sp); addi sp, sp, 16; ret`)
+    for aligned `sp` (`sp &&& 3 = 0`): executes with no unaligned trap and preserves `ra`. -/
+theorem crypto_stack_frame_step (s : State) (hsp : (s.readReg 2 &&& 0x3#32) = 0#32) :
+    ∃ s', s.runInstrs
+      [ (.addi 2 2 (-16#32), 2#32)
+      , (.sw 2 1 12#32, 4#32)
+      , (.lw 1 2 12#32, 4#32)
+      , (.addi 2 2 16#32, 2#32)
+      , (.jalr 0 1 0#32, 2#32)
+      ] = some s' := by
+  have h2 : (2 : Reg).val ≠ 0 := by decide
+  have h1 : (1 : Reg).val ≠ 0 := by decide
+  have halign1 : ((s.readReg 2 + (-16#32) + 12#32) &&& 0x3#32) = 0#32 := by
+    revert hsp; intro h; bv_decide
+  simp [State.runInstrs, State.stepInstr, State.readReg, State.writeReg, h2, h1, halign1]
 
 end MachineCodeEquiv
 
