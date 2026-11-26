@@ -130,7 +130,7 @@ theorem aesXor128_exit_step (s : State) (neg : BitVec 32)
       s.stepInstr (.bge 15 0 6#32) 4#32 = some s1 ∧
       s1.stepInstr (.jalr 0 1 0#32) 2#32 = some s2 ∧
       s2.pc = (s1.readReg 1) &&& ~~~1#32 := by
-  simp [State.stepInstr, hpc, hx15, hsle, State.readReg]
+  simp [State.stepInstr, hpc, State.readReg]
 
 /-- `r_aes_xor_128` loop-body step (`0x40002bf8..0x40002c16`):
     reads `a[i]` (`lbu x15, 0(x15)`) and `b[i]` (`lbu x16, 0(x16)`), computes `xor`,
