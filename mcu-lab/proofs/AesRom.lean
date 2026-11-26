@@ -124,7 +124,7 @@ open Esp32c3Rom.Rv32imc
 
 /-- `r_aes_xor_128` loop-exit step (`0x40002bf2..0x40002bf6`):
     when `a5 < 0` (`s.readReg 15` is negative), `bgez x15, +6` is not taken and `ret` returns. -/
-theorem aesXor128_exit_step (s : State) (neg : BitVec 32)
+theorem aesXor128_exit_step (s : State)
     (hpc : s.pc = 0x40002bf2#32) :
     ∃ s1 s2,
       s.stepInstr (.bge 15 0 6#32) 4#32 = some s1 ∧
