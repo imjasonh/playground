@@ -37,4 +37,38 @@ theorem tinfl_tdefl_roundtrip (data : List UInt8) (hlen : data.length < 65536) :
     omega
   simp [hlen_eq]
 
+/-- RFC 1951 DEFLATE LZ77 token: literal byte or `(length, distance)` back-reference. -/
+inductive DeflateToken where
+  | lit (b : UInt8)
+  | backRef (len dist : Nat)
+  deriving Repr, DecidableEq
+
+/-- Apply a single LZ77 token to the decompressed output buffer, returning `none`
+    if a back-reference has `dist = 0` or `dist > out.length` (RFC 1951 out-of-bounds). -/
+def tinflApplyToken (out : List UInt8) : DeflateToken → Option (List UInt8)
+  | .lit b => some (out ++ [b])
+  | .backRef len dist =>
+    if dist == 0 || dist > out.length then none
+    else
+      let rec copyBytes (buf : List UInt8) : Nat → List UInt8
+        | 0 => buf
+        | k + 1 =>
+          let b := buf[buf.length - dist]!
+          copyBytes (buf ++ [b]) k
+      some (copyBytes out len)
+
+/-- Apply a stream of DEFLATE tokens (`tinfl_decompress` LZ77 + Huffman token stream). -/
+def tinflApplyTokens (out : List UInt8) : List DeflateToken → Option (List UInt8)
+  | [] => some out
+  | t :: ts =>
+    match tinflApplyToken out t with
+    | none => none
+    | some out' => tinflApplyTokens out' ts
+
+theorem tinflApplyToken_lit (out : List UInt8) (b : UInt8) :
+    tinflApplyToken out (.lit b) = some (out ++ [b]) := rfl
+
+theorem tinflApplyToken_bad_dist (out : List UInt8) (len : Nat) :
+    tinflApplyToken out (.backRef len 0) = none := rfl
+
 end Esp32c3Rom.Miniz

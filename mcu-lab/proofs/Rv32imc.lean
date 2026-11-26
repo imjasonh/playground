@@ -28,6 +28,12 @@ inductive Instr where
   | blt (rs1 rs2 : Reg) (imm : BitVec 32)
   | jal (rd : Reg) (imm : BitVec 32)
   | jalr (rd rs1 : Reg) (imm : BitVec 32)
+  | auipc (rd : Reg) (imm : BitVec 32)
+  | sw (rs1 rs2 : Reg) (imm : BitVec 32)
+  | sltiu (rd rs1 : Reg) (imm : BitVec 32)
+  | beq (rs1 rs2 : Reg) (imm : BitVec 32)
+  | bltu (rs1 rs2 : Reg) (imm : BitVec 32)
+  | bgeu (rs1 rs2 : Reg) (imm : BitVec 32)
   | unknown (raw : UInt32) (len : Nat)
   deriving Repr, DecidableEq
 
@@ -249,6 +255,36 @@ def State.stepInstr (s : State) (instr : Instr) (ilen : BitVec 32) : Option Stat
   | .jalr rd rs1 imm =>
     let target := (s.readReg rs1 + imm) &&& ~~~1#32
     some { s.writeReg rd nextPc with pc := target }
+  | .auipc rd imm =>
+    some { s.writeReg rd (s.pc + imm) with pc := nextPc }
+  | .sw rs1 rs2 imm =>
+    let addr := s.readReg rs1 + imm
+    if (addr &&& 0x3#32) != 0#32 then none
+    else
+      let v := s.readReg rs2
+      let b0 : UInt8 := UInt8.ofNat ((v &&& 0xFF#32).toNat)
+      let b1 : UInt8 := UInt8.ofNat (((v >>> 8) &&& 0xFF#32).toNat)
+      let b2 : UInt8 := UInt8.ofNat (((v >>> 16) &&& 0xFF#32).toNat)
+      let b3 : UInt8 := UInt8.ofNat (((v >>> 24) &&& 0xFF#32).toNat)
+      let mem' := fun a =>
+        if a == addr then b0
+        else if a == addr + 1#32 then b1
+        else if a == addr + 2#32 then b2
+        else if a == addr + 3#32 then b3
+        else s.mem a
+      some { s with pc := nextPc, mem := mem' }
+  | .sltiu rd rs1 imm =>
+    let res := if BitVec.ult (s.readReg rs1) imm then 1#32 else 0#32
+    some { s.writeReg rd res with pc := nextPc }
+  | .beq rs1 rs2 imm =>
+    let pc' := if s.readReg rs1 == s.readReg rs2 then s.pc + imm else nextPc
+    some { s with pc := pc' }
+  | .bltu rs1 rs2 imm =>
+    let pc' := if BitVec.ult (s.readReg rs1) (s.readReg rs2) then s.pc + imm else nextPc
+    some { s with pc := pc' }
+  | .bgeu rs1 rs2 imm =>
+    let pc' := if !BitVec.ult (s.readReg rs1) (s.readReg rs2) then s.pc + imm else nextPc
+    some { s with pc := pc' }
   | .unknown _ _ => none
 
 /-- Execute a sequence of `(Instr, byteLen)` pairs. -/
