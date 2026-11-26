@@ -203,11 +203,13 @@ theorem crypto_stack_frame_step (s : State) (hsp : (s.readReg 2 &&& 0x3#32) = 0#
       , (.addi 2 2 16#32, 2#32)
       , (.jalr 0 1 0#32, 2#32)
       ] = some s' := by
-  have h2 : (2 : Reg).val ≠ 0 := by decide
-  have h1 : (1 : Reg).val ≠ 0 := by decide
   have halign1 : ((s.readReg 2 + (-16#32) + 12#32) &&& 0x3#32) = 0#32 := by
     revert hsp; intro h; bv_decide
-  simp [State.runInstrs, State.stepInstr, State.readReg, State.writeReg, h2, h1, halign1]
+  have h2 : (2 : Reg).val ≠ 0 := by decide
+  dsimp only [State.runInstrs, State.stepInstr]
+  simp only [State.readReg, State.writeReg, h2, halign1, ite_false, bne_self_eq_false,
+    Bool.false_eq_true]
+  exact ⟨_, rfl⟩
 
 end MachineCodeEquiv
 
