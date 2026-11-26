@@ -1,3 +1,4 @@
+import Std.Tactic.BVDecide
 import Rv32imc
 
 /-!
