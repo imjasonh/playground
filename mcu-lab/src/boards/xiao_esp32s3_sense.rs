@@ -25,7 +25,8 @@ use esp_idf_svc::hal::modem::Modem;
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::hal::sd::spi::SdSpiHostDriver;
 use esp_idf_svc::hal::sd::{SdCardConfiguration, SdCardDriver};
-use esp_idf_svc::hal::spi::{config::DriverConfig, SpiDriver, SPI2};
+use esp_idf_svc::hal::spi::config::DriverConfig;
+use esp_idf_svc::hal::spi::{SpiDriver, SPI2};
 use esp_idf_svc::io::vfs::MountedFatfs;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::sys::camera::{

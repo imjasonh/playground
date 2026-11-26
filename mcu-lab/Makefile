@@ -34,8 +34,10 @@ FIRMWARE_ID_FILE := $(call APP_META,firmware_id_file)
 FIRMWARE_ID_CONST := $(call APP_META,firmware_id_const)
 
 ifneq ($(EXTRA_COMPONENTS),)
-EXTRA_COMPONENTS_ENV := ESP_IDF_SYS_EXTRA_COMPONENTS_FILE=$(CURDIR)/$(EXTRA_COMPONENTS)
+EXTRA_COMPONENTS_FILE := $(CURDIR)/target/$(BOARD)/extra_components.toml
+EXTRA_COMPONENTS_ENV := ESP_IDF_SYS_EXTRA_COMPONENTS_FILE=$(EXTRA_COMPONENTS_FILE)
 else
+EXTRA_COMPONENTS_FILE :=
 EXTRA_COMPONENTS_ENV :=
 endif
 
@@ -162,7 +164,13 @@ build-gzip-bench-xiao: ensure-python-shim $(XIAO_GZIP_BENCH_SDKCONFIG_DEFAULTS)
 flash-gzip-bench-xiao: build-gzip-bench-xiao
 	espflash flash --port $(PORT) --partition-table partitions.csv $(XIAO_GZIP_BENCH_BIN)
 
-build-app: ensure-python-shim $(SDKCONFIG_DEFAULTS)
+ifneq ($(EXTRA_COMPONENTS),)
+$(EXTRA_COMPONENTS_FILE): $(EXTRA_COMPONENTS) camera_bindings.h
+	@mkdir -p $(FW_TARGET_DIR)
+	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' $(EXTRA_COMPONENTS) > $@
+endif
+
+build-app: ensure-python-shim $(SDKCONFIG_DEFAULTS) $(EXTRA_COMPONENTS_FILE)
 	@if [ -z "$(FIRMWARE_ID)" ]; then \
 	  echo "ERROR: could not read $(FIRMWARE_ID_CONST) from $(FIRMWARE_ID_FILE) for $(BIN_NAME)"; \
 	  exit 1; \

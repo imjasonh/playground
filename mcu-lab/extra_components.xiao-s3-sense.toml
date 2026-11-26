@@ -3,5 +3,5 @@
 # (xiao-esp32c3, waveshare-epd75) do not fetch or compile esp32-camera.
 [[extra_components]]
 remote_component = { name = "espressif/esp32-camera", version = "^2.2.0" }
-bindings_header = "camera_bindings.h"
+bindings_header = "@PROJECT_DIR@/camera_bindings.h"
 bindings_module = "camera"
