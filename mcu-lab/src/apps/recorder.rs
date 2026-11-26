@@ -17,7 +17,7 @@ use esp_idf_svc::io::Write as EspWrite;
 use log::{info, warn};
 
 use crate::boards::xiao_esp32s3_sense::{
-    SenseCamera, SenseMic, SenseSdCard, SenseWifi, SenseWifiInfo, CLIPS_DIR,
+    sd_space_info, SenseCamera, SenseMic, SenseSdCard, SenseWifi, SenseWifiInfo, CLIPS_DIR,
 };
 use crate::boards::{Board, HasSenseAV};
 use crate::platform::{App, RunMode, StepContext, StepOutput};
@@ -77,6 +77,7 @@ impl RecorderShared {
 /// 1-minute A/V clip recorder + HTTP clip server for XIAO ESP32-S3 Sense.
 pub struct RecorderApp {
     _wifi: SenseWifi,
+    _sd: Option<SenseSdCard>,
     _http: EspHttpServer<'static>,
     shared: Arc<RecorderShared>,
 }
@@ -120,6 +121,7 @@ impl<B: Board + HasSenseAV> App<B> for RecorderApp {
             }
         };
 
+        let sd_mounted = sd.is_some();
         let (sd_total_bytes, sd_free_bytes, initial_clips) = if let Some(ref card) = sd {
             cleanup_temp_clips();
             let clips = scan_clips();
@@ -145,13 +147,13 @@ impl<B: Board + HasSenseAV> App<B> for RecorderApp {
             }
         };
 
-        let can_record = sd.is_some() && (camera.is_some() || mic.is_some());
+        let can_record = sd_mounted && (camera.is_some() || mic.is_some());
         let shared = Arc::new(RecorderShared {
             recording: AtomicBool::new(can_record),
             rotate_requested: AtomicBool::new(false),
             state: Mutex::new(SharedState {
                 wifi_info: wifi_info.clone(),
-                sd_mounted: sd.is_some(),
+                sd_mounted,
                 sd_total_bytes,
                 sd_free_bytes,
                 camera_ready: camera.is_some(),
@@ -166,19 +168,24 @@ impl<B: Board + HasSenseAV> App<B> for RecorderApp {
             "recorder: HTTP server listening on http://{} (ssid={}, sd_mounted={}, cam={}, mic={})",
             wifi_info.ip,
             wifi_info.ssid,
-            sd.is_some(),
+            sd_mounted,
             camera.is_some(),
             mic.is_some()
         );
 
-        let worker_shared = Arc::clone(&shared);
-        thread::Builder::new()
-            .name("sense-rec".to_string())
-            .stack_size(12 * 1024)
-            .spawn(move || recorder_worker(worker_shared, sd, camera, mic))?;
+        if sd_mounted {
+            let worker_shared = Arc::clone(&shared);
+            thread::Builder::new()
+                .name("sense-rec".to_string())
+                .stack_size(12 * 1024)
+                .spawn(move || recorder_worker(worker_shared, camera, mic))?;
+        } else {
+            warn!("recorder: no microSD mounted; recorder worker not started");
+        }
 
         Ok(Self {
             _wifi: wifi,
+            _sd: sd,
             _http: http,
             shared,
         })
@@ -280,8 +287,8 @@ fn scan_clips() -> Vec<ClipEntry> {
     clips
 }
 
-fn evict_oldest_clips_if_needed(sd: &SenseSdCard, shared: &RecorderShared) {
-    let Ok((total, free)) = sd.space_info() else {
+fn evict_oldest_clips_if_needed(shared: &RecorderShared) {
+    let Ok((total, free)) = sd_space_info() else {
         return;
     };
     let required = required_free_bytes(total);
@@ -295,7 +302,7 @@ fn evict_oldest_clips_if_needed(sd: &SenseSdCard, shared: &RecorderShared) {
         }
     }
     let updated_clips = scan_clips();
-    let (new_total, new_free) = sd.space_info().unwrap_or((total, free));
+    let (new_total, new_free) = sd_space_info().unwrap_or((total, free));
     let mut st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
     st.sd_total_bytes = new_total;
     st.sd_free_bytes = new_free;
@@ -304,15 +311,9 @@ fn evict_oldest_clips_if_needed(sd: &SenseSdCard, shared: &RecorderShared) {
 
 fn recorder_worker(
     shared: Arc<RecorderShared>,
-    sd: Option<SenseSdCard>,
     mut camera: Option<SenseCamera>,
     mut mic: Option<SenseMic>,
 ) {
-    let Some(sd) = sd else {
-        warn!("recorder-worker: no microSD mounted; idle");
-        return;
-    };
-
     let mut audio_buf = vec![0u8; AUDIO_READ_BUF_BYTES];
 
     loop {
@@ -321,7 +322,7 @@ fn recorder_worker(
             continue;
         }
 
-        evict_oldest_clips_if_needed(&sd, &shared);
+        evict_oldest_clips_if_needed(&shared);
 
         let seq = {
             let st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -419,7 +420,7 @@ fn recorder_worker(
         if write_failed {
             drop(muxer);
             let _ = fs::remove_file(&tmp_path);
-            evict_oldest_clips_if_needed(&sd, &shared);
+            evict_oldest_clips_if_needed(&shared);
         } else {
             match muxer.finalize() {
                 Ok(summary) if summary.video_frames > 0 || summary.audio_samples > 0 => {
@@ -447,7 +448,7 @@ fn recorder_worker(
         }
 
         let clips = scan_clips();
-        let (total, free) = sd.space_info().unwrap_or((0, 0));
+        let (total, free) = sd_space_info().unwrap_or((0, 0));
         let mut st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
         st.active_clip = None;
         st.sd_total_bytes = total;

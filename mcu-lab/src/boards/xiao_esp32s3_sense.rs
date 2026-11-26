@@ -18,9 +18,10 @@ use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::fs::fatfs::Fatfs;
 use esp_idf_svc::hal::gpio::AnyIOPin;
 use esp_idf_svc::hal::i2s::config::{
-    Config as I2sConfig, PdmRxClkConfig, PdmRxConfig, PdmRxGpioConfig, PdmRxSlotConfig,
+    Config as I2sConfig, DataBitWidth, PdmRxClkConfig, PdmRxConfig, PdmRxGpioConfig,
+    PdmRxSlotConfig, SlotMode,
 };
-use esp_idf_svc::hal::i2s::{I2sDriver, I2sPdmRx, I2S0};
+use esp_idf_svc::hal::i2s::{I2sDriver, I2sRx, I2S0};
 use esp_idf_svc::hal::modem::Modem;
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::hal::sd::spi::SdSpiHostDriver;
@@ -252,16 +253,21 @@ impl SenseSdCard {
 
     /// Return `(total_bytes, free_bytes)` for the mounted `/sdcard` FAT32 volume.
     pub fn space_info(&self) -> Result<(u64, u64)> {
-        let mut total: u64 = 0;
-        let mut free: u64 = 0;
-        let mount_cstr = CStr::from_bytes_with_nul(b"/sdcard\0")?;
-        // SAFETY: `mount_cstr` is NUL-terminated and `total`/`free` are valid out pointers.
-        let err = unsafe { esp_vfs_fat_info(mount_cstr.as_ptr(), &mut total, &mut free) };
-        if err != ESP_OK {
-            return Err(anyhow!("esp_vfs_fat_info failed: err={err}"));
-        }
-        Ok((total, free))
+        sd_space_info()
     }
+}
+
+/// Query `(total_bytes, free_bytes)` for the mounted `/sdcard` FAT32 volume.
+pub fn sd_space_info() -> Result<(u64, u64)> {
+    let mut total: u64 = 0;
+    let mut free: u64 = 0;
+    let mount_cstr = CStr::from_bytes_with_nul(b"/sdcard\0")?;
+    // SAFETY: `mount_cstr` is NUL-terminated and `total`/`free` are valid out pointers.
+    let err = unsafe { esp_vfs_fat_info(mount_cstr.as_ptr(), &mut total, &mut free) };
+    if err != ESP_OK {
+        return Err(anyhow!("esp_vfs_fat_info failed: err={err}"));
+    }
+    Ok((total, free))
 }
 
 /// Borrowed camera frame buffer that automatically returns to `esp32-camera` on drop.
@@ -364,7 +370,7 @@ impl Drop for SenseCamera {
 
 /// Onboard digital PDM microphone (16 kHz, 16-bit signed LE mono PCM on GPIO42/GPIO41).
 pub struct SenseMic {
-    driver: I2sDriver<'static, I2sPdmRx>,
+    driver: I2sDriver<'static, I2sRx>,
 }
 
 impl SenseMic {
@@ -376,9 +382,9 @@ impl SenseMic {
         let pdm_cfg = PdmRxConfig::new(
             I2sConfig::default(),
             PdmRxClkConfig::from_sample_rate_hz(DEFAULT_AUDIO_SAMPLE_RATE),
-            PdmRxSlotConfig::from_bits_per_sample_and_mono(
-                esp_idf_svc::hal::i2s::config::DataBitWidth::Bits16,
-                esp_idf_svc::hal::i2s::config::PdmSlot::Left,
+            PdmRxSlotConfig::from_bits_per_sample_and_slot_mode(
+                DataBitWidth::Bits16,
+                SlotMode::Mono,
             ),
             PdmRxGpioConfig::new(false),
         );
