@@ -130,7 +130,8 @@ targets:
         NSPhotoLibraryAddUsageDescription: Wigglecam saves wigglegram GIFs to your photo library when you tap Save. Voxel Eyes saves the current view to your photo library when you tap the camera button.
         NSHealthShareUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
         NSHealthUpdateUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
-        NSBluetoothAlwaysUsageDescription: MCU Lab scans for nearby ESP32 and ESP32-C3 boards to collect BLE telemetry advertisements, pull per-wake profiles, stream BLE GATT OTA firmware updates, and forward OTLP metrics and traces.
+        NSBluetoothAlwaysUsageDescription: MCU Lab scans for nearby ESP32, ESP32-C3, and ESP32-S3 boards to collect BLE telemetry advertisements, pull per-wake profiles, stream BLE GATT OTA firmware updates, and forward OTLP metrics and traces.
+        NSLocalNetworkUsageDescription: MCU Lab connects to your XIAO ESP32-S3 Sense board's local HTTP server over Wi-Fi to browse and stream recorded audio and video clips.
         # Default Cloud Run OTLP/HTTP collector URL for the MCU Lab experiment.
         MCULabOtelEndpoint: https://xiao-otel-965235416369.us-central1.run.app/v1/metrics
         NSAppTransportSecurity:

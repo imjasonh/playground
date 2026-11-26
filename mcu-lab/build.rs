@@ -6,6 +6,19 @@ fn main() {
     println!("cargo:rerun-if-changed=sdkconfig.defaults");
     println!("cargo:rerun-if-changed=sdkconfig.defaults.xiao.in");
     println!("cargo:rerun-if-changed=sdkconfig.defaults.epd.in");
+    println!("cargo:rerun-if-changed=sdkconfig.defaults.xiao-s3-sense.in");
+    println!("cargo:rerun-if-changed=extra_components.xiao-s3-sense.toml");
+    println!("cargo:rerun-if-changed=camera_bindings.h");
+    println!("cargo:rerun-if-env-changed=MCU_LAB_WIFI_SSID");
+    println!("cargo:rerun-if-env-changed=MCU_LAB_WIFI_PASS");
+
+    println!("cargo::rustc-check-cfg=cfg(mcu_esp32, mcu_esp32c3, mcu_esp32s3)");
+    match std::env::var("TARGET").as_deref() {
+        Ok("xtensa-esp32-espidf") => println!("cargo:rustc-cfg=mcu_esp32"),
+        Ok("riscv32imc-esp-espidf") => println!("cargo:rustc-cfg=mcu_esp32c3"),
+        Ok("xtensa-esp32s3-espidf") => println!("cargo:rustc-cfg=mcu_esp32s3"),
+        _ => {}
+    }
 
     println!("cargo:rerun-if-env-changed=GITHUB_SHA");
     println!("cargo:rerun-if-env-changed=MCU_LAB_BUILD_ID");

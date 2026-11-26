@@ -83,17 +83,22 @@ mod inner {
         if addr == 0 || (addr & 0x3) != 0 {
             return false;
         }
-        #[cfg(target_arch = "riscv32")]
+        #[cfg(mcu_esp32c3)]
         {
             // ESP32-C3 internal SRAM (DRAM): 0x3FC8_0000 .. 0x3FCE_0000
             (0x3FC8_0000..0x3FCE_0000).contains(&addr)
         }
-        #[cfg(target_arch = "xtensa")]
+        #[cfg(mcu_esp32)]
         {
             // Classic ESP32 internal DRAM: 0x3FFB_0000 .. 0x4000_0000
             (0x3FFB_0000..0x4000_0000).contains(&addr)
         }
-        #[cfg(not(any(target_arch = "riscv32", target_arch = "xtensa")))]
+        #[cfg(mcu_esp32s3)]
+        {
+            // ESP32-S3 internal DRAM: 0x3FC8_8000 .. 0x3FD0_0000
+            (0x3FC8_8000..0x3FD0_0000).contains(&addr)
+        }
+        #[cfg(not(any(mcu_esp32c3, mcu_esp32, mcu_esp32s3)))]
         {
             let _ = addr;
             false

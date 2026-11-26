@@ -12,11 +12,14 @@ use crate::epd_display::Panel;
 use crate::platform::RunMode;
 use crate::protocol::BoardSpec;
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(mcu_esp32c3)]
 pub mod xiao_esp32c3;
 
-#[cfg(target_arch = "xtensa")]
+#[cfg(mcu_esp32)]
 pub mod waveshare_epd75;
+
+#[cfg(mcu_esp32s3)]
+pub mod xiao_esp32s3_sense;
 
 /// Hardware board abstraction implemented once per physical board / pinout.
 pub trait Board: Sized {
@@ -52,4 +55,11 @@ pub trait HasEpd75 {
 /// Capability trait for boards with a GPIO logic-marker pin for PPK2 / scope correlation.
 pub trait HasLogicProbe {
     fn measure_phase<T>(&mut self, f: impl FnOnce() -> T) -> Result<(T, u32)>;
+}
+
+/// Capability trait for boards equipped with camera, PDM mic, microSD card, and Wi-Fi
+/// (Seeed Studio XIAO ESP32-S3 Sense).
+#[cfg(mcu_esp32s3)]
+pub trait HasSenseAV {
+    fn take_sense_hardware(&mut self) -> Result<xiao_esp32s3_sense::SenseHardware>;
 }

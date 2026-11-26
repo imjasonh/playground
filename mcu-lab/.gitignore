@@ -1,3 +1,4 @@
 /target/
 /.embuild/
 /sdkconfig.defaults
+/components_*.lock
