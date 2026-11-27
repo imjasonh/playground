@@ -47,4 +47,15 @@ theorem mapped_pages_signed {bytes : Bytes} {n : Nat} {h : ImageHeader}
   unfold flashPage at *
   omega
 
+/-- An accepted header's entry point is 2-byte aligned, so `jalr`'s bit-0
+clear leaves it unchanged. -/
+theorem decodeImageHeader_entryPoint_even {bytes : Bytes} {n : Nat} {h : ImageHeader}
+    (hd : decodeImageHeader bytes n = some h) : h.entryPoint % 2 = 0 := by
+  unfold decodeImageHeader at hd
+  simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, require_eq_some, Option.pure_def,
+    Option.some.injEq, exists_const] at hd
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, he, rfl⟩ := hd
+  simp only [Bool.and_eq_true, beq_iff_eq] at he
+  exact he.1
+
 end C3

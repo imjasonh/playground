@@ -73,14 +73,6 @@ import C3BootProofs.Proofs.ShaSpec
 import C3BootProofs.Proofs.ShaTools
 import C3BootProofs.Proofs.ShaSupport
 import C3BootProofs.Proofs.Sha256Data
-import C3BootProofs.Proofs.Sha256Rounds0
-import C3BootProofs.Proofs.Sha256Rounds1
-import C3BootProofs.Proofs.Sha256Rounds2
-import C3BootProofs.Proofs.Sha256Rounds3
-import C3BootProofs.Proofs.Sha256Rounds4
-import C3BootProofs.Proofs.Sha256Rounds5
-import C3BootProofs.Proofs.Sha256Rounds6
-import C3BootProofs.Proofs.Sha256Rounds
 import C3BootProofs.Proofs.ShaStream
 import C3BootProofs.Proofs.Sha2Update
 import C3BootProofs.Proofs.Sha2Final

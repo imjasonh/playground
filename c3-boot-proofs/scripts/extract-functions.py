@@ -601,11 +601,17 @@ def shape_hash(code):
 
 
 def segments(image):
+    if len(image) < 24 or image[0] != 0xE9:
+        sys.exit(f"not an ESP image (len={len(image)}, magic={image[0] if image else None!r})")
     count = image[1]
     pos = 24
     out = []
     for _ in range(count):
+        if pos + 8 > len(image):
+            sys.exit(f"truncated segment header at offset {pos:#x}")
         addr, length = struct.unpack_from("<II", image, pos)
+        if pos + 8 + length > len(image):
+            sys.exit(f"truncated segment payload at offset {pos:#x} (len={length:#x})")
         out.append((addr, image[pos + 8 : pos + 8 + length]))
         pos += 8 + length
     return out
@@ -746,7 +752,7 @@ def main():
     lines += ["", "end C3.Image", ""]
     with open(out, "w") as f:
         f.write("\n".join(lines))
-    write_extra(extra, digest, extracted, symbols, at, segs)
+    write_extra(extra, digest, extracted, symbols, at, segs, image)
 
 
 def function_lines(functions, extracted, symbols, at, segs):
@@ -798,7 +804,7 @@ def function_lines(functions, extracted, symbols, at, segs):
     return lines
 
 
-def write_extra(extra, digest, extracted, symbols, at, segs):
+def write_extra(extra, digest, extracted, symbols, at, segs, image):
     """Writes the outputs after the first."""
     if extra:
         more = [
@@ -1005,6 +1011,9 @@ def write_extra(extra, digest, extracted, symbols, at, segs):
             "namespace C3.Image",
         ]
         more += function_lines(FUNCTIONS_RESET, extracted, symbols, at, segs)
+        entry = struct.unpack_from("<I", image, 4)[0]
+        if entry != extracted["startEntry"][0]:
+            sys.exit(f"image entry point {entry:#x} != _start {extracted['startEntry'][0]:#x}")
         more += name_table("Reset", more)
         more += ["", "end C3.Image", ""]
         with open(extra[9], "w") as f:
