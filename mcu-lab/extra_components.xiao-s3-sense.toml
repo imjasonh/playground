@@ -1,7 +1,14 @@
-# Extra ESP-IDF components enabled only for boards with a DVP camera (XIAO ESP32-S3 Sense).
-# Passed via ESP_IDF_SYS_EXTRA_COMPONENTS_FILE from the Makefile so non-camera boards
-# (xiao-esp32c3, waveshare-epd75) do not fetch or compile esp32-camera.
+# Extra ESP-IDF components enabled only for boards with a DVP camera and PSRAM
+# (XIAO ESP32-S3 Sense). Passed via ESP_IDF_SYS_EXTRA_COMPONENTS_FILE from the
+# Makefile so non-camera boards (xiao-esp32c3, waveshare-epd75) do not fetch or
+# compile esp32-camera or esp-tflite-micro.
+
 [[extra_components]]
 remote_component = { name = "espressif/esp32-camera", version = "^2.2.0" }
 bindings_header = "@PROJECT_DIR@/camera_bindings.h"
 bindings_module = "camera"
+
+[[extra_components]]
+component_dirs = ["@PROJECT_DIR@/components/sense_tflite"]
+bindings_header = "@PROJECT_DIR@/components/sense_tflite/sense_tflite.h"
+bindings_module = "sense_tflite"

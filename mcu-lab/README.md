@@ -67,18 +67,25 @@ One-time host setup:
 cargo install espup espflash ldproxy
 # macOS: brew install cmake ninja dfu-util
 # Debian/Ubuntu: sudo apt-get install cmake ninja-build
-espup install --targets esp32,esp32c3
+espup install --targets esp32,esp32c3,esp32s3
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Then:
 
 ```bash
-cd xiao-esp32c3
+cd mcu-lab
 make test
 make flash          # PORT=/dev/cu.usbmodem101 if autodetection misses the board
 make monitor
 ```
+
+### XIAO ESP32-S3 Sense (`recorder` + On-Device TFLite Micro)
+
+See [`docs/xiao-esp32s3-sense.md`](docs/xiao-esp32s3-sense.md) for microSD
+setup, download commands for the required pre-trained visual (`MobileNetV1`
+ImageNet-1K) and audio (`YAMNet` INT8 AudioSet) `.tflite` models, supported
+object/sound classes, and iOS streaming instructions.
 
 ## Tests
 

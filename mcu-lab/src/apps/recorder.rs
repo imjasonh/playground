@@ -1,7 +1,7 @@
 //! `RecorderApp` — continuous 1-minute audio+video `.mov` clip recorder to microSD
-//! with on-device audio DSP, vision motion/color detection, SD-card custom `MCUM`
-//! model hook, ring-buffer oldest-file eviction, and an HTTP range-streaming server
-//! for the Seeed Studio XIAO ESP32-S3 Sense.
+//! with on-device TensorFlow Lite Micro (`espressif/esp-tflite-micro`) vision & audio
+//! inference from `/sdcard/models/`, ring-buffer oldest-file eviction, and an HTTP
+//! range-streaming server for the Seeed Studio XIAO ESP32-S3 Sense.
 
 use std::fs::{self, File};
 use std::io::{BufWriter, Read, Seek, SeekFrom};
@@ -18,8 +18,8 @@ use esp_idf_svc::io::Write as EspWrite;
 use log::{info, warn};
 
 use crate::boards::xiao_esp32s3_sense::{
-    decode_jpeg_to_rgb_grid, sd_space_info, SenseCamera, SenseMic, SenseSdCard, SenseWifi,
-    SenseWifiInfo, CLIPS_DIR, MODELS_DIR,
+    decode_jpeg_to_image_grid, sd_space_info, SenseCamera, SenseMic, SenseSdCard, SenseWifi,
+    SenseWifiInfo, TfliteRunner, CLIPS_DIR, MODELS_DIR,
 };
 use crate::boards::{Board, HasSenseAV};
 use crate::platform::{App, RunMode, StepContext, StepOutput};
@@ -33,8 +33,11 @@ use crate::sense_clip::{
     RECORDER_FIRMWARE_ID,
 };
 use crate::sense_detect::{
-    format_clip_sidecar_json, parse_clip_sidecar_json, AudioDetector, AudioFeatures, SdLinearModel,
-    TagAccumulator, TagSource, VisionDetector, VisionFeatures,
+    extract_top_tags, format_clip_sidecar_json, infer_audio_input_kind, infer_vision_input_shape,
+    parse_clip_sidecar_json, parse_labels_file, AudioInputKind, MelSpectrogramExtractor,
+    TagAccumulator, TagSource, VisionInputShape, AUDIO_LABELS_CSV_PATH, AUDIO_LABELS_PATH,
+    AUDIO_MODEL_PATH, DEFAULT_AUDIO_MIN_CONFIDENCE, DEFAULT_VISION_MIN_CONFIDENCE,
+    VISION_LABELS_PATH, VISION_MODEL_PATH,
 };
 
 /// Target frame interval during recording (~10 fps -> ~600 frames per 1-minute clip).
@@ -43,11 +46,14 @@ const TARGET_FRAME_INTERVAL: Duration = Duration::from_millis(100);
 const HTTP_STREAM_CHUNK_BYTES: usize = 16 * 1024;
 /// PDM audio read buffer per frame (~3200 bytes = 100 ms at 16 kHz 16-bit mono).
 const AUDIO_READ_BUF_BYTES: usize = 4096;
-/// Downsampled RGB888 grid dimensions for on-device vision motion/color analysis (~1 Hz).
-const VISION_GRID_W: usize = 32;
-const VISION_GRID_H: usize = 24;
-/// Run full JPEG->RGB vision analysis every Nth frame (~1 Hz at 10 fps).
+/// Run vision TFLite inference every Nth frame (~1 Hz at 10 fps).
 const VISION_SAMPLE_STRIDE: usize = 10;
+/// PSRAM tensor arena size for the vision `.tflite` model (512 KiB; fits MobileNetV1 0.25 128×128).
+const VISION_TENSOR_ARENA_BYTES: usize = 512 * 1024;
+/// PSRAM tensor arena size for the audio `.tflite` model (1.4 MiB; fits YAMNet INT8 ~1.2 MiB arena).
+const AUDIO_TENSOR_ARENA_BYTES: usize = 1400 * 1024;
+/// Maximum number of top tags recorded per single TFLite inference.
+const MAX_TAGS_PER_INFERENCE: usize = 3;
 
 struct SharedState {
     wifi_info: SenseWifiInfo,
@@ -139,16 +145,17 @@ impl<B: Board + HasSenseAV> App<B> for RecorderApp {
         };
 
         let sd_mounted = sd.is_some();
-        let (sd_total_bytes, sd_free_bytes, initial_clips, sd_models) = if let Some(ref card) = sd {
-            cleanup_temp_clips();
-            let clips = scan_clips();
-            let models = load_sd_models();
-            let (total, free) = card.space_info().unwrap_or((0, 0));
-            (total, free, clips, models)
-        } else {
-            (0, 0, Vec::new(), Vec::new())
-        };
-        let model_names: Vec<String> = sd_models.iter().map(|m| m.label.clone()).collect();
+        let (sd_total_bytes, sd_free_bytes, initial_clips, tflite_models) =
+            if let Some(ref card) = sd {
+                cleanup_temp_clips();
+                let clips = scan_clips();
+                let models = load_tflite_models();
+                let (total, free) = card.space_info().unwrap_or((0, 0));
+                (total, free, clips, models)
+            } else {
+                (0, 0, Vec::new(), LoadedTfliteModels::default())
+            };
+        let model_names = tflite_models.model_names();
 
         let camera = match SenseCamera::init() {
             Ok(cam) => Some(cam),
@@ -179,28 +186,28 @@ impl<B: Board + HasSenseAV> App<B> for RecorderApp {
                 mic_ready: mic.is_some(),
                 active_clip: None,
                 active_tags: Vec::new(),
-                models: model_names,
+                models: model_names.clone(),
                 clips: initial_clips,
             }),
         });
 
         let http = start_http_server(Arc::clone(&shared))?;
         info!(
-            "recorder: HTTP server listening on http://{} (ssid={}, sd_mounted={}, cam={}, mic={}, models={})",
+            "recorder: HTTP server listening on http://{} (ssid={}, sd_mounted={}, cam={}, mic={}, models={:?})",
             wifi_info.ip,
             wifi_info.ssid,
             sd_mounted,
             camera.is_some(),
             mic.is_some(),
-            sd_models.len()
+            model_names
         );
 
         if sd_mounted {
             let worker_shared = Arc::clone(&shared);
             thread::Builder::new()
                 .name("sense-rec".to_string())
-                .stack_size(16 * 1024)
-                .spawn(move || recorder_worker(worker_shared, camera, mic, sd_models))?;
+                .stack_size(24 * 1024)
+                .spawn(move || recorder_worker(worker_shared, camera, mic, tflite_models))?;
         } else {
             warn!("recorder: no microSD mounted; recorder worker not started");
         }
@@ -282,35 +289,171 @@ impl<B: Board + HasSenseAV> App<B> for RecorderApp {
     }
 }
 
-fn load_sd_models() -> Vec<SdLinearModel> {
-    let _ = fs::create_dir_all(MODELS_DIR);
-    let Ok(entries) = fs::read_dir(MODELS_DIR) else {
-        return Vec::new();
-    };
-    let mut models = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if !ext.eq_ignore_ascii_case("mcum") {
-            continue;
+struct LoadedVisionModel {
+    runner: TfliteRunner,
+    shape: VisionInputShape,
+    labels: Vec<String>,
+    scores: Vec<f32>,
+    input_buf: Vec<u8>,
+}
+
+enum LoadedAudioFrontend {
+    Mel(MelSpectrogramExtractor),
+    Waveform { samples: usize, buf: Vec<f32> },
+}
+
+struct LoadedAudioModel {
+    runner: TfliteRunner,
+    frontend: LoadedAudioFrontend,
+    labels: Vec<String>,
+    scores: Vec<f32>,
+}
+
+#[derive(Default)]
+struct LoadedTfliteModels {
+    vision: Option<LoadedVisionModel>,
+    audio: Option<LoadedAudioModel>,
+}
+
+impl LoadedTfliteModels {
+    fn model_names(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        if self.vision.is_some() {
+            names.push("vision:tflite".to_string());
         }
-        match fs::read(&path) {
-            Ok(bytes) => match SdLinearModel::parse(&bytes) {
-                Ok(model) => {
-                    info!(
-                        "recorder: loaded SD model '{}' ({:?}, threshold={}%)",
-                        model.label, model.modality, model.threshold_pct
-                    );
-                    models.push(model);
-                }
-                Err(err) => warn!("recorder: ignoring invalid model {:?}: {err}", path),
-            },
-            Err(err) => warn!("recorder: failed reading model {:?}: {err}", path),
+        if self.audio.is_some() {
+            names.push("audio:tflite".to_string());
         }
+        names
     }
-    models
+}
+
+fn load_tflite_models() -> LoadedTfliteModels {
+    let _ = fs::create_dir_all(MODELS_DIR);
+    let vision = load_vision_tflite();
+    let audio = load_audio_tflite();
+    if vision.is_none() && audio.is_none() {
+        warn!(
+            "recorder: no TFLite models found in {MODELS_DIR} — tagging disabled until {VISION_MODEL_PATH} and/or {AUDIO_MODEL_PATH} are copied to the SD card"
+        );
+    }
+    LoadedTfliteModels { vision, audio }
+}
+
+fn load_vision_tflite() -> Option<LoadedVisionModel> {
+    let model_bytes = match fs::read(VISION_MODEL_PATH) {
+        Ok(b) => b,
+        Err(_) => {
+            warn!("recorder: vision model not found at {VISION_MODEL_PATH}");
+            return None;
+        }
+    };
+    let labels_text = match fs::read_to_string(VISION_LABELS_PATH) {
+        Ok(s) => s,
+        Err(err) => {
+            warn!("recorder: vision labels missing at {VISION_LABELS_PATH}: {err}");
+            return None;
+        }
+    };
+    let labels = parse_labels_file(&labels_text);
+    if labels.is_empty() {
+        warn!("recorder: vision labels file {VISION_LABELS_PATH} is empty");
+        return None;
+    }
+    let runner = match TfliteRunner::from_bytes(model_bytes, VISION_TENSOR_ARENA_BYTES) {
+        Ok(r) => r,
+        Err(err) => {
+            warn!("recorder: failed initializing vision TFLite model: {err:#}");
+            return None;
+        }
+    };
+    let Some(shape) = infer_vision_input_shape(runner.input_dims()) else {
+        warn!(
+            "recorder: unsupported vision model input dims {:?}",
+            runner.input_dims()
+        );
+        return None;
+    };
+    let num_outputs = runner.num_outputs();
+    info!(
+        "recorder: loaded vision TFLite ({}x{}x{}, {} outputs, {} labels, arena {} B)",
+        shape.width,
+        shape.height,
+        shape.channels,
+        num_outputs,
+        labels.len(),
+        runner.arena_used_bytes()
+    );
+    Some(LoadedVisionModel {
+        runner,
+        shape,
+        labels,
+        scores: vec![0.0f32; num_outputs],
+        input_buf: vec![0u8; shape.width * shape.height * shape.channels],
+    })
+}
+
+fn load_audio_tflite() -> Option<LoadedAudioModel> {
+    let model_bytes = match fs::read(AUDIO_MODEL_PATH) {
+        Ok(b) => b,
+        Err(_) => {
+            warn!("recorder: audio model not found at {AUDIO_MODEL_PATH}");
+            return None;
+        }
+    };
+    let labels_text = match fs::read_to_string(AUDIO_LABELS_PATH)
+        .or_else(|_| fs::read_to_string(AUDIO_LABELS_CSV_PATH))
+    {
+        Ok(s) => s,
+        Err(err) => {
+            warn!(
+                "recorder: audio labels missing at {AUDIO_LABELS_PATH} or {AUDIO_LABELS_CSV_PATH}: {err}"
+            );
+            return None;
+        }
+    };
+    let labels = parse_labels_file(&labels_text);
+    if labels.is_empty() {
+        warn!("recorder: audio labels file is empty");
+        return None;
+    }
+    let runner = match TfliteRunner::from_bytes(model_bytes, AUDIO_TENSOR_ARENA_BYTES) {
+        Ok(r) => r,
+        Err(err) => {
+            warn!("recorder: failed initializing audio TFLite model: {err:#}");
+            return None;
+        }
+    };
+    let Some(kind) = infer_audio_input_kind(runner.input_dims()) else {
+        warn!(
+            "recorder: unsupported audio model input dims {:?}",
+            runner.input_dims()
+        );
+        return None;
+    };
+    let frontend = match kind {
+        AudioInputKind::MelSpectrogram { frames, mel_bins } => {
+            LoadedAudioFrontend::Mel(MelSpectrogramExtractor::new(frames, mel_bins))
+        }
+        AudioInputKind::RawWaveform { samples } => LoadedAudioFrontend::Waveform {
+            samples,
+            buf: Vec::with_capacity(samples),
+        },
+    };
+    let num_outputs = runner.num_outputs();
+    info!(
+        "recorder: loaded audio TFLite ({:?}, {} outputs, {} labels, arena {} B)",
+        kind,
+        num_outputs,
+        labels.len(),
+        runner.arena_used_bytes()
+    );
+    Some(LoadedAudioModel {
+        runner,
+        frontend,
+        labels,
+        scores: vec![0.0f32; num_outputs],
+    })
 }
 
 fn cleanup_temp_clips() {
@@ -395,13 +538,10 @@ fn recorder_worker(
     shared: Arc<RecorderShared>,
     mut camera: Option<SenseCamera>,
     mut mic: Option<SenseMic>,
-    sd_models: Vec<SdLinearModel>,
+    mut models: LoadedTfliteModels,
 ) {
     let mut audio_buf = vec![0u8; AUDIO_READ_BUF_BYTES];
     let mut scratch_rgb = Vec::<u8>::new();
-    let mut vision_grid = [0u8; VISION_GRID_W * VISION_GRID_H * 3];
-    let mut audio_detector = AudioDetector::new(DEFAULT_AUDIO_SAMPLE_RATE);
-    let mut vision_detector = VisionDetector::new();
 
     loop {
         if !shared.recording.load(Ordering::Acquire) {
@@ -459,10 +599,13 @@ fn recorder_worker(
         };
 
         info!("recorder-worker: recording {final_name} ({CLIP_DURATION_SECS}s target)");
-        vision_detector.reset();
+        if let Some(ref mut audio_model) = models.audio {
+            match audio_model.frontend {
+                LoadedAudioFrontend::Mel(ref mut mel) => mel.reset(),
+                LoadedAudioFrontend::Waveform { ref mut buf, .. } => buf.clear(),
+            }
+        }
         let mut tag_acc = TagAccumulator::new();
-        let mut latest_audio_feats = AudioFeatures::default();
-        let mut latest_vision_feats = VisionFeatures::default();
         let clip_start = Instant::now();
         let target_duration = Duration::from_secs(u64::from(CLIP_DURATION_SECS));
         let mut last_frame_at = clip_start;
@@ -498,32 +641,44 @@ fn recorder_worker(
                         break;
                     }
 
-                    // Run on-device vision detection (~1 Hz RGB grid + every-frame JPEG delta).
+                    // Run on-device TFLite Micro vision inference (~1 Hz) when vision.tflite is loaded.
                     if frame_index % VISION_SAMPLE_STRIDE == 0 {
-                        if decode_jpeg_to_rgb_grid(
-                            bytes,
-                            usize::from(frame.width()),
-                            usize::from(frame.height()),
-                            &mut scratch_rgb,
-                            VISION_GRID_W,
-                            VISION_GRID_H,
-                            &mut vision_grid,
-                        ) {
-                            let (vhits, vfeats) = vision_detector.analyze_rgb888(
-                                &vision_grid,
-                                VISION_GRID_W,
-                                VISION_GRID_H,
-                            );
-                            latest_vision_feats = vfeats;
-                            for (label, conf) in vhits {
-                                tag_acc.record(label, TagSource::Vision, conf, elapsed_s);
-                                tags_updated = true;
+                        if let Some(ref mut vmodel) = models.vision {
+                            if decode_jpeg_to_image_grid(
+                                bytes,
+                                usize::from(frame.width()),
+                                usize::from(frame.height()),
+                                &mut scratch_rgb,
+                                vmodel.shape.width,
+                                vmodel.shape.height,
+                                vmodel.shape.channels,
+                                &mut vmodel.input_buf,
+                            ) {
+                                match vmodel
+                                    .runner
+                                    .invoke_u8_rgb(&vmodel.input_buf, &mut vmodel.scores)
+                                {
+                                    Ok(n) => {
+                                        for (label, conf) in extract_top_tags(
+                                            &vmodel.scores[..n],
+                                            &vmodel.labels,
+                                            DEFAULT_VISION_MIN_CONFIDENCE,
+                                            MAX_TAGS_PER_INFERENCE,
+                                        ) {
+                                            tag_acc.record(
+                                                &label,
+                                                TagSource::Vision,
+                                                conf,
+                                                elapsed_s,
+                                            );
+                                            tags_updated = true;
+                                        }
+                                    }
+                                    Err(err) => {
+                                        warn!("recorder-worker: vision TFLite invoke failed: {err}")
+                                    }
+                                }
                             }
-                        } else if let Some((label, conf)) =
-                            vision_detector.analyze_jpeg_size(bytes.len())
-                        {
-                            tag_acc.record(label, TagSource::Vision, conf, elapsed_s);
-                            tags_updated = true;
                         }
                     }
                 }
@@ -538,21 +693,44 @@ fn recorder_worker(
                         write_failed = true;
                         break;
                     }
-                    let (ahits, afeats) = audio_detector.analyze_pcm_le16(pcm);
-                    latest_audio_feats = afeats;
-                    for (label, conf) in ahits {
-                        tag_acc.record(label, TagSource::Audio, conf, elapsed_s);
-                        tags_updated = true;
-                    }
-                }
-            }
-
-            // Evaluate any user-supplied SD-card `.mcum` models on the latest audio+vision features.
-            if !sd_models.is_empty() && frame_index % VISION_SAMPLE_STRIDE == 0 {
-                for model in &sd_models {
-                    if let Some(conf) = model.evaluate(&latest_audio_feats, &latest_vision_feats) {
-                        tag_acc.record(&model.label, TagSource::Model, conf, elapsed_s);
-                        tags_updated = true;
+                    // Run on-device TFLite Micro audio inference when audio.tflite is loaded.
+                    if let Some(ref mut amodel) = models.audio {
+                        let ready_input = match amodel.frontend {
+                            LoadedAudioFrontend::Mel(ref mut mel) => mel.push_pcm_le16(pcm),
+                            LoadedAudioFrontend::Waveform {
+                                samples,
+                                ref mut buf,
+                            } => {
+                                for &chunk in pcm.as_chunks::<2>().0 {
+                                    let s = i16::from_le_bytes(chunk) as f32 / 32768.0;
+                                    buf.push(s);
+                                }
+                                if buf.len() >= samples {
+                                    let out: Vec<f32> = buf.drain(..samples).collect();
+                                    Some(out)
+                                } else {
+                                    None
+                                }
+                            }
+                        };
+                        if let Some(input_f32) = ready_input {
+                            match amodel.runner.invoke_f32(&input_f32, &mut amodel.scores) {
+                                Ok(n_out) => {
+                                    for (label, conf) in extract_top_tags(
+                                        &amodel.scores[..n_out],
+                                        &amodel.labels,
+                                        DEFAULT_AUDIO_MIN_CONFIDENCE,
+                                        MAX_TAGS_PER_INFERENCE,
+                                    ) {
+                                        tag_acc.record(&label, TagSource::Audio, conf, elapsed_s);
+                                        tags_updated = true;
+                                    }
+                                }
+                                Err(err) => {
+                                    warn!("recorder-worker: audio TFLite invoke failed: {err}")
+                                }
+                            }
+                        }
                     }
                 }
             }

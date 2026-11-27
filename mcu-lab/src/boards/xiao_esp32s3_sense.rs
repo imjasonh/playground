@@ -37,6 +37,10 @@ use esp_idf_svc::sys::camera::{
     framesize_t_FRAMESIZE_VGA, ledc_channel_t_LEDC_CHANNEL_0, ledc_timer_t_LEDC_TIMER_0,
     pixformat_t_PIXFORMAT_JPEG,
 };
+use esp_idf_svc::sys::sense_tflite::{
+    sense_tflite_create, sense_tflite_destroy, sense_tflite_info_t, sense_tflite_invoke_f32,
+    sense_tflite_invoke_u8_rgb, sense_tflite_runner_t,
+};
 use esp_idf_svc::sys::{esp_vfs_fat_info, ESP_OK};
 use esp_idf_svc::wifi::{
     AccessPointConfiguration, AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi,
@@ -57,7 +61,7 @@ pub const SD_MOUNT_POINT: &str = "/sdcard";
 /// Directory on the microSD card where recorded `.mov` clips and `.json` sidecars are stored.
 pub const CLIPS_DIR: &str = "/sdcard/clips";
 
-/// Directory on the microSD card where optional custom `.mcum` classifier models can be placed.
+/// Directory on the microSD card where pre-trained `.tflite` models and label files are placed.
 pub const MODELS_DIR: &str = "/sdcard/models";
 
 /// Uninitialized peripheral bundle handed to [`RecorderApp`](crate::apps::recorder::RecorderApp)
@@ -404,21 +408,29 @@ impl SenseMic {
 }
 
 /// Decode a JPEG frame into a reusable RGB888 scratch buffer (in PSRAM) and downsample
-/// into a compact `dst_w × dst_h` RGB888 grid for on-device motion/color detection.
-pub fn decode_jpeg_to_rgb_grid(
+/// into a `dst_w × dst_h × dst_channels` (`1` grayscale or `3` RGB888) tensor buffer
+/// for on-device TFLite Micro vision inference.
+pub fn decode_jpeg_to_image_grid(
     jpeg: &[u8],
     src_w: usize,
     src_h: usize,
     scratch_rgb: &mut Vec<u8>,
     dst_w: usize,
     dst_h: usize,
-    dst_rgb: &mut [u8],
+    dst_channels: usize,
+    dst_buf: &mut [u8],
 ) -> bool {
-    if jpeg.is_empty() || src_w == 0 || src_h == 0 || dst_w == 0 || dst_h == 0 {
+    if jpeg.is_empty()
+        || src_w == 0
+        || src_h == 0
+        || dst_w == 0
+        || dst_h == 0
+        || (dst_channels != 1 && dst_channels != 3)
+    {
         return false;
     }
     let needed = src_w.saturating_mul(src_h).saturating_mul(3);
-    if needed == 0 || dst_rgb.len() < dst_w * dst_h * 3 {
+    if needed == 0 || dst_buf.len() < dst_w * dst_h * dst_channels {
         return false;
     }
     if scratch_rgb.len() < needed {
@@ -441,12 +453,123 @@ pub fn decode_jpeg_to_rgb_grid(
         for dx in 0..dst_w {
             let sx = (dx * src_w) / dst_w;
             let src_i = (sy * src_w + sx) * 3;
-            let dst_i = (dy * dst_w + dx) * 3;
             // `fmt2rgb888` writes BGR888 byte order on ESP32-camera; swap to RGB888.
-            dst_rgb[dst_i] = scratch_rgb[src_i + 2];
-            dst_rgb[dst_i + 1] = scratch_rgb[src_i + 1];
-            dst_rgb[dst_i + 2] = scratch_rgb[src_i];
+            let r = scratch_rgb[src_i + 2];
+            let g = scratch_rgb[src_i + 1];
+            let b = scratch_rgb[src_i];
+            if dst_channels == 3 {
+                let dst_i = (dy * dst_w + dx) * 3;
+                dst_buf[dst_i] = r;
+                dst_buf[dst_i + 1] = g;
+                dst_buf[dst_i + 2] = b;
+            } else {
+                let dst_i = dy * dst_w + dx;
+                dst_buf[dst_i] =
+                    ((77 * u32::from(r) + 150 * u32::from(g) + 29 * u32::from(b)) >> 8) as u8;
+            }
         }
     }
     true
+}
+
+/// Safe Rust wrapper around the C++ `espressif/esp-tflite-micro` interpreter.
+///
+/// Owns the FlatBuffer model bytes in PSRAM and destroys the C interpreter before
+/// freeing the model buffer so pointers into the FlatBuffer stay valid for the
+/// entire lifetime of the interpreter.
+pub struct TfliteRunner {
+    raw: *mut sense_tflite_runner_t,
+    info: sense_tflite_info_t,
+    _model_bytes: Vec<u8>,
+}
+
+// SAFETY: `TfliteRunner` is exclusively owned by the recorder worker thread and never
+// shared across threads concurrently.
+unsafe impl Send for TfliteRunner {}
+
+impl TfliteRunner {
+    /// Load a `.tflite` FlatBuffer from `model_bytes` with a PSRAM tensor arena of `arena_bytes`.
+    pub fn from_bytes(model_bytes: Vec<u8>, arena_bytes: usize) -> Result<Self> {
+        // SAFETY: `sense_tflite_info_t` is a POD C struct filled by `sense_tflite_create`.
+        let mut info: sense_tflite_info_t = unsafe { core::mem::zeroed() };
+        // SAFETY: `model_bytes` stays alive and unmodified inside `Self` until after
+        // `sense_tflite_destroy` runs in `Drop`.
+        let raw = unsafe {
+            sense_tflite_create(
+                model_bytes.as_ptr(),
+                model_bytes.len(),
+                arena_bytes,
+                &mut info,
+            )
+        };
+        if raw.is_null() {
+            return Err(anyhow!(
+                "TFLite Micro failed to load model ({} B, arena {} B)",
+                model_bytes.len(),
+                arena_bytes
+            ));
+        }
+        Ok(Self {
+            raw,
+            info,
+            _model_bytes: model_bytes,
+        })
+    }
+
+    pub fn input_dims(&self) -> &[i32] {
+        let n = (self.info.num_dims as usize).min(4);
+        &self.info.dims[..n]
+    }
+
+    pub fn num_outputs(&self) -> usize {
+        self.info.num_outputs.max(0) as usize
+    }
+
+    pub fn arena_used_bytes(&self) -> usize {
+        self.info.arena_used_bytes
+    }
+
+    pub fn invoke_u8_rgb(&mut self, rgb: &[u8], out_scores: &mut [f32]) -> Result<usize> {
+        // SAFETY: `self.raw` is valid and `rgb`/`out_scores` are valid for their lengths.
+        let n = unsafe {
+            sense_tflite_invoke_u8_rgb(
+                self.raw,
+                rgb.as_ptr(),
+                rgb.len(),
+                out_scores.as_mut_ptr(),
+                out_scores.len(),
+            )
+        };
+        if n < 0 {
+            return Err(anyhow!("sense_tflite_invoke_u8_rgb failed ({n})"));
+        }
+        Ok(n as usize)
+    }
+
+    pub fn invoke_f32(&mut self, input: &[f32], out_scores: &mut [f32]) -> Result<usize> {
+        // SAFETY: `self.raw` is valid and `input`/`out_scores` are valid for their lengths.
+        let n = unsafe {
+            sense_tflite_invoke_f32(
+                self.raw,
+                input.as_ptr(),
+                input.len(),
+                out_scores.as_mut_ptr(),
+                out_scores.len(),
+            )
+        };
+        if n < 0 {
+            return Err(anyhow!("sense_tflite_invoke_f32 failed ({n})"));
+        }
+        Ok(n as usize)
+    }
+}
+
+impl Drop for TfliteRunner {
+    fn drop(&mut self) {
+        if !self.raw.is_null() {
+            // SAFETY: Destroy interpreter before `_model_bytes` is dropped.
+            unsafe { sense_tflite_destroy(self.raw) };
+            self.raw = core::ptr::null_mut();
+        }
+    }
 }

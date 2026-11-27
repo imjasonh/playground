@@ -149,22 +149,30 @@ struct MCULabSensePanel: View {
                 }
             }
 
-            if !status.activeTags.isEmpty || !status.models.isEmpty {
-                HStack(spacing: 8) {
-                    if !status.activeTags.isEmpty {
-                        Label(
-                            "Live: \(status.activeTags.joined(separator: ", "))",
-                            systemImage: "sparkles"
-                        )
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if !status.models.isEmpty {
-                        Label("\(status.models.count) SD models", systemImage: "cpu")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+            HStack(spacing: 8) {
+                if !status.activeTags.isEmpty {
+                    Label(
+                        "Live: \(status.activeTags.joined(separator: ", "))",
+                        systemImage: "sparkles"
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if !status.models.isEmpty {
+                    Label(
+                        "TFLite: \(status.models.joined(separator: ", "))",
+                        systemImage: "cpu"
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                } else if status.sdMounted {
+                    Label(
+                        "No TFLite models in /sdcard/models",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
                 }
             }
 
