@@ -10,7 +10,11 @@
 #include "esp_heap_caps.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
+#if __has_include("tensorflow/lite/schema/schema_generated.h")
 #include "tensorflow/lite/schema/schema_generated.h"
+#elif __has_include("tensorflow/compiler/mlir/lite/schema/schema_generated.h")
+#include "tensorflow/compiler/mlir/lite/schema/schema_generated.h"
+#endif
 
 namespace {
 
@@ -126,9 +130,14 @@ sense_tflite_runner_t *sense_tflite_create(
     }
 
     const tflite::Model *model = tflite::GetModel(model_data);
-    if (!model || model->version() != TFLITE_SCHEMA_VERSION) {
+    if (!model) {
         return nullptr;
     }
+#ifdef TFLITE_SCHEMA_VERSION
+    if (model->version() != TFLITE_SCHEMA_VERSION) {
+        return nullptr;
+    }
+#endif
 
     auto *runner = new (std::nothrow) sense_tflite_runner();
     if (!runner) {
