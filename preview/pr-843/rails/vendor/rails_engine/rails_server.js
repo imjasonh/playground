@@ -47,7 +47,7 @@ export class WasmEngine {
         return ret;
     }
     /**
-     * Return the static North America map definition as JSON for the Canvas renderer.
+     * Return the active map definition as JSON for the Canvas renderer.
      * @returns {string}
      */
     get_map_json() {
@@ -66,6 +66,31 @@ export class WasmEngine {
             return getStringFromWasm0(ptr1, len1);
         } finally {
             wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        }
+    }
+    /**
+     * Parse and activate a custom `.ebm` map file, returning the parsed `MapData` JSON.
+     * @param {string} ebm_text
+     * @returns {string}
+     */
+    load_ebm_map(ebm_text) {
+        let deferred3_0;
+        let deferred3_1;
+        try {
+            const ptr0 = passStringToWasm0(ebm_text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ret = wasm.wasmengine_load_ebm_map(this.__wbg_ptr, ptr0, len0);
+            var ptr2 = ret[0];
+            var len2 = ret[1];
+            if (ret[3]) {
+                ptr2 = 0; len2 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred3_0 = ptr2;
+            deferred3_1 = len2;
+            return getStringFromWasm0(ptr2, len2);
+        } finally {
+            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
         }
     }
     /**

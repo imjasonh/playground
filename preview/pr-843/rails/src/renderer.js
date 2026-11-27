@@ -356,8 +356,8 @@ export class BoardRenderer {
       const mp = this.mpById.get(city.center_mp);
       const isMajor = city.size === "major";
       ctx.font = `${isMajor ? "800" : "700"} ${isMajor ? 0.52 : 0.38}px Inter, sans-serif`;
-      const lx = mp.x + (city.id === "detroit" ? -0.35 : city.id === "cleveland" ? 0.35 : 0);
-      const ly = mp.y - (isMajor ? 0.3 : 0.24) + (city.id === "cleveland" ? 0.62 : 0);
+      const lx = mp.x;
+      const ly = mp.y - (isMajor ? 0.34 : 0.28);
       ctx.lineWidth = 0.14;
       ctx.strokeStyle = "rgba(242, 234, 212, 0.92)";
       ctx.strokeText(city.name, lx, ly);

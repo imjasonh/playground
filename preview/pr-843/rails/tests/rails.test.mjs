@@ -31,8 +31,9 @@ test("vendored wasm engine initializes and simulates a local North America game 
 
   const engine = new mod.WasmEngine();
   const map = JSON.parse(engine.get_map_json());
-  assert.equal(map.id, "na_classic");
-  assert.ok(map.mileposts.length > 400);
+  assert.equal(map.id, "united_states");
+  assert.ok(map.mileposts.length > 1500);
+  assert.equal(map.cities.length, 51);
   assert.equal(map.cities.filter((c) => c.size === "major").length, 6);
 
   const state = JSON.parse(
