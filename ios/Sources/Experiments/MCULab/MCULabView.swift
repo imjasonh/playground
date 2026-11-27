@@ -14,6 +14,7 @@ struct MCULabView: View {
                 availabilityBanner
                 scanControls
                 appCommandsPanel
+                MCULabSensePanel(controller: controller)
                 MCULabPhotoFramePanel(controller: controller)
                 metricsDashboard
                 phaseBreakdownPanel
@@ -239,7 +240,7 @@ struct MCULabView: View {
             ContentUnavailableView(
                 "No telemetry bursts yet",
                 systemImage: "cpu",
-                description: Text("Wake a board running mcu-lab (XIAO ESP32-C3 or Waveshare 7.5″ ESP32) or tap Simulate Wake to inspect phase durations and OTLP payloads.")
+                description: Text("Wake a board running mcu-lab (XIAO ESP32-C3, Waveshare 7.5″ ESP32, or XIAO ESP32-S3 Sense) or tap Simulate Wake to inspect phase durations and OTLP payloads.")
             )
             .frame(minHeight: 160)
             .accessibilityIdentifier("mcuLabEmptyMetrics")

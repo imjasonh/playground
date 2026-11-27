@@ -55,7 +55,7 @@ struct MCULabMetrics: Equatable, Identifiable {
         isEpdPartialRefresh ? "Partial LUT" : "Full LUT"
     }
 
-    /// Board ID encoded in the upper 4 bits of `flags` (`0` = legacy XIAO, `1` = XIAO ESP32-C3, `2` = Waveshare EPD-75).
+    /// Board ID encoded in the upper 4 bits of `flags` (`0` = legacy XIAO, `1` = XIAO ESP32-C3, `2` = Waveshare EPD-75, `3` = XIAO ESP32-S3 Sense).
     var boardID: UInt8 {
         (flags >> 4) & 0x0F
     }
@@ -65,6 +65,8 @@ struct MCULabMetrics: Equatable, Identifiable {
         switch boardID {
         case MCULabBoard.waveshareEPD75.boardID:
             return .waveshareEPD75
+        case MCULabBoard.xiaoESP32S3Sense.boardID:
+            return .xiaoESP32S3Sense
         default:
             return .xiaoESP32C3
         }
@@ -175,12 +177,17 @@ enum MCULabCapability: String, Hashable {
     case logicProbe = "logic-probe"
     case deepSleep = "deep-sleep"
     case epd75 = "epd75"
+    case camera = "camera"
+    case mic = "mic"
+    case sdcard = "sdcard"
+    case wifi = "wifi"
 }
 
 /// Physical MCU hardware board (silicon, pinout, power source, and capabilities).
 enum MCULabBoard: String, CaseIterable, Identifiable {
     case xiaoESP32C3 = "xiao-esp32c3"
     case waveshareEPD75 = "waveshare-epd75"
+    case xiaoESP32S3Sense = "xiao-esp32s3-sense"
 
     var id: String { rawValue }
 
@@ -188,6 +195,7 @@ enum MCULabBoard: String, CaseIterable, Identifiable {
         switch self {
         case .xiaoESP32C3: return "XIAO ESP32-C3"
         case .waveshareEPD75: return "Waveshare EPD-75 (ESP32)"
+        case .xiaoESP32S3Sense: return "XIAO ESP32-S3 Sense"
         }
     }
 
@@ -195,6 +203,7 @@ enum MCULabBoard: String, CaseIterable, Identifiable {
         switch self {
         case .xiaoESP32C3: return MCULabProtocol.deviceName
         case .waveshareEPD75: return "EPD-75"
+        case .xiaoESP32S3Sense: return "XIAO-S3"
         }
     }
 
@@ -202,6 +211,7 @@ enum MCULabBoard: String, CaseIterable, Identifiable {
         switch self {
         case .xiaoESP32C3: return "esp32c3"
         case .waveshareEPD75: return "esp32"
+        case .xiaoESP32S3Sense: return "esp32s3"
         }
     }
 
@@ -210,6 +220,7 @@ enum MCULabBoard: String, CaseIterable, Identifiable {
         switch self {
         case .xiaoESP32C3: return 0x0005
         case .waveshareEPD75: return 0x0000
+        case .xiaoESP32S3Sense: return 0x0009
         }
     }
 
@@ -217,6 +228,7 @@ enum MCULabBoard: String, CaseIterable, Identifiable {
         switch self {
         case .xiaoESP32C3: return 1
         case .waveshareEPD75: return 2
+        case .xiaoESP32S3Sense: return 3
         }
     }
 
@@ -224,6 +236,7 @@ enum MCULabBoard: String, CaseIterable, Identifiable {
         switch self {
         case .xiaoESP32C3: return [.logicProbe, .deepSleep]
         case .waveshareEPD75: return [.epd75]
+        case .xiaoESP32S3Sense: return [.camera, .mic, .sdcard, .wifi]
         }
     }
 
@@ -239,6 +252,7 @@ enum MCULabApp: String, CaseIterable, Identifiable {
     case maze = "maze"
     case grayscale = "grayscale"
     case photo = "photo"
+    case recorder = "recorder"
 
     var id: String { rawValue }
 
@@ -249,6 +263,7 @@ enum MCULabApp: String, CaseIterable, Identifiable {
         case .maze: return "Maze Animator"
         case .grayscale: return "Grayscale Boids"
         case .photo: return "Photo Frame"
+        case .recorder: return "Sense A/V Recorder"
         }
     }
 
@@ -259,6 +274,7 @@ enum MCULabApp: String, CaseIterable, Identifiable {
         case .maze: return [.epd75]
         case .grayscale: return [.epd75]
         case .photo: return [.epd75]
+        case .recorder: return [.camera, .mic, .sdcard, .wifi]
         }
     }
 }

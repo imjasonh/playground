@@ -11,6 +11,11 @@ linker = "ldproxy"
 runner = "espflash flash --monitor"
 rustflags = ["--cfg", "espidf_time64"]
 
+[target.xtensa-esp32s3-espidf]
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+rustflags = ["--cfg", "espidf_time64"]
+
 [env]
 MCU = { value = "esp32c3", force = false }
 ESP_IDF_VERSION = "v6.1"

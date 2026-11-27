@@ -22,15 +22,24 @@ PORT := /dev/cu.usbmodem101
 endif
 
 COMPATIBLE_PAIRS := $(shell python3 -c 'import json; m = json.load(open("manifest.json")); print(" ".join(f"{b}:{a}" for b, bd in m["boards"].items() for a, ad in m["apps"].items() if set(ad["requires"]).issubset(bd["capabilities"])))')
-BOARD_META = $(shell python3 -c 'import json, sys; m = json.load(open("manifest.json")); b = m["boards"].get(sys.argv[1]); print(b[sys.argv[2]] if b else "")' "$(BOARD)" "$(1)")
-APP_META = $(shell python3 -c 'import json, sys; m = json.load(open("manifest.json")); a = m["apps"].get(sys.argv[1]); print(a[sys.argv[2]] if a else "")' "$(APP)" "$(1)")
+BOARD_META = $(shell python3 -c 'import json, sys; m = json.load(open("manifest.json")); b = m["boards"].get(sys.argv[1]); print(b.get(sys.argv[2], "") if b else "")' "$(BOARD)" "$(1)")
+APP_META = $(shell python3 -c 'import json, sys; m = json.load(open("manifest.json")); a = m["apps"].get(sys.argv[1]); print(a.get(sys.argv[2], "") if a else "")' "$(APP)" "$(1)")
 COMPATIBLE := $(shell python3 -c 'import json, sys; m = json.load(open("manifest.json")); b = m["boards"].get(sys.argv[1]); a = m["apps"].get(sys.argv[2]); print("1" if (b and a and set(a["requires"]).issubset(b["capabilities"])) else "")' "$(BOARD)" "$(APP)")
 
 TARGET := $(call BOARD_META,target)
 MCU := $(call BOARD_META,chip)
 SDKCONFIG_IN := $(call BOARD_META,sdkconfig)
+EXTRA_COMPONENTS := $(call BOARD_META,extra_components)
 FIRMWARE_ID_FILE := $(call APP_META,firmware_id_file)
 FIRMWARE_ID_CONST := $(call APP_META,firmware_id_const)
+
+ifneq ($(EXTRA_COMPONENTS),)
+EXTRA_COMPONENTS_FILE := $(CURDIR)/target/$(BOARD)/extra_components.toml
+EXTRA_COMPONENTS_ENV := ESP_IDF_SYS_EXTRA_COMPONENTS_FILE=$(EXTRA_COMPONENTS_FILE)
+else
+EXTRA_COMPONENTS_FILE :=
+EXTRA_COMPONENTS_ENV :=
+endif
 
 ifeq ($(COMPATIBLE),)
 $(error Incompatible or unknown BOARD='$(BOARD)' APP='$(APP)' — valid BOARD:APP pairs: $(COMPATIBLE_PAIRS))
@@ -155,12 +164,19 @@ build-gzip-bench-xiao: ensure-python-shim $(XIAO_GZIP_BENCH_SDKCONFIG_DEFAULTS)
 flash-gzip-bench-xiao: build-gzip-bench-xiao
 	espflash flash --port $(PORT) --partition-table partitions.csv $(XIAO_GZIP_BENCH_BIN)
 
-build-app: ensure-python-shim $(SDKCONFIG_DEFAULTS)
+ifneq ($(EXTRA_COMPONENTS),)
+$(EXTRA_COMPONENTS_FILE): $(EXTRA_COMPONENTS) camera_bindings.h
+	@mkdir -p $(FW_TARGET_DIR)
+	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' $(EXTRA_COMPONENTS) > $@
+endif
+
+build-app: ensure-python-shim $(SDKCONFIG_DEFAULTS) $(EXTRA_COMPONENTS_FILE)
 	@if [ -z "$(FIRMWARE_ID)" ]; then \
 	  echo "ERROR: could not read $(FIRMWARE_ID_CONST) from $(FIRMWARE_ID_FILE) for $(BIN_NAME)"; \
 	  exit 1; \
 	fi
 	$(PROFILE_CARGO_ENV) \
+	$(EXTRA_COMPONENTS_ENV) \
 	MCU=$(MCU) \
 	CARGO_TARGET_DIR=$(FW_TARGET_DIR) \
 	ESP_IDF_SDKCONFIG_DEFAULTS=$(SDKCONFIG_DEFAULTS) \
@@ -171,6 +187,7 @@ build-app: ensure-python-shim $(SDKCONFIG_DEFAULTS)
 	    --target $(TARGET) \
 	    -Z build-std=std,panic_abort
 	@if [ "$(PROFILING)" = "0" ]; then \
+	  $(EXTRA_COMPONENTS_ENV) \
 	  MCU=$(MCU) \
 	  CARGO_TARGET_DIR=$(FW_TARGET_DIR) \
 	  ESP_IDF_SDKCONFIG_DEFAULTS=$(SDKCONFIG_DEFAULTS) \

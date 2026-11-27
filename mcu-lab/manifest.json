@@ -13,6 +13,14 @@
       "target": "xtensa-esp32-espidf",
       "sdkconfig": "sdkconfig.defaults.epd.in",
       "capabilities": ["epd75"]
+    },
+    "xiao-esp32s3-sense": {
+      "board_id": 3,
+      "chip": "esp32s3",
+      "target": "xtensa-esp32s3-espidf",
+      "sdkconfig": "sdkconfig.defaults.xiao-s3-sense.in",
+      "extra_components": "extra_components.xiao-s3-sense.toml",
+      "capabilities": ["camera", "mic", "sdcard", "wifi"]
     }
   },
   "apps": {
@@ -40,6 +48,11 @@
       "requires": ["epd75"],
       "firmware_id_file": "src/photo.rs",
       "firmware_id_const": "PHOTO_FIRMWARE_ID"
+    },
+    "recorder": {
+      "requires": ["camera", "mic", "sdcard", "wifi"],
+      "firmware_id_file": "src/sense_clip.rs",
+      "firmware_id_const": "RECORDER_FIRMWARE_ID"
     }
   }
 }

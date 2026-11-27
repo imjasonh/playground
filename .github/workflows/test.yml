@@ -437,7 +437,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           default: true
-          buildtargets: esp32,esp32c3
+          buildtargets: esp32,esp32c3,esp32s3
           ldproxy: true
 
       # Each image builds into its own directory under APP/target. ESP-IDF

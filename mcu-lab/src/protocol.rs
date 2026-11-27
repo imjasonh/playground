@@ -50,11 +50,15 @@ pub const FLAG_BROWNOUT_RESET: u8 = 1 << 3;
 pub const BOARD_XIAO_ESP32C3: u8 = 1;
 /// Waveshare e-Paper ESP32 Driver Board (classic ESP32 Xtensa + 7.5″ 800×480 UC8179).
 pub const BOARD_WAVESHARE_EPD75: u8 = 2;
+/// Seeed Studio XIAO ESP32-S3 Sense (Xtensa LX7 dual-core + OV2640/OV3660/OV5640 + PDM mic + microSD).
+pub const BOARD_XIAO_ESP32S3_SENSE: u8 = 3;
 
 /// ESP-IDF `esp_image_header_t.chip_id` for classic ESP32 (Xtensa LX6).
 pub const CHIP_ID_ESP32: u16 = 0x0000;
 /// ESP-IDF `esp_image_header_t.chip_id` for ESP32-C3 (RISC-V).
 pub const CHIP_ID_ESP32C3: u16 = 0x0005;
+/// ESP-IDF `esp_image_header_t.chip_id` for ESP32-S3 (Xtensa LX7).
+pub const CHIP_ID_ESP32S3: u16 = 0x0009;
 
 /// Static hardware board descriptor (independent of which [`App`] is running on it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -427,6 +431,7 @@ pub fn format_otlp_json(device_id: &str, m: &AdvMetrics, rssi: i32, time_unix_na
     let escaped_device_id = escape_json_str(device_id);
     let service_name = match decode_board_id(m.flags) {
         BOARD_WAVESHARE_EPD75 => "waveshare-epd75",
+        BOARD_XIAO_ESP32S3_SENSE => "xiao-esp32s3-sense",
         _ => "xiao-esp32c3",
     };
     format!(
@@ -1319,6 +1324,22 @@ mod tests {
         c3_hdr[12..14].copy_from_slice(&CHIP_ID_ESP32C3.to_le_bytes());
         assert!(validate_esp_image_header(&c3_hdr, CHIP_ID_ESP32C3).is_ok());
         assert!(validate_esp_image_header(&c3_hdr, CHIP_ID_ESP32).is_err());
+
+        let mut s3_hdr = [0u8; 24];
+        s3_hdr[0] = 0xE9;
+        s3_hdr[12..14].copy_from_slice(&CHIP_ID_ESP32S3.to_le_bytes());
+        assert!(validate_esp_image_header(&s3_hdr, CHIP_ID_ESP32S3).is_ok());
+        assert!(validate_esp_image_header(&s3_hdr, CHIP_ID_ESP32).is_err());
+        assert!(validate_esp_image_header(&s3_hdr, CHIP_ID_ESP32C3).is_err());
+
+        let s3_flags = encode_board_flags(BOARD_XIAO_ESP32S3_SENSE);
+        assert_eq!(decode_board_id(s3_flags), BOARD_XIAO_ESP32S3_SENSE);
+        let s3_metrics = AdvMetrics {
+            flags: s3_flags,
+            ..AdvMetrics::default()
+        };
+        let s3_json = format_otlp_json("dev-s3", &s3_metrics, -55, 1_000_000);
+        assert!(s3_json.contains(r#""service.name","value":{"stringValue":"xiao-esp32s3-sense"}"#));
 
         c3_hdr[0] = 0x00;
         assert!(validate_esp_image_header(&c3_hdr, CHIP_ID_ESP32C3).is_err());
