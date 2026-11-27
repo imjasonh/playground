@@ -23,12 +23,12 @@
       </div>
 
       <div class="topbar-right">
-        <button id="btn-undo" class="small" disabled title="Undo back to last card draw (Z)">↩ Undo</button>
-        <button id="btn-pitch" class="small warn" style="display:none" title="Discard all 3 cards, draw 3 new ones, and end turn">Pitch Hand</button>
-        <button id="btn-primary-action" class="primary" disabled>End Turn</button>
-        <button id="btn-directory" class="small" title="Commodity directory">Goods</button>
-        <button id="btn-sound" class="small" title="Toggle turn audio chime">🔊</button>
-        <button id="btn-menu" class="small" title="Lobby / New Game">Menu</button>
+        <button type="button" id="btn-undo" class="small" disabled title="Undo back to last card draw (Z)">↩ Undo</button>
+        <button type="button" id="btn-pitch" class="small warn" style="display:none" title="Discard all 3 cards, draw 3 new ones, and end turn">Pitch Hand</button>
+        <button type="button" id="btn-primary-action" class="primary" disabled>End Turn</button>
+        <button type="button" id="btn-directory" class="small" title="Commodity directory">Goods</button>
+        <button type="button" id="btn-sound" class="small" title="Toggle turn audio chime">🔊</button>
+        <button type="button" id="btn-menu" class="small" title="Lobby / New Game">Menu</button>
       </div>
     </header>
 
@@ -46,9 +46,9 @@
         </div>
 
         <div class="map-overlay-controls">
-          <button id="btn-zoom-in" class="small" title="Zoom in">+</button>
-          <button id="btn-zoom-out" class="small" title="Zoom out">−</button>
-          <button id="btn-zoom-fit" class="small" title="Fit North America map">Fit Map</button>
+          <button type="button" id="btn-zoom-in" class="small" title="Zoom in">+</button>
+          <button type="button" id="btn-zoom-out" class="small" title="Zoom out">−</button>
+          <button type="button" id="btn-zoom-fit" class="small" title="Fit North America map">Fit Map</button>
         </div>
 
         <div id="map-tooltip" class="map-tooltip hidden"></div>
@@ -100,8 +100,8 @@
       <p class="subtitle">Crayon railroad empire building for live game nights over Google Meet, or local play vs. RailBots.</p>
 
       <div class="tabs">
-        <button id="tab-local" class="tab-btn active">Local / vs. RailBots</button>
-        <button id="tab-online" class="tab-btn">Online Room (Meet)</button>
+        <button type="button" id="tab-local" class="tab-btn active">Local / vs. RailBots</button>
+        <button type="button" id="tab-online" class="tab-btn">Online Room (Meet)</button>
       </div>
 
       <!-- Local Setup -->
@@ -133,14 +133,14 @@
         <div class="section-title">
           <span>Players (2–6)</span>
           <div style="display:flex;gap:6px">
-            <button id="btn-add-human" class="small">+ Human</button>
-            <button id="btn-add-bot" class="small">+ RailBot</button>
+            <button type="button" id="btn-add-human" class="small">+ Human</button>
+            <button type="button" id="btn-add-bot" class="small">+ RailBot</button>
           </div>
         </div>
         <div id="local-seats" class="seat-list"></div>
 
         <div class="modal-actions">
-          <button id="btn-start-local" class="primary">Start Game</button>
+          <button type="button" id="btn-start-local" class="primary">Start Game</button>
         </div>
       </div>
 
@@ -180,17 +180,17 @@
           </div>
           <div class="section-title">
             <span>Room <b id="online-room-code"></b> — Seats</span>
-            <button id="btn-online-add-bot" class="small">+ RailBot</button>
+            <button type="button" id="btn-online-add-bot" class="small">+ RailBot</button>
           </div>
           <div id="online-seats" class="seat-list"></div>
           <div class="modal-actions">
-            <button id="btn-copy-invite" class="small">Copy Invite Link</button>
-            <button id="btn-online-start" class="primary">Start Online Game</button>
+            <button type="button" id="btn-copy-invite" class="small">Copy Invite Link</button>
+            <button type="button" id="btn-online-start" class="primary">Start Online Game</button>
           </div>
         </div>
 
         <div id="online-connect-actions" class="modal-actions">
-          <button id="btn-online-connect" class="primary">Create / Join Room</button>
+          <button type="button" id="btn-online-connect" class="primary">Create / Join Room</button>
         </div>
       </div>
     </div>
@@ -203,7 +203,7 @@
       <p class="subtitle">Click any commodity to highlight all producing cities on the map.</p>
       <div id="directory-grid" class="directory-grid"></div>
       <div class="modal-actions">
-        <button id="btn-close-directory" class="primary">Close</button>
+        <button type="button" id="btn-close-directory" class="primary">Close</button>
       </div>
     </div>
   </div>
@@ -215,12 +215,13 @@
       <p id="victory-subtitle" class="subtitle"></p>
       <div id="victory-standings" class="seat-list"></div>
       <div class="modal-actions">
-        <button id="btn-victory-inspect" class="small">Inspect Board</button>
-        <button id="btn-victory-new" class="primary">New Game</button>
+        <button type="button" id="btn-victory-inspect" class="small">Inspect Board</button>
+        <button type="button" id="btn-victory-new" class="primary">New Game</button>
       </div>
     </div>
   </div>
 
+  <script src="whbiab.js" data-app="rails"></script>
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>
