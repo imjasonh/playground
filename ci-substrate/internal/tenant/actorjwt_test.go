@@ -125,6 +125,7 @@ func TestActorJWTVerifierAndRegistry(t *testing.T) {
 	reg := NewRegistry()
 	reg.Allow("tok-a", "tenant-a", "shared")
 	reg.Allow("tok-b", "tenant-b", "shared")
+	reg.Allow("tok-admin", "tenant-a", "tenant-b")
 	reg.SetActorJWTVerifier(v)
 
 	validClaims := func(atespace, actor string) map[string]any {
@@ -143,8 +144,9 @@ func TestActorJWTVerifierAndRegistry(t *testing.T) {
 		}
 	}
 
-	// Valid ES256 and RS256 tokens authorize tenant-a and shared, deny tenant-b,
-	// and enforce bot_id == actorName.
+	// Valid ES256 and RS256 tokens authorize only their own atespace (never
+	// sibling instances from multi-tenant static tokens) and enforce
+	// bot_id == actorName.
 	for name, tok := range map[string]string{
 		"ES256": signES256(t, ecKey, "ec-1", validClaims("tenant-a", "ci-runner-abc")),
 		"RS256": signRS256(t, rsaKey, "rsa-1", validClaims("tenant-a", "ci-runner-abc")),
@@ -154,8 +156,8 @@ func TestActorJWTVerifierAndRegistry(t *testing.T) {
 			if err := reg.Authorize(ctx, "tenant-a"); err != nil {
 				t.Fatalf("Authorize(tenant-a): %v", err)
 			}
-			if err := reg.Authorize(ctx, "shared"); err != nil {
-				t.Fatalf("Authorize(shared): %v", err)
+			if err := reg.Authorize(ctx, "shared"); status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("Authorize(shared) = %v, want PermissionDenied", err)
 			}
 			if err := reg.Authorize(ctx, "tenant-b"); status.Code(err) != codes.PermissionDenied {
 				t.Fatalf("Authorize(tenant-b) = %v, want PermissionDenied", err)

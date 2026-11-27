@@ -103,17 +103,38 @@ type jwtHeader struct {
 	Kid string `json:"kid"`
 }
 
+type jwtAudience []string
+
+func (a *jwtAudience) UnmarshalJSON(b []byte) error {
+	var single string
+	if err := json.Unmarshal(b, &single); err == nil {
+		*a = jwtAudience{single}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(b, &many); err != nil {
+		return err
+	}
+	*a = jwtAudience(many)
+	return nil
+}
+
 type jwtClaims struct {
 	Iss   string         `json:"iss"`
 	Sub   string         `json:"sub"`
-	Aud   []string       `json:"aud"`
+	Aud   jwtAudience    `json:"aud"`
 	Exp   int64          `json:"exp"`
 	Nbf   int64          `json:"nbf"`
 	Actor *ActorIdentity `json:"actor.ate.dev"`
 }
 
+const maxJWTBytes = 16 << 10
+
 // Verify parses and cryptographically verifies a Substrate Actor JWT.
 func (v *ActorJWTVerifier) Verify(ctx context.Context, raw string) (*ActorIdentity, error) {
+	if len(raw) > maxJWTBytes {
+		return nil, errors.New("JWT too large")
+	}
 	parts := strings.Split(raw, ".")
 	if len(parts) != 3 {
 		return nil, errors.New("malformed JWT")
@@ -207,34 +228,36 @@ func (v *ActorJWTVerifier) key(ctx context.Context, kid string) (jwkKey, error) 
 	return k, nil
 }
 
-func (v *ActorJWTVerifier) client() (*http.Client, error) {
+func (v *ActorJWTVerifier) client() (*http.Client, func(), error) {
 	if v.httpClient != nil {
-		return v.httpClient, nil
+		return v.httpClient, func() {}, nil
 	}
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS13}
 	if v.caFile != "" {
 		pem, err := os.ReadFile(v.caFile)
 		if err != nil {
-			return nil, fmt.Errorf("reading actor JWT CA %s: %w", v.caFile, err)
+			return nil, nil, fmt.Errorf("reading actor JWT CA %s: %w", v.caFile, err)
 		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("%s holds no certificates", v.caFile)
+			return nil, nil, fmt.Errorf("%s holds no certificates", v.caFile)
 		}
 		tlsCfg.RootCAs = pool
 	}
+	tr := &http.Transport{TLSClientConfig: tlsCfg}
 	return &http.Client{
 		Timeout:   10 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
-	}, nil
+		Transport: tr,
+	}, tr.CloseIdleConnections, nil
 }
 
 func (v *ActorJWTVerifier) refreshLocked(ctx context.Context) error {
 	v.lastRefresh = v.now()
-	cli, err := v.client()
+	cli, closeClient, err := v.client()
 	if err != nil {
 		return err
 	}
+	defer closeClient()
 	if v.jwksURI == "" {
 		var disco struct {
 			Issuer  string `json:"issuer"`
@@ -337,7 +360,11 @@ func (k rawJWK) publicKey() (crypto.PublicKey, error) {
 		if err != nil {
 			return nil, err
 		}
-		e := int(new(big.Int).SetBytes(eb).Int64())
+		eBig := new(big.Int).SetBytes(eb)
+		if eBig.BitLen() > 31 {
+			return nil, errors.New("RSA exponent too large")
+		}
+		e := int(eBig.Int64())
 		if e < 3 {
 			return nil, errors.New("invalid RSA exponent")
 		}

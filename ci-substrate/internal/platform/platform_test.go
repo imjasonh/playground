@@ -54,3 +54,31 @@ func TestFromActionFallsBackToCommand(t *testing.T) {
 		t.Fatalf("action override = %+v", got)
 	}
 }
+
+func TestSpecValidate(t *testing.T) {
+	for _, valid := range []platform.Spec{
+		{},
+		{Env: "warm-go"},
+		{Env: "a"},
+		{Isolation: "clean"},
+		{Env: "go-127", Isolation: "clean"},
+	} {
+		if err := valid.Validate(); err != nil {
+			t.Errorf("Validate(%+v) = %v, want nil", valid, err)
+		}
+	}
+	for _, invalid := range []platform.Spec{
+		{Env: "UPPER"},
+		{Env: "-leading"},
+		{Env: "trailing-"},
+		{Env: "has--double"},
+		{Env: "a,isolation=clean"},
+		{Env: "../escape"},
+		{Env: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, // 41 chars
+		{Isolation: "bogus"},
+	} {
+		if err := invalid.Validate(); err == nil {
+			t.Errorf("Validate(%+v) = nil, want error", invalid)
+		}
+	}
+}

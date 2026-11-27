@@ -6,6 +6,7 @@
 package platform
 
 import (
+	"fmt"
 	"strings"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -40,12 +41,38 @@ func FromProperties(props []*repb.Platform_Property) Spec {
 		case PropEnv:
 			s.Env = strings.TrimSpace(p.GetValue())
 		case PropIsolation:
-			if strings.TrimSpace(p.GetValue()) == IsolationClean {
-				s.Isolation = IsolationClean
+			v := strings.TrimSpace(p.GetValue())
+			if v == "warm" {
+				v = ""
 			}
+			s.Isolation = v
 		}
 	}
 	return s
+}
+
+// Validate reports an error if s carries an invalid tag name or unknown
+// isolation mode.
+func (s Spec) Validate() error {
+	if s.Isolation != "" && s.Isolation != IsolationClean {
+		return fmt.Errorf("unknown %s value %q (want %q or \"warm\")", PropIsolation, s.Isolation, IsolationClean)
+	}
+	if s.Env != "" {
+		if len(s.Env) > 40 {
+			return fmt.Errorf("%s tag %q exceeds 40 characters", PropEnv, s.Env)
+		}
+		if strings.Contains(s.Env, "--") {
+			return fmt.Errorf("%s tag %q must not contain \"--\"", PropEnv, s.Env)
+		}
+		for i := 0; i < len(s.Env); i++ {
+			c := s.Env[i]
+			alnum := (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+			if !alnum && (c != '-' || i == 0 || i == len(s.Env)-1) {
+				return fmt.Errorf("%s tag %q must be a lowercase DNS label", PropEnv, s.Env)
+			}
+		}
+	}
+	return nil
 }
 
 // FromAction extracts a Spec from Action.platform, falling back to

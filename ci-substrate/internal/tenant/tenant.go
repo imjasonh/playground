@@ -104,16 +104,12 @@ func Outgoing(ctx context.Context, token string) context.Context {
 }
 
 func (r *Registry) instancesForAtespace(atespace string) map[string]bool {
-	out := map[string]bool{}
 	for tok, set := range r.allow {
-		if r.acReadOnly[tok] || !set[atespace] {
-			continue
-		}
-		for name := range set {
-			out[name] = true
+		if !r.acReadOnly[tok] && set[atespace] {
+			return map[string]bool{atespace: true}
 		}
 	}
-	return out
+	return nil
 }
 
 func (r *Registry) authenticate(ctx context.Context) (instances map[string]bool, actor *ActorIdentity, readOnlyAC bool, err error) {

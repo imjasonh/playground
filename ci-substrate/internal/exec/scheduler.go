@@ -289,7 +289,11 @@ func (s *Scheduler) Execute(req *repb.ExecuteRequest, stream repb.Execution_Exec
 	if len(action.GetPlatform().GetProperties()) == 0 && action.GetCommandDigest() != nil {
 		cmd = s.tryLoadCommand(action.GetCommandDigest())
 	}
-	platformKey := platform.FromAction(action, cmd).Key()
+	spec := platform.FromAction(action, cmd)
+	if err := spec.Validate(); err != nil {
+		return status.Errorf(codes.InvalidArgument, "platform: %v", err)
+	}
+	platformKey := spec.Key()
 	priority := req.GetExecutionPolicy().GetPriority()
 	j, merged := s.submit(ctx, req.GetInstanceName(), platformKey, req.GetActionDigest(), action.GetDoNotCache(), priority)
 	result := "queued"
@@ -745,6 +749,9 @@ func (s *Scheduler) jobProto(j *job) *workerv1.Job {
 
 // Heartbeat renews the runner's lease on a job.
 func (s *Scheduler) Heartbeat(ctx context.Context, req *workerv1.HeartbeatRequest) (*workerv1.HeartbeatResponse, error) {
+	if err := s.tenants.AuthorizeBot(ctx, req.GetBotId()); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	j, err := s.ownedLocked(ctx, req.GetBotId(), req.GetJobId())
@@ -760,6 +767,9 @@ func (s *Scheduler) Heartbeat(ctx context.Context, req *workerv1.HeartbeatReques
 
 // Complete records the outcome of a leased job and wakes its watchers.
 func (s *Scheduler) Complete(ctx context.Context, req *workerv1.CompleteRequest) (*workerv1.CompleteResponse, error) {
+	if err := s.tenants.AuthorizeBot(ctx, req.GetBotId()); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	j, err := s.ownedLocked(ctx, req.GetBotId(), req.GetJobId())

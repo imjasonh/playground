@@ -301,14 +301,43 @@ if [[ "${golden_tag}" == "-" || -z "${golden_tag}" ]]; then
   exit 1
 fi
 
+if kubectl -n ci-substrate get deployment "${RUNNER_DEPLOYMENT}" >/dev/null 2>&1; then
+  kubectl -n ci-substrate scale deployment "${RUNNER_DEPLOYMENT}" --replicas=0
+fi
+kubectl -n ci-substrate port-forward svc/cas 18980:8980 >/dev/null 2>&1 &
+PORT_FORWARD_PIDS+=("$!")
+kubectl -n ci-substrate port-forward svc/cascache 19092:9092 >/dev/null 2>&1 &
+PORT_FORWARD_PIDS+=("$!")
+sleep 2
+
+echo "==> Seeding pre-warmed build environment Tag (warm-env)"
+warm_marker="prewarmed-toolchain-v1"
+warm_actor="warm-env-seed"
+kubectl ate delete actor "${warm_actor}" -a "${ATESPACE}" >/dev/null 2>&1 || true
+kubectl ate create actor "${warm_actor}" -a "${ATESPACE}" --template ci-runner-env
+kubectl ate create egress-policy "${warm_actor}" -a "${ATESPACE}" -f "${OVERLAY}/egress-cas.yaml"
+kubectl ate resume actor "${warm_actor}" -a "${ATESPACE}"
+go run "${ROOT}/cmd/rbe-run" \
+  -addr localhost:18980 -instance "${ATESPACE}" -token tok-a -runs 1 \
+  -script "printf '%s' '${warm_marker}' > /var/tmp/ci-substrate-warm-env && cat /system/name"
+echo "seeded /var/tmp/ci-substrate-warm-env in actor ${warm_actor}; suspending to tag"
+kubectl ate suspend actor "${warm_actor}" -a "${ATESPACE}"
+for _ in $(seq 1 60); do
+  st="$(kubectl ate get actor "${warm_actor}" -a "${ATESPACE}" -o json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",{}).get("state",""))')"
+  if [[ "${st}" == "ACTOR_STATE_SUSPENDED" ]]; then
+    break
+  fi
+  sleep 2
+done
+kubectl ate delete tag warm-env -a "${ATESPACE}" >/dev/null 2>&1 || true
+kubectl ate create tag warm-env -a "${ATESPACE}" --actor "${warm_actor}" --scope atespace
+kubectl ate delete actor "${warm_actor}" -a "${ATESPACE}" >/dev/null 2>&1 || true
+
 echo "==> Pool"
 kubectl -n ci-substrate create configmap ci-substrate-pool-tenant-a \
   --from-file=egress-policy.yaml="${OVERLAY}/egress-cas.yaml" --dry-run=client -o yaml | kubectl apply -f -
 ko apply -f "${OVERLAY}/pool.yaml"
 kubectl -n ci-substrate rollout status deployment/ci-substrate-pool-tenant-a --timeout=180s
-if kubectl -n ci-substrate get deployment "${RUNNER_DEPLOYMENT}" >/dev/null 2>&1; then
-  kubectl -n ci-substrate scale deployment "${RUNNER_DEPLOYMENT}" --replicas=0
-fi
 
 pool_diagnostics() {
   kubectl ate get actors -a "${ATESPACE}" >&2 || true
@@ -335,11 +364,6 @@ fi
 kubectl ate get actors -a "${ATESPACE}"
 
 echo "==> Executing an action through the pool"
-kubectl -n ci-substrate port-forward svc/cas 18980:8980 >/dev/null 2>&1 &
-PORT_FORWARD_PIDS+=("$!")
-kubectl -n ci-substrate port-forward svc/cascache 19092:9092 >/dev/null 2>&1 &
-PORT_FORWARD_PIDS+=("$!")
-sleep 2
 CI_SUBSTRATE_E2E_ORIGIN_ADDR=localhost:18980 \
 CI_SUBSTRATE_E2E_CACHE_ADDR=localhost:19092 \
 CI_SUBSTRATE_E2E_EXEC_TIMEOUT=5m \
@@ -355,27 +379,6 @@ kubectl ate get actors -a "${ATESPACE}"
 kubectl -n ci-substrate logs deployment/ci-substrate-pool-tenant-a --tail=20
 
 echo "==> Forking a pre-warmed build environment from a Substrate Tag (ci-substrate/env=warm-env)"
-warm_marker="prewarmed-toolchain-v1"
-warm_actor="ci-runner-env-warm-env-seed--0"
-kubectl ate delete actor "${warm_actor}" -a "${ATESPACE}" >/dev/null 2>&1 || true
-kubectl ate create actor "${warm_actor}" -a "${ATESPACE}" --template ci-runner-env
-kubectl ate create egress-policy "${warm_actor}" -a "${ATESPACE}" -f "${OVERLAY}/egress-cas.yaml"
-kubectl ate resume actor "${warm_actor}" -a "${ATESPACE}"
-go run "${ROOT}/cmd/rbe-run" \
-  -addr localhost:18980 -instance "${ATESPACE}" -token tok-a -runs 1 \
-  -platform "ci-substrate/env=warm-env-seed" \
-  -script "printf '%s' '${warm_marker}' > /var/tmp/ci-substrate-warm-env && cat /system/name"
-echo "seeded /var/tmp/ci-substrate-warm-env in actor ${warm_actor}; suspending to tag"
-kubectl ate suspend actor "${warm_actor}" -a "${ATESPACE}"
-for _ in $(seq 1 60); do
-  st="$(kubectl ate get actor "${warm_actor}" -a "${ATESPACE}" -o json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",{}).get("state",""))')"
-  if [[ "${st}" == "ACTOR_STATE_SUSPENDED" ]]; then
-    break
-  fi
-  sleep 2
-done
-kubectl ate delete tag warm-env -a "${ATESPACE}" >/dev/null 2>&1 || true
-kubectl ate create tag warm-env -a "${ATESPACE}" --actor "${warm_actor}" --scope atespace
 CI_SUBSTRATE_E2E_ORIGIN_ADDR=localhost:18980 \
 CI_SUBSTRATE_E2E_CACHE_ADDR=localhost:19092 \
 CI_SUBSTRATE_E2E_EXEC_TIMEOUT=5m \
@@ -385,7 +388,6 @@ CI_SUBSTRATE_E2E_ENV_MARKER="${warm_marker}" \
   pool_diagnostics
   exit 1
 }
-kubectl ate delete actor "${warm_actor}" -a "${ATESPACE}" >/dev/null 2>&1 || true
 
 echo "==> Clean-room per-action isolation (ci-substrate/isolation=clean via RevertActor)"
 CI_SUBSTRATE_E2E_ORIGIN_ADDR=localhost:18980 \
