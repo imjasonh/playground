@@ -63,6 +63,8 @@ playground/
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── qr-quine/              # QR symbol that encodes a data URL of itself
 ├── queens/                # generate and play Queens and Two Not Touch puzzles (JS + Node tests)
+├── rails/                 # Empire Builder crayon rails web app (Canvas + vendored Wasm + Node tests)
+├── rails-server/          # Rust Cloudflare Worker + Wasm engine + 1000-game AI simulator for rails (not a Pages app)
 ├── read-receipt/          # read pasted Markdown word by word, then share a receipt link (JS + Node tests)
 ├── kube/                  # Go library: Kubernetes controller runtime on the standard library alone
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
@@ -107,6 +109,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `qr-quine/` | yes | QR symbol whose payload is a data URL of itself; JS modules, npm scripts, tests |
 | `queens/` | yes | Queens and Two Not Touch puzzle generator and player; JS modules, npm scripts, tests |
+| `rails/` | yes | Empire Builder crayon rails web app; Canvas + vendored Wasm built from `rails-server/`, Node tests |
 | `read-receipt/` | yes | Read pasted Markdown word by word and share a receipt link; JS modules, vendored marked and DOMPurify, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
 | `marptalk/` | yes | Narrated Marp deck player; JS modules, vendored Marp Core, tests |
@@ -147,6 +150,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
 | `tank-commander/` | no | Rust CLI (Tank Commander balance/fun simulator); no `index.html` |
 | `mapvelopes/` | no | Rust Cloudflare Worker; no `index.html` |
+| `rails-server/` | no | Rust Cloudflare Worker (Durable Object) + Wasm engine + AI simulator for `rails/`; no `index.html` |
 | `its-not-jaws/` | no | Cursor SDK knower/guesser guessing harness; no `index.html` |
 | `nethack-agent/` | no | Cursor SDK terminal-game harness; no `index.html` |
 | `bun-image/` | no | bun compile + crane image (shell); no `index.html` |

@@ -1,0 +1,57 @@
+[package]
+name = "rails-server"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Empire Builder (crayon rails) rules engine, AI simulator, Wasm bridge, and Cloudflare Worker multiplayer server"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "rails-sim"
+path = "src/bin/sim.rs"
+required-features = ["sim"]
+
+[features]
+default = ["worker"]
+# Cloudflare Worker runtime + Durable Object (only active on wasm32).
+worker = ["dep:worker", "dep:wasm-bindgen-futures", "dep:serde-wasm-bindgen", "dep:js-sys"]
+# Browser Wasm bindings for ../rails (built with --no-default-features --features browser-wasm).
+browser-wasm = []
+# Native multi-game AI simulator CLI.
+sim = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = { version = "0.8", default-features = false, features = ["std"] }
+rand_chacha = "0.3"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+getrandom = { version = "0.2", features = ["js"] }
+worker = { version = "0.8", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+js-sys = { version = "0.3", optional = true }
+
+[profile.release]
+opt-level = "s"
+lto = true
+# wasm-bindgen needs the wasm target_features custom section (workers-rs#1014).
+strip = "debuginfo"
+
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = "debuginfo"
+panic = "abort"
+
+[lints.rust]
+unused = "deny"
