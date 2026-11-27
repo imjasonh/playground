@@ -123,6 +123,15 @@ for f in ("resourceVersion", "uid", "creationTimestamp", "generation", "managedF
 print(json.dumps(s))
 ' | kubectl replace -f - >/dev/null
 kubectl -n ci-substrate rollout status statefulset/cas --timeout=180s
+# run-kind.sh points cascache at cas's pod IP; update it after cas restarts.
+cas_ip="$(kubectl -n ci-substrate get pod cas-0 -o jsonpath='{.status.podIP}')"
+if [[ -n "${cas_ip}" ]] && kubectl -n ci-substrate get daemonset cascache >/dev/null 2>&1; then
+  cur_origin="$(kubectl -n ci-substrate get daemonset cascache -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ORIGIN_ADDR")].value}')"
+  if [[ -n "${cur_origin}" && "${cur_origin}" != *svc.cluster.local* && "${cur_origin}" != "${cas_ip}:8980" ]]; then
+    kubectl -n ci-substrate set env daemonset/cascache "ORIGIN_ADDR=${cas_ip}:8980"
+    kubectl -n ci-substrate rollout status daemonset/cascache --timeout=180s
+  fi
+fi
 
 echo "==> WorkerPool"
 workerpool_edits=()
