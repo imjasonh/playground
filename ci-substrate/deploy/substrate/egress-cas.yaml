@@ -1,4 +1,4 @@
-# EgressPolicy for a tenant-a CI actor. It allows plain gRPC (HTTP/2) to the
+# EgressPolicy for a CI runner actor. It allows plain gRPC (HTTP/2) to the
 # cas Service on its port, for leases, the two small protos an action names,
 # output uploads, and the result, and to the OpenTelemetry collector, for the
 # runner's traces and metrics, and nothing else. Inputs don't go this way;
@@ -8,13 +8,11 @@
 #   kubectl ate create egress-policy <actor> -a tenant-a -f egress-cas.yaml
 #
 # The gateway replaces the actor's placeholder x-ci-substrate-tenant header
-# with tenant-a's token from the Secret ci-substrate-tenant-a/tenant-token (key
-# "token"), so the actor never holds the token. Each tenant's token lives in
-# its own namespace, and the credential provider's namespace policy grants the
-# tenant-a atespace only ci-substrate-tenant-a, so one tenant's policy cannot
-# resolve another tenant's token. The rule is plain HTTP: the token crosses
-# the gateway-to-Service hop unencrypted, so a real install needs mTLS or a
-# mesh on that hop.
+# with a short-lived Substrate Actor JWT minted by ateapi for that specific
+# actor (atespace + actorName + actorUID). cas verifies the JWT against
+# ate-idp-server's OIDC discovery endpoint and enforces that bot_id matches
+# actorName, so no per-tenant static token Secret or k8s-credential-provider
+# namespace grant is needed, and the actor never holds a reusable secret.
 rules:
 - http:
     hostnames: ["cas.ci-substrate.svc.cluster.local"]
@@ -23,7 +21,9 @@ rules:
     effects:
       replaceHeaders:
       - header: x-ci-substrate-tenant
-        credentialUri: ate-secret://k8s.io/default/ci-substrate-tenant-a/tenant-token/token
+        actorJwt:
+          audiences: ["cas.ci-substrate.svc.cluster.local"]
+          expirationSeconds: 600
 - http:
     hostnames: ["otel-collector.ci-substrate.svc.cluster.local"]
     ports:

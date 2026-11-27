@@ -38,6 +38,9 @@ func TestParsesDeployedEgressPolicy(t *testing.T) {
 	if len(headers) != 1 || headers[0].GetHeader() != "x-ci-substrate-tenant" {
 		t.Errorf("cas rule %v does not inject the tenant header", rules["cas.ci-substrate.svc.cluster.local"])
 	}
+	if jwt := headers[0].GetActorJwt(); jwt == nil || !slices.Contains(jwt.GetAudiences(), "cas.ci-substrate.svc.cluster.local") {
+		t.Errorf("cas rule %v does not inject an Actor JWT for cas", headers[0])
+	}
 	collector, ok := rules["otel-collector.ci-substrate.svc.cluster.local"]
 	if !ok {
 		t.Fatalf("no rule for the collector in %v", policy.GetRules())

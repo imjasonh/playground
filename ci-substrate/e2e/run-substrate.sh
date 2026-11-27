@@ -78,24 +78,51 @@ if [[ -z "${KO_DEFAULTBASEIMAGE:-}" ]]; then
   fi
 fi
 
-echo "==> Tenant ${ATESPACE}: atespace, token Secret, credential grant"
+echo "==> Tenant ${ATESPACE}: atespace"
 if ! kubectl ate get atespaces -o json | grep -q "\"name\": *\"${ATESPACE}\""; then
   kubectl ate create atespace "${ATESPACE}"
 fi
-kubectl apply -f "${OVERLAY}/tenant-a-token.yaml"
-# The credential provider's namespace policy is one ConfigMap for every
-# atespace, so it is edited, not applied.
-kubectl -n ate-system get configmap k8s-credential-provider-namespace-policy -o jsonpath='{.data.namespace-policy\.yaml}' >"${WORKDIR}/policy.yaml"
-if ! grep -q "atespace: ${ATESPACE}$" "${WORKDIR}/policy.yaml"; then
-  if grep -q '^policies: \[\]' "${WORKDIR}/policy.yaml"; then
-    sed -i 's/^policies: \[\]/policies:/' "${WORKDIR}/policy.yaml"
-  fi
-  printf -- '- atespace: %s\n  allowedNamespaces:\n  - ci-substrate-%s\n' "${ATESPACE}" "${ATESPACE}" >>"${WORKDIR}/policy.yaml"
-  kubectl -n ate-system create configmap k8s-credential-provider-namespace-policy \
-    --from-file=namespace-policy.yaml="${WORKDIR}/policy.yaml" --dry-run=client -o yaml | kubectl apply -f -
-  kubectl -n ate-system rollout restart deployment/k8s-credential-provider
-  kubectl -n ate-system rollout status deployment/k8s-credential-provider --timeout=120s
-fi
+
+echo "==> Configure cas for Substrate Actor JWT verification"
+# Mount Substrate's servicedns ClusterTrustBundle into cas so it can verify
+# ate-idp-server's TLS certificate for OIDC discovery / JWKS, and enable
+# Actor JWT verification for actors calling cas via atenet-egress.
+kubectl -n ci-substrate get statefulset cas -o json | python3 -c '
+import json, sys
+s = json.load(sys.stdin)
+pod = s["spec"]["template"]["spec"]
+vols = pod.setdefault("volumes", [])
+if not any(v.get("name") == "ate-trust" for v in vols):
+    vols.append({
+        "name": "ate-trust",
+        "projected": {
+            "sources": [{
+                "clusterTrustBundle": {
+                    "signerName": "servicedns.podcert.ate.dev/identity",
+                    "labelSelector": {"matchLabels": {"podcert.ate.dev/canarying": "live"}},
+                    "path": "trust-bundle.pem",
+                }
+            }]
+        },
+    })
+c = pod["containers"][0]
+mounts = c.setdefault("volumeMounts", [])
+if not any(m.get("name") == "ate-trust" for m in mounts):
+    mounts.append({"name": "ate-trust", "mountPath": "/run/ate", "readOnly": True})
+env = {e["name"]: e for e in c.get("env", [])}
+for k, v in (
+    ("ACTOR_JWT_ISSUER", "https://idp.ate-system.svc"),
+    ("ACTOR_JWT_AUDIENCE", "cas.ci-substrate.svc.cluster.local"),
+    ("ACTOR_JWT_CA_FILE", "/run/ate/trust-bundle.pem"),
+):
+    env[k] = {"name": k, "value": v}
+c["env"] = list(env.values())
+s.pop("status", None)
+for f in ("resourceVersion", "uid", "creationTimestamp", "generation", "managedFields"):
+    s["metadata"].pop(f, None)
+print(json.dumps(s))
+' | kubectl replace -f - >/dev/null
+kubectl -n ci-substrate rollout status statefulset/cas --timeout=180s
 
 echo "==> WorkerPool"
 workerpool_edits=()
@@ -300,6 +327,7 @@ CI_SUBSTRATE_E2E_CACHE_ADDR=localhost:19092 \
 CI_SUBSTRATE_E2E_EXEC_TIMEOUT=5m \
 CI_SUBSTRATE_E2E_WORKER_PREFIX=ci-runner- \
 CI_SUBSTRATE_E2E_EXPECT_INPUT_MODE=volume \
+CI_SUBSTRATE_E2E_ACTOR_JWT=1 \
   go test -v -count=1 -run '^TestE2E' "${ROOT}/e2e" || {
   pool_diagnostics
   exit 1

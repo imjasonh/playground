@@ -611,6 +611,9 @@ func (s *Scheduler) Lease(ctx context.Context, req *workerv1.LeaseRequest) (*wor
 	if req.GetBotId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing bot_id")
 	}
+	if err := s.tenants.AuthorizeBot(ctx, req.GetBotId()); err != nil {
+		return nil, err
+	}
 	instances, err := s.leaseInstances(ctx, req.GetInstanceNames())
 	if err != nil {
 		return nil, err
@@ -777,6 +780,9 @@ func (s *Scheduler) ownedLocked(ctx context.Context, botID, jobID string) (*job,
 		return nil, status.Error(codes.NotFound, "job not found")
 	}
 	if err := s.tenants.Authorize(ctx, j.instance); err != nil {
+		return nil, err
+	}
+	if err := s.tenants.AuthorizeBot(ctx, botID); err != nil {
 		return nil, err
 	}
 	if j.stage != repb.ExecutionStage_EXECUTING || j.botID != botID {

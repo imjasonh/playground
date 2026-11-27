@@ -3,6 +3,11 @@ package e2e_test
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -43,6 +48,7 @@ type e2eConfig struct {
 	TokenA          string        `env:"CI_SUBSTRATE_E2E_TOKEN_A, default=tok-a"`
 	TokenARO        string        `env:"CI_SUBSTRATE_E2E_TOKEN_A_RO, default=tok-a-ro"`
 	TokenB          string        `env:"CI_SUBSTRATE_E2E_TOKEN_B, default=tok-b"`
+	ActorJWT        bool          `env:"CI_SUBSTRATE_E2E_ACTOR_JWT"`
 	ExecTimeout     time.Duration `env:"CI_SUBSTRATE_E2E_EXEC_TIMEOUT, default=3m"`
 	WorkerPrefix    string        `env:"CI_SUBSTRATE_E2E_WORKER_PREFIX"`
 	ExpectInputMode string        `env:"CI_SUBSTRATE_E2E_EXPECT_INPUT_MODE"`
@@ -547,6 +553,67 @@ func TestE2EExecuteGetTreeTimeoutAndCancel(t *testing.T) {
 			t.Errorf("cancelled status = %v, want Canceled", cr.GetStatus())
 		}
 		break
+	}
+}
+
+// TestE2EActorJWTSecurityRejection verifies that cas rejects forged and
+// unsigned Actor JWTs on both WorkerService and CAS RPCs.
+func TestE2EActorJWTSecurityRejection(t *testing.T) {
+	env := dialE2E(t)
+	if !env.ActorJWT {
+		t.Skip("set CI_SUBSTRATE_E2E_ACTOR_JWT=1 to test Actor JWT rejection")
+	}
+	worker := workerv1.NewWorkerServiceClient(env.originConn)
+	casClient := repb.NewContentAddressableStorageClient(env.originConn)
+
+	// Generate a self-signed ES256 key not in ate-idp-server's JWKS.
+	fakeKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	claims, _ := json.Marshal(map[string]any{
+		"iss": "https://idp.ate-system.svc",
+		"sub": "actor/" + env.InstanceA + "/forged-bot",
+		"aud": []string{"cas.ci-substrate.svc.cluster.local"},
+		"iat": now.Unix(),
+		"nbf": now.Add(-time.Minute).Unix(),
+		"exp": now.Add(10 * time.Minute).Unix(),
+		"actor.ate.dev": map[string]string{
+			"atespace":  env.InstanceA,
+			"actorName": "forged-bot",
+			"actorUID":  uuid.NewString(),
+		},
+	})
+	esHdr, _ := json.Marshal(map[string]string{"typ": "JWT", "alg": "ES256", "kid": "forged-kid"})
+	input := base64.RawURLEncoding.EncodeToString(esHdr) + "." + base64.RawURLEncoding.EncodeToString(claims)
+	sum := sha256.Sum256([]byte(input))
+	r, s, err := ecdsa.Sign(rand.Reader, fakeKey, sum[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig := make([]byte, 64)
+	r.FillBytes(sig[:32])
+	s.FillBytes(sig[32:])
+	forgedJWT := input + "." + base64.RawURLEncoding.EncodeToString(sig)
+
+	noneHdr, _ := json.Marshal(map[string]string{"typ": "JWT", "alg": "none"})
+	unsignedJWT := base64.RawURLEncoding.EncodeToString(noneHdr) + "." + base64.RawURLEncoding.EncodeToString(claims) + "."
+
+	for name, tok := range map[string]string{
+		"forged_es256": forgedJWT,
+		"alg_none":     unsignedJWT,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(tenant.Outgoing(t.Context(), tok), 10*time.Second)
+			defer cancel()
+			if _, err := worker.Lease(ctx, &workerv1.LeaseRequest{BotId: "forged-bot", InstanceNames: []string{env.InstanceA}}); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("Lease with %s = %v (%v), want Unauthenticated", name, status.Code(err), err)
+			}
+			if _, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{InstanceName: env.InstanceA}); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("FindMissingBlobs with %s = %v (%v), want Unauthenticated", name, status.Code(err), err)
+			}
+		})
 	}
 }
 
