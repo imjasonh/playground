@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      name="description"
+      content="Click through every word of a Markdown doc to get a link that shows you read it."
+    />
+    <title>Read receipt</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="src/app.js"></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <h1><a href="./">Read receipt</a></h1>
+    </header>
+
+    <main>
+      <form class="compose" id="compose" hidden>
+        <p class="intro">
+          We've all been sent a doc that's a pile of slop that the sender
+          clearly didn't read. That's pretty rude. But if you <em>did</em> read
+          it, you can use this tool to prove it! Copy the markdown text below
+          (it will not leave your browser) and click/tap through each word. At
+          the end you'll get a link that you can share to prove you read the
+          whole thing!
+        </p>
+        <label for="source">Markdown</label>
+        <textarea
+          id="source"
+          required
+          spellcheck="false"
+          placeholder="# Paste your doc here"
+        ></textarea>
+        <p class="error" id="compose-error" role="alert" hidden></p>
+        <button type="submit" class="primary">Start reading</button>
+      </form>
+
+      <div class="toolbar" id="toolbar" hidden>
+        <div class="progress-row">
+          <progress id="progress" max="1" value="0"></progress>
+          <span class="count" id="count"></span>
+        </div>
+        <div class="toolbar-row">
+          <p class="hint" id="hint">
+            <span class="hint-pointer">Click anywhere, or press → or Space, for the next word.</span>
+            <span class="hint-touch">Tap anywhere for the next word.</span>
+          </p>
+          <p class="hint slow" id="slow" role="status"></p>
+          <button type="button" class="ghost" id="edit">Edit</button>
+        </div>
+      </div>
+
+      <div class="banner" id="banner" role="status" hidden></div>
+
+      <section class="done" id="done" aria-labelledby="done-title" hidden>
+        <h2 id="done-title" tabindex="-1">You read it</h2>
+        <p id="done-summary"></p>
+        <label for="link">Receipt link</label>
+        <div class="link-row">
+          <input id="link" readonly />
+          <span class="copy">
+            <button type="button" class="primary" id="copy">Copy</button>
+            <span class="tip" id="copy-tip" role="status"></span>
+          </span>
+          <button type="button" id="share" hidden>Share</button>
+        </div>
+      </section>
+
+      <article class="doc" id="doc" hidden></article>
+
+      <div class="actions" id="receipt-actions" hidden>
+        <button type="button" class="primary" id="read-yourself">
+          Read it yourself
+        </button>
+        <a class="button" href="./">New doc</a>
+      </div>
+    </main>
+    <script src="whbiab.js" data-app="read-receipt"></script>
+  </body>
+</html>

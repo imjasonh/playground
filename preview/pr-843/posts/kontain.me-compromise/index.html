@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kontain.me security incident postmortem · Posts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="alternate" type="application/rss+xml" title="Posts" href="../feed.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root {
+  color-scheme: light dark;
+  --font-text: "Source Serif 4", Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  --font-ui: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --bg: #f7f5f0;
+  --ink: #1b1a17;
+  --muted: #5a564e;
+  --meta-updated: #8f887c;
+  --rule: #e4e0d8;
+  --link: #1d4ed8;
+  --link-hover: #1e3a8a;
+  --code-bg: #ece8e0;
+  --quote: #3f3c36;
+  --alert-bg: #efebe3;
+  --alert-border: #c9c3b6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1916;
+    --ink: #f2efe8;
+    --muted: #b7b1a6;
+    --meta-updated: #7a756c;
+    --rule: #3a3731;
+    --link: #93c5fd;
+    --link-hover: #bfdbfe;
+    --code-bg: #26231e;
+    --quote: #d8d2c6;
+    --alert-bg: #24211c;
+    --alert-border: #4a453c;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-text);
+  font-optical-sizing: auto;
+  font-size: clamp(1.125rem, 1.06rem + 0.3vw, 1.25rem);
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: normal;
+  color: var(--ink);
+  background: var(--bg);
+}
+main {
+  width: min(65ch, 100%);
+  margin: 0 auto;
+  padding: clamp(2.25rem, 7vw, 5rem) clamp(1.25rem, 5vw, 2.25rem) 5rem;
+}
+a {
+  color: var(--link);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+}
+a:hover { color: var(--link-hover); }
+a:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 3px;
+}
+.crumbs {
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  margin: 0 0 2.75rem;
+}
+.crumbs a { color: var(--muted); }
+.crumbs a:hover { color: var(--link); }
+h1 {
+  font-family: var(--font-text);
+  font-optical-sizing: auto;
+  font-size: clamp(2rem, 1.5rem + 2vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  line-height: 1.2;
+  text-wrap: balance;
+  margin: 0 0 0.5rem;
+}
+.meta {
+  margin: 0.85rem 0 0;
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.meta .updated { color: var(--meta-updated); }
+
+  article header {
+    margin-bottom: 2.4rem;
+    padding-bottom: 1.6rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .body {
+    overflow-wrap: break-word;
+    hanging-punctuation: first;
+    hyphens: auto;
+  }
+  .body > *:first-child { margin-top: 0; }
+  .body h2, .body h3, .body h4 {
+    font-optical-sizing: auto;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+    text-wrap: balance;
+    margin: 1.5em 0 0.5em;
+  }
+  .body h2 { font-size: 1.5em; }
+  .body h3 { font-size: 1.25em; }
+  .body h4 { font-size: 1.125em; }
+  .body p, .body ul, .body ol { margin: 0 0 1em; }
+  .body li { margin: 0.28em 0; }
+  .body li::marker { color: var(--muted); }
+  .body img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 1.6em auto;
+    border-radius: 2px;
+  }
+  .body code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.86em;
+    background: var(--code-bg);
+    padding: 0.12em 0.34em;
+    border-radius: 4px;
+    hyphens: none;
+  }
+  .body pre {
+    overflow: auto;
+    padding: 1em 1.1em;
+    background: var(--code-bg);
+    margin: 0 0 1.2em;
+    font-size: 0.9em;
+    line-height: 1.45;
+    border-radius: 6px;
+  }
+  .body pre code { background: none; padding: 0; }
+  .body blockquote {
+    margin: 0 0 1.15em;
+    padding: 0.15em 0 0.15em 1.05em;
+    border-left: 2px solid var(--rule);
+    color: var(--quote);
+  }
+  .body blockquote p:last-child { margin-bottom: 0; }
+  .body hr {
+    border: 0;
+    border-top: 1px solid var(--rule);
+    margin: 2.1em 0;
+  }
+  .alert {
+    margin: 0 0 1.2em;
+    padding: 1em 1.1em;
+    background: var(--alert-bg);
+    border: 1px solid var(--alert-border);
+    border-radius: 8px;
+    font-style: normal;
+    hyphens: none;
+  }
+  .alert-label {
+    margin: 0 0 0.4em;
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+  }
+  .alert p:last-child { margin-bottom: 0; }
+</style>
+</head><body>
+<main>
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="../../">Playground</a>
+    · <a href="../">Posts</a>
+    · <a href="../feed.xml">RSS</a>
+  </nav>
+  <article>
+    <header>
+      <h1><code>kontain.me</code> security incident postmortem</h1>
+      <p class="meta"><span class="published">Published November 21, 2026</span> · <span class="updated">Updated November 23, 2026</span></p>
+
+    </header>
+    <div class="body">
+<p>On Wednesday, November 18th, 2026, an attacker compromised the GCP project that runs <a href="https://github.com/imjasonh/kontain.me">kontain.me</a> and began mining crypto. This is a postmortem of the incident.</p>
+<p>No users of kontain.me (if any) were harmed; no malicious data was served to users, no contents were taken.</p>
+<h2>How it happened</h2>
+<p><code>kontain.me</code> runs on a number of separate Google Cloud Run services, a Service Account with minimal permissions, a shared Cloud Storage bucket, a load balancer and some GCP-managed DNS entries. The architecture of each of the apps is defined in Terraform in the public <a href="https://github.com/imjasonh/kontain.me">https://github.com/imjasonh/kontain.me</a> repo.</p>
+<p>To deploy these services automatically, there's a deployer service account, <code>gha-deployer</code>, which has permissions to deploy Cloud Run services, and manage Service Accounts, buckets, load balancers and DNS entries. That service account can be assumed by a GitHub Actions workflow in the repo, configured using <a href="https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-google-cloud-platform">OIDC Workload Identity Federation</a>. The trust relationships were not defined in Terraform, but were instead click-opsed at some point in the forgotten past.</p>
+<p>Workload Identity is a Very Good Thing(tm), but like a lot of good things, it's also complicated. It's easy to get wrong, and I got it wrong, in at least two ways:</p>
+<ol>
+<li>The rule allowing the GitHub Actions workflow to assume the GCP SA was overly broad. It matched only on the workflow path, <code>.github/workflows/deploy.yaml</code>, and did not check that the repo matched <code>imjasonh/kontain.me</code>. This was a dumb omission on my part; any GitHub repo that minted an OIDC token from <code>deploy.yaml</code> could become my deployer service account.</li>
+<li>The deployer SA had the <code>iam.serviceAccountAdmin</code> role project-wide. Though the app's service account had minimal permissions (read/write to the one GCS bucket), the project also had the default GCP service account enabled, which had broad <strong>Editor</strong> access to the project. This is the classic <code>&lt;project-number&gt;-compute@developer.gserviceaccount.com</code> account. With the deployer's <code>serviceAccountAdmin</code> access, it created a long-lived service account key for the default SA, with Editor access.</li>
+</ol>
+<p>So, using (1), the attacker was able to run a GHA workflow in their repo and become my deployer. As my deployer, they were able to <code>actAs</code> the default GCP SA, which could do .....<em>anything</em>. It could enable APIs, create GKE clusters and VMs, request quota increases, and run Vertex AI training jobs. And it did, all of those.</p>
+<p>Even if they hadn't acted-as the <strong>Editor</strong> default SA, they could have created and acted-as another SA.</p>
+<p>Upon noticing the fraudulent usage, I immediately disabled the SA being used to create new jobs, and unlinked billing. However, this didn't stop the resources in use, and GCP prevented me from canceling or deleting Vertex AI jobs while billing was unlinked🤦. I re-linked billing, cancelled jobs, and re-un-linked. Because jobs were spread across many regions, and because the GCP UI doesn't let me bulk-delete jobs, I had my agent write a script that would cancel all jobs one-by-one.</p>
+<h2>What the attacker did</h2>
+<p>The attacker seems to have gained access late Tuesday and made some exploratory requests to make sure they could do what they wanted. In the wee hours of Wednesday (Eastern) they probed that they were able to create Vertex jobs with GPUs. Around 5 AM Eastern they began creating Vertex AI training runs in six regions. Around noon Eastern they started two more waves totaling 70 GPUs. The jobs they ran were actually doing crypto mining, contributing to a wallet they presumably own.</p>
+<p>Spend began relatively slowly, at ~$44/hour worth of GPU usage, but eventually they sent more requests to the tune of more than $185/hour.</p>
+<h2>Where we got lucky</h2>
+<p>Because kontain.me doesn't normally cost me much money at all, and because I'm constantly paranoid about me doing something stupid (the only smart thing I regularly do!), I had set up a budget alert on the project at $10. The service costs me under $1/month normally, so spending $10 means something is Going Wrong. That budget alert was tripped around 11 AM Eastern, hours after the attack began in earnest, and by the time I saw it they'd already hit &gt;$40 of usage. Once I got the alert I got to work stopping it as quickly as I could.</p>
+<h2>Where we are now</h2>
+<p>I filed a GCP Support ticket for the fraudulent usage, and they were very helpful. At the time of writing they're still tallying the total damage; they say it can take a few days after the last fraudulent usage to assess the total bill. The project is unlinked from billing in the meantime, so kontain.me is down. I may decide not to bring it up again, or if I do I may bring it up in a different shape.</p>
+<p>I also reported the GitHub user and repo that ran the fraudulent GHA workflow to get into my GCP project.</p>
+<p>The attacker spent $400-$500 of my/Google's money, and I believe gained somewhere around $0.03 worth of crypto. They taught me an important lesson about hosting services on the internet, which I'm sharing with you right now.</p>
+<h2>Takeaways</h2>
+<ol>
+<li>Use Workload Identity, but make sure it's tightly constrained. Ask your nearest agent to do a security review and propose fixes.</li>
+<li>Use only Service Accounts with minimal permissions; disable the GCP default service account. Project-wide <code>actAs</code> is full project access otherwise. Avoid project-wide <code>actAs</code> while you're at it.</li>
+<li>Set up budget alerts, and check your email.</li>
+</ol>
+<p>I don't know whether my attacker used any kind of AI in their attack; frankly, they probably only needed some GitHub searches and some relatively straightforward bash scripts to probe. I used AI to defend and it made responding much faster, by parsing thousands of audit log entries, and immediately identifying the behavior. Response would have taken much longer without it, and with this attack, time was literally money.</p>
+<p>Ultimately, this was my boneheaded mistake, and GCP has been very helpful in getting it resolved.</p>
+    </div>
+  </article>
+</main>
+<script src="../whbiab.js" data-app="posts-kontain.me-compromise"></script>
+</body></html>
