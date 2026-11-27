@@ -349,7 +349,7 @@ echo "==> Forking a pre-warmed build environment from a Substrate Tag (ci-substr
 warm_marker="prewarmed-toolchain-v1"
 warm_actor="$(go run "${ROOT}/cmd/rbe-run" \
   -addr localhost:18980 -instance "${ATESPACE}" -token tok-a -runs 1 \
-  -script "printf '%s' '${warm_marker}' > /var/tmp/ci-substrate-warm-env && cat /system/name" \
+  -script "printf '%s' '${warm_marker}' > /var/tmp/ci-substrate-warm-env && cat /system/name" 2>&1 \
   | grep -oE 'ci-runner-[a-z0-9-]+' | tail -n 1)"
 if [[ -z "${warm_actor}" ]]; then
   echo "could not determine warm actor name from rbe-run output" >&2
