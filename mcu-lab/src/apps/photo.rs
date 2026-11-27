@@ -17,8 +17,8 @@ use log::{info, warn};
 
 use crate::boards::{Board, HasEpd75};
 use crate::photo::{
-    render_empty_placeholder, Crc32Hasher, PhotoAlbumHeader, PhotoMode, PHOTO_FIRMWARE_ID,
-    PHOTO_HEADER_LEN,
+    fill_calibration_4gray_chunk, render_empty_placeholder, Crc32Hasher, PhotoAlbumHeader,
+    PhotoMode, PHOTO_FIRMWARE_ID, PHOTO_HEADER_LEN,
 };
 use crate::platform::{feed_task_watchdog, App, RunMode, StepContext, StepOutput};
 use crate::profiler::now_us;
@@ -66,6 +66,11 @@ impl<B: Board + HasEpd75> App<B> for PhotoApp {
             AppCommandSpec {
                 id: "refresh".to_string(),
                 label: "Refresh Display".to_string(),
+                default_count: 1,
+            },
+            AppCommandSpec {
+                id: "calibrate".to_string(),
+                label: "Grayscale Calibration".to_string(),
                 default_count: 1,
             },
         ]
@@ -169,6 +174,31 @@ impl<B: Board + HasEpd75> App<B> for PhotoApp {
             }
             "refresh" => {
                 ctx.record_attr("photo.state", "cmd_refresh");
+            }
+            "calibrate" => {
+                ctx.record_attr("photo.state", "cmd_calibrate");
+                self.record_album_attrs(ctx);
+                let epd_start = now_us();
+                board.panel().show_4gray_stream(|rel, dst| {
+                    fill_calibration_4gray_chunk(rel, dst);
+                    Ok(())
+                })?;
+                ctx.feed_watchdog();
+                board.panel().sleep()?;
+                let epd_end = now_us();
+                ctx.record_span("epd.photo_calibrate", "epd_refresh", epd_start, epd_end);
+                ctx.feed_watchdog();
+                self.displayed = true;
+                self.last_switch_us = now_us();
+                return Ok(StepOutput {
+                    sensor_us: 0,
+                    compute_us: 0,
+                    epd_refresh_us: u32::try_from(epd_end.saturating_sub(epd_start))
+                        .unwrap_or(u32::MAX),
+                    battery_mv: 0,
+                    flags: 0,
+                    post_burst_delay_ms: 0,
+                });
             }
             other => anyhow::bail!("unknown photo command: {other}"),
         }

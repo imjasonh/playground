@@ -16,6 +16,7 @@ use esp_idf_svc::hal::units::FromValueType;
 use crate::grayscale::lut::{DriveLuts, PANEL_SETTING_REGISTER_LUT, VCOM_DATA_INTERVAL, VCOM_DC};
 use crate::maze::ByteRect;
 use crate::panel::FRAME_BYTES;
+use crate::photo::{gray4_step_new_byte, GRAY4_STEP_FRAMES};
 
 type BusyPin = PinDriver<'static, Input>;
 type DcPin = PinDriver<'static, Output>;
@@ -157,33 +158,57 @@ impl Panel {
 
     /// Full-refresh a 4-level grayscale (2-bit) image stored as two contiguous
     /// 48,000-byte planes (`DTM1` at `0..48_000`, `DTM2` at `48_000..96_000`) streamed
-    /// in 4 KiB chunks from flash. Leaves the panel awake.
+    /// in chunks from flash.
+    ///
+    /// Runs a factory full-white clear first so every pixel starts from a uniform,
+    /// charge-balanced white baseline, then drives 3 cumulative white→black passes
+    /// via custom register LUTs ([`DriveLuts`]). All active pixels move in the same
+    /// polarity, avoiding opposite-direction column crosstalk and panel-batch OTP
+    /// `0x5F` incompatibilities. Leaves the panel awake.
     pub fn show_4gray_stream<F>(&mut self, mut read_at: F) -> Result<()>
     where
         F: FnMut(usize, &mut [u8]) -> Result<()>,
     {
-        self.init_4gray()?;
-        let mut buf = [0u8; 4096];
+        self.full_refresh_white()?;
 
+        let first_luts = DriveLuts::new(GRAY4_STEP_FRAMES[0], false);
+        self.init_drive(&first_luts)?;
+
+        // Hold the old plane (`DTM1`) at all white (`0xFF`). With `N2OCP = 0`
+        // (`VCOM_DATA_INTERVAL = [0x31, 0x07]`), the controller preserves `DTM1`
+        // across all three passes so only `DTM2` and the LUT frame count change.
+        let white = [0xFFu8; 1024];
         self.cmd(CMD_DTM1)?;
         let mut offset = 0usize;
         while offset < FRAME_BYTES {
-            let len = (FRAME_BYTES - offset).min(buf.len());
-            read_at(offset, &mut buf[..len])?;
-            self.data(&buf[..len])?;
+            let len = (FRAME_BYTES - offset).min(white.len());
+            self.data(&white[..len])?;
             offset += len;
         }
 
-        self.cmd(CMD_DTM2)?;
-        offset = 0;
-        while offset < FRAME_BYTES {
-            let len = (FRAME_BYTES - offset).min(buf.len());
-            read_at(FRAME_BYTES + offset, &mut buf[..len])?;
-            self.data(&buf[..len])?;
-            offset += len;
-        }
+        let mut dtm1_buf = [0u8; 1024];
+        let mut dtm2_buf = [0u8; 1024];
+        let mut new_buf = [0u8; 1024];
 
-        self.refresh()?;
+        for (pass, &frames) in GRAY4_STEP_FRAMES.iter().enumerate() {
+            if pass > 0 {
+                let luts = DriveLuts::new(frames, false);
+                self.load_drive_luts(&luts)?;
+            }
+            self.cmd(CMD_DTM2)?;
+            let mut offset = 0usize;
+            while offset < FRAME_BYTES {
+                let len = (FRAME_BYTES - offset).min(new_buf.len());
+                read_at(offset, &mut dtm1_buf[..len])?;
+                read_at(FRAME_BYTES + offset, &mut dtm2_buf[..len])?;
+                for i in 0..len {
+                    new_buf[i] = gray4_step_new_byte(pass, dtm1_buf[i], dtm2_buf[i]);
+                }
+                self.data(&new_buf[..len])?;
+                offset += len;
+            }
+            self.refresh()?;
+        }
         Ok(())
     }
 
@@ -276,6 +301,11 @@ impl Panel {
         self.cmd_data(CMD_VCOM, &VCOM_DATA_INTERVAL)?;
         self.cmd_data(CMD_TCON, &[0x22])?;
         self.cmd_data(CMD_VCOM_DC, &[VCOM_DC])?;
+        self.load_drive_luts(luts)
+    }
+
+    /// Write custom waveform LUTs to registers `0x20`–`0x25` without resetting the controller.
+    pub fn load_drive_luts(&mut self, luts: &DriveLuts) -> Result<()> {
         for (command, table) in &luts.registers {
             self.cmd_data(*command, table)?;
         }
@@ -384,20 +414,6 @@ impl Panel {
         self.cmd_data(CMD_DUAL_SPI, &[0x00])?;
         self.cmd_data(CMD_VCOM, &[0x10, 0x07])?;
         self.cmd_data(CMD_TCON, &[0x22])?;
-        Ok(())
-    }
-
-    /// Waveshare 7.5″ V2 4-Gray OTP LUT initialization (`epd7in5_V2.py: init_4Gray`).
-    fn init_4gray(&mut self) -> Result<()> {
-        self.hardware_reset();
-        self.cmd_data(CMD_PANEL_SETTING, &[0x1F])?;
-        self.cmd_data(CMD_VCOM, &[0x10, 0x07])?;
-        self.cmd(CMD_POWER_ON)?;
-        FreeRtos::delay_ms(100);
-        self.wait_idle()?;
-        self.cmd_data(CMD_BOOSTER, &[0x27, 0x27, 0x18, 0x17])?;
-        self.cmd_data(CMD_TEMP_SEL, &[0x02])?;
-        self.cmd_data(CMD_TEMP_LUT, &[0x5F])?;
         Ok(())
     }
 
