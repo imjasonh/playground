@@ -128,4 +128,7 @@ message StatusResponse {
   repeated string busy_bot_ids = 3;
   // Queued jobs per platform key across the requested instances.
   map<string, int32> queued_by_platform = 4;
+  // Clean-isolation runners that completed an action and must be reverted
+  // to their clean durable snapshot before leasing again.
+  repeated string dirty_bot_ids = 5;
 }

@@ -147,6 +147,7 @@ type fakeQueue struct {
 	queued           int
 	queuedByPlatform map[string]int
 	busy             []string
+	dirty            []string
 	statuses         int
 	watches          int
 	watchErr         error
@@ -160,7 +161,7 @@ func (q *fakeQueue) Status(context.Context) (int, []string, error) {
 	return q.queued, q.busy, nil
 }
 
-func (q *fakeQueue) StatusByPlatform(context.Context) (map[string]int, []string, error) {
+func (q *fakeQueue) StatusByPlatform(context.Context) (map[string]int, []string, []string, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.statuses++
@@ -168,7 +169,7 @@ func (q *fakeQueue) StatusByPlatform(context.Context) (map[string]int, []string,
 	for k, v := range q.queuedByPlatform {
 		out[k] = v
 	}
-	return out, q.busy, nil
+	return out, q.busy, q.dirty, nil
 }
 
 func (q *fakeQueue) Watch(ctx context.Context, changed func()) error {
@@ -786,24 +787,29 @@ func TestForksActorsFromSourceTagForPlatformQueue(t *testing.T) {
 func TestCleanIsolationRevertsActorBetweenActions(t *testing.T) {
 	h := newHarness(t, 1, 4)
 	h.sub.actors["ci-runner-0"] = actorpool.StateSuspended
-	// An exited clean-isolation actor with another clean action queued is
-	// reverted to its clean durable snapshot and immediately resumed, instead
-	// of deleted.
+	// A clean-isolation actor that finished an action stays RUNNING in
+	// Substrate (its container exited 0) and is reported in dirty_bot_ids.
+	// With another clean action queued, the pool reverts it to its clean
+	// durable snapshot and immediately resumes it.
 	cleanActor := "ci-runner-clean--abc123def456"
-	h.sub.actors[cleanActor] = actorpool.StateCrashed
+	h.sub.actors[cleanActor] = actorpool.StateRunning
+	h.queue.dirty = []string{cleanActor}
 	h.queue.queuedByPlatform = map[string]int{"isolation=clean": 1}
 
 	if got := h.reconcile(t); !slices.Equal(got, []string{"resume " + cleanActor, "revert " + cleanActor}) {
-		t.Fatalf("clean revert+resume = %v, want revert and resume of %s", got, cleanActor)
+		t.Fatalf("clean dirty revert+resume = %v, want revert and resume of %s", got, cleanActor)
 	}
 	if h.sub.actors[cleanActor] != actorpool.StateRunning {
 		t.Fatalf("clean actor state = %v, want running", h.sub.actors[cleanActor])
 	}
 
-	// Once it exits again with no more clean work queued, it is deleted.
-	h.sub.actors[cleanActor] = actorpool.StateCrashed
+	// Once it completes again with no more clean work queued, it is reverted
+	// and deleted as surplus (warm=0 for isolation=clean).
 	h.queue.queuedByPlatform = nil
-	if got := h.reconcile(t); !slices.Equal(got, []string{"delete " + cleanActor}) {
-		t.Fatalf("clean idle delete = %v, want delete %s", got, cleanActor)
+	if got := h.reconcile(t); !slices.Equal(got, []string{"delete " + cleanActor, "revert " + cleanActor}) {
+		t.Fatalf("clean idle revert+delete = %v, want revert and delete %s", got, cleanActor)
+	}
+	if _, exists := h.sub.actors[cleanActor]; exists {
+		t.Fatalf("clean actor still exists after idle cleanup: %v", h.sub.actors)
 	}
 }

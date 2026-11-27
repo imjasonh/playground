@@ -89,19 +89,19 @@ type queue struct {
 }
 
 func (q *queue) Status(ctx context.Context) (int, []string, error) {
-	byPlatform, busy, err := q.StatusByPlatform(ctx)
+	byPlatform, busy, _, err := q.StatusByPlatform(ctx)
 	if err != nil {
 		return 0, nil, err
 	}
 	return byPlatform[""], busy, nil
 }
 
-func (q *queue) StatusByPlatform(ctx context.Context) (map[string]int, []string, error) {
+func (q *queue) StatusByPlatform(ctx context.Context) (map[string]int, []string, []string, error) {
 	ctx, cancel := context.WithTimeout(tenant.Outgoing(ctx, q.token), 10*time.Second)
 	defer cancel()
 	resp, err := q.client.Status(ctx, &workerv1.StatusRequest{InstanceNames: q.instances})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	out := make(map[string]int, len(resp.GetQueuedByPlatform()))
 	for k, v := range resp.GetQueuedByPlatform() {
@@ -110,7 +110,7 @@ func (q *queue) StatusByPlatform(ctx context.Context) (map[string]int, []string,
 	if _, ok := out[""]; !ok && resp.GetQueued() > 0 {
 		out[""] = int(resp.GetQueued())
 	}
-	return out, resp.GetBusyBotIds(), nil
+	return out, resp.GetBusyBotIds(), resp.GetDirtyBotIds(), nil
 }
 
 func (q *queue) Watch(ctx context.Context, changed func()) error {

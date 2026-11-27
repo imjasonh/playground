@@ -122,9 +122,10 @@ type Queue interface {
 }
 
 // PlatformQueue is an optional extension of Queue that reports queued counts
-// per canonical platform key (e.g. "" for default, "env=<tag>").
+// per canonical platform key (e.g. "" for default, "env=<tag>") and dirty
+// clean-isolation bot IDs awaiting revert.
 type PlatformQueue interface {
-	StatusByPlatform(ctx context.Context) (queuedByPlatform map[string]int, busy []string, err error)
+	StatusByPlatform(ctx context.Context) (queuedByPlatform map[string]int, busy, dirty []string, err error)
 }
 
 // Workers is the WorkerPool the pool sizes: its desired number of workers,
@@ -306,9 +307,9 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 		return fmt.Errorf("listing actors: %w", err)
 	}
 	var queuedByPlatform map[string]int
-	var busyIDs []string
+	var busyIDs, dirtyIDs []string
 	if pq, ok := p.cfg.Queue.(PlatformQueue); ok {
-		queuedByPlatform, busyIDs, err = pq.StatusByPlatform(ctx)
+		queuedByPlatform, busyIDs, dirtyIDs, err = pq.StatusByPlatform(ctx)
 	} else {
 		var q int
 		q, busyIDs, err = p.cfg.Queue.Status(ctx)
@@ -322,6 +323,10 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 	for _, id := range busyIDs {
 		busy[id] = true
 	}
+	dirty := map[string]bool{}
+	for _, id := range dirtyIDs {
+		dirty[id] = true
+	}
 
 	var owned []Actor
 	for _, a := range all {
@@ -332,10 +337,10 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 	slices.SortFunc(owned, func(a, b Actor) int { return strings.Compare(a.Name, b.Name) })
 
 	type platformGroup struct {
-		spec                               platform.Spec
-		suspended, unprimed, idle, crashed []string
-		resumes                            []string
-		running, busyCount, total, creates int
+		spec                                      platform.Spec
+		suspended, unprimed, idle, crashed, dirty []string
+		resumes                                   []string
+		running, busyCount, total, creates        int
 	}
 	groups := map[string]*platformGroup{"": {}}
 	groupFor := func(key string) *platformGroup {
@@ -377,6 +382,10 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 			g.crashed = append(g.crashed, a.Name)
 			totalCrashed++
 		case StateRunning, StateResuming:
+			if a.State == StateRunning && spec.Isolation == platform.IsolationClean && dirty[a.Name] && !busy[a.Name] {
+				g.dirty = append(g.dirty, a.Name)
+				break
+			}
 			g.running++
 			totalRunning++
 			if busy[a.Name] {
@@ -426,10 +435,29 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 	keys = append([]string{""}, keys...)
 
 	revertActors, hasRevertActors := p.cfg.Actors.(RevertActors)
-	reverted := 0
+	revertedCrashed := 0
+	deletedDirty := 0
 	var errs []error
 	for _, key := range keys {
 		g := groups[key]
+		for _, name := range g.dirty {
+			if hasRevertActors {
+				slog.InfoContext(ctx, "reverting dirty clean-isolation actor to durable snapshot", "actor", name, "platform", key)
+				if err := p.do(ctx, "revert", name, revertActors.Revert); err != nil {
+					errs = append(errs, fmt.Errorf("reverting %s: %w", name, err))
+					continue
+				}
+				g.suspended = append(g.suspended, name)
+				continue
+			}
+			slog.InfoContext(ctx, "deleting dirty clean-isolation actor", "actor", name, "platform", key)
+			if err := p.do(ctx, "delete", name, p.cfg.Actors.Delete); err != nil {
+				errs = append(errs, fmt.Errorf("deleting %s: %w", name, err))
+				continue
+			}
+			g.total--
+			deletedDirty++
+		}
 		for _, name := range g.crashed {
 			if g.spec.Isolation == platform.IsolationClean && hasRevertActors && queuedByPlatform[key] > 0 {
 				slog.InfoContext(ctx, "reverting clean-isolation actor to durable snapshot", "actor", name, "platform", key)
@@ -439,7 +467,7 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 				}
 				g.suspended = append(g.suspended, name)
 				g.total++
-				reverted++
+				revertedCrashed++
 				continue
 			}
 			slog.WarnContext(ctx, "deleting crashed actor", "actor", name)
@@ -449,7 +477,7 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 		}
 	}
 
-	total := len(owned) - totalCrashed + reverted
+	total := len(owned) - totalCrashed + revertedCrashed - deletedDirty
 	plannedTotal := total
 	totalWaking := 0
 	tagActors, hasTagActors := p.cfg.Actors.(TagActors)

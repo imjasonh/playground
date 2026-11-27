@@ -78,14 +78,20 @@ type Scheduler struct {
 	invocations   *invocation.Tracker
 	metrics       metrics
 
-	mu       sync.Mutex
-	jobs     map[string]*job
-	inflight map[string]*job
-	queue    []*job
-	waiters  map[*waiter]struct{}
+	mu        sync.Mutex
+	jobs      map[string]*job
+	inflight  map[string]*job
+	queue     []*job
+	waiters   map[*waiter]struct{}
+	dirtyBots map[string]dirtyBot
 	// changed is closed and replaced whenever any job changes stage or
 	// runner, so WatchStatus can wait on it without holding the lock.
 	changed chan struct{}
+}
+
+type dirtyBot struct {
+	instance string
+	at       time.Time
 }
 
 type job struct {
@@ -144,6 +150,7 @@ func New(store *blob.Store, actions *actioncache.Store, tenants *tenant.Registry
 		jobs:          map[string]*job{},
 		inflight:      map[string]*job{},
 		waiters:       map[*waiter]struct{}{},
+		dirtyBots:     map[string]dirtyBot{},
 		changed:       make(chan struct{}),
 	}
 	s.metrics = newMetrics(s)
@@ -252,6 +259,17 @@ func (s *Scheduler) statusLocked(instances map[string]bool, platformKey string) 
 		}
 	}
 	slices.Sort(resp.BusyBotIds)
+	now := time.Now()
+	for botID, db := range s.dirtyBots {
+		if now.Sub(db.at) > 10*time.Minute {
+			delete(s.dirtyBots, botID)
+			continue
+		}
+		if instances[db.instance] {
+			resp.DirtyBotIds = append(resp.DirtyBotIds, botID)
+		}
+	}
+	slices.Sort(resp.DirtyBotIds)
 	return resp
 }
 
@@ -659,6 +677,11 @@ func (s *Scheduler) Lease(ctx context.Context, req *workerv1.LeaseRequest) (*wor
 	}
 	platformKey := req.GetPlatformKey()
 	s.mu.Lock()
+	if _, ok := s.dirtyBots[req.GetBotId()]; ok {
+		delete(s.dirtyBots, req.GetBotId())
+		close(s.changed)
+		s.changed = make(chan struct{})
+	}
 	for i, j := range s.queue {
 		if instances[j.instance] && j.platformKey == platformKey {
 			s.queue = append(s.queue[:i], s.queue[i+1:]...)
@@ -775,6 +798,9 @@ func (s *Scheduler) Complete(ctx context.Context, req *workerv1.CompleteRequest)
 	j, err := s.ownedLocked(ctx, req.GetBotId(), req.GetJobId())
 	if err != nil {
 		return nil, err
+	}
+	if platform.ParseKey(j.platformKey).Isolation == platform.IsolationClean {
+		s.dirtyBots[req.GetBotId()] = dirtyBot{instance: j.instance, at: time.Now()}
 	}
 	// The runner can't tell a transient failure from a bad action, so an
 	// error is final; only a runner that stops heartbeating is retried.
