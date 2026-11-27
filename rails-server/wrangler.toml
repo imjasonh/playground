@@ -1,0 +1,37 @@
+# Cloudflare Workers configuration for the Rails multiplayer game server.
+#
+# Deployed to Cloudflare by `deploy-workers.yml` on pushes to `main`.
+name = "rails"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-06-16"
+
+[build]
+command = "bash scripts/worker-build.sh"
+
+# One Durable Object instance per game room — serializes all turns, holds
+# authoritative game state + action log, and broadcasts live draft previews
+# over hibernatable WebSockets.
+[durable_objects]
+bindings = [
+  { name = "GAME_ROOMS", class_name = "GameRoomDo" },
+]
+
+[[migrations]]
+tag = "v1"
+# SQLite-backed Durable Objects work on every Workers plan.
+new_sqlite_classes = ["GameRoomDo"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 1
+
+[observability.issues]
+enabled = true
