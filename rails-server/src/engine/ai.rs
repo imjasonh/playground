@@ -1,7 +1,7 @@
 use crate::engine::map::{Card, CitySize, EventEffect, MapIndex, MilepostId, PlayerId};
 use crate::engine::rules::{
     active_hazards, apply_action, can_enter_city, connected_major_cities_list, edge_owners_map,
-    effective_move_limit, player_owned_edges,
+    effective_move_limit, opponent_occupied_edges, player_owned_edges,
 };
 use crate::engine::state::{Action, GameState, TrainTier, TurnPhase};
 use std::collections::{HashSet, VecDeque};
@@ -172,7 +172,10 @@ fn full_cities_for(map: &MapIndex, state: &GameState, pid: PlayerId) -> HashSet<
 fn evaluate_demands(map: &MapIndex, state: &GameState, pid: PlayerId) -> Vec<DemandPlan> {
     let owned = player_owned_edges(state, pid);
     let anchors = ai_network_anchors(map, state, pid);
-    let hazards = active_hazards(map, state);
+    let mut hazards = active_hazards(map, state);
+    hazards
+        .blocked_edges
+        .extend(opponent_occupied_edges(state, pid));
     let blocked_cities = full_cities_for(map, state, pid);
     let costs = map.build_costs_from(
         &anchors,
@@ -574,7 +577,10 @@ fn ai_build_phase(map: &MapIndex, state: &mut GameState, pid: PlayerId) -> Resul
     if need_majors && cash >= 140 && state.phase == TurnPhase::Build {
         let owned = player_owned_edges(state, pid);
         let anchors = ai_network_anchors(map, state, pid);
-        let hazards = active_hazards(map, state);
+        let mut hazards = active_hazards(map, state);
+        hazards
+            .blocked_edges
+            .extend(opponent_occupied_edges(state, pid));
         let costs = map.build_costs_from(
             &anchors,
             &owned,
@@ -640,7 +646,10 @@ fn ai_build_phase(map: &MapIndex, state: &mut GameState, pid: PlayerId) -> Resul
 
         let owned = player_owned_edges(state, pid);
         let anchors = ai_network_anchors(map, state, pid);
-        let hazards = active_hazards(map, state);
+        let mut hazards = active_hazards(map, state);
+        hazards
+            .blocked_edges
+            .extend(opponent_occupied_edges(state, pid));
         let bc = full_cities_for(map, state, pid);
         let Some((edges, _total_cost)) = map.shortest_build_path(
             &anchors,

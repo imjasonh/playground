@@ -54,6 +54,6 @@ test("vendored wasm engine initializes and simulates a local North America game 
   assert.equal(state.players[0].hand.length, 5);
 
   const afterBot = JSON.parse(engine.step_local_ai());
-  assert.equal(afterBot.current_player, 1);
+  assert.notEqual(afterBot.current_player, state.current_player);
   assert.ok(afterBot.tracks.length > 0, "bot should build initial track");
 });

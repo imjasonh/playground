@@ -118,6 +118,14 @@ impl TrainTier {
         )
     }
 
+    pub fn can_crossgrade_to(self, target: TrainTier) -> bool {
+        matches!(
+            (self, target),
+            (TrainTier::FastFreight, TrainTier::HeavyFreight)
+                | (TrainTier::HeavyFreight, TrainTier::FastFreight)
+        )
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             TrainTier::Freight => "Freight",
@@ -167,7 +175,7 @@ pub struct ActiveEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TurnPhase {
-    /// Initial build-only rounds (2 in Standard, 3 in Fast).
+    /// Initial build-only rounds (2 in Standard with Switchback, 3 in Fast).
     InitialBuild,
     /// Fast mode: discard down from 5 to 3 cards before regular play begins.
     TrimHand,
@@ -183,6 +191,7 @@ pub enum TurnPhase {
 pub struct TurnTracker {
     pub moves_used: u32,
     pub build_spent: u32,
+    pub major_city_exits: u8,
     pub paid_opponents: Vec<PlayerId>,
     pub upgraded_this_turn: bool,
     pub has_acted_this_turn: bool,
@@ -212,11 +221,14 @@ pub struct GameState {
     pub config: GameConfig,
     pub rng_seed: u64,
     pub rng_step: u64,
+    pub first_player: PlayerId,
+    pub initial_step: usize,
     pub turn_number: u32,
     pub initial_round: u8,
     pub current_player: PlayerId,
     pub phase: TurnPhase,
     pub turn_tracker: TurnTracker,
+    pub final_round: bool,
     pub players: Vec<PlayerState>,
     pub tracks: Vec<TrackSegment>,
     pub chip_supply: HashMap<String, u8>,
@@ -234,11 +246,13 @@ pub struct GameState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicGameState {
     pub config: GameConfig,
+    pub first_player: PlayerId,
     pub turn_number: u32,
     pub initial_round: u8,
     pub current_player: PlayerId,
     pub phase: TurnPhase,
     pub turn_tracker: TurnTracker,
+    pub final_round: bool,
     pub players: Vec<PlayerState>,
     pub tracks: Vec<TrackSegment>,
     pub chip_supply: HashMap<String, u8>,
@@ -253,11 +267,13 @@ impl GameState {
     pub fn to_public(&self) -> PublicGameState {
         PublicGameState {
             config: self.config.clone(),
+            first_player: self.first_player,
             turn_number: self.turn_number,
             initial_round: self.initial_round,
             current_player: self.current_player,
             phase: self.phase,
             turn_tracker: self.turn_tracker.clone(),
+            final_round: self.final_round,
             players: self.players.clone(),
             tracks: self.tracks.clone(),
             chip_supply: self.chip_supply.clone(),

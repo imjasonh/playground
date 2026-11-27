@@ -3,8 +3,8 @@ use crate::engine::map::{edge_key, MapIndex, MilepostId, PlayerId};
 use crate::engine::na_map::build_north_america_map;
 use crate::engine::rules::{
     active_hazards, apply_action, can_enter_city, connected_major_cities_list, edge_owners_map,
-    effective_move_limit, new_game, player_build_anchors, player_owned_edges, reachable_mileposts,
-    PlayerSpec,
+    effective_move_limit, new_game, opponent_occupied_edges, player_build_anchors,
+    player_owned_edges, reachable_mileposts, PlayerSpec,
 };
 use crate::engine::state::{Action, GameConfig, GameMode, GameState, PublicGameState};
 use serde::{Deserialize, Serialize};
@@ -138,7 +138,10 @@ impl WasmEngine {
         let state = self.active_state_shim()?;
         let owned = player_owned_edges(&state, pid);
         let anchors = player_build_anchors(&self.map, &state, pid);
-        let hazards = active_hazards(&self.map, &state);
+        let mut hazards = active_hazards(&self.map, &state);
+        hazards
+            .blocked_edges
+            .extend(opponent_occupied_edges(&state, pid));
         let rem_budget = state
             .config
             .build_budget_per_turn()
@@ -280,11 +283,14 @@ impl WasmEngine {
                 config: pub_s.config.clone(),
                 rng_seed: 0,
                 rng_step: 0,
+                first_player: pub_s.first_player,
+                initial_step: 0,
                 turn_number: pub_s.turn_number,
                 initial_round: pub_s.initial_round,
                 current_player: pub_s.current_player,
                 phase: pub_s.phase,
                 turn_tracker: pub_s.turn_tracker.clone(),
+                final_round: pub_s.final_round,
                 players: pub_s.players.clone(),
                 tracks: pub_s.tracks.clone(),
                 chip_supply: pub_s.chip_supply.clone(),

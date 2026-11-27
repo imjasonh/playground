@@ -5,159 +5,86 @@ use crate::engine::map::{
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use std::collections::{HashMap, HashSet};
+use serde::Deserialize;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 const ROW_STEP: f32 = 0.866_025_4; // sqrt(3) / 2
+const NA_GEO_JSON: &str = include_str!("../../maps/na_geo.json");
 
-/// Build the standard Empire Builder North America (US + Southern Canada) map and deck.
+#[derive(Deserialize)]
+struct NaGeo {
+    width: f32,
+    height: f32,
+    land_polygons: Vec<Vec<[f32; 2]>>,
+    lake_polygons: Vec<Vec<[f32; 2]>>,
+    rivers: Vec<Polyline>,
+    borders: Vec<Polyline>,
+    city_points: HashMap<String, [f32; 2]>,
+}
+
+/// Build the North America (US + Southern Canada) map and deck using Natural Earth 50m
+/// Albers Equal-Area Conic coastlines, lakes, rivers, borders, and real city coordinates.
 pub fn build_north_america_map() -> MapData {
-    let width = 39.0_f32;
-    let height = 22.0_f32 * ROW_STEP + 1.5;
+    let geo: NaGeo = serde_json::from_str(NA_GEO_JSON).expect("valid embedded na_geo.json");
 
-    // 1. Define continental US + Southern Canada landmass polygon (in lattice coordinates).
-    //    Origin (0,0) is top-left (Pacific Northwest / BC).
-    let land_poly: Vec<[f32; 2]> = vec![
-        [1.2, 1.5],   // Vancouver Island / BC coast
-        [4.5, 0.9],   // BC interior
-        [10.0, 0.8],  // Alberta / Calgary
-        [16.0, 0.9],  // Saskatchewan / Manitoba
-        [21.5, 1.2],  // Northern Ontario
-        [26.5, 1.4],  // Quebec north
-        [31.5, 1.2],  // Quebec / St. Lawrence
-        [36.5, 1.8],  // Maritimes / Maine
-        [37.2, 4.2],  // Nova Scotia / Maine coast
-        [35.2, 6.2],  // Boston / Cape Cod
-        [33.8, 7.6],  // New York / Long Island
-        [32.6, 9.5],  // Mid-Atlantic / Chesapeake
-        [32.2, 11.8], // Carolinas
-        [30.5, 14.2], // Georgia
-        [31.0, 17.5], // Florida east coast
-        [29.8, 19.2], // Miami / Keys
-        [28.5, 17.2], // Florida gulf coast
-        [26.8, 15.6], // Panhandle
-        [23.8, 16.0], // New Orleans / Mississippi delta
-        [19.5, 16.4], // Houston / Texas coast
-        [16.8, 18.6], // Brownsville / Rio Grande mouth
-        [14.2, 16.8], // Rio Grande / El Paso
-        [10.5, 15.6], // Arizona / Sonora border
-        [5.8, 15.2],  // San Diego / Southern California
-        [3.4, 13.8],  // Los Angeles coast
-        [1.8, 10.6],  // San Francisco / Central CA
-        [1.2, 7.5],   // Northern CA / Oregon
-        [1.4, 4.2],   // Washington / Puget Sound
-    ];
+    let is_land = |pt: [f32; 2]| -> bool {
+        let on_land = geo
+            .land_polygons
+            .iter()
+            .any(|poly| point_in_polygon(pt, poly));
+        if !on_land {
+            return false;
+        }
+        let in_lake = geo
+            .lake_polygons
+            .iter()
+            .any(|poly| point_in_polygon(pt, poly));
+        !in_lake
+    };
 
-    // Great Lakes cutouts (Superior, Michigan/Huron, Erie/Ontario).
-    let lake_superior: Vec<[f32; 2]> = vec![
-        [21.2, 3.7],
-        [24.2, 3.4],
-        [25.2, 4.4],
-        [23.6, 5.1],
-        [21.4, 4.7],
-    ];
-    let lake_michigan_huron: Vec<[f32; 2]> = vec![
-        [24.3, 5.1],
-        [26.6, 4.8],
-        [27.2, 6.2],
-        [25.6, 6.6],
-        [24.6, 7.3],
-        [23.7, 6.4],
-    ];
-    let lake_erie_ontario: Vec<[f32; 2]> = vec![[26.8, 6.7], [29.6, 5.7], [30.0, 6.5], [27.2, 7.4]];
+    // 1. Place mileposts on the equilateral hex lattice across the Natural Earth landmass.
+    let mut raw_mps: Vec<Milepost> = Vec::new();
+    let max_col = geo.width.ceil() as u16;
+    let max_row = (geo.height / ROW_STEP).ceil() as u16;
 
-    // Major rivers (used both visually and to mark +$2M river crossing edges).
-    let rivers = vec![
-        Polyline {
-            name: "Mississippi".into(),
-            points: vec![
-                [20.2, 4.8],
-                [21.3, 7.0],
-                [22.0, 9.6],
-                [22.4, 12.2],
-                [22.8, 14.5],
-                [23.4, 16.2],
-            ],
-        },
-        Polyline {
-            name: "Missouri".into(),
-            points: vec![
-                [12.2, 3.8],
-                [15.4, 5.2],
-                [17.5, 7.4],
-                [19.2, 9.2],
-                [21.8, 10.0],
-            ],
-        },
-        Polyline {
-            name: "Ohio".into(),
-            points: vec![[29.2, 8.2], [26.8, 9.4], [24.4, 10.4], [22.2, 11.2]],
-        },
-        Polyline {
-            name: "Colorado".into(),
-            points: vec![[11.2, 9.0], [9.2, 11.4], [7.8, 13.8], [7.2, 15.2]],
-        },
-        Polyline {
-            name: "Columbia".into(),
-            points: vec![[6.4, 2.2], [5.4, 4.2], [3.4, 4.8], [1.6, 4.9]],
-        },
-        Polyline {
-            name: "Rio Grande".into(),
-            points: vec![[11.8, 11.2], [12.4, 13.8], [14.2, 16.4], [16.8, 18.4]],
-        },
-        Polyline {
-            name: "St. Lawrence".into(),
-            points: vec![[29.8, 5.8], [32.4, 4.4], [35.2, 2.6]],
-        },
-    ];
-
-    let borders = vec![Polyline {
-        name: "US-Canada".into(),
-        points: vec![
-            [1.8, 3.2],
-            [8.0, 3.2],
-            [15.0, 3.2],
-            [20.8, 3.8],
-            [25.5, 5.2],
-            [28.5, 6.2],
-            [31.5, 5.4],
-            [34.8, 4.2],
-        ],
-    }];
-
-    // 2. Place mileposts on the offset hex lattice inside the landmass and outside lakes.
-    let mut mileposts: Vec<Milepost> = Vec::new();
-    let mut grid_to_id: HashMap<(u16, u16), MilepostId> = HashMap::new();
-
-    for row in 1..22u16 {
-        for col in 1..38u16 {
+    for row in 2..max_row {
+        for col in 1..max_col {
             let x = col as f32 + if row % 2 == 1 { 0.5 } else { 0.0 };
             let y = row as f32 * ROW_STEP;
-            let pt = [x, y];
-            if !point_in_polygon(pt, &land_poly) {
+            if y < 1.8 || y > geo.height - 0.6 {
                 continue;
             }
-            if point_in_polygon(pt, &lake_superior)
-                || point_in_polygon(pt, &lake_michigan_huron)
-                || point_in_polygon(pt, &lake_erie_ontario)
-            {
+            if !is_land([x, y]) {
                 continue;
             }
-            let id = mileposts.len() as MilepostId;
-            let terrain = default_terrain(x, y);
-            mileposts.push(Milepost {
+            let id = raw_mps.len() as MilepostId;
+            raw_mps.push(Milepost {
                 id,
                 col,
                 row,
                 x,
                 y,
-                terrain,
+                terrain: default_terrain(x, y),
                 city_id: None,
             });
-            grid_to_id.insert((col, row), id);
         }
     }
 
-    // Helper: find nearest milepost to (target_x, target_y) not yet assigned to a city.
+    // 2. Build hex adjacency and keep only the main continental connected component
+    //    (drops isolated offshore slivers like PEI/small islands so every milepost is reachable).
+    let raw_adj = build_hex_neighbors(&raw_mps, &is_land);
+    let main_comp = largest_component(&raw_adj);
+    let mut old_to_new: HashMap<MilepostId, MilepostId> = HashMap::with_capacity(main_comp.len());
+    let mut mileposts: Vec<Milepost> = Vec::with_capacity(main_comp.len());
+    for (old_id, mp) in raw_mps.into_iter().enumerate() {
+        if main_comp.contains(&(old_id as MilepostId)) {
+            let new_id = mileposts.len() as MilepostId;
+            old_to_new.insert(old_id as MilepostId, new_id);
+            mileposts.push(Milepost { id: new_id, ..mp });
+        }
+    }
+    let raw_neighbors = build_hex_neighbors(&mileposts, &is_land);
+
     let find_nearest =
         |mileposts: &[Milepost], tx: f32, ty: f32, used: &HashSet<MilepostId>| -> MilepostId {
             mileposts
@@ -172,78 +99,50 @@ pub fn build_north_america_map() -> MapData {
                 .id
         };
 
-    // Build lattice adjacency temporarily so Major Cities can claim their 6 surrounding rim mileposts.
-    let mut raw_neighbors: Vec<Vec<MilepostId>> = vec![Vec::new(); mileposts.len()];
-    for i in 0..mileposts.len() {
-        for j in (i + 1)..mileposts.len() {
-            let dx = mileposts[i].x - mileposts[j].x;
-            let dy = mileposts[i].y - mileposts[j].y;
-            let d2 = dx * dx + dy * dy;
-            if d2 > 0.7 && d2 < 1.25 {
-                raw_neighbors[i].push(j as MilepostId);
-                raw_neighbors[j].push(i as MilepostId);
-            }
-        }
-    }
-
-    // 3. Place cities (6 Major Cities + 32 Medium/Small Cities).
+    // 3. Place classic Empire Builder US + Southern Canada cities at their projected lat/lon!
     struct CitySpec {
         id: &'static str,
         name: &'static str,
         size: CitySize,
-        x: f32,
-        y: f32,
         commodities: &'static [&'static str],
     }
 
     let specs: &[CitySpec] = &[
-        // 6 Major Cities (5 required to win in standard US + Southern Canada EB)
+        // 6 Major Cities (5 connected + $250M to win)
         CitySpec {
             id: "new_york",
             name: "New York",
             size: CitySize::Major,
-            x: 32.5,
-            y: 7.4,
             commodities: &["imports", "machinery", "books"],
         },
         CitySpec {
             id: "chicago",
             name: "Chicago",
             size: CitySize::Major,
-            x: 23.2,
-            y: 7.6,
             commodities: &["machinery", "steel", "wheat"],
         },
         CitySpec {
             id: "toronto",
             name: "Toronto",
             size: CitySize::Major,
-            x: 28.0,
-            y: 5.2,
             commodities: &["beer", "wheat", "cars"],
         },
         CitySpec {
             id: "new_orleans",
             name: "New Orleans",
             size: CitySize::Major,
-            x: 23.2,
-            y: 14.9,
             commodities: &["imports", "sugar", "oil"],
         },
         CitySpec {
             id: "los_angeles",
             name: "Los Angeles",
             size: CitySize::Major,
-            x: 4.5,
-            y: 13.0,
             commodities: &["cars", "oranges", "imports"],
         },
         CitySpec {
             id: "san_francisco",
             name: "San Francisco",
             size: CitySize::Major,
-            x: 2.7,
-            y: 9.8,
             commodities: &["wine", "imports", "fish"],
         },
         // Northeast & Eastern Canada
@@ -251,186 +150,176 @@ pub fn build_north_america_map() -> MapData {
             id: "boston",
             name: "Boston",
             size: CitySize::Medium,
-            x: 34.8,
-            y: 5.8,
             commodities: &["fish", "books", "imports"],
         },
         CitySpec {
             id: "montreal",
             name: "Montreal",
             size: CitySize::Medium,
-            x: 31.8,
-            y: 4.0,
             commodities: &["paper", "beer", "aluminum"],
         },
         CitySpec {
             id: "quebec",
             name: "Quebec",
             size: CitySize::Small,
-            x: 34.2,
-            y: 2.5,
             commodities: &["timber", "paper", "iron"],
+        },
+        CitySpec {
+            id: "philadelphia",
+            name: "Philadelphia",
+            size: CitySize::Medium,
+            commodities: &["chemicals", "books", "imports"],
         },
         CitySpec {
             id: "washington",
             name: "Washington",
             size: CitySize::Medium,
-            x: 31.4,
-            y: 9.6,
             commodities: &["books", "tobacco"],
         },
         CitySpec {
             id: "pittsburgh",
             name: "Pittsburgh",
             size: CitySize::Medium,
-            x: 29.0,
-            y: 8.6,
             commodities: &["coal", "steel", "chemicals"],
+        },
+        CitySpec {
+            id: "buffalo",
+            name: "Buffalo",
+            size: CitySize::Small,
+            commodities: &["wheat", "steel"],
         },
         CitySpec {
             id: "detroit",
             name: "Detroit",
             size: CitySize::Medium,
-            x: 26.2,
-            y: 7.4,
             commodities: &["cars", "steel", "machinery"],
         },
         CitySpec {
             id: "cleveland",
             name: "Cleveland",
             size: CitySize::Small,
-            x: 27.6,
-            y: 7.8,
             commodities: &["steel", "chemicals"],
+        },
+        CitySpec {
+            id: "cincinnati",
+            name: "Cincinnati",
+            size: CitySize::Medium,
+            commodities: &["machinery", "hogs", "coal"],
         },
         // Southeast
         CitySpec {
             id: "norfolk",
             name: "Norfolk",
             size: CitySize::Small,
-            x: 31.8,
-            y: 11.1,
             commodities: &["imports", "tobacco", "fish"],
+        },
+        CitySpec {
+            id: "raleigh",
+            name: "Raleigh",
+            size: CitySize::Small,
+            commodities: &["tobacco", "textiles"],
         },
         CitySpec {
             id: "charlotte",
             name: "Charlotte",
             size: CitySize::Small,
-            x: 29.5,
-            y: 11.6,
             commodities: &["textiles", "tobacco"],
         },
         CitySpec {
             id: "atlanta",
             name: "Atlanta",
             size: CitySize::Medium,
-            x: 27.8,
-            y: 12.8,
             commodities: &["textiles", "cotton", "paper"],
         },
         CitySpec {
             id: "birmingham",
             name: "Birmingham",
             size: CitySize::Small,
-            x: 25.8,
-            y: 13.0,
             commodities: &["coal", "iron", "steel"],
         },
         CitySpec {
             id: "jacksonville",
             name: "Jacksonville",
             size: CitySize::Small,
-            x: 29.5,
-            y: 15.1,
             commodities: &["oranges", "paper", "fish"],
+        },
+        CitySpec {
+            id: "tampa",
+            name: "Tampa",
+            size: CitySize::Small,
+            commodities: &["oranges", "fish"],
         },
         CitySpec {
             id: "miami",
             name: "Miami",
             size: CitySize::Medium,
-            x: 29.8,
-            y: 17.8,
             commodities: &["oranges", "sugar", "imports"],
         },
-        // Midwest & Plains & Central Canada
+        // Midwest, Plains & Central Canada
         CitySpec {
             id: "minneapolis",
             name: "Minneapolis",
             size: CitySize::Medium,
-            x: 20.0,
-            y: 5.5,
             commodities: &["wheat", "iron", "beer"],
+        },
+        CitySpec {
+            id: "duluth",
+            name: "Duluth",
+            size: CitySize::Small,
+            commodities: &["iron", "wheat", "timber"],
         },
         CitySpec {
             id: "winnipeg",
             name: "Winnipeg",
             size: CitySize::Medium,
-            x: 18.0,
-            y: 2.3,
             commodities: &["wheat", "timber", "copper"],
         },
         CitySpec {
             id: "st_louis",
             name: "St. Louis",
             size: CitySize::Medium,
-            x: 22.0,
-            y: 10.2,
             commodities: &["beer", "corn", "hogs"],
         },
         CitySpec {
             id: "memphis",
             name: "Memphis",
             size: CitySize::Small,
-            x: 22.8,
-            y: 12.4,
             commodities: &["cotton", "timber", "hogs"],
         },
         CitySpec {
             id: "kansas_city",
             name: "Kansas City",
             size: CitySize::Medium,
-            x: 18.8,
-            y: 10.0,
             commodities: &["wheat", "cattle", "corn"],
         },
         CitySpec {
             id: "omaha",
             name: "Omaha",
             size: CitySize::Small,
-            x: 17.8,
-            y: 8.1,
             commodities: &["corn", "cattle", "hogs"],
         },
         CitySpec {
             id: "oklahoma_city",
             name: "Oklahoma City",
             size: CitySize::Small,
-            x: 17.8,
-            y: 12.2,
             commodities: &["oil", "cattle", "wheat"],
         },
         CitySpec {
             id: "dallas",
             name: "Dallas",
             size: CitySize::Medium,
-            x: 18.0,
-            y: 14.2,
             commodities: &["oil", "cotton", "cattle"],
         },
         CitySpec {
             id: "houston",
             name: "Houston",
             size: CitySize::Medium,
-            x: 19.6,
-            y: 15.8,
             commodities: &["oil", "chemicals", "sugar"],
         },
         CitySpec {
             id: "san_antonio",
             name: "San Antonio",
             size: CitySize::Small,
-            x: 16.5,
-            y: 16.2,
             commodities: &["cattle", "cotton"],
         },
         // West, Mountains & Western Canada
@@ -438,88 +327,66 @@ pub fn build_north_america_map() -> MapData {
             id: "calgary",
             name: "Calgary",
             size: CitySize::Medium,
-            x: 10.6,
-            y: 2.2,
             commodities: &["oil", "cattle", "coal"],
         },
         CitySpec {
             id: "vancouver",
             name: "Vancouver",
             size: CitySize::Medium,
-            x: 3.0,
-            y: 2.3,
             commodities: &["timber", "fish", "aluminum"],
         },
         CitySpec {
             id: "seattle",
             name: "Seattle",
             size: CitySize::Medium,
-            x: 3.1,
-            y: 4.1,
             commodities: &["timber", "fish", "aluminum"],
         },
         CitySpec {
             id: "portland",
             name: "Portland",
             size: CitySize::Small,
-            x: 2.8,
-            y: 5.8,
             commodities: &["timber", "wine", "wheat"],
         },
         CitySpec {
             id: "boise",
             name: "Boise",
             size: CitySize::Small,
-            x: 6.8,
-            y: 6.2,
             commodities: &["silver", "cattle"],
         },
         CitySpec {
             id: "salt_lake",
             name: "Salt Lake City",
             size: CitySize::Medium,
-            x: 9.2,
-            y: 8.6,
             commodities: &["copper", "silver", "chemicals"],
         },
         CitySpec {
             id: "denver",
             name: "Denver",
             size: CitySize::Medium,
-            x: 13.0,
-            y: 9.2,
             commodities: &["coal", "silver", "cattle"],
         },
         CitySpec {
             id: "las_vegas",
             name: "Las Vegas",
             size: CitySize::Small,
-            x: 6.8,
-            y: 11.4,
             commodities: &["silver", "copper"],
         },
         CitySpec {
             id: "phoenix",
             name: "Phoenix",
             size: CitySize::Medium,
-            x: 9.2,
-            y: 13.8,
             commodities: &["copper", "cotton", "oranges"],
         },
         CitySpec {
             id: "albuquerque",
             name: "Albuquerque",
             size: CitySize::Small,
-            x: 12.2,
-            y: 12.4,
             commodities: &["copper", "oil"],
         },
         CitySpec {
             id: "el_paso",
             name: "El Paso",
             size: CitySize::Small,
-            x: 13.2,
-            y: 15.0,
             commodities: &["copper", "cattle"],
         },
     ];
@@ -528,12 +395,16 @@ pub fn build_north_america_map() -> MapData {
     let mut cities: Vec<City> = Vec::with_capacity(specs.len());
 
     for spec in specs {
-        let center = find_nearest(&mileposts, spec.x, spec.y, &used_mps);
+        let [tx, ty] = geo
+            .city_points
+            .get(spec.id)
+            .copied()
+            .unwrap_or_else(|| panic!("missing city_points for {}", spec.id));
+        let center = find_nearest(&mileposts, tx, ty, &used_mps);
         let mut city_mps = vec![center];
         used_mps.insert(center);
 
         if spec.size == CitySize::Major {
-            // Claim immediate neighbors as part of the red major-city hub (up to 6 rim mileposts).
             for &nb in &raw_neighbors[center as usize] {
                 if !used_mps.contains(&nb) {
                     city_mps.push(nb);
@@ -562,18 +433,7 @@ pub fn build_north_america_map() -> MapData {
         });
     }
 
-    // 4. Build edges with River (+$2M) and Ocean Inlet (+$3M) surcharges.
-    let inlet_segments: &[([f32; 2], [f32; 2])] = &[
-        // Chesapeake Bay
-        ([31.8, 9.6], [32.6, 10.8]),
-        // Puget Sound
-        ([2.3, 3.0], [3.3, 4.3]),
-        // San Francisco Bay
-        ([1.8, 9.5], [3.2, 10.2]),
-        // Mobile / Tampa bays
-        ([25.2, 15.2], [26.2, 16.0]),
-    ];
-
+    // 4. Build edges with River (+$2M) and Lake Channel / Inlet (+$3M / +$2M) surcharges.
     let mut edges: Vec<EdgeDef> = Vec::new();
     let mut seen_edges: HashSet<(MilepostId, MilepostId)> = HashSet::new();
 
@@ -586,19 +446,18 @@ pub fn build_north_america_map() -> MapData {
             let a = &mileposts[ek.0 as usize];
             let b = &mileposts[ek.1 as usize];
 
-            // Edges inside the same major city are always free/normal.
             let same_major = a.terrain == Terrain::MajorCity
                 && b.terrain == Terrain::MajorCity
                 && a.city_id == b.city_id;
 
+            let mid = [(a.x + b.x) * 0.5, (a.y + b.y) * 0.5];
+            let crosses_water = !is_land(mid);
+
             let (kind, river_name) = if same_major {
                 (EdgeKind::Normal, None)
-            } else if inlet_segments
-                .iter()
-                .any(|&(p, q)| segments_intersect([a.x, a.y], [b.x, b.y], p, q))
-            {
+            } else if crosses_water {
                 (EdgeKind::Inlet, None)
-            } else if let Some(rname) = river_crossed([a.x, a.y], [b.x, b.y], &rivers) {
+            } else if let Some(rname) = river_crossed([a.x, a.y], [b.x, b.y], &geo.rivers) {
                 (EdgeKind::River, Some(rname))
             } else {
                 (EdgeKind::Normal, None)
@@ -643,7 +502,6 @@ pub fn build_north_america_map() -> MapData {
         commodity("aluminum", "Aluminum", "ALU", 3, "#94a3b8"),
     ];
 
-    // 6. Generate 108 balanced Demand Cards + 16 Event Cards deterministically.
     let deck = build_deck(&cities, &mileposts, &commodities);
 
     MapData {
@@ -652,12 +510,12 @@ pub fn build_north_america_map() -> MapData {
         default_victory_cash: 250,
         default_victory_major_cities: 5,
         geography: MapGeography {
-            width,
-            height,
-            land_polygons: vec![land_poly],
-            lake_polygons: vec![lake_superior, lake_michigan_huron, lake_erie_ontario],
-            rivers,
-            borders,
+            width: geo.width,
+            height: geo.height,
+            land_polygons: geo.land_polygons,
+            lake_polygons: geo.lake_polygons,
+            rivers: geo.rivers,
+            borders: geo.borders,
         },
         mileposts,
         cities,
@@ -665,6 +523,66 @@ pub fn build_north_america_map() -> MapData {
         commodities,
         deck,
     }
+}
+
+fn build_hex_neighbors<F>(mileposts: &[Milepost], is_land: &F) -> Vec<Vec<MilepostId>>
+where
+    F: Fn([f32; 2]) -> bool,
+{
+    let n = mileposts.len();
+    let mut adj = vec![Vec::new(); n];
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let dx = mileposts[i].x - mileposts[j].x;
+            let dy = mileposts[i].y - mileposts[j].y;
+            let d2 = dx * dx + dy * dy;
+            if d2 > 0.7 && d2 < 1.25 {
+                // Allow narrow water crossings (e.g. Great Lakes channels, bays) if endpoints are adjacent,
+                // while preventing jumps across wide open water by checking two intermediate sample points.
+                let p1 = [
+                    mileposts[i].x * 0.67 + mileposts[j].x * 0.33,
+                    mileposts[i].y * 0.67 + mileposts[j].y * 0.33,
+                ];
+                let p2 = [
+                    mileposts[i].x * 0.33 + mileposts[j].x * 0.67,
+                    mileposts[i].y * 0.33 + mileposts[j].y * 0.67,
+                ];
+                if !is_land(p1) && !is_land(p2) {
+                    continue;
+                }
+                adj[i].push(j as MilepostId);
+                adj[j].push(i as MilepostId);
+            }
+        }
+    }
+    adj
+}
+
+fn largest_component(adj: &[Vec<MilepostId>]) -> HashSet<MilepostId> {
+    let mut visited = vec![false; adj.len()];
+    let mut best: Vec<MilepostId> = Vec::new();
+    for start in 0..adj.len() {
+        if visited[start] {
+            continue;
+        }
+        let mut comp = Vec::new();
+        let mut q = VecDeque::new();
+        visited[start] = true;
+        q.push_back(start as MilepostId);
+        while let Some(u) = q.pop_front() {
+            comp.push(u);
+            for &v in &adj[u as usize] {
+                if !visited[v as usize] {
+                    visited[v as usize] = true;
+                    q.push_back(v);
+                }
+            }
+        }
+        if comp.len() > best.len() {
+            best = comp;
+        }
+    }
+    best.into_iter().collect()
 }
 
 fn commodity(id: &str, name: &str, short: &str, chips: u8, color: &str) -> Commodity {
@@ -677,19 +595,20 @@ fn commodity(id: &str, name: &str, short: &str, chips: u8, color: &str) -> Commo
     }
 }
 
+/// Approximate Rocky Mountains, Cascades/Sierra Nevada, and Appalachians in Albers lattice coordinates.
 fn default_terrain(x: f32, y: f32) -> Terrain {
-    // Rocky Mountains spine
-    let rockies = (9.0..=13.2).contains(&x)
-        && (2.0..=13.0).contains(&y)
-        && ((x - (10.5 + (y - 2.0) * 0.14)).abs() < 1.8);
-    // Sierra Nevada / Cascades
-    let cascades = (3.8..=5.6).contains(&x)
-        && (2.2..=12.2).contains(&y)
-        && ((x - (4.3 + (y - 2.2) * 0.08)).abs() < 1.0);
-    // Appalachian Mountains
-    let appalachians = (27.5..=31.2).contains(&x)
-        && (6.8..=12.6).contains(&y)
-        && ((x - (30.5 - (y - 6.8) * 0.42)).abs() < 1.15);
+    // Rocky Mountains spine (running NW from Calgary/Montana down through Colorado/New Mexico)
+    let rockies = (11.5..=19.2).contains(&x)
+        && (2.2..=20.0).contains(&y)
+        && ((x - (12.5 + (y - 2.2) * 0.34)).abs() < 2.2);
+    // Cascades / Sierra Nevada
+    let cascades = (5.0..=8.6).contains(&x)
+        && (3.5..=17.8).contains(&y)
+        && ((x - (6.0 + (y - 3.5) * 0.14)).abs() < 1.15);
+    // Appalachian Mountains (SW from Maine/NY down through WV/NC/GA)
+    let appalachians = (32.5..=40.0).contains(&x)
+        && (9.5..=19.0).contains(&y)
+        && ((x - (39.5 - (y - 9.5) * 0.65)).abs() < 1.35);
 
     if rockies || cascades || appalachians {
         Terrain::Mountain
@@ -699,9 +618,8 @@ fn default_terrain(x: f32, y: f32) -> Terrain {
 }
 
 fn build_deck(cities: &[City], mileposts: &[Milepost], commodities: &[Commodity]) -> Vec<Card> {
-    let mut rng = ChaCha8Rng::seed_from_u64(0xEB_2026_0001);
+    let mut rng = ChaCha8Rng::seed_from_u64(0xEB_2026_0002);
 
-    // Precompute source city centers for each commodity.
     let mut sources: HashMap<&str, Vec<(f32, f32)>> = HashMap::new();
     for c in cities {
         let mp = &mileposts[c.center_mp as usize];
@@ -710,11 +628,10 @@ fn build_deck(cities: &[City], mileposts: &[Milepost], commodities: &[Commodity]
         }
     }
 
-    // Build a balanced pool of 324 valid (commodity, dest_city, payout) demand entries.
     let mut all_demands: Vec<DemandEntry> = Vec::with_capacity(324);
     let mut city_indices: Vec<usize> = (0..cities.len()).collect();
 
-    for round in 0..13 {
+    for round in 0..10 {
         city_indices.shuffle(&mut rng);
         for &ci in &city_indices {
             if all_demands.len() >= 324 {
@@ -723,14 +640,12 @@ fn build_deck(cities: &[City], mileposts: &[Milepost], commodities: &[Commodity]
             let dest = &cities[ci];
             let dest_mp = &mileposts[dest.center_mp as usize];
 
-            // Pick a commodity not produced at `dest`.
             let comm = loop {
                 let c =
                     &commodities[(all_demands.len() * 7 + round * 11 + ci * 3) % commodities.len()];
                 if !dest.commodities.iter().any(|x| x == &c.id) {
                     break c;
                 }
-                // Fallback deterministic scan
                 if let Some(alt) = commodities
                     .iter()
                     .find(|x| !dest.commodities.iter().any(|d| d == &x.id))
@@ -745,8 +660,8 @@ fn build_deck(cities: &[City], mileposts: &[Milepost], commodities: &[Commodity]
                 .map(|&(sx, sy)| ((sx - dest_mp.x).powi(2) + (sy - dest_mp.y).powi(2)).sqrt())
                 .fold(f32::INFINITY, f32::min);
 
-            // Calibrate payout to nearest source distance (~$1.35M per milepost + base $5M, clamped $7M..$48M).
-            let raw = (5.0 + min_dist * 1.45).round() as u32;
+            // Calibrate payout to Albers lattice distance (~$1.20M per milepost + base $5M, clamped $7M..$48M).
+            let raw = (5.0 + min_dist * 1.25).round() as u32;
             let payout = raw.clamp(7, 48);
 
             all_demands.push(DemandEntry {
@@ -757,7 +672,6 @@ fn build_deck(cities: &[City], mileposts: &[Milepost], commodities: &[Commodity]
         }
     }
 
-    // Sort into low / mid / high payout buckets so each card has a mix of short, medium, and long hauls.
     all_demands.sort_by_key(|d| d.payout);
     let third = all_demands.len() / 3;
     let mut low = all_demands[..third].to_vec();
@@ -769,17 +683,12 @@ fn build_deck(cities: &[City], mileposts: &[Milepost], commodities: &[Commodity]
 
     let mut deck: Vec<Card> = Vec::with_capacity(third + 16);
     for i in 0..third {
-        // Ensure the 3 demands on one card target distinct cities when possible.
-        let d1 = low[i].clone();
-        let d2 = mid[i].clone();
-        let d3 = high[i].clone();
         deck.push(Card::Demand {
             id: (i + 1) as u16,
-            demands: [d1, d2, d3],
+            demands: [low[i].clone(), mid[i].clone(), high[i].clone()],
         });
     }
 
-    // 16 Classic Event Cards (filtered out when events are disabled).
     let mut eid = (third + 1) as u16;
     let mut push_event = |title: &str, desc: &str, effect: EventEffect| {
         deck.push(Card::Event {

@@ -103,15 +103,46 @@ pub fn new_game(
     draw_pile.extend(set_aside_events);
     draw_pile.shuffle(&mut rng);
 
+    // Official rule (Page 3): player with the highest single demand payout goes first
+    // (tie-broken by sorted descending demand payouts).
+    let first_player = players
+        .iter()
+        .max_by(|a, b| {
+            let mut pa: Vec<u32> = a
+                .hand
+                .iter()
+                .flat_map(|c| match c {
+                    Card::Demand { demands, .. } => demands.iter().map(|d| d.payout).collect(),
+                    Card::Event { .. } => Vec::new(),
+                })
+                .collect();
+            let mut pb: Vec<u32> = b
+                .hand
+                .iter()
+                .flat_map(|c| match c {
+                    Card::Demand { demands, .. } => demands.iter().map(|d| d.payout).collect(),
+                    Card::Event { .. } => Vec::new(),
+                })
+                .collect();
+            pa.sort_unstable_by(|x, y| y.cmp(x));
+            pb.sort_unstable_by(|x, y| y.cmp(x));
+            pa.cmp(&pb).then_with(|| b.id.cmp(&a.id))
+        })
+        .map(|p| p.id)
+        .unwrap_or(0);
+
     let mut state = GameState {
         config,
         rng_seed: seed,
         rng_step: 1,
+        first_player,
+        initial_step: 0,
         turn_number: 1,
         initial_round: 1,
-        current_player: 0,
+        current_player: first_player,
         phase: TurnPhase::InitialBuild,
         turn_tracker: TurnTracker::default(),
+        final_round: false,
         players,
         tracks: Vec::new(),
         chip_supply,
@@ -220,6 +251,19 @@ pub fn player_owned_edges(state: &GameState, pid: PlayerId) -> HashSet<(Milepost
         .tracks
         .iter()
         .filter(|t| t.owner == pid)
+        .map(|t| edge_key(t.a, t.b))
+        .collect()
+}
+
+/// Official Right-of-Way rule (Page 4): edges already built by any other player cannot be built on.
+pub fn opponent_occupied_edges(
+    state: &GameState,
+    pid: PlayerId,
+) -> HashSet<(MilepostId, MilepostId)> {
+    state
+        .tracks
+        .iter()
+        .filter(|t| t.owner != pid)
         .map(|t| edge_key(t.a, t.b))
         .collect()
 }
@@ -1026,10 +1070,12 @@ fn handle_build_track(
 
     let hazards = active_hazards(map, state);
     let mut owned = player_owned_edges(state, pid);
+    let occupied_by_others = opponent_occupied_edges(state, pid);
     let mut anchors: HashSet<MilepostId> =
         player_build_anchors(map, state, pid).into_iter().collect();
 
     let mut total_cost = 0u32;
+    let mut major_exits = state.turn_tracker.major_city_exits;
     let mut to_add: Vec<(MilepostId, MilepostId)> = Vec::with_capacity(edges.len());
 
     // Track cities newly entered in this batch to enforce entry caps cleanly.
@@ -1042,6 +1088,11 @@ fn handle_build_track(
         }
         if owned.contains(&ek) {
             return Err(RuleError::new("You already own track on that segment"));
+        }
+        if occupied_by_others.contains(&ek) {
+            return Err(RuleError::new(
+                "Right of Way: another player already owns track on that segment",
+            ));
         }
         let step_cost = map
             .build_step_cost(from, to)
@@ -1060,6 +1111,16 @@ fn handle_build_track(
             return Err(RuleError::new(format!(
                 "Segment {from} -> {to} is not connected to your network or a Major City"
             )));
+        }
+
+        // Official rule (Page 5): at most 2 track segments may be built OUT OF major city mileposts per turn.
+        if map.city_at(from).is_some_and(|c| c.size == CitySize::Major) {
+            major_exits += 1;
+            if major_exits > 2 {
+                return Err(RuleError::new(
+                    "May not build more than 2 track segments out of Major Cities in one turn",
+                ));
+            }
         }
 
         if let Some(dest_city) = map.city_at(to) {
@@ -1106,6 +1167,7 @@ fn handle_build_track(
     state.players[pid as usize].cash -= total_cost;
     state.players[pid as usize].total_spent_building += total_cost;
     state.turn_tracker.build_spent += total_cost;
+    state.turn_tracker.major_city_exits = major_exits;
     state.turn_tracker.has_acted_this_turn = true;
     state.turn_tracker.can_undo = state.undo_checkpoint.is_some();
 
@@ -1133,41 +1195,62 @@ fn handle_upgrade_train(
     pid: PlayerId,
     target_tier: TrainTier,
 ) -> Result<(), RuleError> {
-    if state.phase != TurnPhase::Build {
-        return Err(RuleError::new("Can only upgrade train during Build phase"));
-    }
-    if state.turn_tracker.build_spent > 0 || state.turn_tracker.upgraded_this_turn {
+    if state.phase != TurnPhase::Build && state.phase != TurnPhase::InitialBuild {
         return Err(RuleError::new(
-            "Upgrading your train consumes your entire Build phase",
+            "Can only upgrade train during InitialBuild or Build phase",
         ));
     }
     let cur = state.players[pid as usize].train_tier;
-    if !cur.can_upgrade_to(target_tier) {
+    let is_crossgrade = cur.can_crossgrade_to(target_tier);
+    if !cur.can_upgrade_to(target_tier) && !is_crossgrade {
         return Err(RuleError::new(format!(
             "Cannot upgrade directly from {} to {}",
             cur.label(),
             target_tier.label()
         )));
     }
-    let cost = state.config.upgrade_cost();
+
+    let cost = if is_crossgrade {
+        5
+    } else {
+        state.config.upgrade_cost()
+    };
+
+    if !is_crossgrade
+        && (state.turn_tracker.build_spent > 0 || state.turn_tracker.upgraded_this_turn)
+    {
+        return Err(RuleError::new(
+            "Upgrading your train consumes your entire Build phase",
+        ));
+    }
+    if is_crossgrade && state.turn_tracker.build_spent + cost > state.config.build_budget_per_turn()
+    {
+        return Err(RuleError::new(
+            "Crossgrade ($5M) exceeds remaining turn budget",
+        ));
+    }
     if state.players[pid as usize].cash < cost {
         return Err(RuleError::new(format!("Need ${cost}M to upgrade train")));
     }
 
     state.players[pid as usize].cash -= cost;
     state.players[pid as usize].train_tier = target_tier;
-    state.turn_tracker.upgraded_this_turn = true;
-    state.turn_tracker.build_spent = cost;
+    state.turn_tracker.build_spent += cost;
+    if !is_crossgrade {
+        state.turn_tracker.upgraded_this_turn = true;
+    }
     state.turn_tracker.has_acted_this_turn = true;
     state.turn_tracker.can_undo = state.undo_checkpoint.is_some();
 
     let pname = state.players[pid as usize].name.clone();
+    let verb = if is_crossgrade {
+        "crossgraded"
+    } else {
+        "upgraded"
+    };
     state.push_log(
         Some(pid),
-        format!(
-            "{pname} upgraded train to {} (${cost}M)",
-            target_tier.label()
-        ),
+        format!("{pname} {verb} train to {} (${cost}M)", target_tier.label()),
     );
     Ok(())
 }
@@ -1191,27 +1274,82 @@ fn handle_borrow(state: &mut GameState, pid: PlayerId, amount: u32) -> Result<()
     Ok(())
 }
 
+fn qualifies_for_victory(map: &MapIndex, state: &GameState, pid: PlayerId) -> bool {
+    let p = &state.players[pid as usize];
+    p.cash >= state.config.victory_cash
+        && p.debt == 0
+        && connected_major_cities_count(map, state, pid) >= state.config.victory_major_cities
+}
+
 fn handle_end_turn(map: &MapIndex, state: &mut GameState, pid: PlayerId) -> Result<(), RuleError> {
     if state.phase == TurnPhase::TrimHand {
         return Err(RuleError::new("Discard down to 3 cards before ending turn"));
     }
 
-    // Check victory condition at end of turn.
-    let p = &state.players[pid as usize];
-    if p.cash >= state.config.victory_cash
-        && p.debt == 0
-        && connected_major_cities_count(map, state, pid) >= state.config.victory_major_cities
-    {
-        state.winner = Some(pid);
-        state.phase = TurnPhase::Finished;
-        clear_checkpoint(state);
+    // Official rule (Page 9): declaring victory triggers the Equal Turns final round!
+    if !state.final_round && qualifies_for_victory(map, state, pid) {
+        state.final_round = true;
         let pname = state.players[pid as usize].name.clone();
-        state.push_log(Some(pid), format!("{pname} WINS the game!"));
-        return Ok(());
+        state.push_log(
+            Some(pid),
+            format!("{pname} declared victory! Finishing current round for equal turns."),
+        );
+    }
+
+    let n = state.players.len() as PlayerId;
+    let next_clockwise = (pid + 1) % n;
+    let round_complete = next_clockwise == state.first_player;
+
+    if state.final_round && round_complete {
+        let mut qualifiers: Vec<(PlayerId, u32)> = state
+            .players
+            .iter()
+            .filter(|p| qualifies_for_victory(map, state, p.id))
+            .map(|p| (p.id, p.cash))
+            .collect();
+        qualifiers.sort_by_key(|a| std::cmp::Reverse(a.1));
+
+        if let Some(&(best_pid, best_cash)) = qualifiers.first() {
+            let tied = qualifiers.len() > 1 && qualifiers[1].1 == best_cash;
+            if tied {
+                // Official Page 9 tiebreaker: raise cash target by $50M and continue!
+                state.config.victory_cash += 50;
+                state.final_round = false;
+                state.push_log(
+                    None,
+                    format!(
+                        "Victory tie at ${best_cash}M! Target raised to ${}M — play continues!",
+                        state.config.victory_cash
+                    ),
+                );
+            } else {
+                state.winner = Some(best_pid);
+                state.phase = TurnPhase::Finished;
+                clear_checkpoint(state);
+                let pname = state.players[best_pid as usize].name.clone();
+                state.push_log(Some(best_pid), format!("{pname} WINS the game!"));
+                return Ok(());
+            }
+        } else {
+            state.final_round = false;
+        }
     }
 
     advance_turn(map, state, pid);
     Ok(())
+}
+
+/// Official Switchback Start (Page 5): Round 1 clockwise from `first_player`,
+/// Round 2 counterclockwise (last player goes twice in a row), Round 3 (Fast) clockwise.
+fn switchback_player(n: usize, first: PlayerId, step: usize) -> (u8, PlayerId) {
+    let round = (step / n) as u8 + 1;
+    let offset = step % n;
+    let idx = if round % 2 == 1 {
+        (first as usize + offset) % n
+    } else {
+        (first as usize + n - 1 - offset) % n
+    };
+    (round, idx as PlayerId)
 }
 
 fn advance_turn(map: &MapIndex, state: &mut GameState, finished_pid: PlayerId) {
@@ -1220,30 +1358,38 @@ fn advance_turn(map: &MapIndex, state: &mut GameState, finished_pid: PlayerId) {
         .active_events
         .retain(|e| e.expires_after_turn_of != Some(finished_pid));
 
-    let n = state.players.len() as PlayerId;
-    let mut next = (finished_pid + 1) % n;
+    let n = state.players.len();
 
     if state.phase == TurnPhase::InitialBuild {
-        if next == 0 {
-            if state.initial_round < state.config.initial_build_rounds() {
-                state.initial_round += 1;
+        state.initial_step += 1;
+        let total_initial_steps = n * state.config.initial_build_rounds() as usize;
+        if state.initial_step < total_initial_steps {
+            let (round, next_pid) = switchback_player(n, state.first_player, state.initial_step);
+            if round > state.initial_round {
+                state.initial_round = round;
                 state.turn_number += 1;
-            } else if state.players[0].hand.len() > 3 {
+            }
+            state.current_player = next_pid;
+        } else {
+            state.current_player = state.first_player;
+            if state.players[state.first_player as usize].hand.len() > 3 {
                 state.phase = TurnPhase::TrimHand;
             } else {
                 state.phase = TurnPhase::Operate;
                 state.turn_number += 1;
             }
         }
-        state.current_player = next;
         state.turn_tracker = TurnTracker::default();
         save_checkpoint(state);
         return;
     }
 
+    let n_u8 = n as PlayerId;
+    let mut next = (finished_pid + 1) % n_u8;
+
     // Regular turn advancement; skip players who lost their turn to a derailment.
-    for _ in 0..n {
-        if next == 0 {
+    for _ in 0..n_u8 {
+        if next == state.first_player {
             state.turn_number += 1;
         }
         if state.players[next as usize].skip_next_turn {
@@ -1253,11 +1399,10 @@ fn advance_turn(map: &MapIndex, state: &mut GameState, finished_pid: PlayerId) {
                 Some(next),
                 format!("{pname} skipped turn due to derailment"),
             );
-            // Also expire any events owned by the skipped player.
             state
                 .active_events
                 .retain(|e| e.expires_after_turn_of != Some(next));
-            next = (next + 1) % n;
+            next = (next + 1) % n_u8;
         } else {
             break;
         }
@@ -1441,17 +1586,17 @@ pub fn verify_invariants(map: &MapIndex, state: &GameState) -> Result<(), String
         }
     }
 
-    // 2. No duplicate track segments for the same player, and all edges exist in map.
-    let mut seen: HashSet<(PlayerId, MilepostId, MilepostId)> = HashSet::new();
+    // 2. Right of Way: at most ONE player may own track on any edge, and all edges exist in map.
+    let mut seen: HashSet<(MilepostId, MilepostId)> = HashSet::new();
     for t in &state.tracks {
         let ek = edge_key(t.a, t.b);
         if !map.edge_map.contains_key(&ek) {
             return Err(format!("Track edge {:?} does not exist in map", ek));
         }
-        if !seen.insert((t.owner, ek.0, ek.1)) {
+        if !seen.insert(ek) {
             return Err(format!(
-                "Duplicate track edge {:?} for player {}",
-                ek, t.owner
+                "Right of Way violated: multiple tracks on edge {:?}",
+                ek
             ));
         }
     }
