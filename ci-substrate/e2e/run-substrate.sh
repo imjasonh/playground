@@ -272,7 +272,7 @@ else:
     exit 1
   fi
   if [[ "${golden_tag}" != "-" ]]; then
-    echo "golden snapshot ready: tag=${golden_tag} (${((SECONDS - golden_start))}s)"
+    echo "golden snapshot ready: tag=${golden_tag} ($((SECONDS - golden_start))s)"
     break
   fi
   sleep 2

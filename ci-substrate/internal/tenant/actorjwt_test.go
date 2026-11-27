@@ -70,8 +70,9 @@ func rsaJWK(kid string, pub *rsa.PublicKey) map[string]string {
 	}
 }
 
-func incomingCtx(tok string) context.Context {
-	return metadata.NewIncomingContext(context.Background(), metadata.Pairs(MetadataKey, tok))
+func incomingCtx(t *testing.T, tok string) context.Context {
+	t.Helper()
+	return metadata.NewIncomingContext(t.Context(), metadata.Pairs(MetadataKey, tok))
 }
 
 func TestActorJWTVerifierAndRegistry(t *testing.T) {
@@ -149,7 +150,7 @@ func TestActorJWTVerifierAndRegistry(t *testing.T) {
 		"RS256": signRS256(t, rsaKey, "rsa-1", validClaims("tenant-a", "ci-runner-abc")),
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx := incomingCtx(tok)
+			ctx := incomingCtx(t, tok)
 			if err := reg.Authorize(ctx, "tenant-a"); err != nil {
 				t.Fatalf("Authorize(tenant-a): %v", err)
 			}
@@ -216,7 +217,7 @@ func TestActorJWTVerifierAndRegistry(t *testing.T) {
 	}
 	for name, tc := range badCases {
 		t.Run("reject_"+name, func(t *testing.T) {
-			err := reg.Authorize(incomingCtx(tc.tok), "tenant-a")
+			err := reg.Authorize(incomingCtx(t, tc.tok), "tenant-a")
 			if status.Code(err) != tc.want {
 				t.Fatalf("Authorize = %v (%v), want %v", status.Code(err), err, tc.want)
 			}
@@ -227,7 +228,7 @@ func TestActorJWTVerifierAndRegistry(t *testing.T) {
 	// once the interval passes (key rotation).
 	before := jwksFetches.Load()
 	rotatedTok := signES256(t, ecKey2, "ec-2", validClaims("tenant-a", "ci-runner-abc"))
-	if err := reg.Authorize(incomingCtx(rotatedTok), "tenant-a"); status.Code(err) != codes.Unauthenticated {
+	if err := reg.Authorize(incomingCtx(t, rotatedTok), "tenant-a"); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("unrotated kid = %v, want Unauthenticated", err)
 	}
 	if jwksFetches.Load() != before {
@@ -235,7 +236,7 @@ func TestActorJWTVerifierAndRegistry(t *testing.T) {
 	}
 	keys = append(keys, ecJWK("ec-2", &ecKey2.PublicKey))
 	now = now.Add(11 * time.Second)
-	if err := reg.Authorize(incomingCtx(rotatedTok), "tenant-a"); err != nil {
+	if err := reg.Authorize(incomingCtx(t, rotatedTok), "tenant-a"); err != nil {
 		t.Fatalf("rotated kid after refresh interval: %v", err)
 	}
 }
