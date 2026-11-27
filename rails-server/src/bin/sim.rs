@@ -1,6 +1,6 @@
 use rails_server::engine::ai::play_ai_turn;
+use rails_server::engine::ebm::build_default_ebm_map;
 use rails_server::engine::map::MapIndex;
-use rails_server::engine::na_map::build_north_america_map;
 use rails_server::engine::rules::{new_game, verify_invariants, PlayerSpec};
 use rails_server::engine::state::{GameConfig, GameMode, TrainTier, TurnPhase};
 use std::time::Instant;
@@ -201,7 +201,7 @@ fn main() {
         .unwrap_or(1000);
 
     let start = Instant::now();
-    let map = MapIndex::new(build_north_america_map());
+    let map = MapIndex::new(build_default_ebm_map());
     println!(
         "Loaded map '{}': {} mileposts, {} cities, {} edges, {} commodities, {} cards",
         map.data.name,

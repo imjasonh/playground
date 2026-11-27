@@ -46,6 +46,8 @@ const els = {
   panelOnline: document.getElementById("panel-online"),
   localMode: document.getElementById("local-mode"),
   localEvents: document.getElementById("local-events"),
+  activeMapLabel: document.getElementById("active-map-label"),
+  ebmFileInput: document.getElementById("ebm-file-input"),
   localSeats: document.getElementById("local-seats"),
   btnAddHuman: document.getElementById("btn-add-human"),
   btnAddBot: document.getElementById("btn-add-bot"),
@@ -756,6 +758,23 @@ function setupControls() {
     els.tabLocal.classList.remove("active");
     els.panelOnline.style.display = "";
     els.panelLocal.style.display = "none";
+  });
+
+  els.ebmFileInput.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const mapJson = app.engine.load_ebm_map(text);
+      app.mapData = JSON.parse(mapJson);
+      app.state = null;
+      app.renderer = new BoardRenderer(els.canvas, app.mapData);
+      els.activeMapLabel.textContent = `${app.mapData.name} (${file.name})`;
+      showToast(`Loaded .ebm map: ${app.mapData.name} (${app.mapData.mileposts.length} mileposts)`);
+      draw();
+    } catch (err) {
+      showToast(`Failed to parse .ebm: ${err}`, true);
+    }
   });
 
   els.btnAddHuman.addEventListener("click", () => {

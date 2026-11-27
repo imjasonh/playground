@@ -1,6 +1,6 @@
 use crate::engine::ai::play_ai_turn;
+use crate::engine::ebm::build_default_ebm_map;
 use crate::engine::map::{MapIndex, PlayerId};
-use crate::engine::na_map::build_north_america_map;
 use crate::engine::protocol::{ClientMsg, DraftPreview, RoomLobby, SeatInfo, ServerMsg};
 use crate::engine::rules::{apply_action, new_game, PlayerSpec};
 use crate::engine::state::{GameConfig, GameState, TurnPhase, PLAYER_COLORS};
@@ -484,7 +484,7 @@ impl DurableObject for GameRoomDo {
                     );
                     return Ok(());
                 }
-                let map = MapIndex::new(build_north_america_map());
+                let map = MapIndex::new(build_default_ebm_map());
                 let specs: Vec<PlayerSpec> = doc
                     .seats
                     .iter()
@@ -525,7 +525,7 @@ impl DurableObject for GameRoomDo {
                     );
                     return Ok(());
                 };
-                let map = MapIndex::new(build_north_america_map());
+                let map = MapIndex::new(build_default_ebm_map());
                 let res = match doc.game.as_mut() {
                     Some(g) => apply_action(&map, g, slot, action),
                     None => Err(crate::engine::state::RuleError::new("Game has not started")),

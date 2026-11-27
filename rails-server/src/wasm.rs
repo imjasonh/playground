@@ -1,6 +1,6 @@
 use crate::engine::ai::play_ai_turn;
+use crate::engine::ebm::{build_default_ebm_map, parse_ebm};
 use crate::engine::map::{edge_key, MapIndex, MilepostId, PlayerId};
-use crate::engine::na_map::build_north_america_map;
 use crate::engine::rules::{
     active_hazards, apply_action, can_enter_city, connected_major_cities_list, edge_owners_map,
     effective_move_limit, new_game, opponent_occupied_edges, player_build_anchors,
@@ -56,7 +56,7 @@ pub struct WasmEngine {
 impl WasmEngine {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
-        let map = MapIndex::new(build_north_america_map());
+        let map = MapIndex::new(build_default_ebm_map());
         Self {
             map,
             local_state: None,
@@ -64,7 +64,18 @@ impl WasmEngine {
         }
     }
 
-    /// Return the static North America map definition as JSON for the Canvas renderer.
+    /// Parse and activate a custom `.ebm` map file, returning the parsed `MapData` JSON.
+    pub fn load_ebm_map(&mut self, ebm_text: &str) -> Result<String, JsValue> {
+        let map_data = parse_ebm(ebm_text).map_err(|e| JsValue::from_str(&e))?;
+        let json =
+            serde_json::to_string(&map_data).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.map = MapIndex::new(map_data);
+        self.local_state = None;
+        self.remote_mirror = None;
+        Ok(json)
+    }
+
+    /// Return the active map definition as JSON for the Canvas renderer.
     pub fn get_map_json(&self) -> Result<String, JsValue> {
         serde_json::to_string(&self.map.data).map_err(|e| JsValue::from_str(&e.to_string()))
     }
