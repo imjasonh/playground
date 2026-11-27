@@ -49,6 +49,7 @@ func Dial(addr, serverName, caFile, tokenFile string) (*grpc.ClientConn, error) 
 		return nil, fmt.Errorf("%s holds no certificates", caFile)
 	}
 	return grpc.NewClient(addr, append(telemetry.DialOptions(),
+		grpc.WithDefaultServiceConfig(`{"loadBalancingConfig":[{"round_robin":{}}]}`),
 		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pool, ServerName: serverName})),
 		grpc.WithPerRPCCredentials(bearerFile(tokenFile)),
 		grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {

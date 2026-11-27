@@ -1,20 +1,29 @@
-# The actor pool for tenant-a. It runs in Substrate's system namespace as the
-# ate-client ServiceAccount, which Substrate's API trusts: the pod gets a
-# ServiceAccount token for the API's audience and the servicedns trust bundle
-# that signs the API's certificate. It reads tenant-a's queue from cas with
-# tenant-a's token, and creates, resumes, suspends, and deletes actors in the
-# tenant-a atespace from the ci-runner template, giving each actor the egress
-# policy in egress-cas.yaml before it first resumes. The ConfigMap holds
-# that file:
+# The actor pool for tenant-a. It runs in the ci-substrate namespace as its
+# own ServiceAccount (ci-substrate-pool-tenant-a), which needs the editor role
+# in only the tenant-a atespace (see README.md). The pod gets a projected
+# ServiceAccount token for Substrate's API audience and the servicedns trust
+# bundle that signs the API's certificate, and reaches ate-api-server through
+# the ci-substrate namespace's ate.dev/api-access=true label. It reads
+# tenant-a's queue from cas with tenant-a's token, and creates, resumes,
+# suspends, and deletes actors in the tenant-a atespace from the ci-runner
+# template, giving each actor the egress policy in egress-cas.yaml before it
+# first resumes. The ConfigMap holds that file:
 #
-#   kubectl -n ate-system create configmap ci-substrate-pool-tenant-a \
+#   kubectl -n ci-substrate create configmap ci-substrate-pool-tenant-a \
 #     --from-file=egress-policy.yaml=egress-cas.yaml
 #   ko apply -f pool.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-substrate-pool-tenant-a
+  namespace: ci-substrate
+automountServiceAccountToken: false
+---
 apiVersion: v1
 kind: Secret
 metadata:
   name: ci-substrate-pool-tenant-a
-  namespace: ate-system
+  namespace: ci-substrate
 type: Opaque
 stringData:
   token: tok-a
@@ -23,7 +32,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ci-substrate-pool-tenant-a
-  namespace: ate-system
+  namespace: ci-substrate
   labels:
     app: ci-substrate-pool
     tenant: tenant-a
@@ -41,7 +50,7 @@ spec:
         app: ci-substrate-pool
         tenant: tenant-a
     spec:
-      serviceAccountName: ate-client
+      serviceAccountName: ci-substrate-pool-tenant-a
       automountServiceAccountToken: false
       nodeSelector:
         ci-substrate.imjasonh.com/always-on: "true"
@@ -57,6 +66,9 @@ spec:
       containers:
         - name: pool
           image: ko://github.com/imjasonh/playground/ci-substrate/cmd/pool # pasta:ignore unpinned_container_image
+          envFrom:
+            # Collector settings; see ../05-telemetry.yaml.
+            - configMapRef: {name: otel, optional: true}
           env:
             - name: ATESPACE
               value: tenant-a
@@ -92,12 +104,6 @@ spec:
                 secretKeyRef:
                   name: ci-substrate-pool-tenant-a
                   key: token
-            # The otel ConfigMap is in the ci-substrate namespace, so the
-            # collector settings are repeated here.
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: http://otel-collector.ci-substrate.svc.cluster.local:4317
-            - name: OTEL_METRIC_EXPORT_INTERVAL
-              value: "10000"
             - name: POD_NAME
               valueFrom:
                 fieldRef: {fieldPath: metadata.name}
@@ -105,7 +111,7 @@ spec:
               valueFrom:
                 fieldRef: {fieldPath: spec.nodeName}
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: service.instance.id=$(POD_NAME),k8s.pod.name=$(POD_NAME),k8s.node.name=$(NODE_NAME),k8s.namespace.name=ate-system,ci_substrate.atespace=tenant-a
+              value: service.instance.id=$(POD_NAME),k8s.pod.name=$(POD_NAME),k8s.node.name=$(NODE_NAME),k8s.namespace.name=ci-substrate,ci_substrate.atespace=tenant-a
           volumeMounts:
             - name: ate
               mountPath: /run/ate
@@ -175,24 +181,5 @@ roleRef:
   name: ci-substrate-pool
 subjects:
   - kind: ServiceAccount
-    name: ate-client
-    namespace: ate-system
----
-# Substrate denies ingress to ate-system's pods by default and admits only its
-# own components to ate-api-server. NetworkPolicies add up, so this admits the
-# pool as well.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: ci-substrate-pool
-  namespace: ate-system
-spec:
-  podSelector:
-    matchLabels: {app: ate-api-server}
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels: {app: ci-substrate-pool}
-      ports:
-        - {protocol: TCP, port: 443}
+    name: ci-substrate-pool-tenant-a
+    namespace: ci-substrate

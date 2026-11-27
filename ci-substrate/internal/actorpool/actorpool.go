@@ -33,6 +33,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -138,6 +139,11 @@ type Config struct {
 	MinInterval time.Duration
 	// Now returns the current time. Tests set it.
 	Now func() time.Time
+	// NewName returns a candidate name for a newly created actor; it must
+	// start with Prefix. Defaults to Prefix + uuid.NewString() so deleted
+	// actor names are never reused (Substrate's egress gateway caches
+	// policies by atespace and actor name). Tests set it for determinism.
+	NewName func() string
 	// Burst, when set, is a WorkerPool the pool sizes for its actors.
 	Burst *Burst
 }
@@ -199,6 +205,10 @@ func New(cfg Config) (*Pool, error) {
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.NewName == nil {
+		prefix := cfg.Prefix
+		cfg.NewName = func() string { return prefix + uuid.NewString() }
 	}
 	p := &Pool{cfg: cfg, lastBusy: map[string]time.Time{}, unprimed: map[string]bool{}}
 	p.metrics = newMetrics(p)
@@ -392,7 +402,7 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 		p.lastBusy[name] = now
 	}
 	for range creates {
-		name := p.freeName(names)
+		name := p.nextName(names)
 		names[name] = true
 		total++
 		slog.InfoContext(ctx, "creating actor", "actor", name, "queued", queued, "total", total)
@@ -506,10 +516,10 @@ func outcome(err error) string {
 	return "ok"
 }
 
-// freeName returns the lowest-numbered name with the prefix not in names.
-func (p *Pool) freeName(names map[string]bool) string {
-	for i := 0; ; i++ {
-		name := fmt.Sprintf("%s%d", p.cfg.Prefix, i)
+// nextName returns a fresh actor name not in names.
+func (p *Pool) nextName(names map[string]bool) string {
+	for {
+		name := p.cfg.NewName()
 		if !names[name] {
 			return name
 		}

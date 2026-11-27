@@ -7,10 +7,10 @@
 // API: workers for the actors that do not fit in BASE_SLOTS, down to zero
 // when none needs one.
 //
-// It runs in Substrate's system namespace as the ate-client ServiceAccount,
-// with the API's trust bundle and a ServiceAccount token projected into the
-// pod, and a second token for the Kubernetes API when it sizes a WorkerPool;
-// see deploy/substrate/pool.yaml.
+// It runs in the ci-substrate namespace as a per-tenant ServiceAccount with
+// the editor role in its tenant's atespace, with the API's trust bundle and a
+// ServiceAccount token projected into the pod, and a second token for the
+// Kubernetes API when it sizes a WorkerPool; see deploy/substrate/pool.yaml.
 package main
 
 import (
