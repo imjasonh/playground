@@ -708,7 +708,7 @@ const OTA_DEFLATE_DICT_LEN: usize = 32_768;
 /// Allocates both the `DecompressorOxide` state and the 32 KiB sliding-window
 /// ring buffer on the heap so the NimBLE GATT callback stack stays tiny.
 pub struct OtaDeflateDecoder {
-    decompressor: Box<miniz_oxide::inflate::core::DecompressorOxide>,
+    decompressor: Box<[miniz_oxide::inflate::core::DecompressorOxide]>,
     dict: Box<[u8]>,
     dict_pos: usize,
     finished: bool,
@@ -717,12 +717,34 @@ pub struct OtaDeflateDecoder {
 impl OtaDeflateDecoder {
     /// Allocate a fresh streaming raw-DEFLATE decoder on the heap.
     pub fn new() -> Self {
-        Self {
-            decompressor: Box::new(miniz_oxide::inflate::core::DecompressorOxide::new()),
-            dict: vec![0u8; OTA_DEFLATE_DICT_LEN].into_boxed_slice(),
+        Self::try_new().expect("OtaDeflateDecoder allocation failed")
+    }
+
+    /// Fallibly allocate a fresh streaming raw-DEFLATE decoder on the heap,
+    /// returning `Err` instead of aborting if a constrained MCU heap cannot
+    /// satisfy the 32 KiB sliding-window dictionary or decompressor state.
+    pub fn try_new() -> Result<Self, String> {
+        let mut dict = Vec::new();
+        dict.try_reserve_exact(OTA_DEFLATE_DICT_LEN).map_err(|_| {
+            format!("out of memory allocating {OTA_DEFLATE_DICT_LEN}B deflate dictionary")
+        })?;
+        dict.resize(OTA_DEFLATE_DICT_LEN, 0);
+
+        let mut decompressor = Vec::new();
+        decompressor.try_reserve_exact(1).map_err(|_| {
+            format!(
+                "out of memory allocating {}B deflate state",
+                core::mem::size_of::<miniz_oxide::inflate::core::DecompressorOxide>()
+            )
+        })?;
+        decompressor.push(miniz_oxide::inflate::core::DecompressorOxide::new());
+
+        Ok(Self {
+            decompressor: decompressor.into_boxed_slice(),
+            dict: dict.into_boxed_slice(),
             dict_pos: 0,
             finished: false,
-        }
+        })
     }
 
     /// Feed compressed bytes and invoke `on_output` for each decompressed slice.
@@ -744,7 +766,7 @@ impl OtaDeflateDecoder {
 
         loop {
             let (status, consumed, written) = decompress(
-                &mut self.decompressor,
+                &mut self.decompressor[0],
                 input,
                 &mut self.dict,
                 self.dict_pos,
@@ -794,7 +816,7 @@ impl OtaDeflateDecoder {
         }
         loop {
             let (status, _consumed, written) = decompress(
-                &mut self.decompressor,
+                &mut self.decompressor[0],
                 &[],
                 &mut self.dict,
                 self.dict_pos,
@@ -1964,7 +1986,7 @@ mod hardening_tests {
         );
 
         // Stream in 470-byte BLE packet chunks (exact BLE OTA chunk size).
-        let mut decoder = OtaDeflateDecoder::new();
+        let mut decoder = OtaDeflateDecoder::try_new().expect("try_new");
         let mut out = Vec::with_capacity(original.len());
         for chunk in compressed.chunks(470) {
             decoder

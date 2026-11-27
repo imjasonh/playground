@@ -9,9 +9,13 @@
 //!    every pixel back to white without flashing, and every 20 drains it runs a full refresh.
 //!    The panel powers off at the end of each segment.
 //!
-//! Uses row-by-row triangle rendering and compact half-plane planning so total
-//! heap usage stays around ~128 KiB alongside NimBLE on a no-PSRAM ESP32.
+//! Uses row-by-row triangle rendering and compact half-plane planning (~128 KiB
+//! peak during drive). The 24 KiB half-plane buffer is freed after every segment,
+//! and the 96 KiB [`DrivePlanner`] is allocated lazily and released via
+//! [`App::memory_reclaimer`] before BLE OTA or coredump uploads so the 43 KiB
+//! deflate decoder never OOMs on a no-PSRAM ESP32.
 
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -59,12 +63,21 @@ enum Phase {
     DriveCycle,
 }
 
+#[derive(Default)]
+struct PlannerSlot {
+    planner: Option<DrivePlanner>,
+    reclaimed: bool,
+}
+
 /// Experimental 20+ Hz grayscale boids application for 7.5″ 800×480 e-Paper boards.
 pub struct GrayscaleApp {
     phase: Phase,
     luts: DriveLuts,
-    planner: DrivePlanner,
-    new_half: Vec<u8>,
+    /// Allocated lazily on entering `DriveCycle` (after `BleOtaNode::init`) and
+    /// released via [`App::memory_reclaimer`] before BLE OTA or coredump reads
+    /// so the 32 KiB deflate dictionary + 11 KiB decompressor never OOM on a
+    /// no-PSRAM ESP32.
+    planner: Arc<Mutex<PlannerSlot>>,
     flock: Flock,
     triangles: Vec<RenderTriangle>,
     row_luma: Vec<u8>,
@@ -88,8 +101,6 @@ impl<B: Board + HasEpd75> App<B> for GrayscaleApp {
     fn init(_board: &mut B) -> Result<Self> {
         info!("{GRAYSCALE_FIRMWARE_ID} init spi_mhz={SPI_MHZ} frames_per_step={FRAMES_PER_STEP}");
         let luts = DriveLuts::new(FRAMES_PER_STEP, SWAP_DRIVE_POLARITY);
-        let planner = DrivePlanner::new(LOGICAL_WIDTH, LOGICAL_HEIGHT, DriveConfig::default());
-        let new_half = vec![0u8; planner.half_plane_bytes()];
         let flock = Flock::new(FlockConfig::default(), FLOCK_SEED);
         let mut triangles = Vec::new();
         flock.prepare_triangles(LOGICAL_WIDTH, LOGICAL_HEIGHT, &mut triangles);
@@ -97,8 +108,7 @@ impl<B: Board + HasEpd75> App<B> for GrayscaleApp {
         Ok(Self {
             phase: Phase::FullRefresh,
             luts,
-            planner,
-            new_half,
+            planner: Arc::new(Mutex::new(PlannerSlot::default())),
             flock,
             triangles,
             row_luma,
@@ -117,7 +127,31 @@ impl<B: Board + HasEpd75> App<B> for GrayscaleApp {
         Ok(())
     }
 
+    fn memory_reclaimer(&self) -> Option<Arc<dyn Fn() + Send + Sync>> {
+        let planner = Arc::clone(&self.planner);
+        Some(Arc::new(move || {
+            if let Ok(mut slot) = planner.try_lock() {
+                if slot.planner.take().is_some() {
+                    slot.reclaimed = true;
+                    info!("grayscale: released DrivePlanner for BLE OTA/coredump");
+                }
+            }
+        }))
+    }
+
     fn step(&mut self, board: &mut B, ctx: &mut StepContext<'_>) -> Result<StepOutput> {
+        if self.phase == Phase::DriveCycle {
+            let reclaimed = self
+                .planner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .reclaimed;
+            if reclaimed {
+                // Planner was released during BLE OTA/coredump; recover cleanly
+                // with a full refresh so physical ink matches zeroed levels.
+                self.phase = Phase::FullRefresh;
+            }
+        }
         match self.phase {
             Phase::FullRefresh => self.step_full_refresh(board, ctx),
             Phase::DriveCycle => self.step_drive_cycle(board, ctx),
@@ -143,7 +177,13 @@ impl GrayscaleApp {
         if let Err(err) = board.panel().power_off() {
             error!("grayscale: power off after full refresh failed: {err:#}");
         }
-        self.planner.reset_white();
+        {
+            let mut slot = self.planner.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(planner) = slot.planner.as_mut() {
+                planner.reset_white();
+            }
+            slot.reclaimed = false;
+        }
         self.drive_elapsed = Duration::ZERO;
         self.draining = false;
         self.drains = 0;
@@ -171,19 +211,28 @@ impl GrayscaleApp {
         // On error, recover with a clean full refresh.
         self.phase = Phase::FullRefresh;
 
+        let planner_arc = Arc::clone(&self.planner);
+        let mut slot = planner_arc.lock().unwrap_or_else(|e| e.into_inner());
+        let planner = slot.planner.get_or_insert_with(|| {
+            DrivePlanner::new(LOGICAL_WIDTH, LOGICAL_HEIGHT, DriveConfig::default())
+        });
+        // Keep the 24 KiB half-plane buffer local to the drive cycle so it is
+        // always freed before the platform BLE burst / OTA window.
+        let mut new_half = vec![0u8; planner.half_plane_bytes()];
+
         let init_start = now_us();
         if let Err(err) = board.panel().init_drive(&self.luts) {
             let _ = board.panel().power_off();
             return Err(err);
         }
         // The controller reset in init_drive lost its old plane.
-        self.planner.invalidate_old();
+        planner.invalidate_old();
         let init_end = now_us();
         ctx.record_span("grayscale.init_drive", "epd_refresh", init_start, init_end);
         ctx.feed_watchdog();
 
         let cycle_start_us = now_us();
-        let cycle_res = self.run_drive_loop(board, ctx);
+        let cycle_res = self.run_drive_loop(board, ctx, planner, &mut new_half);
         let cycle_end_us = now_us();
         ctx.record_span(
             "grayscale.drive_cycle",
@@ -191,6 +240,8 @@ impl GrayscaleApp {
             cycle_start_us,
             cycle_end_us,
         );
+        drop(new_half);
+        drop(slot);
 
         if let Err(err) = board.panel().power_off() {
             error!("grayscale: power off after drive cycle failed: {err:#}");
@@ -246,8 +297,10 @@ impl GrayscaleApp {
         &mut self,
         board: &mut B,
         ctx: &mut StepContext<'_>,
+        planner: &mut DrivePlanner,
+        new_half: &mut [u8],
     ) -> Result<Stats> {
-        let row_bytes = self.planner.row_bytes();
+        let row_bytes = planner.row_bytes();
         let cycle_start = Instant::now();
         let mut window_stats = Stats::default();
         let mut cycle_stats = Stats::default();
@@ -257,17 +310,16 @@ impl GrayscaleApp {
         let mut plan = {
             let flock = &self.flock;
             let triangles = &self.triangles;
-            self.planner.plan_tick_compact(
+            planner.plan_tick_compact(
                 |y, row| flock.render_luma_row(triangles, y, row),
                 &mut self.row_luma,
-                &mut self.new_half,
+                new_half,
             )
         };
 
         loop {
             let refresh_start = Instant::now();
             if plan.rewrite_old {
-                let planner = &self.planner;
                 board
                     .panel()
                     .write_old_rows(LOGICAL_HEIGHT, row_bytes, |y, dst| {
@@ -276,7 +328,7 @@ impl GrayscaleApp {
             }
             board
                 .panel()
-                .write_new_half_plane(&self.new_half, LOGICAL_HEIGHT, row_bytes)?;
+                .write_new_half_plane(new_half, LOGICAL_HEIGHT, row_bytes)?;
             let sent = Instant::now();
             board.panel().start_drive()?;
 
@@ -296,21 +348,17 @@ impl GrayscaleApp {
             let sent_plan = plan;
 
             plan = if self.draining {
-                self.planner.plan_tick_compact(
-                    |_, row| row.fill(255),
-                    &mut self.row_luma,
-                    &mut self.new_half,
-                )
+                planner.plan_tick_compact(|_, row| row.fill(255), &mut self.row_luma, new_half)
             } else {
                 self.flock.step();
                 self.flock
                     .prepare_triangles(LOGICAL_WIDTH, LOGICAL_HEIGHT, &mut self.triangles);
                 let flock = &self.flock;
                 let triangles = &self.triangles;
-                self.planner.plan_tick_compact(
+                planner.plan_tick_compact(
                     |y, row| flock.render_luma_row(triangles, y, row),
                     &mut self.row_luma,
-                    &mut self.new_half,
+                    new_half,
                 )
             };
             let planned = Instant::now();

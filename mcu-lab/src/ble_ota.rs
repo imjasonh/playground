@@ -13,15 +13,16 @@ use esp32_nimble::utilities::BleUuid;
 use esp32_nimble::{uuid128, BLEAdvertisementData, BLECharacteristic, BLEDevice, NimbleProperties};
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::sys::{
-    esp_core_dump_image_check, esp_core_dump_image_erase, esp_core_dump_image_get, esp_ota_abort,
-    esp_ota_begin, esp_ota_end, esp_ota_get_next_update_partition, esp_ota_get_running_partition,
-    esp_ota_get_state_partition, esp_ota_handle_t, esp_ota_img_states_t,
-    esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY, esp_ota_mark_app_invalid_rollback_and_reboot,
-    esp_ota_mark_app_valid_cancel_rollback, esp_ota_set_boot_partition, esp_ota_write,
-    esp_partition_erase_range, esp_partition_find_first, esp_partition_read,
-    esp_partition_subtype_t_ESP_PARTITION_SUBTYPE_DATA_COREDUMP, esp_partition_t,
-    esp_partition_type_t_ESP_PARTITION_TYPE_DATA, esp_partition_write, esp_restart,
-    esp_task_wdt_reset, ESP_OK, OTA_WITH_SEQUENTIAL_WRITES,
+    esp_core_dump_image_check, esp_core_dump_image_erase, esp_core_dump_image_get,
+    esp_get_free_heap_size, esp_ota_abort, esp_ota_begin, esp_ota_end,
+    esp_ota_get_next_update_partition, esp_ota_get_running_partition, esp_ota_get_state_partition,
+    esp_ota_handle_t, esp_ota_img_states_t, esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY,
+    esp_ota_mark_app_invalid_rollback_and_reboot, esp_ota_mark_app_valid_cancel_rollback,
+    esp_ota_set_boot_partition, esp_ota_write, esp_partition_erase_range, esp_partition_find_first,
+    esp_partition_read, esp_partition_subtype_t_ESP_PARTITION_SUBTYPE_DATA_COREDUMP,
+    esp_partition_t, esp_partition_type_t_ESP_PARTITION_TYPE_DATA, esp_partition_write,
+    esp_restart, esp_task_wdt_reset, heap_caps_get_largest_free_block, ESP_OK, MALLOC_CAP_8BIT,
+    OTA_WITH_SEQUENTIAL_WRITES,
 };
 use log::{info, warn};
 use sha2::{Digest, Sha256};
@@ -120,7 +121,12 @@ fn read_flash_coredump() -> Option<Vec<u8>> {
         }
         let part_addr = (*part).address as usize;
         let rel_offset = addr.saturating_sub(part_addr);
-        let mut buf = vec![0u8; size];
+        let mut buf = Vec::new();
+        if buf.try_reserve_exact(size).is_err() {
+            warn!("coredump: out of memory reading {size}B flash coredump");
+            return None;
+        }
+        buf.resize(size, 0);
         if esp_partition_read(part, rel_offset, buf.as_mut_ptr().cast(), size) != ESP_OK {
             return None;
         }
@@ -150,9 +156,13 @@ enum ActiveSession {
     DataBlob { erased_end: u32 },
 }
 
+/// Optional app callback invoked before OTA or coredump allocations to free large heap buffers.
+pub type MemoryReclaimer = Arc<dyn Fn() + Send + Sync>;
+
 struct OtaWriterState {
     expected_chip_id: u16,
     min_ota_battery_mv: u16,
+    memory_reclaimer: Option<MemoryReclaimer>,
     session: Option<ActiveSession>,
     partition: *const esp_partition_t,
     expected_size: u32,
@@ -177,10 +187,15 @@ struct OtaWriterState {
 unsafe impl Send for OtaWriterState {}
 
 impl OtaWriterState {
-    fn new(expected_chip_id: u16, min_ota_battery_mv: u16) -> Self {
+    fn new(
+        expected_chip_id: u16,
+        min_ota_battery_mv: u16,
+        memory_reclaimer: Option<MemoryReclaimer>,
+    ) -> Self {
         Self {
             expected_chip_id,
             min_ota_battery_mv,
+            memory_reclaimer,
             session: None,
             partition: core::ptr::null(),
             expected_size: 0,
@@ -287,7 +302,10 @@ impl OtaWriterState {
         }
 
         self.abort_active();
-        // SAFETY: queries ESP-IDF's partition table for the inactive OTA slot.
+        if let Some(ref reclaim) = self.memory_reclaimer {
+            reclaim();
+        }
+        // SAFETY: queries ESP-IDF's partition table for the inactive OTA slot and heap stats.
         unsafe {
             let part = esp_ota_get_next_update_partition(core::ptr::null());
             if part.is_null() {
@@ -300,6 +318,23 @@ impl OtaWriterState {
                     message: format!("size {size} exceeds partition {}B", (*part).size),
                 };
             }
+            let deflate = if compression == OtaCompression::Deflate {
+                match OtaDeflateDecoder::try_new() {
+                    Ok(dec) => Some(dec),
+                    Err(message) => {
+                        let free = esp_get_free_heap_size();
+                        let largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+                        warn!(
+                            "ota: deflate alloc failed ({message}); free_heap={free} largest_block={largest}"
+                        );
+                        return OtaStatus::Error {
+                            message: format!("{message} (free={free}B, largest={largest}B)"),
+                        };
+                    }
+                }
+            } else {
+                None
+            };
             let session = if is_data_blob {
                 ActiveSession::DataBlob { erased_end: 0 }
             } else {
@@ -322,7 +357,7 @@ impl OtaWriterState {
             self.written = 0;
             self.wire_written = 0;
             self.header_len = 0;
-            self.deflate = (compression == OtaCompression::Deflate).then(OtaDeflateDecoder::new);
+            self.deflate = deflate;
             self.next_notify_at = 16 * 1024;
             self.hasher = Sha256::new();
             let kind = if is_data_blob {
@@ -330,7 +365,11 @@ impl OtaWriterState {
             } else {
                 "firmware"
             };
-            info!("ota: opened inactive partition for {kind} ({size} bytes, compression={compression:?})");
+            let free = esp_get_free_heap_size();
+            let largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+            info!(
+                "ota: opened inactive partition for {kind} ({size} bytes, compression={compression:?}, free_heap={free}, largest_block={largest})"
+            );
             OtaStatus::Ready {
                 total: size,
                 offset: 0,
@@ -593,7 +632,7 @@ pub struct BleOtaNode {
 
 impl BleOtaNode {
     /// Initialize NimBLE and register the OTA + Profile + Coredump + App-Command GATT service once.
-    pub fn init(board: BoardSpec) -> Self {
+    pub fn init(board: BoardSpec, memory_reclaimer: Option<MemoryReclaimer>) -> Self {
         let device = BLEDevice::take();
         let _ = device.set_preferred_mtu(512);
         let server = device.get_server();
@@ -604,6 +643,7 @@ impl BleOtaNode {
         let ota_state = Arc::new(Mutex::new(OtaWriterState::new(
             board.chip_id,
             board.min_ota_battery_mv,
+            memory_reclaimer.clone(),
         )));
         let pending_cmd: Arc<Mutex<Option<AppCommandRequest>>> = Arc::new(Mutex::new(None));
 
@@ -655,11 +695,17 @@ impl BleOtaNode {
             coredump_char.lock().set_value(b"NONE");
         }
         let cd_char_sub = Arc::clone(&coredump_char);
+        let cd_reclaim = memory_reclaimer;
         coredump_char
             .lock()
             .on_subscribe(move |_ch, _desc, sub_value| {
                 if sub_value.is_empty() {
                     return;
+                }
+                if has_flash_coredump() {
+                    if let Some(ref reclaim) = cd_reclaim {
+                        reclaim();
+                    }
                 }
                 if let Some(elf_bytes) = read_flash_coredump() {
                     info!(
