@@ -106,6 +106,13 @@ type TagActors interface {
 	CreateFromTag(ctx context.Context, name, tag string) error
 }
 
+// RevertActors is an optional extension of Actors that rolls an exited
+// clean-isolation actor back to SUSPENDED at its clean durable snapshot
+// instead of deleting and cold-creating it.
+type RevertActors interface {
+	Revert(ctx context.Context, name string) error
+}
+
 // Queue is the scheduler's view of the tenant: jobs waiting for a runner and
 // the bot ids holding leases. Watch calls changed each time that view
 // changes, until ctx ends or the watch breaks, and returns why it stopped.
@@ -418,9 +425,23 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 	slices.Sort(keys)
 	keys = append([]string{""}, keys...)
 
+	revertActors, hasRevertActors := p.cfg.Actors.(RevertActors)
+	reverted := 0
 	var errs []error
 	for _, key := range keys {
-		for _, name := range groups[key].crashed {
+		g := groups[key]
+		for _, name := range g.crashed {
+			if g.spec.Isolation == platform.IsolationClean && hasRevertActors && queuedByPlatform[key] > 0 {
+				slog.InfoContext(ctx, "reverting clean-isolation actor to durable snapshot", "actor", name, "platform", key)
+				if err := p.do(ctx, "revert", name, revertActors.Revert); err != nil {
+					errs = append(errs, fmt.Errorf("reverting %s: %w", name, err))
+					continue
+				}
+				g.suspended = append(g.suspended, name)
+				g.total++
+				reverted++
+				continue
+			}
 			slog.WarnContext(ctx, "deleting crashed actor", "actor", name)
 			if err := p.do(ctx, "delete", name, p.cfg.Actors.Delete); err != nil {
 				errs = append(errs, fmt.Errorf("deleting %s: %w", name, err))
@@ -428,7 +449,7 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 		}
 	}
 
-	total := len(owned) - totalCrashed
+	total := len(owned) - totalCrashed + reverted
 	plannedTotal := total
 	totalWaking := 0
 	tagActors, hasTagActors := p.cfg.Actors.(TagActors)

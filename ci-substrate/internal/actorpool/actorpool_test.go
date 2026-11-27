@@ -123,6 +123,10 @@ func (f *fakeSubstrate) Suspend(_ context.Context, name string) error {
 	return f.op("suspend", name, actorpool.StateSuspended)
 }
 
+func (f *fakeSubstrate) Revert(_ context.Context, name string) error {
+	return f.op("revert", name, actorpool.StateSuspended)
+}
+
 func (f *fakeSubstrate) Delete(_ context.Context, name string) error {
 	return f.op("delete", name, actorpool.StateUnknown)
 }
@@ -776,5 +780,30 @@ func TestForksActorsFromSourceTagForPlatformQueue(t *testing.T) {
 	}
 	if h.states() != "ci-runner-0=suspended" {
 		t.Fatalf("states = %q, want only default warm actor", h.states())
+	}
+}
+
+func TestCleanIsolationRevertsActorBetweenActions(t *testing.T) {
+	h := newHarness(t, 1, 4)
+	h.sub.actors["ci-runner-0"] = actorpool.StateSuspended
+	// An exited clean-isolation actor with another clean action queued is
+	// reverted to its clean durable snapshot and immediately resumed, instead
+	// of deleted.
+	cleanActor := "ci-runner-clean--abc123def456"
+	h.sub.actors[cleanActor] = actorpool.StateCrashed
+	h.queue.queuedByPlatform = map[string]int{"isolation=clean": 1}
+
+	if got := h.reconcile(t); !slices.Equal(got, []string{"resume " + cleanActor, "revert " + cleanActor}) {
+		t.Fatalf("clean revert+resume = %v, want revert and resume of %s", got, cleanActor)
+	}
+	if h.sub.actors[cleanActor] != actorpool.StateRunning {
+		t.Fatalf("clean actor state = %v, want running", h.sub.actors[cleanActor])
+	}
+
+	// Once it exits again with no more clean work queued, it is deleted.
+	h.sub.actors[cleanActor] = actorpool.StateCrashed
+	h.queue.queuedByPlatform = nil
+	if got := h.reconcile(t); !slices.Equal(got, []string{"delete " + cleanActor}) {
+		t.Fatalf("clean idle delete = %v, want delete %s", got, cleanActor)
 	}
 }

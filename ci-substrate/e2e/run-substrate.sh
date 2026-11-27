@@ -367,6 +367,16 @@ CI_SUBSTRATE_E2E_ENV_MARKER="${warm_marker}" \
   exit 1
 }
 
+echo "==> Clean-room per-action isolation (ci-substrate/isolation=clean via RevertActor)"
+CI_SUBSTRATE_E2E_ORIGIN_ADDR=localhost:18980 \
+CI_SUBSTRATE_E2E_CACHE_ADDR=localhost:19092 \
+CI_SUBSTRATE_E2E_EXEC_TIMEOUT=5m \
+CI_SUBSTRATE_E2E_CLEAN_ISOLATION=1 \
+  go test -v -count=1 -run '^TestE2ECleanRoomIsolation$' "${ROOT}/e2e" || {
+  pool_diagnostics
+  exit 1
+}
+
 echo "==> Another atespace's template naming ${ATESPACE}'s StorageClass gets no volume"
 # Substrate lets any template name any StorageClass. The driver is what
 # refuses: an actor in the intruder atespace has no volume of casfs-tenant-a.

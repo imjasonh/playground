@@ -52,6 +52,7 @@ type e2eConfig struct {
 	ActorJWT        bool          `env:"CI_SUBSTRATE_E2E_ACTOR_JWT"`
 	EnvTag          string        `env:"CI_SUBSTRATE_E2E_ENV_TAG"`
 	EnvMarker       string        `env:"CI_SUBSTRATE_E2E_ENV_MARKER"`
+	CleanIsolation  bool          `env:"CI_SUBSTRATE_E2E_CLEAN_ISOLATION"`
 	ExecTimeout     time.Duration `env:"CI_SUBSTRATE_E2E_EXEC_TIMEOUT, default=3m"`
 	WorkerPrefix    string        `env:"CI_SUBSTRATE_E2E_WORKER_PREFIX"`
 	ExpectInputMode string        `env:"CI_SUBSTRATE_E2E_EXPECT_INPUT_MODE"`
@@ -662,6 +663,77 @@ func TestE2ESourceTagForkedEnv(t *testing.T) {
 		t.Fatalf("worker = %q, want prefix %q", worker, wantPrefix)
 	}
 	t.Logf("BENCH source_tag_fork_execute tag=%s worker=%s duration=%s", env.EnvTag, worker, took.Round(time.Millisecond))
+}
+
+// TestE2ECleanRoomIsolation verifies that actions carrying
+// Platform.Properties{"ci-substrate/isolation": "clean"} cannot observe
+// rootfs/tmp mutations left by earlier actions.
+func TestE2ECleanRoomIsolation(t *testing.T) {
+	env := dialE2E(t)
+	if !env.CleanIsolation {
+		t.Skip("set CI_SUBSTRATE_E2E_CLEAN_ISOLATION=1 to test clean-room isolation")
+	}
+	ctx := env.ctxA(t)
+	execer := repb.NewExecutionClient(env.originConn)
+	cleanPlat := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: platform.PropIsolation, Value: platform.IsolationClean},
+		},
+	}
+
+	// Action 1: dirty /var/tmp on the sandbox rootfs.
+	cmd1 := mustUploadProto(ctx, t, env.origin, env.InstanceA, &repb.Command{
+		Arguments: []string{"sh", "-c", "echo secret-from-action-1 > /var/tmp/dirty-action-1 && echo WROTE"},
+	})
+	act1 := mustUploadProto(ctx, t, env.origin, env.InstanceA, &repb.Action{
+		CommandDigest: cmd1,
+		DoNotCache:    true,
+		Platform:      cleanPlat,
+	})
+	t1 := time.Now()
+	_, resp1, err := runAction(ctx, execer, env.InstanceA, act1, env.ExecTimeout)
+	if err != nil {
+		t.Fatalf("clean action 1: %v", err)
+	}
+	d1 := time.Since(t1)
+	if resp1.GetResult().GetExitCode() != 0 {
+		t.Fatalf("action 1 exit=%d stderr=%q", resp1.GetResult().GetExitCode(), mustFetchString(ctx, t, env.origin, env.InstanceA, resp1.GetResult().GetStderrDigest()))
+	}
+	w1 := resp1.GetResult().GetExecutionMetadata().GetWorker()
+	if !strings.HasPrefix(w1, "ci-runner-clean--") {
+		t.Fatalf("action 1 worker = %q, want prefix ci-runner-clean--", w1)
+	}
+
+	// Action 2: verify the dirty marker from Action 1 is completely gone.
+	cmd2 := mustUploadProto(ctx, t, env.origin, env.InstanceA, &repb.Command{
+		Arguments: []string{"sh", "-c", "if [ -e /var/tmp/dirty-action-1 ]; then echo LEAKED; exit 1; fi; echo CLEAN"},
+	})
+	act2 := mustUploadProto(ctx, t, env.origin, env.InstanceA, &repb.Action{
+		CommandDigest: cmd2,
+		DoNotCache:    true,
+		Platform:      cleanPlat,
+	})
+	t2 := time.Now()
+	_, resp2, err := runAction(ctx, execer, env.InstanceA, act2, env.ExecTimeout)
+	if err != nil {
+		t.Fatalf("clean action 2: %v", err)
+	}
+	d2 := time.Since(t2)
+	if resp2.GetResult().GetExitCode() != 0 {
+		t.Fatalf("action 2 failed (dirty state leaked!): exit=%d stdout=%q stderr=%q",
+			resp2.GetResult().GetExitCode(),
+			mustFetchString(ctx, t, env.origin, env.InstanceA, resp2.GetResult().GetStdoutDigest()),
+			mustFetchString(ctx, t, env.origin, env.InstanceA, resp2.GetResult().GetStderrDigest()))
+	}
+	if got := strings.TrimSpace(mustFetchString(ctx, t, env.origin, env.InstanceA, resp2.GetResult().GetStdoutDigest())); got != "CLEAN" {
+		t.Fatalf("action 2 stdout = %q, want CLEAN", got)
+	}
+	w2 := resp2.GetResult().GetExecutionMetadata().GetWorker()
+	if !strings.HasPrefix(w2, "ci-runner-clean--") {
+		t.Fatalf("action 2 worker = %q, want prefix ci-runner-clean--", w2)
+	}
+	t.Logf("BENCH clean_isolation action1_worker=%s action1_dur=%s action2_worker=%s action2_dur=%s reused_reverted=%v",
+		w1, d1.Round(time.Millisecond), w2, d2.Round(time.Millisecond), w1 == w2)
 }
 
 func runAction(ctx context.Context, execer repb.ExecutionClient, instance string, action *repb.Digest, timeout time.Duration) (string, *repb.ExecuteResponse, error) {

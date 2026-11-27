@@ -246,6 +246,13 @@ func (a *Actors) Suspend(ctx context.Context, name string) error {
 	return err
 }
 
+// Revert rolls the actor back to SUSPENDED at its clean durable snapshot,
+// discarding any filesystem or memory mutations from its last run.
+func (a *Actors) Revert(ctx context.Context, name string) error {
+	_, err := a.client.RevertActor(ctx, &ateapi.RevertActorRequest{Actor: a.ref(name)})
+	return err
+}
+
 // Delete removes the actor. A missing actor is not an error.
 func (a *Actors) Delete(ctx context.Context, name string) error {
 	_, err := a.client.DeleteActor(ctx, &ateapi.DeleteActorRequest{Actor: a.ref(name)})

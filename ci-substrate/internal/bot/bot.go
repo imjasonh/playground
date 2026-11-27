@@ -39,6 +39,7 @@ import (
 	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
 	"github.com/imjasonh/playground/ci-substrate/internal/casfs"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
+	"github.com/imjasonh/playground/ci-substrate/internal/platform"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
 	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
@@ -270,6 +271,10 @@ func (b *Bot) Run(ctx context.Context) error {
 			continue
 		}
 		b.runJob(context.WithoutCancel(ctx), botID, job)
+		if platform.ParseKey(job.GetPlatformKey()).Isolation == platform.IsolationClean {
+			clog.InfoContext(ctx, "clean isolation action completed; exiting for revert", "bot", botID)
+			return nil
+		}
 	}
 }
 
