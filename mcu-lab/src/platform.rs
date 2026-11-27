@@ -8,6 +8,7 @@
 //! CRC32-guarded RTC state, crash-loop rollback protection, `WakeProfiler`,
 //! BLE telemetry, resumable BLE GATT OTA, and flash coredump upload.
 
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -163,6 +164,14 @@ pub trait App<B: Board>: Sized {
     /// Execute one wake or animation step and return its phase durations and flags.
     fn step(&mut self, board: &mut B, ctx: &mut StepContext<'_>) -> Result<StepOutput>;
 
+    /// Optional callback invoked from the NimBLE host task right before BLE OTA
+    /// or flash coredump buffers are allocated, while [`App::step`] is idle inside
+    /// `broadcast_burst`. Memory-heavy apps on no-PSRAM MCUs can use this to release
+    /// large heap buffers (~100 KiB+) so OTA deflate decompression never OOMs.
+    fn memory_reclaimer(&self) -> Option<Arc<dyn Fn() + Send + Sync>> {
+        None
+    }
+
     /// Execute one iteration of a declarative command queued over `APP_COMMAND_CHAR_UUID`.
     /// Called only after BLE advertising and any GATT connection have stopped so the
     /// workload runs with zero BLE radio interference.
@@ -266,7 +275,7 @@ pub fn run<B: Board, A: App<B>>() -> Result<()> {
         info!("ota: board + app self_test passed");
     }
 
-    let ble = BleOtaNode::init(B::SPEC);
+    let ble = BleOtaNode::init(B::SPEC, app.memory_reclaimer());
     let mut ota_verified = false;
 
     let mut base_flags = encode_board_flags(B::SPEC.board_id) | (board.hardware_flags() & 0x0F);
