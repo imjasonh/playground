@@ -309,6 +309,92 @@ pub fn pack_4gray_planes(levels: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
     Ok((dtm1, dtm2))
 }
 
+/// Incremental white→black frame counts for the 3 stepped [`crate::grayscale::lut::DriveLuts`]
+/// passes used to render 4-level grayscale after a factory full-white clear:
+///
+/// - Pass 0 (`level <= 2`, light gray + dark gray + black): 4 frames (total 4)
+/// - Pass 1 (`level <= 1`, dark gray + black):              6 frames (total 10)
+/// - Pass 2 (`level == 0`, black only):                    14 frames (total 24)
+///
+/// Every active pixel in every pass moves in the same polarity (white → black)
+/// from a uniform white baseline, avoiding opposite-direction column crosstalk
+/// and panel-batch OTP `0x5F` incompatibilities.
+pub const GRAY4_STEP_FRAMES: [u8; 3] = [4, 6, 14];
+
+/// Compute one byte of the `DTM2` new-plane mask for stepped 4-gray pass `pass` (`0..3`),
+/// given the corresponding `dtm1` and `dtm2` bytes from a [`PhotoMode::Gray4`] frame.
+///
+/// With `DTM1` (old plane) held at `0xFF` (white) and `DDX[1:0] = 01`, a `0` bit in `DTM2`
+/// selects `WK` (push black) and a `1` bit selects `WW` (hold):
+/// - Pass 0 (`level <= 2`): `!(dtm1 | dtm2)`
+/// - Pass 1 (`level <= 1`): `!dtm2`
+/// - Pass 2 (`level == 0`): `!(dtm1 & dtm2)`
+pub const fn gray4_step_new_byte(pass: usize, dtm1: u8, dtm2: u8) -> u8 {
+    match pass {
+        0 => !(dtm1 | dtm2),
+        1 => !dtm2,
+        2 => !(dtm1 & dtm2),
+        _ => 0xFF,
+    }
+}
+
+/// 4×4 Bayer ordered-dither threshold matrix (`0..16`) for the calibration gradient band.
+const BAYER_4X4: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+
+/// Compute the 2-bit gray level (`0 = black, 1 = dark gray, 2 = light gray, 3 = white`)
+/// for pixel `(x, y)` of the 800×480 4-gray calibration test pattern:
+///
+/// - `y = 0..280`: 4 vertical solid bars (White, Light Gray, Dark Gray, Black)
+/// - `y = 280..360`: horizontal 4-level Bayer-dithered gradient (White → Black)
+/// - `y = 360..480`: 4 full-width horizontal solid bars (White, Light Gray, Dark Gray, Black)
+///   to inspect horizontal uniformity and column streaking across all 800 columns.
+pub fn calibration_4gray_pixel(x: usize, y: usize) -> u8 {
+    let w = PANEL_WIDTH as usize;
+    if y < 280 {
+        let bar = (x * 4) / w;
+        return 3u8.saturating_sub(bar as u8);
+    }
+    if y < 360 {
+        // Map x in 0..800 to 0.0..3.0 darkness (0 = white, 3 = black) with 4×4 Bayer dithering.
+        let scaled = (x * 3 * 16) / (w - 1);
+        let base = scaled / 16;
+        let rem = (scaled % 16) as u8;
+        let threshold = BAYER_4X4[y & 3][x & 3];
+        let darkness = (base + usize::from(rem > threshold)).min(3);
+        return (3 - darkness) as u8;
+    }
+    let band = ((y - 360) * 4) / (PANEL_HEIGHT as usize - 360);
+    3u8.saturating_sub(band as u8)
+}
+
+/// Stream bytes of the 96,000-byte 4-gray calibration pattern (`DTM1` at `0..48_000`,
+/// `DTM2` at `48_000..96_000`) into `dst` starting at `offset`, without heap allocation.
+pub fn fill_calibration_4gray_chunk(offset: usize, dst: &mut [u8]) {
+    let row_bytes = PANEL_WIDTH as usize / 8;
+    for (i, out) in dst.iter_mut().enumerate() {
+        let pos = offset + i;
+        if pos >= GRAY4_FRAME_BYTES {
+            *out = 0;
+            continue;
+        }
+        let is_dtm2 = pos >= FRAME_BYTES;
+        let byte_idx = if is_dtm2 { pos - FRAME_BYTES } else { pos };
+        let y = byte_idx / row_bytes;
+        let x0 = (byte_idx % row_bytes) * 8;
+        let mut acc = 0u8;
+        for bit in 0..8 {
+            let lvl = calibration_4gray_pixel(x0 + bit, y) & 0x03;
+            let bit_val = if is_dtm2 {
+                u8::from(lvl == 0 || lvl == 1)
+            } else {
+                u8::from(lvl == 0 || lvl == 2)
+            };
+            acc |= bit_val << (7 - bit);
+        }
+        *out = acc;
+    }
+}
+
 /// Render a clean 1-bit B&W placeholder frame (48,000 bytes, 1 = white) shown on
 /// freshly flashed boards before any photos have been uploaded from iOS.
 pub fn render_empty_placeholder() -> Vec<u8> {
@@ -520,5 +606,74 @@ mod tests {
             black_bytes > 500,
             "placeholder should draw visible border and text"
         );
+    }
+
+    #[test]
+    fn gray4_step_passes_deliver_monotonic_cumulative_frames() {
+        let mut levels = vec![3u8; (PANEL_WIDTH as usize) * (PANEL_HEIGHT as usize)];
+        levels[0..8].copy_from_slice(&[0, 1, 2, 3, 3, 2, 1, 0]);
+        let (dtm1, dtm2) = pack_4gray_planes(&levels).expect("pack 4-gray");
+
+        let mut cumulative = [0u16; 8];
+        for (pass, &frames) in GRAY4_STEP_FRAMES.iter().enumerate() {
+            let new_byte = gray4_step_new_byte(pass, dtm1[0], dtm2[0]);
+            for (bit, total) in cumulative.iter_mut().enumerate() {
+                // DTM1 is 1 (white); a 0 bit in DTM2 selects WK (push black).
+                if (new_byte & (1 << (7 - bit))) == 0 {
+                    *total += u16::from(frames);
+                }
+            }
+        }
+        let expected_black = u16::from(GRAY4_STEP_FRAMES[0])
+            + u16::from(GRAY4_STEP_FRAMES[1])
+            + u16::from(GRAY4_STEP_FRAMES[2]);
+        let expected_dark = u16::from(GRAY4_STEP_FRAMES[0]) + u16::from(GRAY4_STEP_FRAMES[1]);
+        let expected_light = u16::from(GRAY4_STEP_FRAMES[0]);
+        assert_eq!(
+            cumulative,
+            [
+                expected_black,
+                expected_dark,
+                expected_light,
+                0,
+                0,
+                expected_light,
+                expected_dark,
+                expected_black,
+            ]
+        );
+    }
+
+    #[test]
+    fn calibration_4gray_chunk_matches_pack_4gray_planes() {
+        let w = PANEL_WIDTH as usize;
+        let h = PANEL_HEIGHT as usize;
+        let mut levels = vec![0u8; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                levels[y * w + x] = calibration_4gray_pixel(x, y);
+            }
+        }
+        // Verify the 4 vertical bars span white -> black left-to-right.
+        assert_eq!(calibration_4gray_pixel(50, 100), 3);
+        assert_eq!(calibration_4gray_pixel(250, 100), 2);
+        assert_eq!(calibration_4gray_pixel(450, 100), 1);
+        assert_eq!(calibration_4gray_pixel(650, 100), 0);
+        // Verify the 4 horizontal bars span white -> black top-to-bottom.
+        assert_eq!(calibration_4gray_pixel(400, 370), 3);
+        assert_eq!(calibration_4gray_pixel(400, 400), 2);
+        assert_eq!(calibration_4gray_pixel(400, 430), 1);
+        assert_eq!(calibration_4gray_pixel(400, 460), 0);
+
+        let (dtm1, dtm2) = pack_4gray_planes(&levels).expect("pack calibration");
+        let mut expected = Vec::with_capacity(GRAY4_FRAME_BYTES);
+        expected.extend_from_slice(&dtm1);
+        expected.extend_from_slice(&dtm2);
+
+        let mut streamed = vec![0u8; GRAY4_FRAME_BYTES];
+        for (idx, chunk) in streamed.chunks_mut(1024).enumerate() {
+            fill_calibration_4gray_chunk(idx * 1024, chunk);
+        }
+        assert_eq!(streamed, expected);
     }
 }
