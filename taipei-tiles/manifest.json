@@ -1,0 +1,376 @@
+{
+  "name": "Taipei (Windows 1990/95) \u2014 American Mahjong 152-Tile Set",
+  "tileSizePx": [
+    36,
+    36
+  ],
+  "tile3dSizePx": [
+    41,
+    39
+  ],
+  "palette": "Windows 16-color VGA",
+  "totalPlayingTiles": 152,
+  "uniquePlayingFaces": 43,
+  "tiles": [
+    {
+      "id": "crak_1",
+      "name": "1 Crak",
+      "group": "Craks (Characters)",
+      "count": 4,
+      "source": "original (#1.bmp)",
+      "orig_idx": 1
+    },
+    {
+      "id": "crak_2",
+      "name": "2 Crak",
+      "group": "Craks (Characters)",
+      "count": 4,
+      "source": "original (#2.bmp)",
+      "orig_idx": 2
+    },
+    {
+      "id": "crak_3",
+      "name": "3 Crak",
+      "group": "Craks (Characters)",
+      "count": 4,
+      "source": "original (#3.bmp)",
+      "orig_idx": 3
+    },
+    {
+      "id": "crak_4",
+      "name": "4 Crak",
+      "group": "Craks (Characters)",
+      "count": 4,
+      "source": "original (#4.bmp)",
+      "orig_idx": 4
+    },
+    {
+      "id": "crak_5",
+      "name": "5 Crak",
+      "group": "Craks (Characters)",
+      "count": 4,
+      "source": "original (#5.bmp)",
+      "orig_idx": 5
+    },
+    {
+      "id": "crak_6",
+      "name": "6 Crak",
+      "group": "Craks (Characters)",
+      "count": 4,
+      "source": "original (#6.bmp)",
+      "orig_idx": 6
+    },
+    {
+      "id": "crak_7",
+      "name": "7 Crak",
+      "group": "Craks (Characters)",
+      "count": 4,
+      "source": "original (#7.bmp)",
+      "orig_idx": 7
+    },
+    {
+      "id": "crak_8",
+      "name": "8 Crak",
+      "group": "Craks (Characters)",
+      "count": 4,
+      "source": "original (#8.bmp)",
+      "orig_idx": 8
+    },
+    {
+      "id": "crak_9",
+      "name": "9 Crak",
+      "group": "Craks (Characters)",
+      "count": 4,
+      "source": "original (#9.bmp)",
+      "orig_idx": 9
+    },
+    {
+      "id": "bam_1",
+      "name": "1 Bam (Bird)",
+      "group": "Bams (Bamboos)",
+      "count": 4,
+      "source": "original (#10.bmp)",
+      "orig_idx": 10
+    },
+    {
+      "id": "bam_2",
+      "name": "2 Bam",
+      "group": "Bams (Bamboos)",
+      "count": 4,
+      "source": "original (#11.bmp)",
+      "orig_idx": 11
+    },
+    {
+      "id": "bam_3",
+      "name": "3 Bam",
+      "group": "Bams (Bamboos)",
+      "count": 4,
+      "source": "original (#12.bmp)",
+      "orig_idx": 12
+    },
+    {
+      "id": "bam_4",
+      "name": "4 Bam",
+      "group": "Bams (Bamboos)",
+      "count": 4,
+      "source": "original (#13.bmp)",
+      "orig_idx": 13
+    },
+    {
+      "id": "bam_5",
+      "name": "5 Bam",
+      "group": "Bams (Bamboos)",
+      "count": 4,
+      "source": "original (#14.bmp)",
+      "orig_idx": 14
+    },
+    {
+      "id": "bam_6",
+      "name": "6 Bam",
+      "group": "Bams (Bamboos)",
+      "count": 4,
+      "source": "original (#15.bmp)",
+      "orig_idx": 15
+    },
+    {
+      "id": "bam_7",
+      "name": "7 Bam",
+      "group": "Bams (Bamboos)",
+      "count": 4,
+      "source": "original (#16.bmp)",
+      "orig_idx": 16
+    },
+    {
+      "id": "bam_8",
+      "name": "8 Bam",
+      "group": "Bams (Bamboos)",
+      "count": 4,
+      "source": "original (#17.bmp)",
+      "orig_idx": 17
+    },
+    {
+      "id": "bam_9",
+      "name": "9 Bam",
+      "group": "Bams (Bamboos)",
+      "count": 4,
+      "source": "original (#18.bmp)",
+      "orig_idx": 18
+    },
+    {
+      "id": "dot_1",
+      "name": "1 Dot",
+      "group": "Dots (Circles)",
+      "count": 4,
+      "source": "original (#19.bmp)",
+      "orig_idx": 19
+    },
+    {
+      "id": "dot_2",
+      "name": "2 Dot",
+      "group": "Dots (Circles)",
+      "count": 4,
+      "source": "original (#20.bmp)",
+      "orig_idx": 20
+    },
+    {
+      "id": "dot_3",
+      "name": "3 Dot",
+      "group": "Dots (Circles)",
+      "count": 4,
+      "source": "original (#21.bmp)",
+      "orig_idx": 21
+    },
+    {
+      "id": "dot_4",
+      "name": "4 Dot",
+      "group": "Dots (Circles)",
+      "count": 4,
+      "source": "original (#22.bmp)",
+      "orig_idx": 22
+    },
+    {
+      "id": "dot_5",
+      "name": "5 Dot",
+      "group": "Dots (Circles)",
+      "count": 4,
+      "source": "original (#23.bmp)",
+      "orig_idx": 23
+    },
+    {
+      "id": "dot_6",
+      "name": "6 Dot",
+      "group": "Dots (Circles)",
+      "count": 4,
+      "source": "original (#24.bmp)",
+      "orig_idx": 24
+    },
+    {
+      "id": "dot_7",
+      "name": "7 Dot",
+      "group": "Dots (Circles)",
+      "count": 4,
+      "source": "original (#25.bmp)",
+      "orig_idx": 25
+    },
+    {
+      "id": "dot_8",
+      "name": "8 Dot",
+      "group": "Dots (Circles)",
+      "count": 4,
+      "source": "original (#26.bmp)",
+      "orig_idx": 26
+    },
+    {
+      "id": "dot_9",
+      "name": "9 Dot",
+      "group": "Dots (Circles)",
+      "count": 4,
+      "source": "original (#27.bmp)",
+      "orig_idx": 27
+    },
+    {
+      "id": "wind_north",
+      "name": "North Wind (N)",
+      "group": "Winds (NEWS)",
+      "count": 4,
+      "source": "original (#28.bmp)",
+      "orig_idx": 28
+    },
+    {
+      "id": "wind_east",
+      "name": "East Wind (E)",
+      "group": "Winds (NEWS)",
+      "count": 4,
+      "source": "original (#30.bmp)",
+      "orig_idx": 30
+    },
+    {
+      "id": "wind_west",
+      "name": "West Wind (W)",
+      "group": "Winds (NEWS)",
+      "count": 4,
+      "source": "original (#31.bmp)",
+      "orig_idx": 31
+    },
+    {
+      "id": "wind_south",
+      "name": "South Wind (S)",
+      "group": "Winds (NEWS)",
+      "count": 4,
+      "source": "original (#29.bmp)",
+      "orig_idx": 29
+    },
+    {
+      "id": "dragon_red",
+      "name": "Red Dragon (\u4e2d)",
+      "group": "Dragons",
+      "count": 4,
+      "source": "original (#32.bmp)",
+      "orig_idx": 32
+    },
+    {
+      "id": "dragon_green",
+      "name": "Green Dragon (\u767c)",
+      "group": "Dragons",
+      "count": 4,
+      "source": "original (#33.bmp)",
+      "orig_idx": 33
+    },
+    {
+      "id": "dragon_white",
+      "name": "White Dragon / Soap (\u767d)",
+      "group": "Dragons",
+      "count": 4,
+      "source": "original (#34.bmp)",
+      "orig_idx": 34
+    },
+    {
+      "id": "flower_winter",
+      "name": "Flower 1 \u2014 Winter (WIN)",
+      "group": "Flowers (8)",
+      "count": 1,
+      "source": "original (#35.bmp)",
+      "orig_idx": 35
+    },
+    {
+      "id": "flower_spring",
+      "name": "Flower 2 \u2014 Spring (SPR)",
+      "group": "Flowers (8)",
+      "count": 1,
+      "source": "original (#36.bmp)",
+      "orig_idx": 36
+    },
+    {
+      "id": "flower_summer",
+      "name": "Flower 3 \u2014 Summer (SUM)",
+      "group": "Flowers (8)",
+      "count": 1,
+      "source": "original (#37.bmp)",
+      "orig_idx": 37
+    },
+    {
+      "id": "flower_autumn",
+      "name": "Flower 4 \u2014 Autumn (AUT)",
+      "group": "Flowers (8)",
+      "count": 1,
+      "source": "original (#38.bmp)",
+      "orig_idx": 38
+    },
+    {
+      "id": "flower_bamboo",
+      "name": "Flower 5 \u2014 Bamboo",
+      "group": "Flowers (8)",
+      "count": 1,
+      "source": "original (#39.bmp)",
+      "orig_idx": 39
+    },
+    {
+      "id": "flower_orchid",
+      "name": "Flower 6 \u2014 Orchid",
+      "group": "Flowers (8)",
+      "count": 1,
+      "source": "original (#40.bmp)",
+      "orig_idx": 40
+    },
+    {
+      "id": "flower_mum",
+      "name": "Flower 7 \u2014 Chrysanthemum (MUM)",
+      "group": "Flowers (8)",
+      "count": 1,
+      "source": "original (#41.bmp)",
+      "orig_idx": 41
+    },
+    {
+      "id": "flower_plum",
+      "name": "Flower 8 \u2014 Plum",
+      "group": "Flowers (8)",
+      "count": 1,
+      "source": "original (#42.bmp)",
+      "orig_idx": 42
+    },
+    {
+      "id": "joker",
+      "name": "Joker (Wild)",
+      "group": "Jokers (8) \u2014 Extrapolated",
+      "count": 8,
+      "source": "original Windows 95 32x32 logo (windows-logo-32.png)",
+      "orig_idx": null
+    },
+    {
+      "id": "blank",
+      "name": "Blank (Spare)",
+      "group": "Extras (Spares & Back)",
+      "count": 0,
+      "source": "extrapolated (spare)",
+      "orig_idx": null
+    },
+    {
+      "id": "back",
+      "name": "Tile Back / Logo",
+      "group": "Extras (Spares & Back)",
+      "count": 0,
+      "source": "original (#44.bmp)",
+      "orig_idx": 44
+    }
+  ]
+}
