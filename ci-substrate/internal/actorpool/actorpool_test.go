@@ -248,6 +248,15 @@ type harness struct {
 	now     time.Time
 }
 
+func sequentialName(prefix string) func() string {
+	next := 0
+	return func() string {
+		name := fmt.Sprintf("%s%d", prefix, next)
+		next++
+		return name
+	}
+}
+
 func newHarness(t *testing.T, warm, maxActors int) *harness {
 	t.Helper()
 	h := &harness{sub: newFake(), queue: &fakeQueue{}, now: time.Unix(1_700_000_000, 0)}
@@ -259,6 +268,7 @@ func newHarness(t *testing.T, warm, maxActors int) *harness {
 		Max:       maxActors,
 		IdleAfter: time.Minute,
 		Now:       func() time.Time { return h.now },
+		NewName:   sequentialName("ci-runner-"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -280,6 +290,7 @@ func newScalingHarness(t *testing.T, warm, maxActors, baseSlots, perWorker, maxW
 		Max:       maxActors,
 		IdleAfter: time.Minute,
 		Now:       func() time.Time { return h.now },
+		NewName:   sequentialName("ci-runner-"),
 		Burst: &actorpool.Burst{
 			Workers:         h.workers,
 			Name:            burstPool,
@@ -650,5 +661,63 @@ func TestWorkerErrorsDoNotStopActors(t *testing.T) {
 	}
 	if h.workers.replicas != 0 {
 		t.Fatalf("replicas %d after a failed scale", h.workers.replicas)
+	}
+}
+
+func TestDefaultActorNamesAreUniqueAndNotReused(t *testing.T) {
+	sub := newFake()
+	queue := &fakeQueue{}
+	p, err := actorpool.New(actorpool.Config{
+		Actors:    sub,
+		Queue:     queue,
+		Prefix:    "ci-runner-",
+		Warm:      1,
+		Max:       2,
+		IdleAfter: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(sub.actors) != 1 {
+		t.Fatalf("expected 1 actor, got %v", sub.actors)
+	}
+	var first string
+	for name := range sub.actors {
+		first = name
+	}
+	if !strings.HasPrefix(first, "ci-runner-") {
+		t.Fatalf("name %q missing prefix", first)
+	}
+	if len(first) > 63 {
+		t.Fatalf("name %q exceeds 63-char k8s-short-name limit (%d)", first, len(first))
+	}
+	for _, r := range first {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			t.Fatalf("name %q contains invalid DNS label char %q", first, r)
+		}
+	}
+
+	// Mark the first actor crashed and reconcile: it is deleted and replaced
+	// with a fresh name, never reusing the deleted actor's name.
+	sub.actors[first] = actorpool.StateCrashed
+	if err := p.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, stillThere := sub.actors[first]; stillThere {
+		t.Fatalf("crashed actor %q was not deleted", first)
+	}
+	if len(sub.actors) != 1 {
+		t.Fatalf("expected 1 replacement actor, got %v", sub.actors)
+	}
+	for second := range sub.actors {
+		if second == first {
+			t.Fatalf("reused deleted actor name %q", first)
+		}
+		if !strings.HasPrefix(second, "ci-runner-") {
+			t.Fatalf("replacement name %q missing prefix", second)
+		}
 	}
 }

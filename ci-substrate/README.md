@@ -718,7 +718,7 @@ The script creates the atespace, token Secret, credential grant,
 `ActorTemplate`, and the pool for `tenant-a`, turns on the `ExternalVolumes`
 preview gate in `ate-api-server`, scales the runner Deployment to zero so
 actors do the work, then runs the Go e2e suite and checks that the worker that ran
-the action is a `ci-runner-N` actor and that it reported input mode
+the action is a `ci-runner-<uuid>` actor and that it reported input mode
 `volume`. On the test cluster the pool created one actor at start, an
 `Execute` against the empty queue ran 40 ms after the actor was up with its
 inputs from the volume, the pool suspended the actor after two idle minutes

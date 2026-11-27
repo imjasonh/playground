@@ -17,10 +17,10 @@ caching, and remote execution with the runner Deployment in
 |------|------------|
 | `workerpool.yaml` | Two `WorkerPool`s of gVisor workers labeled `workload: ci-runner`: `ci-runner-base`, one worker on the always-on node, and `ci-runner`, the burst pool on autoscaled nodes, whose replicas the pool sets. Actors from the runner template land on either. |
 | `tenant-a-token.yaml` | The tenant's cas token in a namespace of its own, for the egress gateway to inject. |
-| `casfs-csi.yaml` | The `casfs-csi` DaemonSet, its controller Service, the `CSIDriverConfig` that tells Substrate where the driver listens, the tenant's `StorageClass` (`casfs-tenant-a`, parameters `instance: tenant-a` and `atespace: tenant-a`), the driver's ServiceAccount, and a NetworkPolicy that admits the driver to Substrate's API. The driver mounts an inputs volume for each actor on the actor's node and serves it from that node's `cascache` with the tenant's token. |
+| `casfs-csi.yaml` | The `casfs-csi` DaemonSet, its controller Service, the `CSIDriverConfig` that tells Substrate where the driver listens, the tenant's `StorageClass` (`casfs-tenant-a`, parameters `instance: tenant-a` and `atespace: tenant-a`), and the driver's ServiceAccount. The driver mounts an inputs volume for each actor on the actor's node and serves it from that node's `cascache` with the tenant's token. |
 | `egress-cas.yaml` | The egress policy every runner actor gets: plain gRPC to the `cas` Service only, with the tenant token replacing the placeholder header. Inputs don't go through egress. |
 | `runner-template.yaml` | The `ActorTemplate` for a runner actor: the `runner` bot with the tenant's instance, a placeholder token, its actor name as its bot id, and an external `inputs` volume of the tenant's `StorageClass` mounted at `/inputs`. |
-| `pool.yaml` | The `pool` Deployment for the tenant. It runs in `ate-system` as the `ate-client` ServiceAccount, sizes the tenant's actors to its queue, and sizes the burst `WorkerPool` to its actors. A Role lets `ate-client` change only that `WorkerPool`'s scale, and a NetworkPolicy admits the pool to Substrate's API, which `ate-system` otherwise closes to all but Substrate's own components. |
+| `pool.yaml` | The `pool` Deployment for the tenant, its per-tenant ServiceAccount (`ci-substrate-pool-tenant-a`) in `ci-substrate`, and a Role letting that ServiceAccount change only the burst `WorkerPool`'s scale. It sizes the tenant's actors to its queue and sizes the burst `WorkerPool` to its actors. |
 
 `../../e2e/run-substrate.sh` applies all of it for `tenant-a` and runs the
 Go e2e tests (`e2e/`) against the result. `../../e2e/run-substrate-kind.sh` builds a
@@ -36,10 +36,13 @@ Substrate, and runs it there. By hand, for each CI tenant:
 4. Turn on Substrate's `ExternalVolumes` preview gate: add
    `ExternalVolumes` to the `--preview=` argument of the `ate-api-server`
    Deployment in `ate-system`. Substrate keeps external volumes behind it.
-5. Give the driver's ServiceAccount the `viewer` role in the atespace. The
-   driver refuses a volume for an actor that isn't in the `StorageClass`'s
-   `atespace`, and it learns that by listing the atespace's actors. Give it
-   no other role:
+5. Grant the CSI driver's ServiceAccount `viewer` and the tenant pool's
+   ServiceAccount `editor` in the atespace. The driver refuses a volume for an
+   actor that isn't in the `StorageClass`'s `atespace` (which it learns by
+   listing actors), and the pool creates, resumes, suspends, and deletes
+   actors and their egress policies in only that atespace. Both reach
+   `ate-api-server` through the `ci-substrate` namespace's
+   `ate.dev/api-access=true` label (set in `../00-namespace-and-config.yaml`):
 
    ```bash
    kubectl ate create access-policy -a tenant-a -f - <<'EOF'
@@ -47,11 +50,14 @@ Substrate, and runs it there. By hand, for each CI tenant:
    - role: viewer
      members:
      - user:system:serviceaccount:ci-substrate:casfs-csi
+   - role: editor
+     members:
+     - user:system:serviceaccount:ci-substrate:ci-substrate-pool-tenant-a
    EOF
    ```
 
-   If the atespace already has an access policy, add the member to its
-   `viewer` binding with `kubectl ate update access-policy` instead.
+   If the atespace already has an access policy, add the members with
+   `kubectl ate update access-policy` instead.
 6. Deploy the CSI driver and the tenant's `StorageClass`:
 
    ```bash
@@ -79,13 +85,15 @@ Substrate, and runs it there. By hand, for each CI tenant:
 8. Put the egress policy in a ConfigMap and deploy the pool:
 
    ```bash
-   kubectl -n ate-system create configmap ci-substrate-pool-tenant-a \
+   kubectl -n ci-substrate create configmap ci-substrate-pool-tenant-a \
      --from-file=egress-policy.yaml=egress-cas.yaml
    ko apply -f pool.yaml
    ```
 
-The pool creates `ci-runner-N` actors from the template, sets each one's
-egress policy before its first resume, and then:
+The pool creates `ci-runner-<uuid>` actors from the template (never reusing
+deleted actor names, since Substrate's egress gateway caches policies by
+atespace and actor name), sets each one's egress policy before its first
+resume, and then:
 
 - keeps `WARM` actors (default 1) suspended with a snapshot, so a resume is
   a memory restore, not an image pull and a cold start;
@@ -113,7 +121,7 @@ actor", and the pool tries again on its next reconcile. It shrinks the
 burst worker, since a scale-down can stop any worker and Substrate crashes
 the actor on it. When every actor is suspended, that is zero, and the
 cluster autoscaler removes the burst nodes. The pool calls the Kubernetes
-API with a projected token for `ate-client`, which the `ci-substrate-pool` Role allows to get and patch
+API with a projected token for `ci-substrate-pool-tenant-a`, which the `ci-substrate-pool` Role allows to get and patch
 only `workerpools/scale` for `ci-runner`.
 
 It reads the queue from the scheduler in `cas` with `WorkerService.Status`,
@@ -197,8 +205,9 @@ count on the burst pool emptying.
   a node without egress, upload the release to Substrate's object store and
   point the `SandboxConfig` at the `s3://` or `gs://` copy; the object-store
   plugin serves it from there.
-- `kubectl-ate` acts as `ate-system/ate-client` by default, which is also
-  the identity the pool uses.
+- `kubectl-ate` acts as `ate-system/ate-client` by default (Substrate's
+  default bootstrap owner); the pool uses its own per-tenant ServiceAccount in
+  `ci-substrate` with the `editor` role in only its tenant's atespace.
 - `ate-api-server` must reach the `casfs-csi` Service on port 9095 for
   `CreateVolume`, and the worker pod must see mounts made under
   `/var/lib/ate` on the host. Both hold on kind.

@@ -135,28 +135,51 @@ print(json.dumps(d))" | kubectl apply -f -
   kubectl -n ate-system rollout status deployment/ate-api-server --timeout=180s
 fi
 
-echo "==> casfs CSI driver: viewer in ${ATESPACE}"
-# The driver asks Substrate which atespace an actor is in, as its own
-# ServiceAccount, and refuses a volume for an actor outside the StorageClass's
-# atespace. It needs only the viewer role, and only here.
+echo "==> Access policy in ${ATESPACE} (casfs-csi viewer, pool editor) and API access label"
+# Substrate's built-in ate-api-server NetworkPolicy admits non-worker pods from
+# namespaces labeled ate.dev/api-access=true.
+kubectl label namespace ci-substrate ate.dev/api-access=true --overwrite
+# The driver asks Substrate which atespace an actor is in (needs only viewer),
+# and the pool manages actors and egress policies in this atespace (needs editor).
 driver_member="user:system:serviceaccount:ci-substrate:casfs-csi"
+pool_member="user:system:serviceaccount:ci-substrate:ci-substrate-pool-tenant-a"
 if ! kubectl ate get access-policy -a "${ATESPACE}" -o json >"${WORKDIR}/access-policy.json" 2>/dev/null ||
   ! grep -q '"bindings"' "${WORKDIR}/access-policy.json"; then
-  printf 'bindings:\n- role: viewer\n  members:\n  - %s\n' "${driver_member}" >"${WORKDIR}/access-policy-new.yaml"
+  cat >"${WORKDIR}/access-policy-new.yaml" <<EOF
+bindings:
+- role: viewer
+  members:
+  - ${driver_member}
+- role: editor
+  members:
+  - ${pool_member}
+EOF
   kubectl ate create access-policy -a "${ATESPACE}" -f "${WORKDIR}/access-policy-new.yaml"
-elif ! grep -q "${driver_member}" "${WORKDIR}/access-policy.json"; then
-  python3 - "${WORKDIR}/access-policy.json" "${driver_member}" <<'PY' >"${WORKDIR}/access-policy-new.json"
+else
+  if python3 - "${WORKDIR}/access-policy.json" "${WORKDIR}/access-policy-new.json" "${driver_member}" "${pool_member}" <<'PY'
 import json, sys
-policy = json.load(open(sys.argv[1]))
+src, dst, driver, pool = sys.argv[1:5]
+policy = json.load(open(src))
 bindings = policy.setdefault("bindings", [])
-viewer = next((b for b in bindings if b.get("role") == "viewer"), None)
-if viewer is None:
-    viewer = {"role": "viewer", "members": []}
-    bindings.append(viewer)
-viewer.setdefault("members", []).append(sys.argv[2])
-print(json.dumps(policy))
+changed = False
+for role, member in (("viewer", driver), ("editor", pool)):
+    binding = next((b for b in bindings if b.get("role") == role), None)
+    if binding is None:
+        binding = {"role": role, "members": []}
+        bindings.append(binding)
+    members = binding.setdefault("members", [])
+    if member not in members:
+        members.append(member)
+        changed = True
+if changed:
+    with open(dst, "w") as f:
+        json.dump(policy, f)
+    sys.exit(0)
+sys.exit(1)
 PY
-  kubectl ate update access-policy -a "${ATESPACE}" -f "${WORKDIR}/access-policy-new.json"
+  then
+    kubectl ate update access-policy -a "${ATESPACE}" -f "${WORKDIR}/access-policy-new.json"
+  fi
 fi
 
 echo "==> casfs CSI driver"
@@ -177,9 +200,9 @@ KO_DOCKER_REPO="${ACTOR_IMAGE_REPO}" ko resolve -f "${OVERLAY}/runner-template.y
 # so it does not make more against the old template. ko apply of pool.yaml
 # brings the pool back.
 if kubectl ate get actor-templates -a "${ATESPACE}" -o json | grep -q '"name": *"ci-runner"'; then
-  if kubectl -n ate-system get deployment ci-substrate-pool-tenant-a >/dev/null 2>&1; then
-    kubectl -n ate-system scale deployment ci-substrate-pool-tenant-a --replicas=0
-    kubectl -n ate-system rollout status deployment/ci-substrate-pool-tenant-a --timeout=120s
+  if kubectl -n ci-substrate get deployment ci-substrate-pool-tenant-a >/dev/null 2>&1; then
+    kubectl -n ci-substrate scale deployment ci-substrate-pool-tenant-a --replicas=0
+    kubectl -n ci-substrate rollout status deployment/ci-substrate-pool-tenant-a --timeout=120s
   fi
   for actor in $(kubectl ate get actors -a "${ATESPACE}" -o json |
     python3 -c 'import json,sys; print(" ".join(a["metadata"]["name"] for a in json.load(sys.stdin).get("actors", []) if a.get("actorTemplate", {}).get("name") == "ci-runner"))'); do
@@ -202,18 +225,18 @@ if [[ "${golden}" != GOLDEN_SNAPSHOT_MODE_DISABLED ]]; then
 fi
 
 echo "==> Pool"
-kubectl -n ate-system create configmap ci-substrate-pool-tenant-a \
+kubectl -n ci-substrate create configmap ci-substrate-pool-tenant-a \
   --from-file=egress-policy.yaml="${OVERLAY}/egress-cas.yaml" --dry-run=client -o yaml | kubectl apply -f -
 ko apply -f "${OVERLAY}/pool.yaml"
-kubectl -n ate-system rollout status deployment/ci-substrate-pool-tenant-a --timeout=180s
+kubectl -n ci-substrate rollout status deployment/ci-substrate-pool-tenant-a --timeout=180s
 if kubectl -n ci-substrate get deployment "${RUNNER_DEPLOYMENT}" >/dev/null 2>&1; then
   kubectl -n ci-substrate scale deployment "${RUNNER_DEPLOYMENT}" --replicas=0
 fi
 
 pool_diagnostics() {
   kubectl ate get actors -a "${ATESPACE}" >&2 || true
-  kubectl -n ate-system get pods -l app=ci-substrate-pool -o wide >&2 || true
-  kubectl -n ate-system logs deployment/ci-substrate-pool-tenant-a --tail=60 >&2 || true
+  kubectl -n ci-substrate get pods -l app=ci-substrate-pool -o wide >&2 || true
+  kubectl -n ci-substrate logs deployment/ci-substrate-pool-tenant-a --tail=60 >&2 || true
   kubectl -n ci-substrate-workers get pods -o wide >&2 || true
   kubectl -n ci-substrate-workers logs deployment/ci-runner-base --all-containers --tail=40 >&2 || true
 }
@@ -251,7 +274,7 @@ CI_SUBSTRATE_E2E_EXPECT_INPUT_MODE=volume \
 }
 echo "==> Actors after the run"
 kubectl ate get actors -a "${ATESPACE}"
-kubectl -n ate-system logs deployment/ci-substrate-pool-tenant-a --tail=20
+kubectl -n ci-substrate logs deployment/ci-substrate-pool-tenant-a --tail=20
 
 echo "==> Another atespace's template naming ${ATESPACE}'s StorageClass gets no volume"
 # Substrate lets any template name any StorageClass. The driver is what
@@ -296,19 +319,24 @@ await_burst() {
   done
   echo "the burst WorkerPool has ${got} replicas after ${timeout}s, want ${want}" >&2
   kubectl ate get actors -a "${ATESPACE}" >&2 || true
-  kubectl -n ate-system logs deployment/ci-substrate-pool-tenant-a --tail=40 >&2
+  kubectl -n ci-substrate logs deployment/ci-substrate-pool-tenant-a --tail=40 >&2
   return 1
 }
-# actor_placement prints "<state> <workerPool> <node>" for actor $1.
-actor_placement() {
+# burst_actor_placement prints "<name> <state> <workerPool> <node>" for any
+# ci-runner-* actor currently placed on the burst WorkerPool.
+burst_actor_placement() {
   kubectl ate get actors -a "${ATESPACE}" -o json | python3 -c '
 import json, sys
 for a in json.load(sys.stdin).get("actors", []):
-    if a["metadata"]["name"] == sys.argv[1]:
-        s = a.get("status", {})
-        w = s.get("workerAssignment", {})
-        print(s.get("state", "-"), w.get("workerPool", "-"), s.get("assignedNode", "-"))
-' "$1"
+    name = a["metadata"]["name"]
+    if not name.startswith("ci-runner-"):
+        continue
+    s = a.get("status", {})
+    w = s.get("workerAssignment", {})
+    if w.get("workerPool") == "ci-runner":
+        print(name, s.get("state", "-"), w.get("workerPool", "-"), s.get("assignedNode", "-"))
+        break
+'
 }
 if [[ "$(burst_replicas)" != 0 ]]; then
   echo "the burst WorkerPool has $(burst_replicas) replicas for one actor, want 0" >&2
@@ -316,37 +344,35 @@ if [[ "$(burst_replicas)" != 0 ]]; then
 fi
 # The base worker holds two actors, so a third warm actor needs a burst
 # worker. A short idle timeout lets all three suspend soon after.
-kubectl -n ate-system set env deployment/ci-substrate-pool-tenant-a WARM=3 IDLE_AFTER=20s
-kubectl -n ate-system rollout status deployment/ci-substrate-pool-tenant-a --timeout=180s
+kubectl -n ci-substrate set env deployment/ci-substrate-pool-tenant-a WARM=3 IDLE_AFTER=20s
+kubectl -n ci-substrate rollout status deployment/ci-substrate-pool-tenant-a --timeout=180s
 await_burst 1 120
 echo "burst WorkerPool scaled to 1"
 placement=""
 deadline=$((SECONDS + 600))
 while ((SECONDS < deadline)); do
-  placement="$(actor_placement ci-runner-2)"
-  if [[ "${placement}" == *" ci-runner "* ]]; then
-    break
-  fi
-  if [[ "${placement}" == ACTOR_STATE_RUNNING* ]]; then
+  placement="$(burst_actor_placement)"
+  if [[ -n "${placement}" ]]; then
     break
   fi
   sleep 5
 done
-if [[ "${placement}" != *" ci-runner "* ]]; then
-  echo "ci-runner-2 did not run on the burst WorkerPool: ${placement}" >&2
+if [[ -z "${placement}" ]]; then
+  echo "no ci-runner-* actor ran on the burst WorkerPool" >&2
   kubectl ate get actors -a "${ATESPACE}" >&2 || true
   kubectl -n ci-substrate-workers get pods -o wide >&2
-  kubectl -n ate-system logs deployment/ci-substrate-pool-tenant-a --tail=40 >&2
+  kubectl -n ci-substrate logs deployment/ci-substrate-pool-tenant-a --tail=40 >&2
   exit 1
 fi
+actor="${placement%% *}"
 node="${placement##* }"
 if [[ "$(kubectl get node "${node}" -o jsonpath='{.metadata.labels.ci-substrate\.imjasonh\.com/burst}')" != "true" ]]; then
-  echo "ci-runner-2 ran on ${node}, which is not a burst node" >&2
+  echo "${actor} ran on ${node}, which is not a burst node" >&2
   exit 1
 fi
-echo "ci-runner-2 ran on burst node ${node}"
+echo "${actor} ran on burst node ${node}"
 await_burst 0 300
 echo "burst WorkerPool scaled to 0"
 kubectl ate get actors -a "${ATESPACE}"
-kubectl -n ate-system set env deployment/ci-substrate-pool-tenant-a WARM=1 IDLE_AFTER=2m
-kubectl -n ate-system rollout status deployment/ci-substrate-pool-tenant-a --timeout=180s
+kubectl -n ci-substrate set env deployment/ci-substrate-pool-tenant-a WARM=1 IDLE_AFTER=2m
+kubectl -n ci-substrate rollout status deployment/ci-substrate-pool-tenant-a --timeout=180s
