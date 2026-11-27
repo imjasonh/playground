@@ -1,5 +1,52 @@
 import Foundation
 
+/// Source of an on-device tag detected on the XIAO ESP32-S3 Sense.
+enum MCULabSenseTagSource: String, Codable, Equatable, Sendable {
+    case audio
+    case vision
+    case model
+
+    var systemImage: String {
+        switch self {
+        case .audio: return "waveform"
+        case .vision: return "eye"
+        case .model: return "cpu"
+        }
+    }
+}
+
+/// A single on-device tag attached to a recorded clip (`clip_NNNNNN.json` sidecar).
+struct MCULabSenseTag: Codable, Equatable, Identifiable, Sendable {
+    var label: String
+    var source: MCULabSenseTagSource
+    var confidence: UInt8
+    var firstS: UInt32
+    var count: UInt32
+
+    var id: String { "\(source.rawValue):\(label)" }
+
+    enum CodingKeys: String, CodingKey {
+        case label
+        case source
+        case confidence
+        case firstS = "first_s"
+        case count
+    }
+}
+
+/// Aggregate tag count returned by `GET /api/tags` or computed across clips.
+struct MCULabSenseTagCount: Codable, Equatable, Identifiable, Sendable {
+    var label: String
+    var count: Int
+
+    var id: String { label }
+}
+
+/// Response payload returned by `GET /api/tags`.
+struct MCULabSenseTagsResponse: Codable, Equatable, Sendable {
+    var tags: [MCULabSenseTagCount]
+}
+
 /// Runtime status payload returned by `GET /api/status` on the XIAO ESP32-S3 Sense recorder.
 struct MCULabSenseStatus: Codable, Equatable, Sendable {
     var board: String
@@ -17,6 +64,8 @@ struct MCULabSenseStatus: Codable, Equatable, Sendable {
     var ip: String
     var cameraReady: Bool
     var micReady: Bool
+    var models: [String]
+    var activeTags: [String]
 
     enum CodingKeys: String, CodingKey {
         case board
@@ -34,6 +83,67 @@ struct MCULabSenseStatus: Codable, Equatable, Sendable {
         case ip
         case cameraReady = "camera_ready"
         case micReady = "mic_ready"
+        case models
+        case activeTags = "active_tags"
+    }
+
+    init(
+        board: String,
+        app: String,
+        firmwareId: String,
+        recording: Bool,
+        clipDurationS: UInt32,
+        clipCount: Int,
+        activeClip: String?,
+        sdMounted: Bool,
+        sdTotalBytes: UInt64,
+        sdFreeBytes: UInt64,
+        wifiMode: String,
+        ssid: String,
+        ip: String,
+        cameraReady: Bool,
+        micReady: Bool,
+        models: [String] = [],
+        activeTags: [String] = []
+    ) {
+        self.board = board
+        self.app = app
+        self.firmwareId = firmwareId
+        self.recording = recording
+        self.clipDurationS = clipDurationS
+        self.clipCount = clipCount
+        self.activeClip = activeClip
+        self.sdMounted = sdMounted
+        self.sdTotalBytes = sdTotalBytes
+        self.sdFreeBytes = sdFreeBytes
+        self.wifiMode = wifiMode
+        self.ssid = ssid
+        self.ip = ip
+        self.cameraReady = cameraReady
+        self.micReady = micReady
+        self.models = models
+        self.activeTags = activeTags
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        board = try c.decode(String.self, forKey: .board)
+        app = try c.decode(String.self, forKey: .app)
+        firmwareId = try c.decode(String.self, forKey: .firmwareId)
+        recording = try c.decode(Bool.self, forKey: .recording)
+        clipDurationS = try c.decode(UInt32.self, forKey: .clipDurationS)
+        clipCount = try c.decode(Int.self, forKey: .clipCount)
+        activeClip = try c.decodeIfPresent(String.self, forKey: .activeClip)
+        sdMounted = try c.decode(Bool.self, forKey: .sdMounted)
+        sdTotalBytes = try c.decode(UInt64.self, forKey: .sdTotalBytes)
+        sdFreeBytes = try c.decode(UInt64.self, forKey: .sdFreeBytes)
+        wifiMode = try c.decode(String.self, forKey: .wifiMode)
+        ssid = try c.decode(String.self, forKey: .ssid)
+        ip = try c.decode(String.self, forKey: .ip)
+        cameraReady = try c.decode(Bool.self, forKey: .cameraReady)
+        micReady = try c.decode(Bool.self, forKey: .micReady)
+        models = try c.decodeIfPresent([String].self, forKey: .models) ?? []
+        activeTags = try c.decodeIfPresent([String].self, forKey: .activeTags) ?? []
     }
 }
 
@@ -43,6 +153,7 @@ struct MCULabSenseClip: Codable, Equatable, Identifiable, Sendable {
     var seq: UInt32
     var sizeBytes: UInt64
     var durationS: UInt32
+    var tags: [MCULabSenseTag]
 
     var id: String { name }
 
@@ -51,6 +162,30 @@ struct MCULabSenseClip: Codable, Equatable, Identifiable, Sendable {
         case seq
         case sizeBytes = "size_bytes"
         case durationS = "duration_s"
+        case tags
+    }
+
+    init(
+        name: String,
+        seq: UInt32,
+        sizeBytes: UInt64,
+        durationS: UInt32,
+        tags: [MCULabSenseTag] = []
+    ) {
+        self.name = name
+        self.seq = seq
+        self.sizeBytes = sizeBytes
+        self.durationS = durationS
+        self.tags = tags
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        seq = try c.decode(UInt32.self, forKey: .seq)
+        sizeBytes = try c.decode(UInt64.self, forKey: .sizeBytes)
+        durationS = try c.decode(UInt32.self, forKey: .durationS)
+        tags = try c.decodeIfPresent([MCULabSenseTag].self, forKey: .tags) ?? []
     }
 }
 
@@ -66,6 +201,36 @@ struct MCULabSenseClipsResponse: Codable, Equatable, Sendable {
         case sdTotalBytes = "sd_total_bytes"
         case sdFreeBytes = "sd_free_bytes"
         case recording
+    }
+}
+
+/// Pure helpers for computing tag filter chips and filtering clips by tag label.
+enum MCULabSenseTagFilter {
+    static func tagCounts(in clips: [MCULabSenseClip]) -> [MCULabSenseTagCount] {
+        var counts: [String: Int] = [:]
+        for clip in clips {
+            let uniqueLabels = Set(clip.tags.map { $0.label.lowercased() })
+            for label in uniqueLabels {
+                counts[label, default: 0] += 1
+            }
+        }
+        return counts
+            .map { MCULabSenseTagCount(label: $0.key, count: $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.count != rhs.count { return lhs.count > rhs.count }
+                return lhs.label < rhs.label
+            }
+    }
+
+    static func filter(_ clips: [MCULabSenseClip], by tag: String?) -> [MCULabSenseClip] {
+        guard let wanted = tag?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !wanted.isEmpty
+        else {
+            return clips
+        }
+        return clips.filter { clip in
+            clip.tags.contains { $0.label.caseInsensitiveCompare(wanted) == .orderedSame }
+        }
     }
 }
 
@@ -149,7 +314,7 @@ protocol MCULabSenseHTTPClient: Sendable {
 
 extension URLSession: MCULabSenseHTTPClient {}
 
-/// Async HTTP client for browsing, streaming, and controlling a XIAO ESP32-S3 Sense recorder.
+/// Async HTTP client for browsing, streaming, filtering, and controlling a XIAO ESP32-S3 Sense recorder.
 struct MCULabSenseClient: Sendable {
     let baseURL: URL
     private let http: any MCULabSenseHTTPClient
@@ -164,9 +329,23 @@ struct MCULabSenseClient: Sendable {
         return try await getJSON(MCULabSenseStatus.self, from: url)
     }
 
-    func fetchClips() async throws -> MCULabSenseClipsResponse {
-        let url = baseURL.appendingPathComponent("api/clips")
+    func fetchClips(tag: String? = nil) async throws -> MCULabSenseClipsResponse {
+        var url = baseURL.appendingPathComponent("api/clips")
+        if let tag = tag?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !tag.isEmpty,
+           var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        {
+            components.queryItems = [URLQueryItem(name: "tag", value: tag)]
+            if let filteredURL = components.url {
+                url = filteredURL
+            }
+        }
         return try await getJSON(MCULabSenseClipsResponse.self, from: url)
+    }
+
+    func fetchTags() async throws -> MCULabSenseTagsResponse {
+        let url = baseURL.appendingPathComponent("api/tags")
+        return try await getJSON(MCULabSenseTagsResponse.self, from: url)
     }
 
     func setRecording(_ enabled: Bool) async throws -> MCULabSenseStatus {

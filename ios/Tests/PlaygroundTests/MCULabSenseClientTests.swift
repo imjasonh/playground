@@ -119,6 +119,53 @@ final class MCULabSenseClientTests: XCTestCase {
         }
     }
 
+    func testTagFilteringAndQueryEndpoints() async throws {
+        let baseURL = try XCTUnwrap(MCULabSenseServerAddress.normalize("192.168.4.1"))
+        let fakeHTTP = FakeSenseHTTP()
+        fakeHTTP.handler = { req in
+            let urlStr = req.url?.absoluteString ?? ""
+            if urlStr == "http://192.168.4.1/api/tags" {
+                let body = #"{"tags":[{"label":"dog","count":2},{"label":"bluejay","count":1}]}"#
+                return try Self.httpResponse(url: req.url!, status: 200, body: body)
+            }
+            if urlStr == "http://192.168.4.1/api/clips?tag=bluejay" {
+                let body = """
+                {"clips":[{"name":"clip_000002.mov","seq":2,"size_bytes":8400000,"duration_s":60,"tags":[{"label":"bluejay","source":"vision","confidence":82,"first_s":14,"count":2},{"label":"bird","source":"audio","confidence":79,"first_s":15,"count":3}]}],"sd_total_bytes":32000000000,"sd_free_bytes":31500000000,"recording":true}
+                """
+                return try Self.httpResponse(url: req.url!, status: 200, body: body)
+            }
+            return try Self.httpResponse(url: req.url!, status: 404, body: "{}")
+        }
+
+        let client = MCULabSenseClient(baseURL: baseURL, http: fakeHTTP)
+        let tagsResp = try await client.fetchTags()
+        XCTAssertEqual(tagsResp.tags.count, 2)
+        XCTAssertEqual(tagsResp.tags[0].label, "dog")
+
+        let filteredResp = try await client.fetchClips(tag: "bluejay")
+        XCTAssertEqual(filteredResp.clips.count, 1)
+        XCTAssertEqual(filteredResp.clips[0].tags.count, 2)
+        XCTAssertEqual(filteredResp.clips[0].tags[0].source, .vision)
+        XCTAssertEqual(filteredResp.clips[0].tags[1].source, .audio)
+
+        let clipA = MCULabSenseClip(
+            name: "clip_000001.mov",
+            seq: 1,
+            sizeBytes: 100,
+            durationS: 60,
+            tags: [
+                MCULabSenseTag(label: "dog", source: .audio, confidence: 85, firstS: 5, count: 2),
+                MCULabSenseTag(label: "bark", source: .audio, confidence: 90, firstS: 5, count: 2),
+            ]
+        )
+        let clipB = filteredResp.clips[0]
+        let counts = MCULabSenseTagFilter.tagCounts(in: [clipA, clipB])
+        XCTAssertTrue(counts.contains(MCULabSenseTagCount(label: "dog", count: 1)))
+        XCTAssertTrue(counts.contains(MCULabSenseTagCount(label: "bluejay", count: 1)))
+        XCTAssertEqual(MCULabSenseTagFilter.filter([clipA, clipB], by: "DOG").map(\.name), ["clip_000001.mov"])
+        XCTAssertEqual(MCULabSenseTagFilter.filter([clipA, clipB], by: nil).count, 2)
+    }
+
     private static func httpResponse(url: URL, status: Int, body: String) throws -> (Data, URLResponse) {
         let resp = try XCTUnwrap(HTTPURLResponse(
             url: url,

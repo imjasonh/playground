@@ -33,7 +33,7 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::sys::camera::{
     camera_config_t, camera_config_t__bindgen_ty_1, camera_config_t__bindgen_ty_2,
     camera_fb_location_t_CAMERA_FB_IN_PSRAM, camera_fb_t, camera_grab_mode_t_CAMERA_GRAB_LATEST,
-    esp_camera_deinit, esp_camera_fb_get, esp_camera_fb_return, esp_camera_init,
+    esp_camera_deinit, esp_camera_fb_get, esp_camera_fb_return, esp_camera_init, fmt2rgb888,
     framesize_t_FRAMESIZE_VGA, ledc_channel_t_LEDC_CHANNEL_0, ledc_timer_t_LEDC_TIMER_0,
     pixformat_t_PIXFORMAT_JPEG,
 };
@@ -54,8 +54,11 @@ const USB_RAIL_MV: u16 = 5000;
 /// Mount point for the onboard microSD card FAT32 filesystem.
 pub const SD_MOUNT_POINT: &str = "/sdcard";
 
-/// Directory on the microSD card where recorded `.mov` clips are stored.
+/// Directory on the microSD card where recorded `.mov` clips and `.json` sidecars are stored.
 pub const CLIPS_DIR: &str = "/sdcard/clips";
+
+/// Directory on the microSD card where optional custom `.mcum` classifier models can be placed.
+pub const MODELS_DIR: &str = "/sdcard/models";
 
 /// Uninitialized peripheral bundle handed to [`RecorderApp`](crate::apps::recorder::RecorderApp)
 /// so `xiao-esp32s3-sense-base` can boot and accept BLE OTA even without an SD card or camera.
@@ -398,4 +401,52 @@ impl SenseMic {
     pub fn read_pcm(&mut self, buf: &mut [u8], timeout_ticks: u32) -> usize {
         self.driver.read(buf, timeout_ticks).unwrap_or(0)
     }
+}
+
+/// Decode a JPEG frame into a reusable RGB888 scratch buffer (in PSRAM) and downsample
+/// into a compact `dst_w × dst_h` RGB888 grid for on-device motion/color detection.
+pub fn decode_jpeg_to_rgb_grid(
+    jpeg: &[u8],
+    src_w: usize,
+    src_h: usize,
+    scratch_rgb: &mut Vec<u8>,
+    dst_w: usize,
+    dst_h: usize,
+    dst_rgb: &mut [u8],
+) -> bool {
+    if jpeg.is_empty() || src_w == 0 || src_h == 0 || dst_w == 0 || dst_h == 0 {
+        return false;
+    }
+    let needed = src_w.saturating_mul(src_h).saturating_mul(3);
+    if needed == 0 || dst_rgb.len() < dst_w * dst_h * 3 {
+        return false;
+    }
+    if scratch_rgb.len() < needed {
+        scratch_rgb.resize(needed, 0);
+    }
+    // SAFETY: `jpeg` is valid for `jpeg.len()` bytes and `scratch_rgb` has `src_w * src_h * 3` bytes.
+    let ok = unsafe {
+        fmt2rgb888(
+            jpeg.as_ptr(),
+            jpeg.len(),
+            pixformat_t_PIXFORMAT_JPEG,
+            scratch_rgb.as_mut_ptr(),
+        )
+    };
+    if !ok {
+        return false;
+    }
+    for dy in 0..dst_h {
+        let sy = (dy * src_h) / dst_h;
+        for dx in 0..dst_w {
+            let sx = (dx * src_w) / dst_w;
+            let src_i = (sy * src_w + sx) * 3;
+            let dst_i = (dy * dst_w + dx) * 3;
+            // `fmt2rgb888` writes BGR888 byte order on ESP32-camera; swap to RGB888.
+            dst_rgb[dst_i] = scratch_rgb[src_i + 2];
+            dst_rgb[dst_i + 1] = scratch_rgb[src_i + 1];
+            dst_rgb[dst_i + 2] = scratch_rgb[src_i];
+        }
+    }
+    true
 }

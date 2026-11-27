@@ -6,7 +6,10 @@
 //! host-safe module allows `cargo test --lib` to verify every byte on the host
 //! without needing the ESP-IDF toolchain.
 
+use std::collections::BTreeMap;
 use std::io::{self, Seek, SeekFrom, Write};
+
+use crate::sense_detect::{format_tags_array_json, ClipTag};
 
 /// On-wire / log identifier for the XIAO ESP32-S3 Sense A/V recorder app.
 pub const RECORDER_FIRMWARE_ID: &str = "xiao-esp32s3-sense-recorder/0.1";
@@ -41,6 +44,16 @@ pub fn format_clip_name(seq: u32) -> String {
 /// Format an in-progress temporary clip filename (`clip_000001.tmp`).
 pub fn format_temp_clip_name(seq: u32) -> String {
     format!("clip_{seq:06}.tmp")
+}
+
+/// Format the JSON sidecar filename for sequence number `seq` (`clip_000001.json`).
+pub fn format_clip_meta_name(seq: u32) -> String {
+    format!("clip_{seq:06}.json")
+}
+
+/// Derive the sidecar JSON filename (`clip_NNNNNN.json`) for a validated clip filename.
+pub fn clip_meta_name_for(clip_name: &str) -> Option<String> {
+    parse_clip_seq(clip_name).map(format_clip_meta_name)
 }
 
 /// Parse a finalized clip filename (`clip_NNNNNN.mov`) and return its sequence number.
@@ -87,6 +100,7 @@ pub struct ClipEntry {
     pub seq: u32,
     pub size_bytes: u64,
     pub duration_s: u32,
+    pub tags: Vec<ClipTag>,
 }
 
 /// Compute target free-space headroom to keep available on an SD card of size `total_bytes`.
@@ -761,6 +775,8 @@ pub struct RecorderStatus {
     pub ip: String,
     pub camera_ready: bool,
     pub mic_ready: bool,
+    pub models: Vec<String>,
+    pub active_tags: Vec<String>,
 }
 
 fn escape_json(s: &str) -> String {
@@ -779,6 +795,20 @@ fn escape_json(s: &str) -> String {
     out
 }
 
+fn format_string_array_json(items: &[String]) -> String {
+    let mut out = String::from("[");
+    for (idx, item) in items.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        out.push('"');
+        out.push_str(&escape_json(item));
+        out.push('"');
+    }
+    out.push(']');
+    out
+}
+
 /// Format `GET /api/status` JSON payload.
 pub fn format_status_json(st: &RecorderStatus) -> String {
     let active_json = match &st.active_clip {
@@ -790,7 +820,8 @@ pub fn format_status_json(st: &RecorderStatus) -> String {
             r#"{{"board":"xiao-esp32s3-sense","app":"recorder","firmware_id":"{}","#,
             r#""recording":{},"clip_duration_s":{},"clip_count":{},"active_clip":{},"#,
             r#""sd_mounted":{},"sd_total_bytes":{},"sd_free_bytes":{},"#,
-            r#""wifi_mode":"{}","ssid":"{}","ip":"{}","camera_ready":{},"mic_ready":{}}}"#
+            r#""wifi_mode":"{}","ssid":"{}","ip":"{}","camera_ready":{},"mic_ready":{},"#,
+            r#""models":{},"active_tags":{}}}"#
         ),
         escape_json(RECORDER_FIRMWARE_ID),
         st.recording,
@@ -805,17 +836,58 @@ pub fn format_status_json(st: &RecorderStatus) -> String {
         escape_json(&st.ip),
         st.camera_ready,
         st.mic_ready,
+        format_string_array_json(&st.models),
+        format_string_array_json(&st.active_tags),
     )
 }
 
-/// Format `GET /api/clips` JSON payload (clips sorted newest-first).
+/// Filter `clips` by case-insensitive tag label (returns all clips when `tag` is `None` or empty).
+pub fn filter_clips_by_tag<'a>(clips: &'a [ClipEntry], tag: Option<&str>) -> Vec<&'a ClipEntry> {
+    let Some(wanted) = tag.map(str::trim).filter(|s| !s.is_empty()) else {
+        return clips.iter().collect();
+    };
+    clips
+        .iter()
+        .filter(|clip| {
+            clip.tags
+                .iter()
+                .any(|t| t.label.eq_ignore_ascii_case(wanted))
+        })
+        .collect()
+}
+
+/// Extract a query parameter value from a request URI (e.g. `tag` from `/api/clips?tag=dog`).
+pub fn extract_query_param<'a>(uri: &'a str, key: &str) -> Option<&'a str> {
+    let (_, query) = uri.split_once('?')?;
+    for pair in query.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == key && !v.is_empty() {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+/// Format `GET /api/clips` JSON payload (clips sorted newest-first, with optional tag filter).
 pub fn format_clips_json(
     clips: &[ClipEntry],
     sd_total_bytes: u64,
     sd_free_bytes: u64,
     recording: bool,
 ) -> String {
-    let mut ordered: Vec<&ClipEntry> = clips.iter().collect();
+    format_clips_filtered_json(clips, None, sd_total_bytes, sd_free_bytes, recording)
+}
+
+/// Format `GET /api/clips[?tag=...]` JSON payload (clips sorted newest-first).
+pub fn format_clips_filtered_json(
+    clips: &[ClipEntry],
+    tag_filter: Option<&str>,
+    sd_total_bytes: u64,
+    sd_free_bytes: u64,
+    recording: bool,
+) -> String {
+    let mut ordered = filter_clips_by_tag(clips, tag_filter);
     ordered.sort_by_key(|a| std::cmp::Reverse(a.seq));
 
     let mut out = String::from(r#"{"clips":["#);
@@ -824,16 +896,45 @@ pub fn format_clips_json(
             out.push(',');
         }
         out.push_str(&format!(
-            r#"{{"name":"{}","seq":{},"size_bytes":{},"duration_s":{}}}"#,
+            r#"{{"name":"{}","seq":{},"size_bytes":{},"duration_s":{},"tags":{}}}"#,
             escape_json(&clip.name),
             clip.seq,
             clip.size_bytes,
             clip.duration_s,
+            format_tags_array_json(&clip.tags),
         ));
     }
     out.push_str(&format!(
         r#"],"sd_total_bytes":{sd_total_bytes},"sd_free_bytes":{sd_free_bytes},"recording":{recording}}}"#
     ));
+    out
+}
+
+/// Format `GET /api/tags` JSON summary of distinct tags and clip counts across all clips.
+pub fn format_tags_summary_json(clips: &[ClipEntry]) -> String {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for clip in clips {
+        let mut seen_in_clip: Vec<&str> = clip.tags.iter().map(|t| t.label.as_str()).collect();
+        seen_in_clip.sort_unstable();
+        seen_in_clip.dedup();
+        for label in seen_in_clip {
+            *counts.entry(label.to_string()).or_insert(0) += 1;
+        }
+    }
+    let mut pairs: Vec<(String, usize)> = counts.into_iter().collect();
+    pairs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+    let mut out = String::from(r#"{"tags":["#);
+    for (idx, (label, count)) in pairs.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!(
+            r#"{{"label":"{}","count":{count}}}"#,
+            escape_json(label)
+        ));
+    }
+    out.push_str("]}");
     out
 }
 
@@ -890,18 +991,21 @@ mod tests {
                 seq: 5,
                 size_bytes: 10_000_000,
                 duration_s: 60,
+                tags: Vec::new(),
             },
             ClipEntry {
                 name: format_clip_name(2),
                 seq: 2,
                 size_bytes: 8_000_000,
                 duration_s: 60,
+                tags: Vec::new(),
             },
             ClipEntry {
                 name: format_clip_name(3),
                 seq: 3,
                 size_bytes: 9_000_000,
                 duration_s: 60,
+                tags: Vec::new(),
             },
         ];
 
@@ -1010,6 +1114,8 @@ mod tests {
 
     #[test]
     fn json_formatters_emit_expected_schema() {
+        use crate::sense_detect::TagSource;
+
         let status = RecorderStatus {
             recording: true,
             clip_duration_s: 60,
@@ -1023,11 +1129,15 @@ mod tests {
             ip: "192.168.4.1".to_string(),
             camera_ready: true,
             mic_ready: true,
+            models: vec!["dog".to_string()],
+            active_tags: vec!["bark".to_string(), "dog".to_string()],
         };
         let status_json = format_status_json(&status);
         assert!(status_json.contains(r#""board":"xiao-esp32s3-sense""#));
         assert!(status_json.contains(r#""recording":true"#));
         assert!(status_json.contains(r#""active_clip":"clip_000003.tmp""#));
+        assert!(status_json.contains(r#""models":["dog"]"#));
+        assert!(status_json.contains(r#""active_tags":["bark","dog"]"#));
 
         let clips = vec![
             ClipEntry {
@@ -1035,12 +1145,26 @@ mod tests {
                 seq: 1,
                 size_bytes: 7_500_000,
                 duration_s: 60,
+                tags: vec![ClipTag {
+                    label: "dog".to_string(),
+                    source: TagSource::Audio,
+                    confidence: 84,
+                    first_s: 9,
+                    count: 3,
+                }],
             },
             ClipEntry {
                 name: "clip_000002.mov".to_string(),
                 seq: 2,
                 size_bytes: 8_200_000,
                 duration_s: 60,
+                tags: vec![ClipTag {
+                    label: "bluejay".to_string(),
+                    source: TagSource::Vision,
+                    confidence: 78,
+                    first_s: 22,
+                    count: 2,
+                }],
             },
         ];
         let clips_json = format_clips_json(&clips, 32_000_000_000, 31_000_000_000, true);
@@ -1048,5 +1172,25 @@ mod tests {
         let pos2 = clips_json.find("clip_000002.mov").unwrap();
         let pos1 = clips_json.find("clip_000001.mov").unwrap();
         assert!(pos2 < pos1);
+        assert!(clips_json.contains(r#""label":"bluejay""#));
+
+        let dog_only =
+            format_clips_filtered_json(&clips, Some("DOG"), 32_000_000_000, 31_000_000_000, true);
+        assert!(dog_only.contains("clip_000001.mov"));
+        assert!(!dog_only.contains("clip_000002.mov"));
+
+        let tags_json = format_tags_summary_json(&clips);
+        assert!(tags_json.contains(r#""label":"bluejay","count":1"#));
+        assert!(tags_json.contains(r#""label":"dog","count":1"#));
+
+        assert_eq!(
+            extract_query_param("/api/clips?tag=bluejay", "tag"),
+            Some("bluejay")
+        );
+        assert_eq!(
+            extract_query_param("/api/clips?foo=1&tag=dog", "tag"),
+            Some("dog")
+        );
+        assert_eq!(extract_query_param("/api/clips", "tag"), None);
     }
 }

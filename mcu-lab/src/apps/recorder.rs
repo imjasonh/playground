@@ -1,6 +1,7 @@
 //! `RecorderApp` — continuous 1-minute audio+video `.mov` clip recorder to microSD
-//! with ring-buffer oldest-file eviction and an HTTP range-streaming server for the
-//! Seeed Studio XIAO ESP32-S3 Sense.
+//! with on-device audio DSP, vision motion/color detection, SD-card custom `MCUM`
+//! model hook, ring-buffer oldest-file eviction, and an HTTP range-streaming server
+//! for the Seeed Studio XIAO ESP32-S3 Sense.
 
 use std::fs::{self, File};
 use std::io::{BufWriter, Read, Seek, SeekFrom};
@@ -17,16 +18,23 @@ use esp_idf_svc::io::Write as EspWrite;
 use log::{info, warn};
 
 use crate::boards::xiao_esp32s3_sense::{
-    sd_space_info, SenseCamera, SenseMic, SenseSdCard, SenseWifi, SenseWifiInfo, CLIPS_DIR,
+    decode_jpeg_to_rgb_grid, sd_space_info, SenseCamera, SenseMic, SenseSdCard, SenseWifi,
+    SenseWifiInfo, CLIPS_DIR, MODELS_DIR,
 };
 use crate::boards::{Board, HasSenseAV};
 use crate::platform::{App, RunMode, StepContext, StepOutput};
 use crate::protocol::AppCommandSpec;
 use crate::sense_clip::{
-    format_clip_name, format_clips_json, format_status_json, format_temp_clip_name,
-    is_temp_clip_name, is_valid_clip_name, next_clip_seq, parse_byte_range, parse_clip_seq,
-    plan_evictions, required_free_bytes, ClipEntry, MovMuxer, RecorderStatus, CLIP_DURATION_SECS,
-    DEFAULT_AUDIO_SAMPLE_RATE, DEFAULT_VIDEO_HEIGHT, DEFAULT_VIDEO_WIDTH, RECORDER_FIRMWARE_ID,
+    clip_meta_name_for, extract_query_param, format_clip_meta_name, format_clip_name,
+    format_clips_filtered_json, format_status_json, format_tags_summary_json,
+    format_temp_clip_name, is_temp_clip_name, is_valid_clip_name, next_clip_seq, parse_byte_range,
+    parse_clip_seq, plan_evictions, required_free_bytes, ClipEntry, MovMuxer, RecorderStatus,
+    CLIP_DURATION_SECS, DEFAULT_AUDIO_SAMPLE_RATE, DEFAULT_VIDEO_HEIGHT, DEFAULT_VIDEO_WIDTH,
+    RECORDER_FIRMWARE_ID,
+};
+use crate::sense_detect::{
+    format_clip_sidecar_json, parse_clip_sidecar_json, AudioDetector, AudioFeatures, SdLinearModel,
+    TagAccumulator, TagSource, VisionDetector, VisionFeatures,
 };
 
 /// Target frame interval during recording (~10 fps -> ~600 frames per 1-minute clip).
@@ -35,6 +43,11 @@ const TARGET_FRAME_INTERVAL: Duration = Duration::from_millis(100);
 const HTTP_STREAM_CHUNK_BYTES: usize = 16 * 1024;
 /// PDM audio read buffer per frame (~3200 bytes = 100 ms at 16 kHz 16-bit mono).
 const AUDIO_READ_BUF_BYTES: usize = 4096;
+/// Downsampled RGB888 grid dimensions for on-device vision motion/color analysis (~1 Hz).
+const VISION_GRID_W: usize = 32;
+const VISION_GRID_H: usize = 24;
+/// Run full JPEG->RGB vision analysis every Nth frame (~1 Hz at 10 fps).
+const VISION_SAMPLE_STRIDE: usize = 10;
 
 struct SharedState {
     wifi_info: SenseWifiInfo,
@@ -44,6 +57,8 @@ struct SharedState {
     camera_ready: bool,
     mic_ready: bool,
     active_clip: Option<String>,
+    active_tags: Vec<String>,
+    models: Vec<String>,
     clips: Vec<ClipEntry>,
 }
 
@@ -70,11 +85,13 @@ impl RecorderShared {
             ip: st.wifi_info.ip.clone(),
             camera_ready: st.camera_ready,
             mic_ready: st.mic_ready,
+            models: st.models.clone(),
+            active_tags: st.active_tags.clone(),
         }
     }
 }
 
-/// 1-minute A/V clip recorder + HTTP clip server for XIAO ESP32-S3 Sense.
+/// 1-minute A/V clip recorder + on-device tagger + HTTP clip server for XIAO ESP32-S3 Sense.
 pub struct RecorderApp {
     _wifi: SenseWifi,
     _sd: Option<SenseSdCard>,
@@ -122,14 +139,16 @@ impl<B: Board + HasSenseAV> App<B> for RecorderApp {
         };
 
         let sd_mounted = sd.is_some();
-        let (sd_total_bytes, sd_free_bytes, initial_clips) = if let Some(ref card) = sd {
+        let (sd_total_bytes, sd_free_bytes, initial_clips, sd_models) = if let Some(ref card) = sd {
             cleanup_temp_clips();
             let clips = scan_clips();
+            let models = load_sd_models();
             let (total, free) = card.space_info().unwrap_or((0, 0));
-            (total, free, clips)
+            (total, free, clips, models)
         } else {
-            (0, 0, Vec::new())
+            (0, 0, Vec::new(), Vec::new())
         };
+        let model_names: Vec<String> = sd_models.iter().map(|m| m.label.clone()).collect();
 
         let camera = match SenseCamera::init() {
             Ok(cam) => Some(cam),
@@ -159,26 +178,29 @@ impl<B: Board + HasSenseAV> App<B> for RecorderApp {
                 camera_ready: camera.is_some(),
                 mic_ready: mic.is_some(),
                 active_clip: None,
+                active_tags: Vec::new(),
+                models: model_names,
                 clips: initial_clips,
             }),
         });
 
         let http = start_http_server(Arc::clone(&shared))?;
         info!(
-            "recorder: HTTP server listening on http://{} (ssid={}, sd_mounted={}, cam={}, mic={})",
+            "recorder: HTTP server listening on http://{} (ssid={}, sd_mounted={}, cam={}, mic={}, models={})",
             wifi_info.ip,
             wifi_info.ssid,
             sd_mounted,
             camera.is_some(),
-            mic.is_some()
+            mic.is_some(),
+            sd_models.len()
         );
 
         if sd_mounted {
             let worker_shared = Arc::clone(&shared);
             thread::Builder::new()
                 .name("sense-rec".to_string())
-                .stack_size(12 * 1024)
-                .spawn(move || recorder_worker(worker_shared, camera, mic))?;
+                .stack_size(16 * 1024)
+                .spawn(move || recorder_worker(worker_shared, camera, mic, sd_models))?;
         } else {
             warn!("recorder: no microSD mounted; recorder worker not started");
         }
@@ -205,6 +227,10 @@ impl<B: Board + HasSenseAV> App<B> for RecorderApp {
             if st.sd_mounted { "true" } else { "false" },
         );
         ctx.record_attr("sense.clips", &st.clip_count.to_string());
+        ctx.record_attr("sense.models", &st.models.len().to_string());
+        if let Some(last_tag) = st.active_tags.first() {
+            ctx.record_attr("sense.last_tag", last_tag);
+        }
         let free_mb = st.sd_free_bytes / (1024 * 1024);
         ctx.record_attr("sense.sd_free_mb", &free_mb.to_string());
         ctx.record_metric("sense.clips", st.clip_count as i64, "1", &[]);
@@ -256,6 +282,37 @@ impl<B: Board + HasSenseAV> App<B> for RecorderApp {
     }
 }
 
+fn load_sd_models() -> Vec<SdLinearModel> {
+    let _ = fs::create_dir_all(MODELS_DIR);
+    let Ok(entries) = fs::read_dir(MODELS_DIR) else {
+        return Vec::new();
+    };
+    let mut models = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if !ext.eq_ignore_ascii_case("mcum") {
+            continue;
+        }
+        match fs::read(&path) {
+            Ok(bytes) => match SdLinearModel::parse(&bytes) {
+                Ok(model) => {
+                    info!(
+                        "recorder: loaded SD model '{}' ({:?}, threshold={}%)",
+                        model.label, model.modality, model.threshold_pct
+                    );
+                    models.push(model);
+                }
+                Err(err) => warn!("recorder: ignoring invalid model {:?}: {err}", path),
+            },
+            Err(err) => warn!("recorder: failed reading model {:?}: {err}", path),
+        }
+    }
+    models
+}
+
 fn cleanup_temp_clips() {
     let Ok(entries) = fs::read_dir(CLIPS_DIR) else {
         return;
@@ -273,6 +330,16 @@ fn cleanup_temp_clips() {
     }
 }
 
+fn remove_clip_and_sidecar(clip_name: &str) -> std::io::Result<()> {
+    let clip_path = PathBuf::from(CLIPS_DIR).join(clip_name);
+    fs::remove_file(&clip_path)?;
+    if let Some(meta_name) = clip_meta_name_for(clip_name) {
+        let meta_path = PathBuf::from(CLIPS_DIR).join(meta_name);
+        let _ = fs::remove_file(meta_path);
+    }
+    Ok(())
+}
+
 fn scan_clips() -> Vec<ClipEntry> {
     let Ok(entries) = fs::read_dir(CLIPS_DIR) else {
         return Vec::new();
@@ -287,11 +354,16 @@ fn scan_clips() -> Vec<ClipEntry> {
             continue;
         };
         let size_bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        let meta_path = PathBuf::from(CLIPS_DIR).join(format_clip_meta_name(seq));
+        let tags = fs::read_to_string(&meta_path)
+            .map(|s| parse_clip_sidecar_json(&s))
+            .unwrap_or_default();
         clips.push(ClipEntry {
             name: name_str.to_string(),
             seq,
             size_bytes,
             duration_s: CLIP_DURATION_SECS,
+            tags,
         });
     }
     clips.sort_by_key(|c| c.seq);
@@ -306,8 +378,7 @@ fn evict_oldest_clips_if_needed(shared: &RecorderShared) {
     let clips = scan_clips();
     let victims = plan_evictions(&clips, free, required);
     for name in victims {
-        let path = PathBuf::from(CLIPS_DIR).join(&name);
-        match fs::remove_file(&path) {
+        match remove_clip_and_sidecar(&name) {
             Ok(()) => info!("recorder: evicted oldest clip {name} to free SD space"),
             Err(err) => warn!("recorder: failed to evict {name}: {err}"),
         }
@@ -324,8 +395,13 @@ fn recorder_worker(
     shared: Arc<RecorderShared>,
     mut camera: Option<SenseCamera>,
     mut mic: Option<SenseMic>,
+    sd_models: Vec<SdLinearModel>,
 ) {
     let mut audio_buf = vec![0u8; AUDIO_READ_BUF_BYTES];
+    let mut scratch_rgb = Vec::<u8>::new();
+    let mut vision_grid = [0u8; VISION_GRID_W * VISION_GRID_H * 3];
+    let mut audio_detector = AudioDetector::new(DEFAULT_AUDIO_SAMPLE_RATE);
+    let mut vision_detector = VisionDetector::new();
 
     loop {
         if !shared.recording.load(Ordering::Acquire) {
@@ -342,12 +418,15 @@ fn recorder_worker(
         };
         let tmp_name = format_temp_clip_name(seq);
         let final_name = format_clip_name(seq);
+        let meta_name = format_clip_meta_name(seq);
         let tmp_path = PathBuf::from(CLIPS_DIR).join(&tmp_name);
         let final_path = PathBuf::from(CLIPS_DIR).join(&final_name);
+        let meta_path = PathBuf::from(CLIPS_DIR).join(&meta_name);
 
         {
             let mut st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
             st.active_clip = Some(tmp_name.clone());
+            st.active_tags.clear();
         }
 
         let file = match File::create(&tmp_path) {
@@ -380,9 +459,14 @@ fn recorder_worker(
         };
 
         info!("recorder-worker: recording {final_name} ({CLIP_DURATION_SECS}s target)");
+        vision_detector.reset();
+        let mut tag_acc = TagAccumulator::new();
+        let mut latest_audio_feats = AudioFeatures::default();
+        let mut latest_vision_feats = VisionFeatures::default();
         let clip_start = Instant::now();
         let target_duration = Duration::from_secs(u64::from(CLIP_DURATION_SECS));
         let mut last_frame_at = clip_start;
+        let mut frame_index = 0usize;
         let mut write_failed = false;
 
         while clip_start.elapsed() < target_duration {
@@ -393,22 +477,54 @@ fn recorder_worker(
             }
 
             let loop_start = Instant::now();
+            let elapsed_s = clip_start.elapsed().as_secs() as u32;
+            let mut tags_updated = false;
 
             if let Some(ref mut cam) = camera {
                 if let Some(frame) = cam.capture() {
                     if muxer.video_frame_count() == 0 {
                         muxer.set_dimensions(frame.width(), frame.height());
                     }
+                    let bytes = frame.bytes();
                     let now = Instant::now();
                     let delta_ms = now
                         .saturating_duration_since(last_frame_at)
                         .as_millis()
                         .clamp(1, u128::from(u32::MAX)) as u32;
                     last_frame_at = now;
-                    if let Err(err) = muxer.write_video_frame(frame.bytes(), delta_ms) {
+                    if let Err(err) = muxer.write_video_frame(bytes, delta_ms) {
                         warn!("recorder-worker: video write failed: {err}");
                         write_failed = true;
                         break;
+                    }
+
+                    // Run on-device vision detection (~1 Hz RGB grid + every-frame JPEG delta).
+                    if frame_index % VISION_SAMPLE_STRIDE == 0 {
+                        if decode_jpeg_to_rgb_grid(
+                            bytes,
+                            usize::from(frame.width()),
+                            usize::from(frame.height()),
+                            &mut scratch_rgb,
+                            VISION_GRID_W,
+                            VISION_GRID_H,
+                            &mut vision_grid,
+                        ) {
+                            let (vhits, vfeats) = vision_detector.analyze_rgb888(
+                                &vision_grid,
+                                VISION_GRID_W,
+                                VISION_GRID_H,
+                            );
+                            latest_vision_feats = vfeats;
+                            for (label, conf) in vhits {
+                                tag_acc.record(label, TagSource::Vision, conf, elapsed_s);
+                                tags_updated = true;
+                            }
+                        } else if let Some((label, conf)) =
+                            vision_detector.analyze_jpeg_size(bytes.len())
+                        {
+                            tag_acc.record(label, TagSource::Vision, conf, elapsed_s);
+                            tags_updated = true;
+                        }
                     }
                 }
             }
@@ -416,12 +532,37 @@ fn recorder_worker(
             if let Some(ref mut m) = mic {
                 let n = m.read_pcm(&mut audio_buf, 20);
                 if n >= 2 {
-                    if let Err(err) = muxer.write_audio_pcm(&audio_buf[..n]) {
+                    let pcm = &audio_buf[..n];
+                    if let Err(err) = muxer.write_audio_pcm(pcm) {
                         warn!("recorder-worker: audio write failed: {err}");
                         write_failed = true;
                         break;
                     }
+                    let (ahits, afeats) = audio_detector.analyze_pcm_le16(pcm);
+                    latest_audio_feats = afeats;
+                    for (label, conf) in ahits {
+                        tag_acc.record(label, TagSource::Audio, conf, elapsed_s);
+                        tags_updated = true;
+                    }
                 }
+            }
+
+            // Evaluate any user-supplied SD-card `.mcum` models on the latest audio+vision features.
+            if !sd_models.is_empty() && frame_index % VISION_SAMPLE_STRIDE == 0 {
+                for model in &sd_models {
+                    if let Some(conf) = model.evaluate(&latest_audio_feats, &latest_vision_feats) {
+                        tag_acc.record(&model.label, TagSource::Model, conf, elapsed_s);
+                        tags_updated = true;
+                    }
+                }
+            }
+
+            frame_index = frame_index.wrapping_add(1);
+
+            if tags_updated {
+                let active = tag_acc.active_labels();
+                let mut st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
+                st.active_tags = active;
             }
 
             let elapsed = loop_start.elapsed();
@@ -434,11 +575,8 @@ fn recorder_worker(
         if write_failed {
             drop(muxer);
             let _ = fs::remove_file(&tmp_path);
-            // Force-evict the oldest clip in case free space was above nominal headroom yet
-            // a high-bitrate clip still hit ENOSPC.
             if let Some(oldest) = scan_clips().first() {
-                let path = PathBuf::from(CLIPS_DIR).join(&oldest.name);
-                if fs::remove_file(&path).is_ok() {
+                if remove_clip_and_sidecar(&oldest.name).is_ok() {
                     warn!(
                         "recorder-worker: force-evicted oldest clip {} after write error",
                         oldest.name
@@ -453,12 +591,18 @@ fn recorder_worker(
                         warn!("recorder-worker: rename {tmp_name} -> {final_name} failed: {err}");
                         let _ = fs::remove_file(&tmp_path);
                     } else {
+                        let tags = tag_acc.finalize();
+                        let sidecar = format_clip_sidecar_json(&tags);
+                        if let Err(err) = fs::write(&meta_path, sidecar.as_bytes()) {
+                            warn!("recorder-worker: failed to write {meta_name}: {err}");
+                        }
                         info!(
-                            "recorder-worker: saved {final_name} ({} B, {} frames, {} audio samples, {}s)",
+                            "recorder-worker: saved {final_name} ({} B, {} frames, {} audio samples, {}s, {} tags)",
                             summary.total_bytes,
                             summary.video_frames,
                             summary.audio_samples,
-                            actual_dur_s
+                            actual_dur_s,
+                            tags.len()
                         );
                     }
                 }
@@ -476,6 +620,7 @@ fn recorder_worker(
         let (total, free) = sd_space_info().unwrap_or((0, 0));
         let mut st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
         st.active_clip = None;
+        st.active_tags.clear();
         st.sd_total_bytes = total;
         st.sd_free_bytes = free;
         st.clips = clips;
@@ -502,7 +647,7 @@ fn start_http_server(shared: Arc<RecorderShared>) -> Result<EspHttpServer<'stati
                     "<!doctype html><html><head><meta charset='utf-8'><title>XIAO ESP32-S3 Sense</title></head>",
                     "<body><h1>XIAO ESP32-S3 Sense Recorder</h1>",
                     "<p>Recording: {} | Clips: {} | SD Free: {} MiB</p>",
-                    "<p><a href='/api/status'>/api/status</a> | <a href='/api/clips'>/api/clips</a></p>",
+                    "<p><a href='/api/status'>/api/status</a> | <a href='/api/clips'>/api/clips</a> | <a href='/api/tags'>/api/tags</a></p>",
                     "</body></html>"
                 ),
                 st.recording,
@@ -538,16 +683,40 @@ fn start_http_server(shared: Arc<RecorderShared>) -> Result<EspHttpServer<'stati
         })?;
     }
 
-    // GET /api/clips
+    // GET /api/tags
+    {
+        let shared = Arc::clone(&shared);
+        server.fn_handler("/api/tags", Method::Get, move |req| -> Result<()> {
+            let clips = {
+                let st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
+                st.clips.clone()
+            };
+            let json = format_tags_summary_json(&clips);
+            let mut resp = req.into_response(
+                200,
+                Some("OK"),
+                &[
+                    ("Content-Type", "application/json"),
+                    ("Cache-Control", "no-store"),
+                ],
+            )?;
+            resp.write_all(json.as_bytes())?;
+            Ok(())
+        })?;
+    }
+
+    // GET /api/clips (supports optional `?tag=<label>` filter)
     {
         let shared = Arc::clone(&shared);
         server.fn_handler("/api/clips", Method::Get, move |req| -> Result<()> {
+            let uri = req.uri().to_string();
+            let tag_filter = extract_query_param(&uri, "tag");
             let recording = shared.recording.load(Ordering::Relaxed);
             let (clips, total, free) = {
                 let st = shared.state.lock().unwrap_or_else(|e| e.into_inner());
                 (st.clips.clone(), st.sd_total_bytes, st.sd_free_bytes)
             };
-            let json = format_clips_json(&clips, total, free, recording);
+            let json = format_clips_filtered_json(&clips, tag_filter, total, free, recording);
             let mut resp = req.into_response(
                 200,
                 Some("OK"),
@@ -619,8 +788,7 @@ fn start_http_server(shared: Arc<RecorderShared>) -> Result<EspHttpServer<'stati
                 resp.write_all(br#"{"error":"invalid clip name"}"#)?;
                 return Ok(());
             }
-            let path = PathBuf::from(CLIPS_DIR).join(name);
-            if fs::remove_file(&path).is_err() {
+            if remove_clip_and_sidecar(name).is_err() {
                 let mut resp = req.into_response(
                     404,
                     Some("Not Found"),

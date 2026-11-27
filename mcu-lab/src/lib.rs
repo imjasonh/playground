@@ -7,6 +7,7 @@ pub mod panel;
 pub mod photo;
 pub mod protocol;
 pub mod sense_clip;
+pub mod sense_detect;
 
 #[cfg(feature = "firmware")]
 pub mod apps;

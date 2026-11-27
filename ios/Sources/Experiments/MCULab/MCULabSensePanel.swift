@@ -2,7 +2,8 @@ import AVKit
 import SwiftUI
 
 /// Controls to connect to a Seeed Studio XIAO ESP32-S3 Sense recorder HTTP server,
-/// browse recorded 1-minute `.mov` clips on its microSD card, and stream them with `AVPlayer`.
+/// filter and browse recorded 1-minute `.mov` clips by on-device audio/vision tags,
+/// and stream them with `AVPlayer`.
 struct MCULabSensePanel: View {
     @ObservedObject var controller: MCULabController
 
@@ -17,6 +18,7 @@ struct MCULabSensePanel: View {
 
     @State private var status: MCULabSenseStatus?
     @State private var clips: [MCULabSenseClip] = []
+    @State private var selectedTag: String?
     @State private var isLoading = false
     @State private var isUpdatingRecording = false
     @State private var errorMessage: String?
@@ -31,6 +33,14 @@ struct MCULabSensePanel: View {
         return controller.history
             .compactMap { $0.profile?.attrs?["sense.http_url"] }
             .first { !$0.isEmpty }
+    }
+
+    private var availableTags: [MCULabSenseTagCount] {
+        MCULabSenseTagFilter.tagCounts(in: clips)
+    }
+
+    private var filteredClips: [MCULabSenseClip] {
+        MCULabSenseTagFilter.filter(clips, by: selectedTag)
     }
 
     var body: some View {
@@ -99,9 +109,10 @@ struct MCULabSensePanel: View {
 
             if let status {
                 statusSummary(status)
+                tagFilterBar
                 clipsListSection
             } else {
-                Text("Join the XIAO-S3-Sense Wi-Fi (or enter its LAN IP) and tap Connect to browse and stream 1-minute audio+video clips from the microSD card.")
+                Text("Join the XIAO-S3-Sense Wi-Fi (or enter its LAN IP) and tap Connect to browse, filter by on-device tags, and stream 1-minute audio+video clips.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("mcuLabSenseHint")
@@ -138,6 +149,25 @@ struct MCULabSensePanel: View {
                 }
             }
 
+            if !status.activeTags.isEmpty || !status.models.isEmpty {
+                HStack(spacing: 8) {
+                    if !status.activeTags.isEmpty {
+                        Label(
+                            "Live: \(status.activeTags.joined(separator: ", "))",
+                            systemImage: "sparkles"
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if !status.models.isEmpty {
+                        Label("\(status.models.count) SD models", systemImage: "cpu")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
             HStack(spacing: 10) {
                 Button {
                     Task { await toggleRecording(!status.recording) }
@@ -157,58 +187,129 @@ struct MCULabSensePanel: View {
     }
 
     @ViewBuilder
+    private var tagFilterBar: some View {
+        let tags = availableTags
+        if !tags.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    filterChip(title: "All (\(clips.count))", isSelected: selectedTag == nil) {
+                        selectedTag = nil
+                    }
+                    .accessibilityIdentifier("mcuLabSenseTagFilter-all")
+
+                    ForEach(tags) { item in
+                        filterChip(
+                            title: "\(item.label) (\(item.count))",
+                            isSelected: selectedTag == item.label
+                        ) {
+                            selectedTag = selectedTag == item.label ? nil : item.label
+                        }
+                        .accessibilityIdentifier("mcuLabSenseTagFilter-\(item.label)")
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .accessibilityIdentifier("mcuLabSenseTagFilterBar")
+        }
+    }
+
+    private func filterChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(isSelected ? .semibold : .regular))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    isSelected ? Color.accentColor : Color.secondary.opacity(0.15),
+                    in: Capsule()
+                )
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
     private var clipsListSection: some View {
+        let visible = filteredClips
         if clips.isEmpty {
             Text("No finalized 1-minute clips on the SD card yet. Clips appear here as soon as each 60-second recording finishes.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("mcuLabSenseEmptyClips")
+        } else if visible.isEmpty {
+            Text("No clips matched tag \"\(selectedTag ?? "")\".")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("mcuLabSenseNoMatchingClips")
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Recorded Clips (\(clips.count))")
-                    .font(.caption.bold())
-                    .foregroundStyle(.secondary)
+                Text(
+                    selectedTag == nil
+                        ? "Recorded Clips (\(visible.count))"
+                        : "Clips tagged \"\(selectedTag ?? "")\" (\(visible.count))"
+                )
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
 
-                ForEach(clips) { clip in
-                    HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(clip.name)
-                                .font(.footnote.monospaced())
-                                .lineLimit(1)
-                            Text(
-                                "\(MCULabSenseFormatting.formatDuration(clip.durationS)) · \(MCULabSenseFormatting.formatBytes(clip.sizeBytes))"
-                            )
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        Button {
-                            if let baseURL = MCULabSenseServerAddress.normalize(serverAddress) {
-                                let client = MCULabSenseClient(baseURL: baseURL)
-                                streamingClip = StreamingClipItem(
-                                    clip: clip,
-                                    url: client.clipStreamURL(for: clip)
+                ForEach(visible) { clip in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(clip.name)
+                                    .font(.footnote.monospaced())
+                                    .lineLimit(1)
+                                Text(
+                                    "\(MCULabSenseFormatting.formatDuration(clip.durationS)) · \(MCULabSenseFormatting.formatBytes(clip.sizeBytes))"
                                 )
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
                             }
-                        } label: {
-                            Label("Play", systemImage: "play.fill")
-                                .font(.caption.bold())
-                                .frame(minHeight: 36)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier("mcuLabSensePlay-\(clip.name)")
 
-                        Button(role: .destructive) {
-                            Task { await deleteClip(clip) }
-                        } label: {
-                            Image(systemName: "trash")
-                                .frame(minWidth: 36, minHeight: 36)
+                            Spacer()
+
+                            Button {
+                                if let baseURL = MCULabSenseServerAddress.normalize(serverAddress) {
+                                    let client = MCULabSenseClient(baseURL: baseURL)
+                                    streamingClip = StreamingClipItem(
+                                        clip: clip,
+                                        url: client.clipStreamURL(for: clip)
+                                    )
+                                }
+                            } label: {
+                                Label("Play", systemImage: "play.fill")
+                                    .font(.caption.bold())
+                                    .frame(minHeight: 36)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("mcuLabSensePlay-\(clip.name)")
+
+                            Button(role: .destructive) {
+                                Task { await deleteClip(clip) }
+                            } label: {
+                                Image(systemName: "trash")
+                                    .frame(minWidth: 36, minHeight: 36)
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityLabel("Delete \(clip.name)")
+                            .accessibilityIdentifier("mcuLabSenseDelete-\(clip.name)")
                         }
-                        .buttonStyle(.bordered)
-                        .accessibilityLabel("Delete \(clip.name)")
-                        .accessibilityIdentifier("mcuLabSenseDelete-\(clip.name)")
+
+                        if !clip.tags.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    ForEach(clip.tags) { tag in
+                                        Label(
+                                            "\(tag.label) \(tag.confidence)%",
+                                            systemImage: tag.source.systemImage
+                                        )
+                                        .font(.caption2)
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 3)
+                                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                                    }
+                                }
+                            }
+                        }
                     }
                     .padding(.vertical, 4)
                 }
@@ -234,6 +335,11 @@ struct MCULabSensePanel: View {
             let (newStatus, clipsResponse) = try await (fetchedStatus, fetchedClips)
             status = newStatus
             clips = clipsResponse.clips
+            if let currentTag = selectedTag,
+               !availableTags.contains(where: { $0.label == currentTag })
+            {
+                selectedTag = nil
+            }
         } catch {
             errorMessage = "Could not reach \(baseURL.absoluteString): \(error.localizedDescription)"
         }
@@ -298,7 +404,7 @@ private struct MCULabSenseClipPlayerSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .accessibilityIdentifier("mcuLabSenseVideoPlayer")
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(clip.name)
                         .font(.subheadline.monospaced())
                     Text(
@@ -307,6 +413,23 @@ private struct MCULabSenseClipPlayerSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
+
+                    if !clip.tags.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(clip.tags) { tag in
+                                    Label(
+                                        "\(tag.label) \(tag.confidence)% @ \(MCULabSenseFormatting.formatDuration(tag.firstS))",
+                                        systemImage: tag.source.systemImage
+                                    )
+                                    .font(.caption2)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.secondary.opacity(0.15), in: Capsule())
+                                }
+                            }
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
