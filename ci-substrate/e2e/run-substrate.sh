@@ -247,6 +247,15 @@ if kubectl ate get actor-templates -a "${ATESPACE}" -o json | grep -q '"name": *
   kubectl ate delete actor-template ci-runner -a "${ATESPACE}"
 fi
 kubectl ate --preview create actor-template -f "${WORKDIR}/runner-template.yaml"
+KO_DOCKER_REPO="${ACTOR_IMAGE_REPO}" ko resolve -f "${OVERLAY}/runner-env-template.yaml" >"${WORKDIR}/runner-env-template.yaml"
+if kubectl ate get actor-templates -a "${ATESPACE}" -o json | grep -q '"name": *"ci-runner-env"'; then
+  for actor in $(kubectl ate get actors -a "${ATESPACE}" -o json |
+    python3 -c 'import json,sys; print(" ".join(a["metadata"]["name"] for a in json.load(sys.stdin).get("actors", []) if a.get("actorTemplate", {}).get("name") == "ci-runner-env"))'); do
+    kubectl ate delete actor "${actor}" -a "${ATESPACE}"
+  done
+  kubectl ate delete actor-template ci-runner-env -a "${ATESPACE}"
+fi
+kubectl ate create actor-template -f "${WORKDIR}/runner-env-template.yaml"
 # Verify golden snapshots are enabled and wait for the template controller to
 # build the golden memory snapshot tag before the pool creates actors, so
 # every actor forks from the golden snapshot instead of cold-booting.
@@ -347,14 +356,15 @@ kubectl -n ci-substrate logs deployment/ci-substrate-pool-tenant-a --tail=20
 
 echo "==> Forking a pre-warmed build environment from a Substrate Tag (ci-substrate/env=warm-env)"
 warm_marker="prewarmed-toolchain-v1"
-warm_actor="$(go run "${ROOT}/cmd/rbe-run" \
+warm_actor="ci-runner-env-warm-env-seed--0"
+kubectl ate delete actor "${warm_actor}" -a "${ATESPACE}" >/dev/null 2>&1 || true
+kubectl ate create actor "${warm_actor}" -a "${ATESPACE}" --template ci-runner-env
+kubectl ate create egress-policy "${warm_actor}" -a "${ATESPACE}" -f "${OVERLAY}/egress-cas.yaml"
+kubectl ate resume actor "${warm_actor}" -a "${ATESPACE}"
+go run "${ROOT}/cmd/rbe-run" \
   -addr localhost:18980 -instance "${ATESPACE}" -token tok-a -runs 1 \
-  -script "printf '%s' '${warm_marker}' > /var/tmp/ci-substrate-warm-env && cat /system/name" 2>&1 \
-  | grep -oE 'ci-runner-[a-z0-9-]+' | tail -n 1)"
-if [[ -z "${warm_actor}" ]]; then
-  echo "could not determine warm actor name from rbe-run output" >&2
-  exit 1
-fi
+  -platform "ci-substrate/env=warm-env-seed" \
+  -script "printf '%s' '${warm_marker}' > /var/tmp/ci-substrate-warm-env && cat /system/name"
 echo "seeded /var/tmp/ci-substrate-warm-env in actor ${warm_actor}; suspending to tag"
 kubectl ate suspend actor "${warm_actor}" -a "${ATESPACE}"
 for _ in $(seq 1 60); do
@@ -375,6 +385,7 @@ CI_SUBSTRATE_E2E_ENV_MARKER="${warm_marker}" \
   pool_diagnostics
   exit 1
 }
+kubectl ate delete actor "${warm_actor}" -a "${ATESPACE}" >/dev/null 2>&1 || true
 
 echo "==> Clean-room per-action isolation (ci-substrate/isolation=clean via RevertActor)"
 CI_SUBSTRATE_E2E_ORIGIN_ADDR=localhost:18980 \

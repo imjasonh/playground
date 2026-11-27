@@ -74,6 +74,8 @@ spec:
               value: tenant-a
             - name: TEMPLATE
               value: ci-runner
+            - name: ENV_TEMPLATE
+              value: ci-runner-env
             - name: PREFIX
               value: ci-runner-
             - name: EGRESS_POLICY_FILE

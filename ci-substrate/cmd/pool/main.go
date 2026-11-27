@@ -49,6 +49,7 @@ type config struct {
 	// policy each actor gets before it first resumes.
 	Atespace         string `env:"ATESPACE, required"`
 	Template         string `env:"TEMPLATE, default=ci-runner"`
+	EnvTemplate      string `env:"ENV_TEMPLATE"`
 	Prefix           string `env:"PREFIX, default=ci-runner-"`
 	EgressPolicyFile string `env:"EGRESS_POLICY_FILE, required"`
 
@@ -165,6 +166,9 @@ func main() {
 	if err != nil {
 		slog.Error("configuring Substrate actors", "err", err)
 		os.Exit(1)
+	}
+	if c.EnvTemplate != "" {
+		actors.SetEnvTemplate(c.EnvTemplate)
 	}
 	cfg := actorpool.Config{
 		Actors:      actors,
