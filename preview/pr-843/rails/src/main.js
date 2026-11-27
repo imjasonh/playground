@@ -277,31 +277,37 @@ function renderHud() {
   }
 
   // Scoreboard
-  els.scoreboard.innerHTML = "";
-  s.players.forEach((p, idx) => {
-    const majors = app.majorProgress[idx]?.length ?? 0;
-    const row = document.createElement("div");
-    row.className = `player-row${p.id === s.current_player ? " active" : ""}`;
-    row.innerHTML = `
-      <div class="player-info">
-        <span class="color-dot" style="background:${p.color}"></span>
-        <span class="player-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}${p.is_bot ? " 🤖" : ""}</span>
-      </div>
-      <div class="player-stats">
-        <span title="Train">${shortTier(p.train_tier)}</span>
-        <span class="stat-majors" title="Connected Major Cities">⬡${majors}/${s.config.victory_major_cities}</span>
-        <span class="stat-cash">$${p.cash}M${p.debt ? ` (-$${p.debt}M)` : ""}</span>
-      </div>
-    `;
-    els.scoreboard.appendChild(row);
-  });
+  els.scoreboard.replaceChildren(
+    ...s.players.map((p, idx) => {
+      const majors = app.majorProgress[idx]?.length ?? 0;
+      return h(
+        "div",
+        { className: `player-row${p.id === s.current_player ? " active" : ""}` },
+        h(
+          "div",
+          { className: "player-info" },
+          h("span", { className: "color-dot", style: { background: p.color } }),
+          h("span", { className: "player-name", title: p.name }, `${p.name}${p.is_bot ? " 🤖" : ""}`)
+        ),
+        h(
+          "div",
+          { className: "player-stats" },
+          h("span", { title: "Train" }, shortTier(p.train_tier)),
+          h("span", { className: "stat-majors", title: "Connected Major Cities" }, `⬡${majors}/${s.config.victory_major_cities}`),
+          h("span", { className: "stat-cash" }, `$${p.cash}M${p.debt ? ` (-$${p.debt}M)` : ""}`)
+        )
+      );
+    })
+  );
 
   // Active Events
   if (s.active_events.length > 0) {
     els.eventsSection.style.display = "";
-    els.activeEvents.innerHTML = s.active_events
-      .map((ev) => `<div class="event-banner"><strong>⚠ ${escapeHtml(ev.title)}</strong>${escapeHtml(ev.description)}</div>`)
-      .join("");
+    els.activeEvents.replaceChildren(
+      ...s.active_events.map((ev) =>
+        h("div", { className: "event-banner" }, h("strong", null, `⚠ ${ev.title}`), ev.description)
+      )
+    );
   } else {
     els.eventsSection.style.display = "none";
   }
@@ -314,37 +320,70 @@ function renderHud() {
   els.moveCounter.textContent = `${tierLabel(vp.train_tier)} · ${maxSpd} mp/turn`;
 
   const curCity = vp.train_pos != null ? app.renderer.cityById.get(app.renderer.mpById.get(vp.train_pos)?.city_id) : null;
-  let trainHtml = `
-    <div class="train-header">
-      <span><b style="color:${vp.color}">●</b> ${escapeHtml(vp.name)}</span>
-      <span style="color:var(--muted);font-size:12px">${curCity ? `At ${escapeHtml(curCity.name)}` : vp.train_pos != null ? `Milepost #${vp.train_pos}` : "Not placed"}</span>
-    </div>
-    <div class="cargo-slots">
-  `;
+  const trainNodes = [
+    h(
+      "div",
+      { className: "train-header" },
+      h("span", null, h("b", { style: { color: vp.color } }, "●"), ` ${vp.name}`),
+      h(
+        "span",
+        { style: { color: "var(--muted)", fontSize: "12px" } },
+        curCity ? `At ${curCity.name}` : vp.train_pos != null ? `Milepost #${vp.train_pos}` : "Not placed"
+      )
+    ),
+  ];
+
+  const cargoSlots = [];
   for (let i = 0; i < cap; i++) {
     const commId = vp.cargo[i];
     if (commId) {
       const c = app.renderer.commById.get(commId);
-      const canDrop = isVpTurn && s.phase === "operate" && curCity;
-      trainHtml += `<button class="cargo-chip" data-drop-slot="${i}" ${canDrop ? "" : "disabled"} style="border-color:${c?.color ?? "#94a3b8"}" title="Click to drop at city">
-        <span class="comm-pill" style="background:${c?.color ?? "#475569"}">${c?.short ?? commId}</span> ${escapeHtml(c?.name ?? commId)}${canDrop ? " ×" : ""}
-      </button>`;
+      const canDrop = isVpTurn && s.phase === "operate" && Boolean(curCity);
+      cargoSlots.push(
+        h(
+          "button",
+          {
+            type: "button",
+            className: "cargo-chip",
+            disabled: !canDrop,
+            style: { borderColor: c?.color ?? "#94a3b8" },
+            title: "Click to drop at city",
+            onClick: () => sendAction({ type: "drop_load", slot: i }),
+          },
+          h("span", { className: "comm-pill", style: { background: c?.color ?? "#475569" } }, c?.short ?? commId),
+          ` ${c?.name ?? commId}${canDrop ? " ×" : ""}`
+        )
+      );
     } else {
-      trainHtml += `<span class="cargo-chip empty">Empty Hold</span>`;
+      cargoSlots.push(h("span", { className: "cargo-chip empty" }, "Empty Hold"));
     }
   }
-  trainHtml += `</div>`;
+  trainNodes.push(h("div", { className: "cargo-slots" }, ...cargoSlots));
 
   // Pickup buttons when at a producing city
   if (isVpTurn && s.phase === "operate" && curCity && curCity.commodities.length > 0) {
-    trainHtml += `<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Pick up at ${escapeHtml(curCity.name)}:</div><div class="city-goods">`;
-    for (const cid of curCity.commodities) {
-      const c = app.renderer.commById.get(cid);
-      const left = s.chip_supply[cid] ?? 0;
-      const disabled = vp.cargo.length >= cap || left <= 0;
-      trainHtml += `<button class="small" data-pickup="${cid}" ${disabled ? "disabled" : ""}>+ ${escapeHtml(c?.name ?? cid)} (${left})</button>`;
-    }
-    trainHtml += `</div>`;
+    trainNodes.push(
+      h("div", { style: { fontSize: "11px", color: "var(--muted)", marginBottom: "4px" } }, `Pick up at ${curCity.name}:`),
+      h(
+        "div",
+        { className: "city-goods" },
+        ...curCity.commodities.map((cid) => {
+          const c = app.renderer.commById.get(cid);
+          const left = s.chip_supply[cid] ?? 0;
+          const disabled = vp.cargo.length >= cap || left <= 0;
+          return h(
+            "button",
+            {
+              type: "button",
+              className: "small",
+              disabled,
+              onClick: () => sendAction({ type: "pickup_load", commodity: cid }),
+            },
+            `+ ${c?.name ?? cid} (${left})`
+          );
+        })
+      )
+    );
   }
 
   // Heating Fuel Shortage bonus delivery button
@@ -353,7 +392,26 @@ function renderHud() {
       if (ev.effect.type === "heating_fuel_shortage" && ev.effect.target_cities.includes(curCity.id)) {
         const slot = vp.cargo.findIndex((c) => c === ev.effect.commodity || c === "coal");
         if (slot >= 0) {
-          trainHtml += `<div class="upgrade-row"><button class="success small" data-deliver-event="${ev.card_id}" data-slot="${slot}">🔥 Fulfill ${escapeHtml(ev.title)} (+$${ev.effect.bonus}M)</button></div>`;
+          trainNodes.push(
+            h(
+              "div",
+              { className: "upgrade-row" },
+              h(
+                "button",
+                {
+                  type: "button",
+                  className: "success small",
+                  onClick: () =>
+                    sendAction({
+                      type: "deliver_event_bonus",
+                      slot,
+                      event_card_id: ev.card_id,
+                    }),
+                },
+                `🔥 Fulfill ${ev.title} (+$${ev.effect.bonus}M)`
+              )
+            )
+          );
         }
       }
     }
@@ -363,43 +421,47 @@ function renderHud() {
   if (isVpTurn && s.phase === "build" && s.turn_tracker.build_spent === 0 && !s.turn_tracker.upgraded_this_turn) {
     const upgrades = nextUpgrades(vp.train_tier);
     if (upgrades.length > 0) {
-      trainHtml += `<div class="upgrade-row">`;
-      for (const u of upgrades) {
-        trainHtml += `<button class="small primary" data-upgrade="${u}" ${vp.cash < 20 ? "disabled" : ""}>⬆ ${tierLabel(u)} ($20M)</button>`;
-      }
-      trainHtml += `</div>`;
+      trainNodes.push(
+        h(
+          "div",
+          { className: "upgrade-row" },
+          ...upgrades.map((u) =>
+            h(
+              "button",
+              {
+                type: "button",
+                className: "small primary",
+                disabled: vp.cash < 20,
+                onClick: () => sendAction({ type: "upgrade_train", target_tier: u }),
+              },
+              `⬆ ${tierLabel(u)} ($20M)`
+            )
+          )
+        )
+      );
     }
   }
 
   // Emergency borrow option if cash < $10M and debt == 0
   if (isVpTurn && (s.phase === "build" || s.phase === "operate") && vp.cash < 10 && vp.debt === 0) {
-    trainHtml += `<div class="upgrade-row"><button class="small warn" data-borrow="15">🏦 Emergency Loan +$15M (repay $30M)</button></div>`;
+    trainNodes.push(
+      h(
+        "div",
+        { className: "upgrade-row" },
+        h(
+          "button",
+          {
+            type: "button",
+            className: "small warn",
+            onClick: () => sendAction({ type: "borrow", amount: 15 }),
+          },
+          "🏦 Emergency Loan +$15M (repay $30M)"
+        )
+      )
+    );
   }
 
-  els.trainPanel.innerHTML = trainHtml;
-
-  // Bind dynamic train panel buttons
-  els.trainPanel.querySelectorAll("[data-pickup]").forEach((btn) => {
-    btn.addEventListener("click", () => sendAction({ type: "pickup_load", commodity: btn.dataset.pickup }));
-  });
-  els.trainPanel.querySelectorAll("[data-drop-slot]").forEach((btn) => {
-    btn.addEventListener("click", () => sendAction({ type: "drop_load", slot: Number(btn.dataset.dropSlot) }));
-  });
-  els.trainPanel.querySelectorAll("[data-upgrade]").forEach((btn) => {
-    btn.addEventListener("click", () => sendAction({ type: "upgrade_train", target_tier: btn.dataset.upgrade }));
-  });
-  els.trainPanel.querySelectorAll("[data-borrow]").forEach((btn) => {
-    btn.addEventListener("click", () => sendAction({ type: "borrow", amount: Number(btn.dataset.borrow) }));
-  });
-  els.trainPanel.querySelectorAll("[data-deliver-event]").forEach((btn) => {
-    btn.addEventListener("click", () =>
-      sendAction({
-        type: "deliver_event_bonus",
-        slot: Number(btn.dataset.slot),
-        event_card_id: Number(btn.dataset.deliverEvent),
-      })
-    );
-  });
+  els.trainPanel.replaceChildren(...trainNodes);
 
   // Demand Cards
   els.deckCounter.textContent = `Deck: ${s.draw_pile_count}`;
@@ -408,74 +470,77 @@ function renderHud() {
       ? `Click ${vp.hand.length - 3} card(s) to discard`
       : `${vp.name}'s Demand Cards (hover to locate)`;
 
-  els.cardsList.innerHTML = "";
+  els.cardsList.replaceChildren();
   vp.hand.forEach((card, ci) => {
     if (card.kind !== "demand") return;
-    const cardEl = document.createElement("div");
-    cardEl.className = `demand-card${app.trimSelected.has(ci) ? " trim-selected" : ""}`;
-    if (s.phase === "trim_hand" && isVpTurn) {
-      cardEl.style.cursor = "pointer";
-      cardEl.addEventListener("click", () => {
-        if (app.trimSelected.has(ci)) app.trimSelected.delete(ci);
-        else if (app.trimSelected.size < vp.hand.length - 3) app.trimSelected.add(ci);
-        renderHud();
-      });
-    }
+    const cardEl = h(
+      "div",
+      {
+        className: `demand-card${app.trimSelected.has(ci) ? " trim-selected" : ""}`,
+        style: s.phase === "trim_hand" && isVpTurn ? { cursor: "pointer" } : null,
+        onClick:
+          s.phase === "trim_hand" && isVpTurn
+            ? () => {
+                if (app.trimSelected.has(ci)) app.trimSelected.delete(ci);
+                else if (app.trimSelected.size < vp.hand.length - 3) app.trimSelected.add(ci);
+                renderHud();
+              }
+            : null,
+      },
+      h("div", { className: "demand-card-header" }, h("span", null, `Contract #${card.id}`), h("span", null, "Payoff")),
+      ...card.demands.map((d, di) => {
+        const comm = app.renderer.commById.get(d.commodity);
+        const destCity = app.renderer.cityById.get(d.city_id);
+        const matchingSlot =
+          isVpTurn && s.phase === "operate" && curCity && curCity.id === d.city_id
+            ? vp.cargo.findIndex((c) => c === d.commodity)
+            : -1;
+        const deliverable = matchingSlot >= 0;
 
-    let html = `<div class="demand-card-header"><span>Contract #${card.id}</span><span>Payoff</span></div>`;
-    card.demands.forEach((d, di) => {
-      const comm = app.renderer.commById.get(d.commodity);
-      const destCity = app.renderer.cityById.get(d.city_id);
-      const matchingSlot =
-        isVpTurn && s.phase === "operate" && curCity && curCity.id === d.city_id
-          ? vp.cargo.findIndex((c) => c === d.commodity)
-          : -1;
-      const deliverable = matchingSlot >= 0;
-
-      html += `
-        <div class="demand-row${deliverable ? " deliverable" : ""}" data-ci="${ci}" data-di="${di}" data-comm="${d.commodity}" data-dest="${d.city_id}" data-slot="${matchingSlot}">
-          <div class="demand-left">
-            <span class="comm-pill" style="background:${comm?.color ?? "#475569"}">${comm?.short ?? d.commodity}</span>
-            <span><b>${escapeHtml(comm?.name ?? d.commodity)}</b> → ${escapeHtml(destCity?.name ?? d.city_id)}</span>
-          </div>
-          <span class="demand-payout">${deliverable ? `✓ Deliver $${d.payout}M` : `$${d.payout}M`}</span>
-        </div>
-      `;
-    });
-    cardEl.innerHTML = html;
-
-    cardEl.querySelectorAll(".demand-row").forEach((row) => {
-      row.addEventListener("mouseenter", () => {
-        app.highlight = { commodity: row.dataset.comm, destCityId: row.dataset.dest };
-        draw();
-      });
-      row.addEventListener("mouseleave", () => {
-        app.highlight = null;
-        draw();
-      });
-      row.addEventListener("click", (ev) => {
-        const slot = Number(row.dataset.slot);
-        if (slot >= 0) {
-          ev.stopPropagation();
-          sendAction({
-            type: "deliver_load",
-            slot,
-            card_index: Number(row.dataset.ci),
-            demand_index: Number(row.dataset.di),
-          });
-        }
-      });
-    });
-
+        return h(
+          "div",
+          {
+            className: `demand-row${deliverable ? " deliverable" : ""}`,
+            onMouseEnter: () => {
+              app.highlight = { commodity: d.commodity, destCityId: d.city_id };
+              draw();
+            },
+            onMouseLeave: () => {
+              app.highlight = null;
+              draw();
+            },
+            onClick: (ev) => {
+              if (matchingSlot >= 0) {
+                ev.stopPropagation();
+                sendAction({
+                  type: "deliver_load",
+                  slot: matchingSlot,
+                  card_index: ci,
+                  demand_index: di,
+                });
+              }
+            },
+          },
+          h(
+            "div",
+            { className: "demand-left" },
+            h("span", { className: "comm-pill", style: { background: comm?.color ?? "#475569" } }, comm?.short ?? d.commodity),
+            h("span", null, h("b", null, comm?.name ?? d.commodity), ` → ${destCity?.name ?? d.city_id}`)
+          ),
+          h("span", { className: "demand-payout" }, deliverable ? `✓ Deliver $${d.payout}M` : `$${d.payout}M`)
+        );
+      })
+    );
     els.cardsList.appendChild(cardEl);
   });
 
   // Turn Log (newest first)
-  els.turnLog.innerHTML = [...s.log]
-    .reverse()
-    .slice(0, 30)
-    .map((entry) => `<div class="log-item"><b>T${entry.turn}</b> ${escapeHtml(entry.text)}</div>`)
-    .join("");
+  els.turnLog.replaceChildren(
+    ...[...s.log]
+      .reverse()
+      .slice(0, 30)
+      .map((entry) => h("div", { className: "log-item" }, h("b", null, `T${entry.turn}`), ` ${entry.text}`))
+  );
 }
 
 function showVictoryModal() {
@@ -485,19 +550,20 @@ function showVictoryModal() {
   els.victoryTitle.textContent = `🏆 ${w.name} Wins!`;
   els.victorySubtitle.textContent = `Connected ${app.majorProgress[w.id]?.length ?? 5} Major Cities with $${w.cash}M in ${s.turn_number} turns.`;
   const sorted = [...s.players].sort((a, b) => b.cash - a.cash);
-  els.victoryStandings.innerHTML = sorted
-    .map(
-      (p, i) => `
-      <div class="seat-item">
-        <b>#${i + 1}</b>
-        <span class="color-dot" style="background:${p.color}"></span>
-        <span style="flex:1"><b>${escapeHtml(p.name)}</b> (${tierLabel(p.train_tier)})</span>
-        <span>⬡${app.majorProgress[p.id]?.length ?? 0} Majors</span>
-        <span class="stat-cash">$${p.cash}M</span>
-        <span style="color:var(--muted)">${p.deliveries_completed} del.</span>
-      </div>`
+  els.victoryStandings.replaceChildren(
+    ...sorted.map((p, i) =>
+      h(
+        "div",
+        { className: "seat-item" },
+        h("b", null, `#${i + 1}`),
+        h("span", { className: "color-dot", style: { background: p.color } }),
+        h("span", { style: { flex: "1" } }, h("b", null, p.name), ` (${tierLabel(p.train_tier)})`),
+        h("span", null, `⬡${app.majorProgress[p.id]?.length ?? 0} Majors`),
+        h("span", { className: "stat-cash" }, `$${p.cash}M`),
+        h("span", { style: { color: "var(--muted)" } }, `${p.deliveries_completed} del.`)
+      )
     )
-    .join("");
+  );
   els.victoryModal.classList.remove("hidden");
 }
 
@@ -558,9 +624,14 @@ function setupCanvasInteraction() {
 
     els.canvas.classList.add("pointing");
     const city = mp.city_id ? app.renderer.cityById.get(mp.city_id) : null;
-    let tip = city
-      ? `<b>${escapeHtml(city.name)}</b> (${city.size} city)<br/>Produces: ${city.commodities.map((c) => app.renderer.commById.get(c)?.name ?? c).join(", ")}`
-      : `<b>Milepost #${mp.id}</b> (${mp.terrain})`;
+    const tipNodes = city
+      ? [
+          h("b", null, city.name),
+          ` (${city.size} city)`,
+          h("br"),
+          `Produces: ${city.commodities.map((c) => app.renderer.commById.get(c)?.name ?? c).join(", ")}`,
+        ]
+      : [h("b", null, `Milepost #${mp.id}`), ` (${mp.terrain})`];
 
     if (canControlCurrentPlayer() && app.state) {
       const pid = app.state.current_player;
@@ -569,9 +640,18 @@ function setupCanvasInteraction() {
           const prev = JSON.parse(app.engine.preview_build(pid, mp.id));
           app.localPreview = prev;
           if (prev.edges.length > 0) {
-            tip += `<br/><span style="color:${prev.affordable ? "#4ade80" : "#f87171"}">Build ${prev.edges.length} seg: <b>$${prev.total_cost}M</b>${prev.error ? ` (${escapeHtml(prev.error)})` : ""}</span>`;
+            tipNodes.push(
+              h("br"),
+              h(
+                "span",
+                { style: { color: prev.affordable ? "#4ade80" : "#f87171" } },
+                `Build ${prev.edges.length} seg: `,
+                h("b", null, `$${prev.total_cost}M`),
+                prev.error ? ` (${prev.error})` : ""
+              )
+            );
           } else if (prev.error) {
-            tip += `<br/><span style="color:var(--muted)">${escapeHtml(prev.error)}</span>`;
+            tipNodes.push(h("br"), h("span", { style: { color: "var(--muted)" } }, prev.error));
           }
           if (app.sessionType === "online") {
             app.roomClient?.sendDraft(prev.affordable ? prev.edges : [], []);
@@ -582,15 +662,27 @@ function setupCanvasInteraction() {
       } else if (app.state.phase === "operate") {
         const cur = app.state.players[pid];
         if (cur.train_pos == null) {
-          tip += city
-            ? `<br/><span style="color:#4ade80">Click to place locomotive at ${escapeHtml(city.name)}</span>`
-            : `<br/><span style="color:#f87171">Click a city to place your locomotive</span>`;
+          tipNodes.push(
+            h("br"),
+            city
+              ? h("span", { style: { color: "#4ade80" } }, `Click to place locomotive at ${city.name}`)
+              : h("span", { style: { color: "#f87171" } }, "Click a city to place your locomotive")
+          );
         } else {
           try {
             const prev = JSON.parse(app.engine.preview_move(pid, mp.id));
             if (prev.reachable && prev.hops > 0) {
               app.localPreview = { path: prev.path, affordable: true };
-              tip += `<br/><span style="color:#38bdf8">Move <b>${prev.hops}</b> milepost(s)${prev.additional_fee ? ` (+$${prev.additional_fee}M trackage)` : ""}</span>`;
+              tipNodes.push(
+                h("br"),
+                h(
+                  "span",
+                  { style: { color: "#38bdf8" } },
+                  "Move ",
+                  h("b", null, String(prev.hops)),
+                  ` milepost(s)${prev.additional_fee ? ` (+$${prev.additional_fee}M trackage)` : ""}`
+                )
+              );
               if (app.sessionType === "online") {
                 app.roomClient?.sendDraft([], prev.path);
               }
@@ -602,7 +694,7 @@ function setupCanvasInteraction() {
       }
     }
 
-    els.tooltip.innerHTML = tip;
+    els.tooltip.replaceChildren(...tipNodes);
     els.tooltip.classList.remove("hidden");
     positionTooltip(sx, sy);
     draw();
@@ -676,74 +768,102 @@ function positionTooltip(sx, sy) {
 
 // --- Lobby & Modals ---
 function renderLocalSeats() {
-  els.localSeats.innerHTML = "";
-  app.localSeatDraft.forEach((seat, idx) => {
-    const row = document.createElement("div");
-    row.className = "seat-item";
-    row.innerHTML = `
-      <span class="color-dot" style="background:${seat.color}"></span>
-      <input type="text" value="${escapeHtml(seat.name)}" maxlength="20" />
-      <span class="badge">${seat.is_bot ? "RailBot" : "Human"}</span>
-      <button class="small" ${app.localSeatDraft.length <= 2 ? "disabled" : ""}>×</button>
-    `;
-    row.querySelector("input").addEventListener("input", (e) => {
-      seat.name = e.target.value;
-    });
-    row.querySelector("button").addEventListener("click", () => {
-      app.localSeatDraft.splice(idx, 1);
-      renderLocalSeats();
-    });
-    els.localSeats.appendChild(row);
-  });
+  els.localSeats.replaceChildren(
+    ...app.localSeatDraft.map((seat, idx) =>
+      h(
+        "div",
+        { className: "seat-item" },
+        h("span", { className: "color-dot", style: { background: seat.color } }),
+        h("input", {
+          type: "text",
+          value: seat.name,
+          maxLength: 20,
+          onInput: (e) => {
+            seat.name = e.target.value;
+          },
+        }),
+        h("span", { className: "badge" }, seat.is_bot ? "RailBot" : "Human"),
+        h(
+          "button",
+          {
+            type: "button",
+            className: "small",
+            disabled: app.localSeatDraft.length <= 2,
+            onClick: () => {
+              app.localSeatDraft.splice(idx, 1);
+              renderLocalSeats();
+            },
+          },
+          "×"
+        )
+      )
+    )
+  );
 }
 
 function renderOnlineLobby(lobby) {
   els.onlineRoomCode.textContent = lobby.code;
   els.onlineMode.value = lobby.config.mode;
   els.onlineEvents.value = lobby.config.events_enabled ? "on" : "off";
-  els.onlineSeats.innerHTML = lobby.seats
-    .map(
-      (s) => `
-      <div class="seat-item">
-        <span class="color-dot" style="background:${s.color}"></span>
-        <span style="flex:1"><b>${escapeHtml(s.name)}</b> ${s.slot === app.mySlot ? "(You)" : ""}</span>
-        <span class="badge">${s.is_bot ? "RailBot" : s.connected ? "Online" : "Offline"}</span>
-        ${s.is_bot ? `<button class="small" data-rm-bot="${s.slot}">×</button>` : ""}
-      </div>`
+  els.onlineSeats.replaceChildren(
+    ...lobby.seats.map((s) =>
+      h(
+        "div",
+        { className: "seat-item" },
+        h("span", { className: "color-dot", style: { background: s.color } }),
+        h("span", { style: { flex: "1" } }, h("b", null, s.name), s.slot === app.mySlot ? " (You)" : ""),
+        h("span", { className: "badge" }, s.is_bot ? "RailBot" : s.connected ? "Online" : "Offline"),
+        s.is_bot
+          ? h(
+              "button",
+              {
+                type: "button",
+                className: "small",
+                onClick: () => app.roomClient?.send({ type: "remove_bot", slot: s.slot }),
+              },
+              "×"
+            )
+          : null
+      )
     )
-    .join("");
-  els.onlineSeats.querySelectorAll("[data-rm-bot]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      app.roomClient?.send({ type: "remove_bot", slot: Number(btn.dataset.rmBot) });
-    });
-  });
+  );
   els.roomBadge.textContent = `ROOM ${lobby.code} 📋`;
   els.roomBadge.style.display = "";
 }
 
 function buildDirectory() {
-  els.directoryGrid.innerHTML = "";
-  for (const c of app.mapData.commodities) {
-    const srcs = (app.renderer.sourcesByComm.get(c.id) || []).map((x) => x.name).join(", ");
-    const left = app.state?.chip_supply?.[c.id] ?? c.chips;
-    const div = document.createElement("div");
-    div.className = "dir-item";
-    div.style.cursor = "pointer";
-    div.innerHTML = `
-      <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-        <span><span class="comm-pill" style="background:${c.color}">${c.short}</span> <b>${escapeHtml(c.name)}</b></span>
-        <span style="color:var(--muted)">${left}/${c.chips} chips</span>
-      </div>
-      <div style="color:var(--muted);font-size:11px">${escapeHtml(srcs)}</div>
-    `;
-    div.addEventListener("click", () => {
-      app.highlight = { commodity: c.id, destCityId: null };
-      els.directoryModal.classList.add("hidden");
-      showToast(`Highlighted ${c.name} sources on map`);
-      draw();
-    });
-    els.directoryGrid.appendChild(div);
-  }
+  els.directoryGrid.replaceChildren(
+    ...app.mapData.commodities.map((c) => {
+      const srcs = (app.renderer.sourcesByComm.get(c.id) || []).map((x) => x.name).join(", ");
+      const left = app.state?.chip_supply?.[c.id] ?? c.chips;
+      return h(
+        "div",
+        {
+          className: "dir-item",
+          style: { cursor: "pointer" },
+          onClick: () => {
+            app.highlight = { commodity: c.id, destCityId: null };
+            els.directoryModal.classList.add("hidden");
+            showToast(`Highlighted ${c.name} sources on map`);
+            draw();
+          },
+        },
+        h(
+          "div",
+          { style: { display: "flex", justifyContent: "space-between", marginBottom: "3px" } },
+          h(
+            "span",
+            null,
+            h("span", { className: "comm-pill", style: { background: c.color } }, c.short),
+            " ",
+            h("b", null, c.name)
+          ),
+          h("span", { style: { color: "var(--muted)" } }, `${left}/${c.chips} chips`)
+        ),
+        h("div", { style: { color: "var(--muted)", fontSize: "11px" } }, srcs)
+      );
+    })
+  );
 }
 
 function setupControls() {
@@ -973,12 +1093,33 @@ function nextUpgrades(tier) {
   return [];
 }
 
-function escapeHtml(str) {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+function h(tag, attrs = null, ...children) {
+  const el = document.createElement(tag);
+  if (attrs) {
+    for (const [key, val] of Object.entries(attrs)) {
+      if (val == null || val === false) continue;
+      if (key === "className") {
+        el.className = val;
+      } else if (key === "style" && typeof val === "object") {
+        Object.assign(el.style, val);
+      } else if (key === "dataset" && typeof val === "object") {
+        Object.assign(el.dataset, val);
+      } else if (key.startsWith("on") && typeof val === "function") {
+        el.addEventListener(key.slice(2).toLowerCase(), val);
+      } else if (val === true) {
+        el.setAttribute(key, "");
+      } else if (key in el && key !== "type") {
+        el[key] = val;
+      } else {
+        el.setAttribute(key, String(val));
+      }
+    }
+  }
+  for (const child of children.flat()) {
+    if (child == null || child === false) continue;
+    el.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return el;
 }
 
 async function boot() {
