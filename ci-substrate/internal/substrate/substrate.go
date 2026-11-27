@@ -78,10 +78,11 @@ func (bearerFile) RequireTransportSecurity() bool { return true }
 
 // Actors implements actorpool.Actors for one atespace and template.
 type Actors struct {
-	client   ateapi.ControlClient
-	atespace string
-	template string
-	policy   *ateapi.EgressPolicy
+	client      ateapi.ControlClient
+	atespace    string
+	template    string
+	envTemplate string
+	policy      *ateapi.EgressPolicy
 }
 
 // NewActors returns an adapter that creates actors in atespace from template
@@ -97,6 +98,14 @@ func NewActors(ctx context.Context, client ateapi.ControlClient, atespace, templ
 		return nil, fmt.Errorf("actor template %s/%s: %w", atespace, template, err)
 	}
 	return &Actors{client: client, atespace: atespace, template: template, policy: policy}, nil
+}
+
+// SetEnvTemplate configures the ActorTemplate used by CreateFromTag.
+// Substrate's tag cloning requires an ActorTemplate without external volumes,
+// so tenants whose default template mounts a casfs external volume can point
+// tag-cloned environments at a companion volume-free template.
+func (a *Actors) SetEnvTemplate(template string) {
+	a.envTemplate = template
 }
 
 // Directory answers where actors are, for a caller that holds a viewer role
@@ -202,9 +211,27 @@ func State(s ateapi.ActorState) actorpool.State {
 // policy. An actor that already exists from an earlier, interrupted Create
 // just gets the policy.
 func (a *Actors) Create(ctx context.Context, name string) error {
+	return a.create(ctx, name, "")
+}
+
+// CreateFromTag makes a suspended actor seeded from a published Substrate Tag
+// in the same atespace (copy-on-write memory and rootfs fork) and sets its
+// egress policy.
+func (a *Actors) CreateFromTag(ctx context.Context, name, tag string) error {
+	return a.create(ctx, name, tag)
+}
+
+func (a *Actors) create(ctx context.Context, name, sourceTag string) error {
+	tmpl := a.template
+	if sourceTag != "" && a.envTemplate != "" {
+		tmpl = a.envTemplate
+	}
 	actor := &ateapi.Actor{
 		Metadata:      &ateapi.ResourceMetadata{Atespace: a.atespace, Name: name},
-		ActorTemplate: a.ref(a.template),
+		ActorTemplate: a.ref(tmpl),
+	}
+	if sourceTag != "" {
+		actor.SourceTag = a.ref(sourceTag)
 	}
 	if _, err := a.client.CreateActor(ctx, &ateapi.CreateActorRequest{Actor: actor}); err != nil && status.Code(err) != codes.AlreadyExists {
 		return err
@@ -229,6 +256,13 @@ func (a *Actors) Resume(ctx context.Context, name string) error {
 // Suspend checkpoints the actor and frees its worker.
 func (a *Actors) Suspend(ctx context.Context, name string) error {
 	_, err := a.client.SuspendActor(ctx, &ateapi.SuspendActorRequest{Actor: a.ref(name)})
+	return err
+}
+
+// Revert rolls the actor back to SUSPENDED at its clean durable snapshot,
+// discarding any filesystem or memory mutations from its last run.
+func (a *Actors) Revert(ctx context.Context, name string) error {
+	_, err := a.client.RevertActor(ctx, &ateapi.RevertActorRequest{Actor: a.ref(name)})
 	return err
 }
 

@@ -38,6 +38,9 @@ func TestParsesDeployedEgressPolicy(t *testing.T) {
 	if len(headers) != 1 || headers[0].GetHeader() != "x-ci-substrate-tenant" {
 		t.Errorf("cas rule %v does not inject the tenant header", rules["cas.ci-substrate.svc.cluster.local"])
 	}
+	if jwt := headers[0].GetActorJwt(); jwt == nil || !slices.Contains(jwt.GetAudiences(), "cas.ci-substrate.svc.cluster.local") {
+		t.Errorf("cas rule %v does not inject an Actor JWT for cas", headers[0])
+	}
 	collector, ok := rules["otel-collector.ci-substrate.svc.cluster.local"]
 	if !ok {
 		t.Fatalf("no rule for the collector in %v", policy.GetRules())
@@ -79,7 +82,8 @@ func TestStateMapping(t *testing.T) {
 
 type actorControl struct {
 	ateapi.UnimplementedControlServer
-	actors []*ateapi.Actor
+	actors  []*ateapi.Actor
+	created []*ateapi.Actor
 }
 
 func (c *actorControl) GetActorTemplate(context.Context, *ateapi.GetActorTemplateRequest) (*ateapi.ActorTemplate, error) {
@@ -88,6 +92,15 @@ func (c *actorControl) GetActorTemplate(context.Context, *ateapi.GetActorTemplat
 
 func (c *actorControl) ListActors(context.Context, *ateapi.ListActorsRequest) (*ateapi.ListActorsResponse, error) {
 	return &ateapi.ListActorsResponse{Actors: c.actors}, nil
+}
+
+func (c *actorControl) CreateActor(_ context.Context, req *ateapi.CreateActorRequest) (*ateapi.Actor, error) {
+	c.created = append(c.created, req.GetActor())
+	return req.GetActor(), nil
+}
+
+func (c *actorControl) CreateActorEgressPolicy(_ context.Context, req *ateapi.CreateActorEgressPolicyRequest) (*ateapi.EgressPolicy, error) {
+	return req.GetEgressPolicy(), nil
 }
 
 func TestListReportsWorkerPool(t *testing.T) {
@@ -120,5 +133,41 @@ func TestListReportsWorkerPool(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("List() = %v, want %v", got, want)
+	}
+}
+
+func TestCreateFromTagUsesEnvTemplate(t *testing.T) {
+	ctrl := &actorControl{}
+	client := serve(t, ctrl)
+	manifest, err := os.ReadFile("../../deploy/substrate/egress-cas.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actors, err := substrate.NewActors(t.Context(), client, "tenant-a", "ci-runner", manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actors.SetEnvTemplate("ci-runner-env")
+
+	if err := actors.Create(t.Context(), "ci-runner-1"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := actors.CreateFromTag(t.Context(), "ci-runner-env-warm--1", "warm"); err != nil {
+		t.Fatalf("CreateFromTag: %v", err)
+	}
+	if len(ctrl.created) != 2 {
+		t.Fatalf("created %d actors, want 2", len(ctrl.created))
+	}
+	if got := ctrl.created[0].GetActorTemplate().GetName(); got != "ci-runner" {
+		t.Errorf("Create template = %q, want ci-runner", got)
+	}
+	if ctrl.created[0].GetSourceTag() != nil {
+		t.Errorf("Create sourceTag = %v, want nil", ctrl.created[0].GetSourceTag())
+	}
+	if got := ctrl.created[1].GetActorTemplate().GetName(); got != "ci-runner-env" {
+		t.Errorf("CreateFromTag template = %q, want ci-runner-env", got)
+	}
+	if got := ctrl.created[1].GetSourceTag().GetName(); got != "warm" {
+		t.Errorf("CreateFromTag sourceTag = %q, want warm", got)
 	}
 }

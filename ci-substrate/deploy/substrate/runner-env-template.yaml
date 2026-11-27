@@ -1,0 +1,52 @@
+# ActorTemplate (protojson-shaped ateapi.ActorTemplate) for tag-forked CI
+# runner environments (ci-substrate/env=<tag>) in the tenant-a atespace.
+#
+# Substrate's Tag cloning (Actor.source_tag) does not support ActorTemplates
+# with external volumes, so pre-warmed environment templates omit the casfs
+# external volume and fetch action inputs over gRPC (-input-mode=copy) using
+# the same Actor JWT egress policy. Tags taken from actors created with this
+# template capture memory and rootfs (SNAPSHOT_FIDELITY_MEMORY) so forked
+# runners resume directly into the pre-warmed toolchain.
+#
+#   ko resolve -f runner-env-template.yaml > /tmp/runner-env-template.yaml
+#   kubectl ate create actor-template -f /tmp/runner-env-template.yaml
+metadata:
+  atespace: tenant-a
+  name: ci-runner-env
+workerSelector:
+  matchLabels:
+    workload: ci-runner
+containers:
+- name: runner
+  image: ko://github.com/imjasonh/playground/ci-substrate/cmd/runner # pasta:ignore unpinned_container_image
+  args:
+  - -origin-addr=cas.ci-substrate.svc.cluster.local:8980
+  - -instances=tenant-a
+  - -token=placeholder
+  - -bot-id-file=/system/name
+  - -work-dir=/tmp/ci-substrate
+  - -input-mode=copy
+  env:
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: http://otel-collector.ci-substrate.svc.cluster.local:4317
+  - name: OTEL_METRIC_EXPORT_INTERVAL
+    value: "10000"
+  - name: OTEL_RESOURCE_ATTRIBUTES
+    value: ci_substrate.atespace=tenant-a
+  volumeMounts:
+  - name: system
+    mountPath: /system
+volumes:
+- name: system
+  systemInfo:
+    dataSources:
+    - actorMetadata:
+        items:
+        - field: ACTOR_METADATA_FIELD_NAME
+          path: name
+resources:
+  limits:
+    cpuMillicores: 1000
+    memoryBytes: 1073741824 # 1Gi
+snapshotConfig:
+  preferredFidelity: SNAPSHOT_FIDELITY_MEMORY

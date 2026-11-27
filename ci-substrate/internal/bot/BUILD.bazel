@@ -14,6 +14,7 @@ go_library(
         "//api/worker/v1:worker",
         "//internal/casfs",
         "//internal/digest",
+        "//internal/platform",
         "//internal/remote",
         "//internal/telemetry",
         "//internal/tenant",

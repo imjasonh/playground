@@ -68,6 +68,12 @@ type config struct {
 	TLSCertFile     string `env:"TLS_CERT_FILE"`
 	TLSKeyFile      string `env:"TLS_KEY_FILE"`
 	TLSClientCAFile string `env:"TLS_CLIENT_CA_FILE"`
+	// Substrate Actor JWT verification; when ActorJWTIssuer is set, cas
+	// verifies short-lived Actor JWTs injected by atenet-egress via OIDC
+	// discovery against ate-idp-server.
+	ActorJWTIssuer   string `env:"ACTOR_JWT_ISSUER"`
+	ActorJWTAudience string `env:"ACTOR_JWT_AUDIENCE, default=cas.ci-substrate.svc.cluster.local"`
+	ActorJWTCAFile   string `env:"ACTOR_JWT_CA_FILE"`
 }
 
 func main() {
@@ -99,6 +105,19 @@ func main() {
 	if err != nil {
 		slog.Error("parsing tenants", "err", err)
 		os.Exit(1)
+	}
+	if c.ActorJWTIssuer != "" {
+		v, err := tenant.NewActorJWTVerifier(tenant.ActorJWTConfig{
+			Issuer:   c.ActorJWTIssuer,
+			Audience: c.ActorJWTAudience,
+			CAFile:   c.ActorJWTCAFile,
+		})
+		if err != nil {
+			slog.Error("configuring actor JWT verifier", "err", err)
+			os.Exit(1)
+		}
+		tenants.SetActorJWTVerifier(v)
+		slog.Info("actor JWT verification enabled", "issuer", c.ActorJWTIssuer, "audience", c.ActorJWTAudience)
 	}
 	assets, err := asset.New(filepath.Join(c.StoreDir, "asset"), store, tenants)
 	if err != nil {

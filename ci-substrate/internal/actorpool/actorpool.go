@@ -39,6 +39,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/imjasonh/playground/ci-substrate/internal/platform"
 	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 )
 
@@ -99,12 +100,32 @@ type Actors interface {
 	Delete(ctx context.Context, name string) error
 }
 
+// TagActors is an optional extension of Actors that forks new actors from a
+// published Substrate Tag (copy-on-write memory and rootfs snapshot).
+type TagActors interface {
+	CreateFromTag(ctx context.Context, name, tag string) error
+}
+
+// RevertActors is an optional extension of Actors that rolls an exited
+// clean-isolation actor back to SUSPENDED at its clean durable snapshot
+// instead of deleting and cold-creating it.
+type RevertActors interface {
+	Revert(ctx context.Context, name string) error
+}
+
 // Queue is the scheduler's view of the tenant: jobs waiting for a runner and
 // the bot ids holding leases. Watch calls changed each time that view
 // changes, until ctx ends or the watch breaks, and returns why it stopped.
 type Queue interface {
 	Status(ctx context.Context) (queued int, busy []string, err error)
 	Watch(ctx context.Context, changed func()) error
+}
+
+// PlatformQueue is an optional extension of Queue that reports queued counts
+// per canonical platform key (e.g. "" for default, "env=<tag>") and dirty
+// clean-isolation bot IDs awaiting revert.
+type PlatformQueue interface {
+	StatusByPlatform(ctx context.Context) (queuedByPlatform map[string]int, busy, dirty []string, err error)
 }
 
 // Workers is the WorkerPool the pool sizes: its desired number of workers,
@@ -285,7 +306,15 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("listing actors: %w", err)
 	}
-	queued, busyIDs, err := p.cfg.Queue.Status(ctx)
+	var queuedByPlatform map[string]int
+	var busyIDs, dirtyIDs []string
+	if pq, ok := p.cfg.Queue.(PlatformQueue); ok {
+		queuedByPlatform, busyIDs, dirtyIDs, err = pq.StatusByPlatform(ctx)
+	} else {
+		var q int
+		q, busyIDs, err = p.cfg.Queue.Status(ctx)
+		queuedByPlatform = map[string]int{"": q}
+	}
 	if err != nil {
 		return fmt.Errorf("reading queue: %w", err)
 	}
@@ -293,6 +322,10 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 	busy := map[string]bool{}
 	for _, id := range busyIDs {
 		busy[id] = true
+	}
+	dirty := map[string]bool{}
+	for _, id := range dirtyIDs {
+		dirty[id] = true
 	}
 
 	var owned []Actor
@@ -303,27 +336,61 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 	}
 	slices.SortFunc(owned, func(a, b Actor) int { return strings.Compare(a.Name, b.Name) })
 
-	var suspended, unprimed, idle, crashed []string
+	type platformGroup struct {
+		spec                                      platform.Spec
+		suspended, unprimed, idle, crashed, dirty []string
+		resumes                                   []string
+		running, busyCount, total, creates        int
+	}
+	groups := map[string]*platformGroup{"": {}}
+	groupFor := func(key string) *platformGroup {
+		g, ok := groups[key]
+		if !ok {
+			g = &platformGroup{spec: platform.ParseKey(key)}
+			groups[key] = g
+		}
+		return g
+	}
+	totalQueued := 0
+	for key, q := range queuedByPlatform {
+		totalQueued += q
+		if q > 0 {
+			groupFor(key)
+		}
+	}
+
 	names := map[string]bool{}
-	running := 0
+	totalRunning := 0
+	totalCrashed := 0
 	byState := map[State]int{}
 	for _, a := range owned {
 		names[a.Name] = true
 		byState[a.State]++
+		spec, _ := platform.ParseActorName(p.cfg.Prefix, a.Name)
+		g := groupFor(spec.Key())
 		if a.State != StateSuspended {
 			delete(p.unprimed, a.Name)
 		}
 		switch a.State {
 		case StateSuspended:
 			if p.unprimed[a.Name] {
-				unprimed = append(unprimed, a.Name)
+				g.unprimed = append(g.unprimed, a.Name)
 			} else {
-				suspended = append(suspended, a.Name)
+				g.suspended = append(g.suspended, a.Name)
 			}
 		case StateCrashed:
-			crashed = append(crashed, a.Name)
+			g.crashed = append(g.crashed, a.Name)
+			totalCrashed++
 		case StateRunning, StateResuming:
-			running++
+			if a.State == StateRunning && spec.Isolation == platform.IsolationClean && dirty[a.Name] && !busy[a.Name] {
+				g.dirty = append(g.dirty, a.Name)
+				break
+			}
+			g.running++
+			totalRunning++
+			if busy[a.Name] {
+				g.busyCount++
+			}
 			if busy[a.Name] || a.State == StateResuming {
 				p.lastBusy[a.Name] = now
 			} else if last, ok := p.lastBusy[a.Name]; !ok {
@@ -331,8 +398,11 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 				// lease before calling it idle.
 				p.lastBusy[a.Name] = now
 			} else if now.Sub(last) >= p.cfg.IdleAfter {
-				idle = append(idle, a.Name)
+				g.idle = append(g.idle, a.Name)
 			}
+		}
+		if a.State != StateCrashed {
+			g.total++
 		}
 	}
 	for name := range p.lastBusy {
@@ -346,101 +416,178 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 		}
 	}
 
-	// Resuming actors count as free: they lease as soon as they are up.
-	free := running - len(busy)
-	need := queued - free
 	p.mu.Lock()
-	p.byState, p.queued, p.busyBots = byState, queued, len(busy)
+	p.byState, p.queued, p.busyBots = byState, totalQueued, len(busy)
 	p.mu.Unlock()
 	span.SetAttributes(
-		attribute.Int("ci_substrate.queued", queued),
+		attribute.Int("ci_substrate.queued", totalQueued),
 		attribute.Int("ci_substrate.actors", len(owned)),
 		attribute.Int("ci_substrate.actors_busy", len(busy)),
-		attribute.Int("ci_substrate.need", need),
 	)
 
-	var errs []error
-	for _, name := range crashed {
-		slog.WarnContext(ctx, "deleting crashed actor", "actor", name)
-		if err := p.do(ctx, "delete", name, p.cfg.Actors.Delete); err != nil {
-			errs = append(errs, fmt.Errorf("deleting %s: %w", name, err))
+	keys := make([]string, 0, len(groups))
+	for k := range groups {
+		if k != "" {
+			keys = append(keys, k)
 		}
 	}
-	total := len(owned) - len(crashed)
+	slices.Sort(keys)
+	keys = append([]string{""}, keys...)
 
-	// A failed resume still counts against need: the usual cause is a full
-	// worker pool, which more actors would not fix.
-	need -= len(unprimed)
-	resumes := suspended[:min(max(need, 0), len(suspended))]
-	suspended = suspended[len(resumes):]
-	need -= len(resumes)
-	// Below Warm, create actors too: their first run leaves the snapshot
-	// that makes a later resume warm.
-	creates := 0
-	for (need-creates > 0 || total+creates < p.cfg.Warm) && total+creates < p.cfg.Max {
-		creates++
+	revertActors, hasRevertActors := p.cfg.Actors.(RevertActors)
+	revertedCrashed := 0
+	deletedDirty := 0
+	var errs []error
+	for _, key := range keys {
+		g := groups[key]
+		for _, name := range g.dirty {
+			if hasRevertActors {
+				slog.InfoContext(ctx, "reverting dirty clean-isolation actor to durable snapshot", "actor", name, "platform", key)
+				if err := p.do(ctx, "revert", name, revertActors.Revert); err != nil {
+					errs = append(errs, fmt.Errorf("reverting %s: %w", name, err))
+					continue
+				}
+				g.suspended = append(g.suspended, name)
+				continue
+			}
+			slog.InfoContext(ctx, "deleting dirty clean-isolation actor", "actor", name, "platform", key)
+			if err := p.do(ctx, "delete", name, p.cfg.Actors.Delete); err != nil {
+				errs = append(errs, fmt.Errorf("deleting %s: %w", name, err))
+				continue
+			}
+			g.total--
+			deletedDirty++
+		}
+		for _, name := range g.crashed {
+			if g.spec.Isolation == platform.IsolationClean && hasRevertActors && queuedByPlatform[key] > 0 {
+				slog.InfoContext(ctx, "reverting clean-isolation actor to durable snapshot", "actor", name, "platform", key)
+				if err := p.do(ctx, "revert", name, revertActors.Revert); err != nil {
+					errs = append(errs, fmt.Errorf("reverting %s: %w", name, err))
+					continue
+				}
+				g.suspended = append(g.suspended, name)
+				g.total++
+				revertedCrashed++
+				continue
+			}
+			slog.WarnContext(ctx, "deleting crashed actor", "actor", name)
+			if err := p.do(ctx, "delete", name, p.cfg.Actors.Delete); err != nil {
+				errs = append(errs, fmt.Errorf("deleting %s: %w", name, err))
+			}
+		}
 	}
-	if err := p.scaleWorkers(ctx, owned, running+byState[StateSuspending], len(unprimed)+len(resumes)+creates); err != nil {
+
+	total := len(owned) - totalCrashed + revertedCrashed - deletedDirty
+	plannedTotal := total
+	totalWaking := 0
+	tagActors, hasTagActors := p.cfg.Actors.(TagActors)
+	for _, key := range keys {
+		g := groups[key]
+		queued := queuedByPlatform[key]
+		free := g.running - g.busyCount
+		need := queued - free
+		// A failed resume still counts against need: the usual cause is a full
+		// worker pool, which more actors would not fix.
+		need -= len(g.unprimed)
+		g.resumes = g.suspended[:min(max(need, 0), len(g.suspended))]
+		g.suspended = g.suspended[len(g.resumes):]
+		need -= len(g.resumes)
+		warm := 0
+		if key == "" {
+			warm = p.cfg.Warm
+		}
+		if g.spec.Env == "" || hasTagActors {
+			for (need-g.creates > 0 || g.total+g.creates < warm) && plannedTotal < p.cfg.Max {
+				g.creates++
+				plannedTotal++
+			}
+		}
+		totalWaking += len(g.unprimed) + len(g.resumes) + g.creates
+	}
+	if err := p.scaleWorkers(ctx, owned, totalRunning+byState[StateSuspending], totalWaking); err != nil {
 		errs = append(errs, err)
 	}
 
-	for _, name := range unprimed {
-		slog.InfoContext(ctx, "resuming new actor again", "actor", name)
-		if err := p.do(ctx, "resume", name, p.cfg.Actors.Resume); err != nil {
-			errs = append(errs, fmt.Errorf("resuming new %s: %w", name, err))
-			continue
+	for _, key := range keys {
+		g := groups[key]
+		queued := queuedByPlatform[key]
+		for _, name := range g.unprimed {
+			slog.InfoContext(ctx, "resuming new actor again", "actor", name)
+			if err := p.do(ctx, "resume", name, p.cfg.Actors.Resume); err != nil {
+				errs = append(errs, fmt.Errorf("resuming new %s: %w", name, err))
+				continue
+			}
+			delete(p.unprimed, name)
+			p.lastBusy[name] = now
 		}
-		delete(p.unprimed, name)
-		p.lastBusy[name] = now
-	}
-	for _, name := range resumes {
-		slog.InfoContext(ctx, "resuming actor for queued work", "actor", name, "queued", queued)
-		if err := p.do(ctx, "resume", name, p.cfg.Actors.Resume); err != nil {
-			errs = append(errs, fmt.Errorf("resuming %s: %w", name, err))
-			continue
+		for _, name := range g.resumes {
+			slog.InfoContext(ctx, "resuming actor for queued work", "actor", name, "platform", key, "queued", queued)
+			if err := p.do(ctx, "resume", name, p.cfg.Actors.Resume); err != nil {
+				errs = append(errs, fmt.Errorf("resuming %s: %w", name, err))
+				continue
+			}
+			p.lastBusy[name] = now
 		}
-		p.lastBusy[name] = now
-	}
-	for range creates {
-		name := p.nextName(names)
-		names[name] = true
-		total++
-		slog.InfoContext(ctx, "creating actor", "actor", name, "queued", queued, "total", total)
-		if err := p.do(ctx, "create", name, p.cfg.Actors.Create); err != nil {
-			errs = append(errs, fmt.Errorf("creating %s: %w", name, err))
-			continue
+		for range g.creates {
+			var name string
+			if key == "" {
+				name = p.nextName(names)
+			} else {
+				name = p.nextNameFor(g.spec, names)
+			}
+			names[name] = true
+			g.total++
+			total++
+			slog.InfoContext(ctx, "creating actor", "actor", name, "platform", key, "sourceTag", g.spec.Env, "queued", queued, "total", total)
+			createFn := p.cfg.Actors.Create
+			if g.spec.Env != "" {
+				tag := g.spec.Env
+				createFn = func(ctx context.Context, n string) error {
+					return tagActors.CreateFromTag(ctx, n, tag)
+				}
+			}
+			if err := p.do(ctx, "create", name, createFn); err != nil {
+				errs = append(errs, fmt.Errorf("creating %s: %w", name, err))
+				continue
+			}
+			if err := p.do(ctx, "resume", name, p.cfg.Actors.Resume); err != nil {
+				p.unprimed[name] = true
+				errs = append(errs, fmt.Errorf("resuming new %s: %w", name, err))
+				continue
+			}
+			p.lastBusy[name] = now
 		}
-		if err := p.do(ctx, "resume", name, p.cfg.Actors.Resume); err != nil {
-			p.unprimed[name] = true
-			errs = append(errs, fmt.Errorf("resuming new %s: %w", name, err))
-			continue
-		}
-		p.lastBusy[name] = now
-	}
 
-	// Keep as many idle runners as there are queued jobs still waiting for
-	// one.
-	keep := max(0, queued-(free-len(idle)))
-	for _, name := range idle {
-		if keep > 0 {
-			keep--
-			continue
+		// Keep as many idle runners as there are queued jobs still waiting for
+		// one on this platform.
+		free := g.running - g.busyCount
+		keep := max(0, queued-(free-len(g.idle)))
+		for _, name := range g.idle {
+			if keep > 0 {
+				keep--
+				continue
+			}
+			slog.InfoContext(ctx, "suspending idle actor", "actor", name, "idle", now.Sub(p.lastBusy[name]).Round(time.Second))
+			if err := p.do(ctx, "suspend", name, p.cfg.Actors.Suspend); err != nil {
+				errs = append(errs, fmt.Errorf("suspending %s: %w", name, err))
+			}
 		}
-		slog.InfoContext(ctx, "suspending idle actor", "actor", name, "idle", now.Sub(p.lastBusy[name]).Round(time.Second))
-		if err := p.do(ctx, "suspend", name, p.cfg.Actors.Suspend); err != nil {
-			errs = append(errs, fmt.Errorf("suspending %s: %w", name, err))
-		}
-	}
 
-	for total > p.cfg.Warm && len(suspended) > 0 {
-		name := suspended[len(suspended)-1]
-		suspended = suspended[:len(suspended)-1]
-		slog.InfoContext(ctx, "deleting surplus actor", "actor", name, "total", total, "warm", p.cfg.Warm)
-		if err := p.do(ctx, "delete", name, p.cfg.Actors.Delete); err != nil {
-			errs = append(errs, fmt.Errorf("deleting %s: %w", name, err))
-			continue
+		warm := 0
+		if key == "" {
+			warm = p.cfg.Warm
 		}
-		total--
+		for g.total > warm && len(g.suspended) > 0 {
+			name := g.suspended[len(g.suspended)-1]
+			g.suspended = g.suspended[:len(g.suspended)-1]
+			slog.InfoContext(ctx, "deleting surplus actor", "actor", name, "platform", key, "total", g.total, "warm", warm)
+			if err := p.do(ctx, "delete", name, p.cfg.Actors.Delete); err != nil {
+				errs = append(errs, fmt.Errorf("deleting %s: %w", name, err))
+				continue
+			}
+			g.total--
+			total--
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -520,6 +667,18 @@ func outcome(err error) string {
 func (p *Pool) nextName(names map[string]bool) string {
 	for {
 		name := p.cfg.NewName()
+		if !names[name] {
+			return name
+		}
+	}
+}
+
+// nextNameFor returns a fresh actor name encoding spec so the runner inside
+// the forked actor can infer its platform key from /system/name.
+func (p *Pool) nextNameFor(spec platform.Spec, names map[string]bool) string {
+	for {
+		id := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+		name := platform.ActorName(p.cfg.Prefix, spec, id)
 		if !names[name] {
 			return name
 		}

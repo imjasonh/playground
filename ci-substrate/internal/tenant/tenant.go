@@ -13,20 +13,25 @@ package tenant
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-// MetadataKey is the gRPC metadata header that carries a tenant token.
+// MetadataKey is the gRPC metadata header that carries a tenant token (or a
+// Substrate Actor JWT injected by atenet-egress).
 const MetadataKey = "x-ci-substrate-tenant"
 
 // Registry maps tokens to the instance names they may use and tracks whether
-// each token may write to the ActionCache directly.
+// each token may write to the ActionCache directly. When an ActorJWTVerifier
+// is configured, Substrate Actor JWTs presented in MetadataKey are also
+// accepted and mapped to their atespace's instances.
 type Registry struct {
 	allow      map[string]map[string]bool
 	acReadOnly map[string]bool
+	actorJWT   *ActorJWTVerifier
 }
 
 // NewRegistry returns an empty registry.
@@ -35,6 +40,12 @@ func NewRegistry() *Registry {
 		allow:      map[string]map[string]bool{},
 		acReadOnly: map[string]bool{},
 	}
+}
+
+// SetActorJWTVerifier enables verification of Substrate Actor JWTs presented
+// in MetadataKey.
+func (r *Registry) SetActorJWTVerifier(v *ActorJWTVerifier) {
+	r.actorJWT = v
 }
 
 // Allow grants token access to each named instance. Calling it again for the
@@ -92,11 +103,46 @@ func Outgoing(ctx context.Context, token string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, MetadataKey, token)
 }
 
-// Instances returns a copy of the instance names the token in ctx may use. An
-// unknown or missing token has none.
+func (r *Registry) instancesForAtespace(atespace string) map[string]bool {
+	for tok, set := range r.allow {
+		if !r.acReadOnly[tok] && set[atespace] {
+			return map[string]bool{atespace: true}
+		}
+	}
+	return nil
+}
+
+func (r *Registry) authenticate(ctx context.Context) (instances map[string]bool, actor *ActorIdentity, readOnlyAC bool, err error) {
+	tok := Token(ctx)
+	if tok == "" {
+		return nil, nil, false, status.Error(codes.Unauthenticated, "missing tenant token")
+	}
+	if set, ok := r.allow[tok]; ok {
+		return set, nil, r.acReadOnly[tok], nil
+	}
+	if r.actorJWT != nil && strings.Count(tok, ".") == 2 {
+		id, err := r.actorJWT.Verify(ctx, tok)
+		if err != nil {
+			return nil, nil, false, status.Errorf(codes.Unauthenticated, "invalid actor JWT: %v", err)
+		}
+		set := r.instancesForAtespace(id.Atespace)
+		if len(set) == 0 {
+			return nil, id, false, status.Errorf(codes.PermissionDenied, "%v: atespace %q", errUnauthorized, id.Atespace)
+		}
+		return set, id, false, nil
+	}
+	return nil, nil, false, status.Error(codes.Unauthenticated, "unknown tenant token")
+}
+
+// Instances returns a copy of the instance names the caller in ctx may use.
+// An unknown, invalid, or missing credential has none.
 func (r *Registry) Instances(ctx context.Context) map[string]bool {
+	set, _, _, err := r.authenticate(ctx)
+	if err != nil {
+		return map[string]bool{}
+	}
 	out := map[string]bool{}
-	for name := range r.allow[Token(ctx)] {
+	for name := range set {
 		out[name] = true
 	}
 	return out
@@ -104,17 +150,14 @@ func (r *Registry) Instances(ctx context.Context) map[string]bool {
 
 var errUnauthorized = errors.New("tenant not authorized for instance")
 
-// Authorize returns nil when the token in ctx may use instanceName, and a gRPC
-// status error otherwise. An unknown or missing token is Unauthenticated; a
-// known token reaching for an instance it was not granted is PermissionDenied.
+// Authorize returns nil when the caller in ctx may use instanceName, and a
+// gRPC status error otherwise. An unknown or missing token is Unauthenticated;
+// a known credential reaching for an instance it was not granted is
+// PermissionDenied.
 func (r *Registry) Authorize(ctx context.Context, instanceName string) error {
-	tok := Token(ctx)
-	if tok == "" {
-		return status.Error(codes.Unauthenticated, "missing tenant token")
-	}
-	set, ok := r.allow[tok]
-	if !ok {
-		return status.Error(codes.Unauthenticated, "unknown tenant token")
+	set, _, _, err := r.authenticate(ctx)
+	if err != nil {
+		return err
 	}
 	if !set[instanceName] {
 		return status.Errorf(codes.PermissionDenied, "%v: %q", errUnauthorized, instanceName)
@@ -122,13 +165,31 @@ func (r *Registry) Authorize(ctx context.Context, instanceName string) error {
 	return nil
 }
 
+// AuthorizeBot verifies that when the caller authenticated with a Substrate
+// Actor JWT, the claimed botID matches the JWT's actorName. For static tokens
+// it only verifies the token is valid.
+func (r *Registry) AuthorizeBot(ctx context.Context, botID string) error {
+	_, actor, _, err := r.authenticate(ctx)
+	if err != nil {
+		return err
+	}
+	if actor != nil && actor.ActorName != botID {
+		return status.Errorf(codes.PermissionDenied, "actor JWT identity %q does not match bot_id %q", actor.ActorName, botID)
+	}
+	return nil
+}
+
 // AuthorizeActionCacheWrite authorizes an ActionCache write for instanceName.
 // Tokens configured with AllowReadOnlyAC receive PermissionDenied.
 func (r *Registry) AuthorizeActionCacheWrite(ctx context.Context, instanceName string) error {
-	if err := r.Authorize(ctx, instanceName); err != nil {
+	set, _, readOnly, err := r.authenticate(ctx)
+	if err != nil {
 		return err
 	}
-	if r.acReadOnly[Token(ctx)] {
+	if !set[instanceName] {
+		return status.Errorf(codes.PermissionDenied, "%v: %q", errUnauthorized, instanceName)
+	}
+	if readOnly {
 		return status.Errorf(codes.PermissionDenied, "token is read-only for action cache on instance %q", instanceName)
 	}
 	return nil

@@ -38,6 +38,7 @@ func main() {
 	script := flag.String("script", `date -u +%Y-%m-%dT%H:%M:%SZ`, "bash script to run")
 	runs := flag.Int("runs", 3, "how many times to execute the action")
 	cacheable := flag.Bool("cacheable", false, "leave do_not_cache unset, so the action cache can answer")
+	platformSpec := flag.String("platform", "", "comma-separated RBE Platform properties (name=value,...)")
 	timeout := flag.Duration("timeout", 2*time.Minute, "how long to wait for each run")
 	flag.Parse()
 
@@ -45,13 +46,36 @@ func main() {
 		slog.Error("missing required flag", "need", "-addr")
 		os.Exit(2)
 	}
-	if err := run(*addr, *instance, *token, *script, *runs, *cacheable, *timeout); err != nil {
+	if err := run(*addr, *instance, *token, *script, *runs, *cacheable, *platformSpec, *timeout); err != nil {
 		slog.Error("rbe-run failed", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(addr, instance, token, script string, runs int, cacheable bool, timeout time.Duration) error {
+func parsePlatform(spec string) (*repb.Platform, error) {
+	if strings.TrimSpace(spec) == "" {
+		return nil, nil
+	}
+	p := &repb.Platform{}
+	for _, entry := range strings.Split(spec, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(entry, "=")
+		if !ok || k == "" {
+			return nil, fmt.Errorf("invalid -platform entry %q (want name=value)", entry)
+		}
+		p.Properties = append(p.Properties, &repb.Platform_Property{Name: k, Value: v})
+	}
+	return p, nil
+}
+
+func run(addr, instance, token, script string, runs int, cacheable bool, platformSpec string, timeout time.Duration) error {
+	plat, err := parsePlatform(platformSpec)
+	if err != nil {
+		return err
+	}
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
@@ -61,7 +85,10 @@ func run(addr, instance, token, script string, runs int, cacheable bool, timeout
 	execer := repb.NewExecutionClient(conn)
 	ctx := tenant.Outgoing(context.Background(), token)
 
-	command, err := cas.Upload(ctx, instance, tree.Marshal(&repb.Command{Arguments: []string{"bash", "-c", script}}))
+	command, err := cas.Upload(ctx, instance, tree.Marshal(&repb.Command{
+		Arguments: []string{"bash", "-c", script},
+		Platform:  plat,
+	}))
 	if err != nil {
 		return fmt.Errorf("uploading command: %w", err)
 	}
@@ -73,11 +100,12 @@ func run(addr, instance, token, script string, runs int, cacheable bool, timeout
 		CommandDigest:   command,
 		InputRootDigest: inputRoot,
 		DoNotCache:      !cacheable,
+		Platform:        plat,
 	}))
 	if err != nil {
 		return fmt.Errorf("uploading action: %w", err)
 	}
-	slog.Info("uploaded action", "action", digest.Key(action), "doNotCache", !cacheable, "script", script)
+	slog.Info("uploaded action", "action", digest.Key(action), "doNotCache", !cacheable, "platform", platformSpec, "script", script)
 
 	for i := 1; i <= runs; i++ {
 		resp, took, err := execute(ctx, execer, instance, action, timeout)

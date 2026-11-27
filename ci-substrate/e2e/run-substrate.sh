@@ -78,23 +78,59 @@ if [[ -z "${KO_DEFAULTBASEIMAGE:-}" ]]; then
   fi
 fi
 
-echo "==> Tenant ${ATESPACE}: atespace, token Secret, credential grant"
+echo "==> Tenant ${ATESPACE}: atespace"
 if ! kubectl ate get atespaces -o json | grep -q "\"name\": *\"${ATESPACE}\""; then
   kubectl ate create atespace "${ATESPACE}"
 fi
-kubectl apply -f "${OVERLAY}/tenant-a-token.yaml"
-# The credential provider's namespace policy is one ConfigMap for every
-# atespace, so it is edited, not applied.
-kubectl -n ate-system get configmap k8s-credential-provider-namespace-policy -o jsonpath='{.data.namespace-policy\.yaml}' >"${WORKDIR}/policy.yaml"
-if ! grep -q "atespace: ${ATESPACE}$" "${WORKDIR}/policy.yaml"; then
-  if grep -q '^policies: \[\]' "${WORKDIR}/policy.yaml"; then
-    sed -i 's/^policies: \[\]/policies:/' "${WORKDIR}/policy.yaml"
+
+echo "==> Configure cas for Substrate Actor JWT verification"
+# Mount Substrate's servicedns ClusterTrustBundle into cas so it can verify
+# ate-idp-server's TLS certificate for OIDC discovery / JWKS, and enable
+# Actor JWT verification for actors calling cas via atenet-egress.
+kubectl -n ci-substrate get statefulset cas -o json | python3 -c '
+import json, sys
+s = json.load(sys.stdin)
+pod = s["spec"]["template"]["spec"]
+vols = pod.setdefault("volumes", [])
+if not any(v.get("name") == "ate-trust" for v in vols):
+    vols.append({
+        "name": "ate-trust",
+        "projected": {
+            "sources": [{
+                "clusterTrustBundle": {
+                    "signerName": "servicedns.podcert.ate.dev/identity",
+                    "labelSelector": {"matchLabels": {"podcert.ate.dev/canarying": "live"}},
+                    "path": "trust-bundle.pem",
+                }
+            }]
+        },
+    })
+c = pod["containers"][0]
+mounts = c.setdefault("volumeMounts", [])
+if not any(m.get("name") == "ate-trust" for m in mounts):
+    mounts.append({"name": "ate-trust", "mountPath": "/run/ate", "readOnly": True})
+env = {e["name"]: e for e in c.get("env", [])}
+for k, v in (
+    ("ACTOR_JWT_ISSUER", "https://idp.ate-system.svc"),
+    ("ACTOR_JWT_AUDIENCE", "cas.ci-substrate.svc.cluster.local"),
+    ("ACTOR_JWT_CA_FILE", "/run/ate/trust-bundle.pem"),
+):
+    env[k] = {"name": k, "value": v}
+c["env"] = list(env.values())
+s.pop("status", None)
+for f in ("resourceVersion", "uid", "creationTimestamp", "generation", "managedFields"):
+    s["metadata"].pop(f, None)
+print(json.dumps(s))
+' | kubectl replace -f - >/dev/null
+kubectl -n ci-substrate rollout status statefulset/cas --timeout=180s
+# run-kind.sh points cascache at cas's pod IP; update it after cas restarts.
+cas_ip="$(kubectl -n ci-substrate get pod cas-0 -o jsonpath='{.status.podIP}')"
+if [[ -n "${cas_ip}" ]] && kubectl -n ci-substrate get daemonset cascache >/dev/null 2>&1; then
+  cur_origin="$(kubectl -n ci-substrate get daemonset cascache -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ORIGIN_ADDR")].value}')"
+  if [[ -n "${cur_origin}" && "${cur_origin}" != *svc.cluster.local* && "${cur_origin}" != "${cas_ip}:8980" ]]; then
+    kubectl -n ci-substrate set env daemonset/cascache "ORIGIN_ADDR=${cas_ip}:8980"
+    kubectl -n ci-substrate rollout status daemonset/cascache --timeout=180s
   fi
-  printf -- '- atespace: %s\n  allowedNamespaces:\n  - ci-substrate-%s\n' "${ATESPACE}" "${ATESPACE}" >>"${WORKDIR}/policy.yaml"
-  kubectl -n ate-system create configmap k8s-credential-provider-namespace-policy \
-    --from-file=namespace-policy.yaml="${WORKDIR}/policy.yaml" --dry-run=client -o yaml | kubectl apply -f -
-  kubectl -n ate-system rollout restart deployment/k8s-credential-provider
-  kubectl -n ate-system rollout status deployment/k8s-credential-provider --timeout=120s
 fi
 
 echo "==> WorkerPool"
@@ -211,27 +247,97 @@ if kubectl ate get actor-templates -a "${ATESPACE}" -o json | grep -q '"name": *
   kubectl ate delete actor-template ci-runner -a "${ATESPACE}"
 fi
 kubectl ate --preview create actor-template -f "${WORKDIR}/runner-template.yaml"
-# The e2e test run below starts before a golden snapshot would be ready, so it
-# can't see an actor restored from one reporting the golden actor's name.
+KO_DOCKER_REPO="${ACTOR_IMAGE_REPO}" ko resolve -f "${OVERLAY}/runner-env-template.yaml" >"${WORKDIR}/runner-env-template.yaml"
+if kubectl ate get actor-templates -a "${ATESPACE}" -o json | grep -q '"name": *"ci-runner-env"'; then
+  for actor in $(kubectl ate get actors -a "${ATESPACE}" -o json |
+    python3 -c 'import json,sys; print(" ".join(a["metadata"]["name"] for a in json.load(sys.stdin).get("actors", []) if a.get("actorTemplate", {}).get("name") == "ci-runner-env"))'); do
+    kubectl ate delete actor "${actor}" -a "${ATESPACE}"
+  done
+  kubectl ate delete actor-template ci-runner-env -a "${ATESPACE}"
+fi
+kubectl ate create actor-template -f "${WORKDIR}/runner-env-template.yaml"
+# Verify golden snapshots are enabled and wait for the template controller to
+# build the golden memory snapshot tag before the pool creates actors, so
+# every actor forks from the golden snapshot instead of cold-booting.
 golden="$(kubectl ate get actor-templates -a "${ATESPACE}" -o json | python3 -c '
 import json, sys
 for t in json.load(sys.stdin).get("actorTemplates", []):
     if t["metadata"]["name"] == "ci-runner":
         print(t.get("snapshotConfig", {}).get("goldenSnapshotConfig", {}).get("mode", "-"))
 ')"
-if [[ "${golden}" != GOLDEN_SNAPSHOT_MODE_DISABLED ]]; then
-  echo "the runner template's golden snapshot mode is ${golden}, want GOLDEN_SNAPSHOT_MODE_DISABLED" >&2
+if [[ "${golden}" != GOLDEN_SNAPSHOT_MODE_ENABLED ]]; then
+  echo "the runner template's golden snapshot mode is ${golden}, want GOLDEN_SNAPSHOT_MODE_ENABLED" >&2
   exit 1
 fi
+echo "==> Waiting for golden snapshot on ci-runner template"
+golden_start="${SECONDS}"
+golden_tag=""
+for _ in $(seq 1 90); do
+  read -r golden_tag golden_err < <(kubectl ate get actor-templates -a "${ATESPACE}" -o json | python3 -c '
+import json, sys
+for t in json.load(sys.stdin).get("actorTemplates", []):
+    if t["metadata"]["name"] == "ci-runner":
+        gs = t.get("status", {}).get("goldenSnapshotStatus", {})
+        tag = gs.get("goldenTag", {}).get("name", "")
+        err = gs.get("errorMessage", "").replace("\n", " ")
+        print(tag or "-", err or "-")
+        break
+else:
+    print("- -")
+')
+  if [[ "${golden_err}" != "-" ]]; then
+    echo "golden snapshot build failed: ${golden_err}" >&2
+    exit 1
+  fi
+  if [[ "${golden_tag}" != "-" ]]; then
+    echo "golden snapshot ready: tag=${golden_tag} ($((SECONDS - golden_start))s)"
+    break
+  fi
+  sleep 2
+done
+if [[ "${golden_tag}" == "-" || -z "${golden_tag}" ]]; then
+  echo "golden snapshot did not become ready in 180s" >&2
+  kubectl ate get actor-templates -a "${ATESPACE}" -o yaml >&2 || true
+  exit 1
+fi
+
+if kubectl -n ci-substrate get deployment "${RUNNER_DEPLOYMENT}" >/dev/null 2>&1; then
+  kubectl -n ci-substrate scale deployment "${RUNNER_DEPLOYMENT}" --replicas=0
+fi
+kubectl -n ci-substrate port-forward svc/cas 18980:8980 >/dev/null 2>&1 &
+PORT_FORWARD_PIDS+=("$!")
+kubectl -n ci-substrate port-forward svc/cascache 19092:9092 >/dev/null 2>&1 &
+PORT_FORWARD_PIDS+=("$!")
+sleep 2
+
+echo "==> Seeding pre-warmed build environment Tag (warm-env)"
+warm_marker="prewarmed-toolchain-v1"
+warm_actor="warm-env-seed"
+kubectl ate delete actor "${warm_actor}" -a "${ATESPACE}" >/dev/null 2>&1 || true
+kubectl ate create actor "${warm_actor}" -a "${ATESPACE}" --template ci-runner-env
+kubectl ate create egress-policy "${warm_actor}" -a "${ATESPACE}" -f "${OVERLAY}/egress-cas.yaml"
+kubectl ate resume actor "${warm_actor}" -a "${ATESPACE}"
+go run "${ROOT}/cmd/rbe-run" \
+  -addr localhost:18980 -instance "${ATESPACE}" -token tok-a -runs 1 \
+  -script "printf '%s' '${warm_marker}' > /var/tmp/ci-substrate-warm-env && cat /system/name"
+echo "seeded /var/tmp/ci-substrate-warm-env in actor ${warm_actor}; suspending to tag"
+kubectl ate suspend actor "${warm_actor}" -a "${ATESPACE}"
+for _ in $(seq 1 60); do
+  st="$(kubectl ate get actor "${warm_actor}" -a "${ATESPACE}" -o json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",{}).get("state",""))')"
+  if [[ "${st}" == "ACTOR_STATE_SUSPENDED" ]]; then
+    break
+  fi
+  sleep 2
+done
+kubectl ate delete tag warm-env -a "${ATESPACE}" >/dev/null 2>&1 || true
+kubectl ate create tag warm-env -a "${ATESPACE}" --actor "${warm_actor}" --scope atespace
+kubectl ate delete actor "${warm_actor}" -a "${ATESPACE}" >/dev/null 2>&1 || true
 
 echo "==> Pool"
 kubectl -n ci-substrate create configmap ci-substrate-pool-tenant-a \
   --from-file=egress-policy.yaml="${OVERLAY}/egress-cas.yaml" --dry-run=client -o yaml | kubectl apply -f -
 ko apply -f "${OVERLAY}/pool.yaml"
 kubectl -n ci-substrate rollout status deployment/ci-substrate-pool-tenant-a --timeout=180s
-if kubectl -n ci-substrate get deployment "${RUNNER_DEPLOYMENT}" >/dev/null 2>&1; then
-  kubectl -n ci-substrate scale deployment "${RUNNER_DEPLOYMENT}" --replicas=0
-fi
 
 pool_diagnostics() {
   kubectl ate get actors -a "${ATESPACE}" >&2 || true
@@ -258,16 +364,12 @@ fi
 kubectl ate get actors -a "${ATESPACE}"
 
 echo "==> Executing an action through the pool"
-kubectl -n ci-substrate port-forward svc/cas 18980:8980 >/dev/null 2>&1 &
-PORT_FORWARD_PIDS+=("$!")
-kubectl -n ci-substrate port-forward svc/cascache 19092:9092 >/dev/null 2>&1 &
-PORT_FORWARD_PIDS+=("$!")
-sleep 2
 CI_SUBSTRATE_E2E_ORIGIN_ADDR=localhost:18980 \
 CI_SUBSTRATE_E2E_CACHE_ADDR=localhost:19092 \
 CI_SUBSTRATE_E2E_EXEC_TIMEOUT=5m \
 CI_SUBSTRATE_E2E_WORKER_PREFIX=ci-runner- \
 CI_SUBSTRATE_E2E_EXPECT_INPUT_MODE=volume \
+CI_SUBSTRATE_E2E_ACTOR_JWT=1 \
   go test -v -count=1 -run '^TestE2E' "${ROOT}/e2e" || {
   pool_diagnostics
   exit 1
@@ -275,6 +377,27 @@ CI_SUBSTRATE_E2E_EXPECT_INPUT_MODE=volume \
 echo "==> Actors after the run"
 kubectl ate get actors -a "${ATESPACE}"
 kubectl -n ci-substrate logs deployment/ci-substrate-pool-tenant-a --tail=20
+
+echo "==> Forking a pre-warmed build environment from a Substrate Tag (ci-substrate/env=warm-env)"
+CI_SUBSTRATE_E2E_ORIGIN_ADDR=localhost:18980 \
+CI_SUBSTRATE_E2E_CACHE_ADDR=localhost:19092 \
+CI_SUBSTRATE_E2E_EXEC_TIMEOUT=5m \
+CI_SUBSTRATE_E2E_ENV_TAG=warm-env \
+CI_SUBSTRATE_E2E_ENV_MARKER="${warm_marker}" \
+  go test -v -count=1 -run '^TestE2ESourceTagForkedEnv$' "${ROOT}/e2e" || {
+  pool_diagnostics
+  exit 1
+}
+
+echo "==> Clean-room per-action isolation (ci-substrate/isolation=clean via RevertActor)"
+CI_SUBSTRATE_E2E_ORIGIN_ADDR=localhost:18980 \
+CI_SUBSTRATE_E2E_CACHE_ADDR=localhost:19092 \
+CI_SUBSTRATE_E2E_EXEC_TIMEOUT=5m \
+CI_SUBSTRATE_E2E_CLEAN_ISOLATION=1 \
+  go test -v -count=1 -run '^TestE2ECleanRoomIsolation$' "${ROOT}/e2e" || {
+  pool_diagnostics
+  exit 1
+}
 
 echo "==> Another atespace's template naming ${ATESPACE}'s StorageClass gets no volume"
 # Substrate lets any template name any StorageClass. The driver is what

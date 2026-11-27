@@ -49,6 +49,7 @@ type config struct {
 	// policy each actor gets before it first resumes.
 	Atespace         string `env:"ATESPACE, required"`
 	Template         string `env:"TEMPLATE, default=ci-runner"`
+	EnvTemplate      string `env:"ENV_TEMPLATE"`
 	Prefix           string `env:"PREFIX, default=ci-runner-"`
 	EgressPolicyFile string `env:"EGRESS_POLICY_FILE, required"`
 
@@ -88,13 +89,28 @@ type queue struct {
 }
 
 func (q *queue) Status(ctx context.Context) (int, []string, error) {
+	byPlatform, busy, _, err := q.StatusByPlatform(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+	return byPlatform[""], busy, nil
+}
+
+func (q *queue) StatusByPlatform(ctx context.Context) (map[string]int, []string, []string, error) {
 	ctx, cancel := context.WithTimeout(tenant.Outgoing(ctx, q.token), 10*time.Second)
 	defer cancel()
 	resp, err := q.client.Status(ctx, &workerv1.StatusRequest{InstanceNames: q.instances})
 	if err != nil {
-		return 0, nil, err
+		return nil, nil, nil, err
 	}
-	return int(resp.GetQueued()), resp.GetBusyBotIds(), nil
+	out := make(map[string]int, len(resp.GetQueuedByPlatform()))
+	for k, v := range resp.GetQueuedByPlatform() {
+		out[k] = int(v)
+	}
+	if _, ok := out[""]; !ok && resp.GetQueued() > 0 {
+		out[""] = int(resp.GetQueued())
+	}
+	return out, resp.GetBusyBotIds(), resp.GetDirtyBotIds(), nil
 }
 
 func (q *queue) Watch(ctx context.Context, changed func()) error {
@@ -150,6 +166,9 @@ func main() {
 	if err != nil {
 		slog.Error("configuring Substrate actors", "err", err)
 		os.Exit(1)
+	}
+	if c.EnvTemplate != "" {
+		actors.SetEnvTemplate(c.EnvTemplate)
 	}
 	cfg := actorpool.Config{
 		Actors:      actors,

@@ -3,7 +3,7 @@
 These files run a tenant's CI runners as Agent Substrate actors. They are
 applied **after** Agent Substrate
 ([agent-substrate/substrate](https://github.com/agent-substrate/substrate)) is
-installed into the cluster with the `k8s.io` credential provider, and after
+installed into the cluster, and after
 the `cas`/`cascache` control plane from `../` is already running. Install the
 Substrate release that `../../go.mod` requires as `go.ate.dev/substrate`; the
 pool's client is built against it, and `workerpool.yaml` runs its
@@ -16,11 +16,11 @@ caching, and remote execution with the runner Deployment in
 | File | What it is |
 |------|------------|
 | `workerpool.yaml` | Two `WorkerPool`s of gVisor workers labeled `workload: ci-runner`: `ci-runner-base`, one worker on the always-on node, and `ci-runner`, the burst pool on autoscaled nodes, whose replicas the pool sets. Actors from the runner template land on either. |
-| `tenant-a-token.yaml` | The tenant's cas token in a namespace of its own, for the egress gateway to inject. |
 | `casfs-csi.yaml` | The `casfs-csi` DaemonSet, its controller Service, the `CSIDriverConfig` that tells Substrate where the driver listens, the tenant's `StorageClass` (`casfs-tenant-a`, parameters `instance: tenant-a` and `atespace: tenant-a`), and the driver's ServiceAccount. The driver mounts an inputs volume for each actor on the actor's node and serves it from that node's `cascache` with the tenant's token. |
-| `egress-cas.yaml` | The egress policy every runner actor gets: plain gRPC to the `cas` Service only, with the tenant token replacing the placeholder header. Inputs don't go through egress. |
-| `runner-template.yaml` | The `ActorTemplate` for a runner actor: the `runner` bot with the tenant's instance, a placeholder token, its actor name as its bot id, and an external `inputs` volume of the tenant's `StorageClass` mounted at `/inputs`. |
-| `pool.yaml` | The `pool` Deployment for the tenant, its per-tenant ServiceAccount (`ci-substrate-pool-tenant-a`) in `ci-substrate`, and a Role letting that ServiceAccount change only the burst `WorkerPool`'s scale. It sizes the tenant's actors to its queue and sizes the burst `WorkerPool` to its actors. |
+| `egress-cas.yaml` | The egress policy every runner actor gets: plain gRPC to the `cas` Service only, with Substrate's egress gateway injecting a short-lived signed Actor JWT (`actorJwt`) into `x-ci-substrate-tenant` — no per-tenant token Secrets or `k8s-credential-provider-namespace-policy` needed. |
+| `runner-template.yaml` | The `ActorTemplate` for default and clean-room runner actors: `GOLDEN_SNAPSHOT_MODE_ENABLED` memory snapshots, actor name projected into `/system/name` (re-read per lease), and an external `inputs` volume of the tenant's `StorageClass` mounted at `/inputs`. |
+| `runner-env-template.yaml` | Companion volume-free `ActorTemplate` (`ci-runner-env`, `-input-mode=copy`) used for pre-warmed Substrate Tag environments (`ci-substrate/env=<tag>`), since Substrate Tag cloning does not support external volumes. |
+| `pool.yaml` | The `pool` Deployment for the tenant, its per-tenant ServiceAccount (`ci-substrate-pool-tenant-a`) in `ci-substrate`, and a Role letting that ServiceAccount change only the burst `WorkerPool`'s scale. It sizes the tenant's actors across RBE platform queues (`default`, `ci-substrate/env=<tag>`, `ci-substrate/isolation=clean`) and sizes the burst `WorkerPool` to its actors. |
 
 `../../e2e/run-substrate.sh` applies all of it for `tenant-a` and runs the
 Go e2e tests (`e2e/`) against the result. `../../e2e/run-substrate-kind.sh` builds a
@@ -28,9 +28,11 @@ two-node kind cluster with the [node pools](#node-pools) below, installs
 Substrate, and runs it there. By hand, for each CI tenant:
 
 1. Create the atespace `tenant-a`.
-2. Apply `tenant-a-token.yaml` to put the tenant's token in its own
-   namespace, and grant the `tenant-a` atespace that namespace in the
-   `k8s-credential-provider-namespace-policy` ConfigMap.
+2. Configure `StatefulSet/cas` to verify Substrate Actor JWTs: mount the
+   `servicedns.podcert.ate.dev/identity` `ClusterTrustBundle` and set
+   `ACTOR_JWT_ISSUER=https://idp.ate-system.svc`,
+   `ACTOR_JWT_AUDIENCE=cas.ci-substrate.svc.cluster.local`, and
+   `ACTOR_JWT_CA_FILE=/run/ate-idp/trust-bundle.pem`.
 3. Apply `workerpool.yaml`. It needs the node labels and taint in
    [Node pools](#node-pools).
 4. Turn on Substrate's `ExternalVolumes` preview gate: add
@@ -39,7 +41,7 @@ Substrate, and runs it there. By hand, for each CI tenant:
 5. Grant the CSI driver's ServiceAccount `viewer` and the tenant pool's
    ServiceAccount `editor` in the atespace. The driver refuses a volume for an
    actor that isn't in the `StorageClass`'s `atespace` (which it learns by
-   listing actors), and the pool creates, resumes, suspends, and deletes
+   listing actors), and the pool creates, resumes, suspends, reverts, and deletes
    actors and their egress policies in only that atespace. Both reach
    `ate-api-server` through the `ci-substrate` namespace's
    `ate.dev/api-access=true` label (set in `../00-namespace-and-config.yaml`):
@@ -71,15 +73,17 @@ Substrate, and runs it there. By hand, for each CI tenant:
    resolves the instance to a token from the `tenants` Secret, so the
    `StorageClass` needs no secret of its own. A `StorageClass`'s parameters
    can't change, so delete and recreate one to change them.
-7. Resolve and create the actor template, with `--preview` so the API
-   accepts the external volume:
+7. Resolve and create the actor templates (`--preview` is needed for
+   `runner-template.yaml`'s external volume):
 
    ```bash
    ko resolve -f runner-template.yaml > /tmp/runner-template.yaml
    kubectl ate --preview create actor-template -f /tmp/runner-template.yaml
+   ko resolve -f runner-env-template.yaml > /tmp/runner-env-template.yaml
+   kubectl ate create actor-template -f /tmp/runner-env-template.yaml
    ```
 
-   An actor keeps the volumes it was created with. To change the template,
+   An actor keeps the volumes it was created with. To change a template,
    stop the pool, delete its actors, delete the template, and create the
    new one; `run-substrate.sh` does this when the template exists.
 8. Put the egress policy in a ConfigMap and deploy the pool:
@@ -90,18 +94,22 @@ Substrate, and runs it there. By hand, for each CI tenant:
    ko apply -f pool.yaml
    ```
 
-The pool creates `ci-runner-<uuid>` actors from the template (never reusing
-deleted actor names, since Substrate's egress gateway caches policies by
-atespace and actor name), sets each one's egress policy before its first
-resume, and then:
+The pool creates actors from the templates (never reusing deleted actor names,
+since Substrate's egress gateway caches policies by atespace and actor name),
+sets each one's egress policy before its first resume, and then:
 
-- keeps `WARM` actors (default 1) suspended with a snapshot, so a resume is
-  a memory restore, not an image pull and a cold start;
+- forks new default actors from `ci-runner`'s golden memory snapshot
+  (`GOLDEN_SNAPSHOT_MODE_ENABLED`) and keeps `WARM` actors (default 1)
+  suspended with a snapshot;
+- forks actors for `ci-substrate/env=<tag>` RBE `Platform.Properties` directly
+  from the published Substrate `Tag` (`sourceTag`) using `ci-runner-env`;
+- reverts `ci-substrate/isolation=clean` actors back to their clean durable
+  snapshot via `RevertActor` between actions (and deletes them once idle);
 - resumes a suspended actor for each queued action that no running actor is
   free to take, and creates more up to `MAX` (default 4);
 - suspends an actor that has run nothing for `IDLE_AFTER` (default 2m), and
   deletes suspended actors beyond `WARM`;
-- deletes crashed actors and replaces them under a new name;
+- deletes crashed non-clean actors and replaces them under a new name;
 - retries the first resume of an actor it created, each reconcile, until it
   succeeds.
 

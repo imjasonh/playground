@@ -59,6 +59,9 @@ message Job {
   // client sent with Execute. The runner sends it on its own calls, so cas
   // and cascache attribute them to the same invocation and action.
   bytes request_metadata = 6;
+  // Canonical platform key extracted from Action/Command Platform.Properties
+  // (e.g. "" for default, "env=<tag>", "isolation=clean").
+  string platform_key = 7;
 }
 
 message LeaseRequest {
@@ -67,6 +70,9 @@ message LeaseRequest {
   // Instances this runner serves. The scheduler intersects them with the
   // instances the tenant token allows.
   repeated string instance_names = 2;
+  // Platform key this runner serves. Empty matches jobs with no platform
+  // overrides.
+  string platform_key = 3;
 }
 
 message LeaseResponse {
@@ -109,13 +115,20 @@ message RunnerMetadata {
 message StatusRequest {
   // Instances to report on. Empty means every instance the token allows.
   repeated string instance_names = 1;
+  // Platform key to report on. Empty reports the default ("") platform queue.
+  string platform_key = 2;
 }
 
 message StatusResponse {
-  // Jobs waiting for a runner.
+  // Jobs waiting for a runner on the requested platform_key.
   int32 queued = 1;
-  // Jobs a runner holds a lease on.
+  // Jobs a runner holds a lease on (for the requested platform_key).
   int32 executing = 2;
   // Runners that hold a lease, by bot_id.
   repeated string busy_bot_ids = 3;
+  // Queued jobs per platform key across the requested instances.
+  map<string, int32> queued_by_platform = 4;
+  // Clean-isolation runners that completed an action and must be reverted
+  // to their clean durable snapshot before leasing again.
+  repeated string dirty_bot_ids = 5;
 }

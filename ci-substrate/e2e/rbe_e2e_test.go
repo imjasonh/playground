@@ -3,6 +3,11 @@ package e2e_test
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,6 +34,7 @@ import (
 	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
 	"github.com/imjasonh/playground/ci-substrate/internal/cache"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
+	"github.com/imjasonh/playground/ci-substrate/internal/platform"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 	"github.com/imjasonh/playground/ci-substrate/internal/tree"
@@ -43,6 +49,10 @@ type e2eConfig struct {
 	TokenA          string        `env:"CI_SUBSTRATE_E2E_TOKEN_A, default=tok-a"`
 	TokenARO        string        `env:"CI_SUBSTRATE_E2E_TOKEN_A_RO, default=tok-a-ro"`
 	TokenB          string        `env:"CI_SUBSTRATE_E2E_TOKEN_B, default=tok-b"`
+	ActorJWT        bool          `env:"CI_SUBSTRATE_E2E_ACTOR_JWT"`
+	EnvTag          string        `env:"CI_SUBSTRATE_E2E_ENV_TAG"`
+	EnvMarker       string        `env:"CI_SUBSTRATE_E2E_ENV_MARKER"`
+	CleanIsolation  bool          `env:"CI_SUBSTRATE_E2E_CLEAN_ISOLATION"`
 	ExecTimeout     time.Duration `env:"CI_SUBSTRATE_E2E_EXEC_TIMEOUT, default=3m"`
 	WorkerPrefix    string        `env:"CI_SUBSTRATE_E2E_WORKER_PREFIX"`
 	ExpectInputMode string        `env:"CI_SUBSTRATE_E2E_EXPECT_INPUT_MODE"`
@@ -548,6 +558,182 @@ func TestE2EExecuteGetTreeTimeoutAndCancel(t *testing.T) {
 		}
 		break
 	}
+}
+
+// TestE2EActorJWTSecurityRejection verifies that cas rejects forged and
+// unsigned Actor JWTs on both WorkerService and CAS RPCs.
+func TestE2EActorJWTSecurityRejection(t *testing.T) {
+	env := dialE2E(t)
+	if !env.ActorJWT {
+		t.Skip("set CI_SUBSTRATE_E2E_ACTOR_JWT=1 to test Actor JWT rejection")
+	}
+	worker := workerv1.NewWorkerServiceClient(env.originConn)
+	casClient := repb.NewContentAddressableStorageClient(env.originConn)
+
+	// Generate a self-signed ES256 key not in ate-idp-server's JWKS.
+	fakeKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	claims, _ := json.Marshal(map[string]any{
+		"iss": "https://idp.ate-system.svc",
+		"sub": "actor/" + env.InstanceA + "/forged-bot",
+		"aud": []string{"cas.ci-substrate.svc.cluster.local"},
+		"iat": now.Unix(),
+		"nbf": now.Add(-time.Minute).Unix(),
+		"exp": now.Add(10 * time.Minute).Unix(),
+		"actor.ate.dev": map[string]string{
+			"atespace":  env.InstanceA,
+			"actorName": "forged-bot",
+			"actorUID":  uuid.NewString(),
+		},
+	})
+	esHdr, _ := json.Marshal(map[string]string{"typ": "JWT", "alg": "ES256", "kid": "forged-kid"})
+	input := base64.RawURLEncoding.EncodeToString(esHdr) + "." + base64.RawURLEncoding.EncodeToString(claims)
+	sum := sha256.Sum256([]byte(input))
+	r, s, err := ecdsa.Sign(rand.Reader, fakeKey, sum[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig := make([]byte, 64)
+	r.FillBytes(sig[:32])
+	s.FillBytes(sig[32:])
+	forgedJWT := input + "." + base64.RawURLEncoding.EncodeToString(sig)
+
+	noneHdr, _ := json.Marshal(map[string]string{"typ": "JWT", "alg": "none"})
+	unsignedJWT := base64.RawURLEncoding.EncodeToString(noneHdr) + "." + base64.RawURLEncoding.EncodeToString(claims) + "."
+
+	for name, tok := range map[string]string{
+		"forged_es256": forgedJWT,
+		"alg_none":     unsignedJWT,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(tenant.Outgoing(t.Context(), tok), 10*time.Second)
+			defer cancel()
+			if _, err := worker.Lease(ctx, &workerv1.LeaseRequest{BotId: "forged-bot", InstanceNames: []string{env.InstanceA}}); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("Lease with %s = %v (%v), want Unauthenticated", name, status.Code(err), err)
+			}
+			if _, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{InstanceName: env.InstanceA}); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("FindMissingBlobs with %s = %v (%v), want Unauthenticated", name, status.Code(err), err)
+			}
+		})
+	}
+}
+
+// TestE2ESourceTagForkedEnv verifies that an RBE Action carrying
+// Platform.Properties{"ci-substrate/env": "<tag>"} is routed to an actor
+// forked from that Substrate Tag (copy-on-write snapshot) and sees the
+// pre-warmed filesystem state captured in the tag.
+func TestE2ESourceTagForkedEnv(t *testing.T) {
+	env := dialE2E(t)
+	if env.EnvTag == "" {
+		t.Skip("set CI_SUBSTRATE_E2E_ENV_TAG to test sourceTag forked environments")
+	}
+	ctx := env.ctxA(t)
+	execer := repb.NewExecutionClient(env.originConn)
+	cmdDigest := mustUploadProto(ctx, t, env.origin, env.InstanceA, &repb.Command{
+		Arguments: []string{"cat", "/var/tmp/ci-substrate-warm-env"},
+	})
+	actDigest := mustUploadProto(ctx, t, env.origin, env.InstanceA, &repb.Action{
+		CommandDigest: cmdDigest,
+		DoNotCache:    true,
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: platform.PropEnv, Value: env.EnvTag},
+			},
+		},
+	})
+	start := time.Now()
+	_, resp, err := runAction(ctx, execer, env.InstanceA, actDigest, env.ExecTimeout)
+	if err != nil {
+		t.Fatalf("Execute on env=%s: %v", env.EnvTag, err)
+	}
+	took := time.Since(start)
+	if resp.GetResult().GetExitCode() != 0 {
+		t.Fatalf("exit code %d, stderr=%q", resp.GetResult().GetExitCode(), mustFetchString(ctx, t, env.origin, env.InstanceA, resp.GetResult().GetStderrDigest()))
+	}
+	got := strings.TrimSpace(mustFetchString(ctx, t, env.origin, env.InstanceA, resp.GetResult().GetStdoutDigest()))
+	if env.EnvMarker != "" && got != env.EnvMarker {
+		t.Fatalf("warm-env marker = %q, want %q", got, env.EnvMarker)
+	}
+	worker := resp.GetResult().GetExecutionMetadata().GetWorker()
+	wantPrefix := "ci-runner-env-" + env.EnvTag + "--"
+	if !strings.HasPrefix(worker, wantPrefix) {
+		t.Fatalf("worker = %q, want prefix %q", worker, wantPrefix)
+	}
+	t.Logf("BENCH source_tag_fork_execute tag=%s worker=%s duration=%s", env.EnvTag, worker, took.Round(time.Millisecond))
+}
+
+// TestE2ECleanRoomIsolation verifies that actions carrying
+// Platform.Properties{"ci-substrate/isolation": "clean"} cannot observe
+// rootfs/tmp mutations left by earlier actions.
+func TestE2ECleanRoomIsolation(t *testing.T) {
+	env := dialE2E(t)
+	if !env.CleanIsolation {
+		t.Skip("set CI_SUBSTRATE_E2E_CLEAN_ISOLATION=1 to test clean-room isolation")
+	}
+	ctx := env.ctxA(t)
+	execer := repb.NewExecutionClient(env.originConn)
+	cleanPlat := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: platform.PropIsolation, Value: platform.IsolationClean},
+		},
+	}
+
+	// Action 1: dirty /var/tmp on the sandbox rootfs.
+	cmd1 := mustUploadProto(ctx, t, env.origin, env.InstanceA, &repb.Command{
+		Arguments: []string{"sh", "-c", "echo secret-from-action-1 > /var/tmp/dirty-action-1 && echo WROTE"},
+	})
+	act1 := mustUploadProto(ctx, t, env.origin, env.InstanceA, &repb.Action{
+		CommandDigest: cmd1,
+		DoNotCache:    true,
+		Platform:      cleanPlat,
+	})
+	t1 := time.Now()
+	_, resp1, err := runAction(ctx, execer, env.InstanceA, act1, env.ExecTimeout)
+	if err != nil {
+		t.Fatalf("clean action 1: %v", err)
+	}
+	d1 := time.Since(t1)
+	if resp1.GetResult().GetExitCode() != 0 {
+		t.Fatalf("action 1 exit=%d stderr=%q", resp1.GetResult().GetExitCode(), mustFetchString(ctx, t, env.origin, env.InstanceA, resp1.GetResult().GetStderrDigest()))
+	}
+	w1 := resp1.GetResult().GetExecutionMetadata().GetWorker()
+	if !strings.HasPrefix(w1, "ci-runner-clean--") {
+		t.Fatalf("action 1 worker = %q, want prefix ci-runner-clean--", w1)
+	}
+
+	// Action 2: verify the dirty marker from Action 1 is completely gone.
+	cmd2 := mustUploadProto(ctx, t, env.origin, env.InstanceA, &repb.Command{
+		Arguments: []string{"sh", "-c", "if [ -e /var/tmp/dirty-action-1 ]; then echo LEAKED; exit 1; fi; echo CLEAN"},
+	})
+	act2 := mustUploadProto(ctx, t, env.origin, env.InstanceA, &repb.Action{
+		CommandDigest: cmd2,
+		DoNotCache:    true,
+		Platform:      cleanPlat,
+	})
+	t2 := time.Now()
+	_, resp2, err := runAction(ctx, execer, env.InstanceA, act2, env.ExecTimeout)
+	if err != nil {
+		t.Fatalf("clean action 2: %v", err)
+	}
+	d2 := time.Since(t2)
+	if resp2.GetResult().GetExitCode() != 0 {
+		t.Fatalf("action 2 failed (dirty state leaked!): exit=%d stdout=%q stderr=%q",
+			resp2.GetResult().GetExitCode(),
+			mustFetchString(ctx, t, env.origin, env.InstanceA, resp2.GetResult().GetStdoutDigest()),
+			mustFetchString(ctx, t, env.origin, env.InstanceA, resp2.GetResult().GetStderrDigest()))
+	}
+	if got := strings.TrimSpace(mustFetchString(ctx, t, env.origin, env.InstanceA, resp2.GetResult().GetStdoutDigest())); got != "CLEAN" {
+		t.Fatalf("action 2 stdout = %q, want CLEAN", got)
+	}
+	w2 := resp2.GetResult().GetExecutionMetadata().GetWorker()
+	if !strings.HasPrefix(w2, "ci-runner-clean--") {
+		t.Fatalf("action 2 worker = %q, want prefix ci-runner-clean--", w2)
+	}
+	t.Logf("BENCH clean_isolation action1_worker=%s action1_dur=%s action2_worker=%s action2_dur=%s reused_reverted=%v",
+		w1, d1.Round(time.Millisecond), w2, d2.Round(time.Millisecond), w1 == w2)
 }
 
 func runAction(ctx context.Context, execer repb.ExecutionClient, instance string, action *repb.Digest, timeout time.Duration) (string, *repb.ExecuteResponse, error) {

@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//api/worker/v1:worker",
         "//internal/bot",
+        "//internal/platform",
         "//internal/remote",
         "//internal/telemetry",
         "//internal/tlscfg",
