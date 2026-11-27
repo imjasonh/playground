@@ -103,7 +103,7 @@ func main() {
 	if *instances != "" {
 		names = strings.Split(*instances, ",")
 	}
-	b, err := bot.New(bot.Config{
+	botCfg := bot.Config{
 		BotID:        id,
 		Token:        *token,
 		Instances:    names,
@@ -114,7 +114,12 @@ func main() {
 		InputMode:    bot.InputMode(*inputMode),
 		InputsVolume: *inputsVolume,
 		LeaseWait:    *leaseWait,
-	})
+	}
+	if *botID == "" && *botIDFile != "" {
+		file := *botIDFile
+		botCfg.BotIDFunc = func() (string, error) { return identity("", file) }
+	}
+	b, err := bot.New(botCfg)
 	if err != nil {
 		slog.Error("configuring runner", "err", err)
 		os.Exit(1)

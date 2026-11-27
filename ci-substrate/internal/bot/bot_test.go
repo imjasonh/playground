@@ -443,3 +443,39 @@ func TestTimeoutReturnsDeadlineExceededWithPartialOutput(t *testing.T) {
 		t.Errorf("timed-out action was cached: ok=%v err=%v", ok, err)
 	}
 }
+
+func TestBotIDReReadPerLease(t *testing.T) {
+	s := newStack(t)
+	current := "golden-actor-uid"
+	b, err := bot.New(bot.Config{
+		BotIDFunc: func() (string, error) { return current, nil },
+		Token:     token,
+		Instances: []string{instance},
+		Worker:    s.worker,
+		Origin:    s.client,
+		Cache:     s.client,
+		WorkDir:   t.TempDir(),
+		InputMode: bot.InputCopy,
+		LeaseWait: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate restoring from a golden snapshot into a new actor whose
+	// /system/name now holds the forked actor's name.
+	current = "ci-runner-forked-1"
+	cmd1 := s.uploadProto(t, &repb.Command{Arguments: []string{"echo", "one"}})
+	act1 := s.uploadProto(t, &repb.Action{CommandDigest: cmd1, DoNotCache: true})
+	resp1 := s.execute(t, b, act1)
+	if got := resp1.GetResult().GetExecutionMetadata().GetWorker(); got != "ci-runner-forked-1" {
+		t.Fatalf("first action worker = %q, want %q", got, "ci-runner-forked-1")
+	}
+
+	current = "ci-runner-forked-2"
+	cmd2 := s.uploadProto(t, &repb.Command{Arguments: []string{"echo", "two"}})
+	act2 := s.uploadProto(t, &repb.Action{CommandDigest: cmd2, DoNotCache: true})
+	resp2 := s.execute(t, b, act2)
+	if got := resp2.GetResult().GetExecutionMetadata().GetWorker(); got != "ci-runner-forked-2" {
+		t.Fatalf("second action worker = %q, want %q", got, "ci-runner-forked-2")
+	}
+}

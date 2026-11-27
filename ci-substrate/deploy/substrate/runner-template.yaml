@@ -73,12 +73,11 @@ resources:
   limits:
     cpuMillicores: 1000
     memoryBytes: 1073741824 # 1Gi
-# No golden snapshot. The golden actor is named after the template's UID and
-# would run the runner for 20 seconds, leasing real actions under that name.
-# Every actor restored from its memory snapshot would then keep the runner
-# that already read that name, so the pool could not tell which actors are
-# busy. Each actor cold-boots once and then resumes from its own snapshot.
+# Golden snapshot enabled: the golden actor has no egress policy so its Lease
+# calls cannot claim real actions during warmup, and the runner re-reads
+# /system/name before each lease so every actor forked from the golden memory
+# snapshot reports its own actor name as its bot id.
 snapshotConfig:
   preferredFidelity: SNAPSHOT_FIDELITY_MEMORY
   goldenSnapshotConfig:
-    mode: GOLDEN_SNAPSHOT_MODE_DISABLED
+    mode: GOLDEN_SNAPSHOT_MODE_ENABLED

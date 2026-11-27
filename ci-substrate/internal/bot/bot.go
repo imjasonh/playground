@@ -73,9 +73,13 @@ const (
 
 // Config wires a Bot.
 type Config struct {
-	// BotID identifies this runner to the scheduler. Under Substrate it is
-	// the actor name.
+	// BotID identifies this runner to the scheduler when BotIDFunc is nil.
+	// Under Substrate, prefer BotIDFunc reading /system/name so an actor
+	// forked from a golden snapshot or tag picks up its own name.
 	BotID string
+	// BotIDFunc resolves the runner identity before each lease. When set, it
+	// takes precedence over BotID.
+	BotIDFunc func() (string, error)
 	// Token is the tenant token sent on every call. Under Substrate it is a
 	// placeholder that the egress gateway replaces.
 	Token string
@@ -114,8 +118,8 @@ type Bot struct {
 // host, such as InputFUSE with no /dev/fuse, InputVolume with a volume that
 // does not answer, or a host with no bash to start commands through.
 func New(cfg Config) (*Bot, error) {
-	if cfg.BotID == "" || cfg.Worker == nil || cfg.Origin == nil || cfg.Cache == nil || cfg.WorkDir == "" {
-		return nil, errors.New("bot: BotID, Worker, Origin, Cache, and WorkDir are required")
+	if (cfg.BotID == "" && cfg.BotIDFunc == nil) || cfg.Worker == nil || cfg.Origin == nil || cfg.Cache == nil || cfg.WorkDir == "" {
+		return nil, errors.New("bot: BotID (or BotIDFunc), Worker, Origin, Cache, and WorkDir are required")
 	}
 	if cfg.LeaseWait <= 0 {
 		cfg.LeaseWait = 20 * time.Second
@@ -215,6 +219,20 @@ func (b *Bot) InputsVolume() string {
 	return b.cfg.InputsVolume
 }
 
+func (b *Bot) botID() (string, error) {
+	if b.cfg.BotIDFunc != nil {
+		id, err := b.cfg.BotIDFunc()
+		if err != nil {
+			return "", err
+		}
+		if id == "" {
+			return "", errors.New("bot: BotIDFunc returned empty id")
+		}
+		return id, nil
+	}
+	return b.cfg.BotID, nil
+}
+
 // Run leases and runs jobs until ctx ends. Errors from the scheduler are
 // logged and retried; the loop only returns with ctx's error. A job that is
 // running when ctx ends runs to completion: the action's own timeout and the
@@ -226,7 +244,7 @@ func (b *Bot) Run(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		job, err := b.lease(ctx)
+		botID, job, err := b.lease(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -244,29 +262,33 @@ func (b *Bot) Run(ctx context.Context) error {
 		if job == nil {
 			continue
 		}
-		b.RunJob(context.WithoutCancel(ctx), job)
+		b.runJob(context.WithoutCancel(ctx), botID, job)
 	}
 }
 
 // RunOnce leases at most one job and runs it. It reports whether a job ran.
 func (b *Bot) RunOnce(ctx context.Context) (bool, error) {
 	ctx = tenant.Outgoing(ctx, b.cfg.Token)
-	job, err := b.lease(ctx)
+	botID, job, err := b.lease(ctx)
 	if err != nil || job == nil {
 		return false, err
 	}
-	b.RunJob(ctx, job)
+	b.runJob(ctx, botID, job)
 	return true, nil
 }
 
-func (b *Bot) lease(ctx context.Context) (*workerv1.Job, error) {
+func (b *Bot) lease(ctx context.Context) (string, *workerv1.Job, error) {
+	botID, err := b.botID()
+	if err != nil {
+		return "", nil, fmt.Errorf("resolving bot id: %w", err)
+	}
 	ctx, cancel := context.WithTimeout(ctx, b.cfg.LeaseWait)
 	defer cancel()
-	resp, err := b.cfg.Worker.Lease(ctx, &workerv1.LeaseRequest{BotId: b.cfg.BotID, InstanceNames: b.cfg.Instances})
+	resp, err := b.cfg.Worker.Lease(ctx, &workerv1.LeaseRequest{BotId: botID, InstanceNames: b.cfg.Instances})
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return resp.GetJob(), nil
+	return botID, resp.GetJob(), nil
 }
 
 // RunJob runs one leased job and reports its outcome to the scheduler,
@@ -274,6 +296,15 @@ func (b *Bot) lease(ctx context.Context) (*workerv1.Job, error) {
 // that queued the job, the action process gets that span as its trace
 // parent, and its calls carry that call's RequestMetadata.
 func (b *Bot) RunJob(ctx context.Context, job *workerv1.Job) {
+	botID, err := b.botID()
+	if err != nil {
+		clog.ErrorContext(ctx, "resolving bot id", "err", err)
+		botID = b.cfg.BotID
+	}
+	b.runJob(ctx, botID, job)
+}
+
+func (b *Bot) runJob(ctx context.Context, botID string, job *workerv1.Job) {
 	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(job.GetTraceContext()))
 	md := &repb.RequestMetadata{}
 	if proto.Unmarshal(job.GetRequestMetadata(), md) == nil && md.GetToolInvocationId() != "" {
@@ -282,22 +313,22 @@ func (b *Bot) RunJob(ctx context.Context, job *workerv1.Job) {
 	ctx, span := telemetry.Tracer().Start(ctx, "runner.execute", trace.WithAttributes(append(telemetry.Attributes(md),
 		attribute.String("ci_substrate.operation", job.GetId()),
 		attribute.String("ci_substrate.instance", job.GetInstanceName()),
-		attribute.String("ci_substrate.bot", b.cfg.BotID),
+		attribute.String("ci_substrate.bot", botID),
 		attribute.String("ci_substrate.input_mode", string(b.cfg.InputMode)),
 	)...))
 	defer span.End()
 	ctx = clog.WithLogger(ctx, clog.FromContext(ctx).With("job", job.GetId(), "instance", job.GetInstanceName()))
 	ctx, cancel := context.WithCancel(tenant.Outgoing(ctx, b.cfg.Token))
 	defer cancel()
-	go b.heartbeat(ctx, cancel, job)
+	go b.heartbeat(ctx, cancel, botID, job)
 
 	start := time.Now()
 	fetcher := b.newJobFetcher(ctx)
-	ar, err := b.execute(ctx, job, fetcher)
+	ar, err := b.execute(ctx, botID, job, fetcher)
 	b.metrics.inputBytes.Add(ctx, fetcher.inputBytes(), metric.WithAttributes(telemetry.AttrInputMode.String(string(b.cfg.InputMode))))
 	span.SetAttributes(attribute.Int64("ci_substrate.input_bytes_fetched", fetcher.inputBytes()))
 	span.SetAttributes(fetcher.attributes()...)
-	req := &workerv1.CompleteRequest{BotId: b.cfg.BotID, JobId: job.GetId()}
+	req := &workerv1.CompleteRequest{BotId: botID, JobId: job.GetId()}
 	outcome := "ok"
 	switch {
 	case errors.Is(err, errActionTimedOut):
@@ -353,7 +384,7 @@ func (b *Bot) RunJob(ctx context.Context, job *workerv1.Job) {
 
 // heartbeat renews the lease every third of its duration and cancels the job
 // when the scheduler says the lease is gone.
-func (b *Bot) heartbeat(ctx context.Context, cancel context.CancelFunc, job *workerv1.Job) {
+func (b *Bot) heartbeat(ctx context.Context, cancel context.CancelFunc, botID string, job *workerv1.Job) {
 	interval := job.GetLeaseDuration().AsDuration() / 3
 	if interval <= 0 {
 		interval = 10 * time.Second
@@ -365,7 +396,7 @@ func (b *Bot) heartbeat(ctx context.Context, cancel context.CancelFunc, job *wor
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			resp, err := b.cfg.Worker.Heartbeat(ctx, &workerv1.HeartbeatRequest{BotId: b.cfg.BotID, JobId: job.GetId()})
+			resp, err := b.cfg.Worker.Heartbeat(ctx, &workerv1.HeartbeatRequest{BotId: botID, JobId: job.GetId()})
 			if err != nil {
 				if status.Code(err) == codes.Canceled {
 					return
@@ -384,7 +415,7 @@ func (b *Bot) heartbeat(ctx context.Context, cancel context.CancelFunc, job *wor
 
 // execute builds the exec root, runs the command, and uploads the outputs,
 // reading through f.
-func (b *Bot) execute(ctx context.Context, job *workerv1.Job, f tree.Fetcher) (*repb.ActionResult, error) {
+func (b *Bot) execute(ctx context.Context, botID string, job *workerv1.Job, f tree.Fetcher) (*repb.ActionResult, error) {
 	workerStart := timestamppb.Now()
 	instance := job.GetInstanceName()
 	action, command, err := b.fetchAction(ctx, f, instance, job.GetActionDigest())
@@ -396,7 +427,7 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job, f tree.Fetcher) (*
 		rootDigest = tree.Digest(&repb.Directory{})
 	}
 
-	md := &repb.ExecutedActionMetadata{Worker: b.cfg.BotID, WorkerStartTimestamp: workerStart, InputFetchStartTimestamp: timestamppb.Now()}
+	md := &repb.ExecutedActionMetadata{Worker: botID, WorkerStartTimestamp: workerStart, InputFetchStartTimestamp: timestamppb.Now()}
 	inputCtx, end := b.stage(ctx, "prepare_inputs")
 	execRoot, cleanup, err := b.execRoot(inputCtx, f, instance, rootDigest, job.GetId())
 	end(err)

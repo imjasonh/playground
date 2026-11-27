@@ -211,16 +211,48 @@ if kubectl ate get actor-templates -a "${ATESPACE}" -o json | grep -q '"name": *
   kubectl ate delete actor-template ci-runner -a "${ATESPACE}"
 fi
 kubectl ate --preview create actor-template -f "${WORKDIR}/runner-template.yaml"
-# The e2e test run below starts before a golden snapshot would be ready, so it
-# can't see an actor restored from one reporting the golden actor's name.
+# Verify golden snapshots are enabled and wait for the template controller to
+# build the golden memory snapshot tag before the pool creates actors, so
+# every actor forks from the golden snapshot instead of cold-booting.
 golden="$(kubectl ate get actor-templates -a "${ATESPACE}" -o json | python3 -c '
 import json, sys
 for t in json.load(sys.stdin).get("actorTemplates", []):
     if t["metadata"]["name"] == "ci-runner":
         print(t.get("snapshotConfig", {}).get("goldenSnapshotConfig", {}).get("mode", "-"))
 ')"
-if [[ "${golden}" != GOLDEN_SNAPSHOT_MODE_DISABLED ]]; then
-  echo "the runner template's golden snapshot mode is ${golden}, want GOLDEN_SNAPSHOT_MODE_DISABLED" >&2
+if [[ "${golden}" != GOLDEN_SNAPSHOT_MODE_ENABLED ]]; then
+  echo "the runner template's golden snapshot mode is ${golden}, want GOLDEN_SNAPSHOT_MODE_ENABLED" >&2
+  exit 1
+fi
+echo "==> Waiting for golden snapshot on ci-runner template"
+golden_start="${SECONDS}"
+golden_tag=""
+for _ in $(seq 1 90); do
+  read -r golden_tag golden_err < <(kubectl ate get actor-templates -a "${ATESPACE}" -o json | python3 -c '
+import json, sys
+for t in json.load(sys.stdin).get("actorTemplates", []):
+    if t["metadata"]["name"] == "ci-runner":
+        gs = t.get("status", {}).get("goldenSnapshotStatus", {})
+        tag = gs.get("goldenTag", {}).get("name", "")
+        err = gs.get("errorMessage", "").replace("\n", " ")
+        print(tag or "-", err or "-")
+        break
+else:
+    print("- -")
+')
+  if [[ "${golden_err}" != "-" ]]; then
+    echo "golden snapshot build failed: ${golden_err}" >&2
+    exit 1
+  fi
+  if [[ "${golden_tag}" != "-" ]]; then
+    echo "golden snapshot ready: tag=${golden_tag} (${((SECONDS - golden_start))}s)"
+    break
+  fi
+  sleep 2
+done
+if [[ "${golden_tag}" == "-" || -z "${golden_tag}" ]]; then
+  echo "golden snapshot did not become ready in 180s" >&2
+  kubectl ate get actor-templates -a "${ATESPACE}" -o yaml >&2 || true
   exit 1
 fi
 
