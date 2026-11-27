@@ -111,6 +111,10 @@ func (f *fakeSubstrate) Create(_ context.Context, name string) error {
 	return f.op("create", name, actorpool.StateSuspended)
 }
 
+func (f *fakeSubstrate) CreateFromTag(_ context.Context, name, tag string) error {
+	return f.op("create-from-tag:"+tag, name, actorpool.StateSuspended)
+}
+
 func (f *fakeSubstrate) Resume(_ context.Context, name string) error {
 	return f.op("resume", name, actorpool.StateRunning)
 }
@@ -135,13 +139,14 @@ func (f *fakeSubstrate) take() []string {
 // fakeQueue reports queued and busy. Its Watch calls changed once for each
 // value sent on changes, and fails instead while watchErr is set.
 type fakeQueue struct {
-	mu       sync.Mutex
-	queued   int
-	busy     []string
-	statuses int
-	watches  int
-	watchErr error
-	changes  chan struct{}
+	mu               sync.Mutex
+	queued           int
+	queuedByPlatform map[string]int
+	busy             []string
+	statuses         int
+	watches          int
+	watchErr         error
+	changes          chan struct{}
 }
 
 func (q *fakeQueue) Status(context.Context) (int, []string, error) {
@@ -149,6 +154,17 @@ func (q *fakeQueue) Status(context.Context) (int, []string, error) {
 	defer q.mu.Unlock()
 	q.statuses++
 	return q.queued, q.busy, nil
+}
+
+func (q *fakeQueue) StatusByPlatform(context.Context) (map[string]int, []string, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.statuses++
+	out := map[string]int{"": q.queued}
+	for k, v := range q.queuedByPlatform {
+		out[k] = v
+	}
+	return out, q.busy, nil
 }
 
 func (q *fakeQueue) Watch(ctx context.Context, changed func()) error {
@@ -719,5 +735,46 @@ func TestDefaultActorNamesAreUniqueAndNotReused(t *testing.T) {
 		if !strings.HasPrefix(second, "ci-runner-") {
 			t.Fatalf("replacement name %q missing prefix", second)
 		}
+	}
+}
+
+func TestForksActorsFromSourceTagForPlatformQueue(t *testing.T) {
+	h := newHarness(t, 1, 4)
+	h.sub.actors["ci-runner-0"] = actorpool.StateSuspended
+	h.queue.queuedByPlatform = map[string]int{"env=warm-go": 1}
+
+	calls := h.reconcile(t)
+	var tagActor string
+	for _, c := range calls {
+		if after, ok := strings.CutPrefix(c, "create-from-tag:warm-go "); ok {
+			tagActor = after
+		}
+	}
+	if tagActor == "" {
+		t.Fatalf("expected create-from-tag:warm-go call, got %v", calls)
+	}
+	if !strings.HasPrefix(tagActor, "ci-runner-env-warm-go--") {
+		t.Fatalf("tag actor name = %q, want prefix ci-runner-env-warm-go--", tagActor)
+	}
+	if !slices.Contains(calls, "resume "+tagActor) {
+		t.Fatalf("expected resume %s, got %v", tagActor, calls)
+	}
+	// Default warm actor stays untouched.
+	if h.sub.actors["ci-runner-0"] != actorpool.StateSuspended {
+		t.Fatalf("default warm actor state = %v, want suspended", h.sub.actors["ci-runner-0"])
+	}
+
+	// Once work drains and the tag actor idles out, it suspends and is deleted
+	// (warm=0 for ad-hoc tag queues) while the default warm actor remains.
+	h.queue.queuedByPlatform = nil
+	h.now = h.now.Add(2 * time.Minute)
+	if got := h.reconcile(t); !slices.Equal(got, []string{"suspend " + tagActor}) {
+		t.Fatalf("idle tag actor = %v, want suspend", got)
+	}
+	if got := h.reconcile(t); !slices.Equal(got, []string{"delete " + tagActor}) {
+		t.Fatalf("surplus tag actor = %v, want delete", got)
+	}
+	if h.states() != "ci-runner-0=suspended" {
+		t.Fatalf("states = %q, want only default warm actor", h.states())
 	}
 }

@@ -80,6 +80,13 @@ type Config struct {
 	// BotIDFunc resolves the runner identity before each lease. When set, it
 	// takes precedence over BotID.
 	BotIDFunc func() (string, error)
+	// PlatformKey narrows which platform queue the bot leases from.
+	PlatformKey string
+	// PlatformKeyFunc derives the platform key from the current bot ID before
+	// each lease (used under Substrate so actors forked from a Tag infer
+	// their platform queue from /system/name). When set, takes precedence
+	// over PlatformKey.
+	PlatformKeyFunc func(botID string) string
 	// Token is the tenant token sent on every call. Under Substrate it is a
 	// placeholder that the egress gateway replaces.
 	Token string
@@ -282,9 +289,13 @@ func (b *Bot) lease(ctx context.Context) (string, *workerv1.Job, error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("resolving bot id: %w", err)
 	}
+	platformKey := b.cfg.PlatformKey
+	if b.cfg.PlatformKeyFunc != nil {
+		platformKey = b.cfg.PlatformKeyFunc(botID)
+	}
 	ctx, cancel := context.WithTimeout(ctx, b.cfg.LeaseWait)
 	defer cancel()
-	resp, err := b.cfg.Worker.Lease(ctx, &workerv1.LeaseRequest{BotId: botID, InstanceNames: b.cfg.Instances})
+	resp, err := b.cfg.Worker.Lease(ctx, &workerv1.LeaseRequest{BotId: botID, InstanceNames: b.cfg.Instances, PlatformKey: platformKey})
 	if err != nil {
 		return "", nil, err
 	}

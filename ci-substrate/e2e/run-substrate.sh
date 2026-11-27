@@ -336,6 +336,37 @@ echo "==> Actors after the run"
 kubectl ate get actors -a "${ATESPACE}"
 kubectl -n ci-substrate logs deployment/ci-substrate-pool-tenant-a --tail=20
 
+echo "==> Forking a pre-warmed build environment from a Substrate Tag (ci-substrate/env=warm-env)"
+warm_marker="prewarmed-toolchain-v1"
+warm_actor="$(go run "${ROOT}/cmd/rbe-run" \
+  -addr localhost:18980 -instance "${ATESPACE}" -token tok-a -runs 1 \
+  -script "printf '%s' '${warm_marker}' > /var/tmp/ci-substrate-warm-env && cat /system/name" \
+  | grep -oE 'ci-runner-[a-z0-9-]+' | tail -n 1)"
+if [[ -z "${warm_actor}" ]]; then
+  echo "could not determine warm actor name from rbe-run output" >&2
+  exit 1
+fi
+echo "seeded /var/tmp/ci-substrate-warm-env in actor ${warm_actor}; suspending to tag"
+kubectl ate suspend actor "${warm_actor}" -a "${ATESPACE}"
+for _ in $(seq 1 60); do
+  st="$(kubectl ate get actor "${warm_actor}" -a "${ATESPACE}" -o json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",{}).get("state",""))')"
+  if [[ "${st}" == "ACTOR_STATE_SUSPENDED" ]]; then
+    break
+  fi
+  sleep 2
+done
+kubectl ate delete tag warm-env -a "${ATESPACE}" >/dev/null 2>&1 || true
+kubectl ate create tag warm-env -a "${ATESPACE}" --actor "${warm_actor}" --scope atespace
+CI_SUBSTRATE_E2E_ORIGIN_ADDR=localhost:18980 \
+CI_SUBSTRATE_E2E_CACHE_ADDR=localhost:19092 \
+CI_SUBSTRATE_E2E_EXEC_TIMEOUT=5m \
+CI_SUBSTRATE_E2E_ENV_TAG=warm-env \
+CI_SUBSTRATE_E2E_ENV_MARKER="${warm_marker}" \
+  go test -v -count=1 -run '^TestE2ESourceTagForkedEnv$' "${ROOT}/e2e" || {
+  pool_diagnostics
+  exit 1
+}
+
 echo "==> Another atespace's template naming ${ATESPACE}'s StorageClass gets no volume"
 # Substrate lets any template name any StorageClass. The driver is what
 # refuses: an actor in the intruder atespace has no volume of casfs-tenant-a.

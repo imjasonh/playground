@@ -34,6 +34,7 @@ import (
 	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
 	"github.com/imjasonh/playground/ci-substrate/internal/cache"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
+	"github.com/imjasonh/playground/ci-substrate/internal/platform"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 	"github.com/imjasonh/playground/ci-substrate/internal/tree"
@@ -49,6 +50,8 @@ type e2eConfig struct {
 	TokenARO        string        `env:"CI_SUBSTRATE_E2E_TOKEN_A_RO, default=tok-a-ro"`
 	TokenB          string        `env:"CI_SUBSTRATE_E2E_TOKEN_B, default=tok-b"`
 	ActorJWT        bool          `env:"CI_SUBSTRATE_E2E_ACTOR_JWT"`
+	EnvTag          string        `env:"CI_SUBSTRATE_E2E_ENV_TAG"`
+	EnvMarker       string        `env:"CI_SUBSTRATE_E2E_ENV_MARKER"`
 	ExecTimeout     time.Duration `env:"CI_SUBSTRATE_E2E_EXEC_TIMEOUT, default=3m"`
 	WorkerPrefix    string        `env:"CI_SUBSTRATE_E2E_WORKER_PREFIX"`
 	ExpectInputMode string        `env:"CI_SUBSTRATE_E2E_EXPECT_INPUT_MODE"`
@@ -615,6 +618,50 @@ func TestE2EActorJWTSecurityRejection(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestE2ESourceTagForkedEnv verifies that an RBE Action carrying
+// Platform.Properties{"ci-substrate/env": "<tag>"} is routed to an actor
+// forked from that Substrate Tag (copy-on-write snapshot) and sees the
+// pre-warmed filesystem state captured in the tag.
+func TestE2ESourceTagForkedEnv(t *testing.T) {
+	env := dialE2E(t)
+	if env.EnvTag == "" {
+		t.Skip("set CI_SUBSTRATE_E2E_ENV_TAG to test sourceTag forked environments")
+	}
+	ctx := env.ctxA(t)
+	execer := repb.NewExecutionClient(env.originConn)
+	cmdDigest := mustUploadProto(ctx, t, env.origin, env.InstanceA, &repb.Command{
+		Arguments: []string{"cat", "/var/tmp/ci-substrate-warm-env"},
+	})
+	actDigest := mustUploadProto(ctx, t, env.origin, env.InstanceA, &repb.Action{
+		CommandDigest: cmdDigest,
+		DoNotCache:    true,
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: platform.PropEnv, Value: env.EnvTag},
+			},
+		},
+	})
+	start := time.Now()
+	_, resp, err := runAction(ctx, execer, env.InstanceA, actDigest, env.ExecTimeout)
+	if err != nil {
+		t.Fatalf("Execute on env=%s: %v", env.EnvTag, err)
+	}
+	took := time.Since(start)
+	if resp.GetResult().GetExitCode() != 0 {
+		t.Fatalf("exit code %d, stderr=%q", resp.GetResult().GetExitCode(), mustFetchString(ctx, t, env.origin, env.InstanceA, resp.GetResult().GetStderrDigest()))
+	}
+	got := strings.TrimSpace(mustFetchString(ctx, t, env.origin, env.InstanceA, resp.GetResult().GetStdoutDigest()))
+	if env.EnvMarker != "" && got != env.EnvMarker {
+		t.Fatalf("warm-env marker = %q, want %q", got, env.EnvMarker)
+	}
+	worker := resp.GetResult().GetExecutionMetadata().GetWorker()
+	wantPrefix := "ci-runner-env-" + env.EnvTag + "--"
+	if !strings.HasPrefix(worker, wantPrefix) {
+		t.Fatalf("worker = %q, want prefix %q", worker, wantPrefix)
+	}
+	t.Logf("BENCH source_tag_fork_execute tag=%s worker=%s duration=%s", env.EnvTag, worker, took.Round(time.Millisecond))
 }
 
 func runAction(ctx context.Context, execer repb.ExecutionClient, instance string, action *repb.Digest, timeout time.Duration) (string, *repb.ExecuteResponse, error) {

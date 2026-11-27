@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/imjasonh/playground/ci-substrate/internal/actorpool",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//internal/platform",
         "//internal/telemetry",
         "@com_github_google_uuid//:uuid",
         "@io_opentelemetry_go_otel//attribute",

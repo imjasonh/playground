@@ -24,6 +24,7 @@ import (
 
 	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
 	"github.com/imjasonh/playground/ci-substrate/internal/bot"
+	"github.com/imjasonh/playground/ci-substrate/internal/platform"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
 	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tlscfg"
@@ -36,6 +37,8 @@ func main() {
 	token := flag.String("token", "", "tenant token; under Substrate, the placeholder the egress gateway replaces")
 	botID := flag.String("bot-id", "", "runner identity reported to the scheduler; defaults to the hostname")
 	botIDFile := flag.String("bot-id-file", "", "file holding the runner identity, such as a Substrate actor_metadata name projection")
+	actorPrefix := flag.String("actor-prefix", "ci-runner-", "actor name prefix used to infer platform keys from -bot-id-file")
+	platformKey := flag.String("platform-key", "", "static platform key to lease from; when empty with -bot-id-file, inferred from the actor name")
 	workDir := flag.String("work-dir", "/tmp/ci-substrate", "directory for exec roots")
 	inputMode := flag.String("input-mode", string(bot.InputAuto), "how inputs reach the exec root: volume, fuse, copy, or auto")
 	inputsVolume := flag.String("inputs-volume", "", "mounted casfs inputs volume for the volume input mode, such as a Substrate external volume")
@@ -105,6 +108,7 @@ func main() {
 	}
 	botCfg := bot.Config{
 		BotID:        id,
+		PlatformKey:  *platformKey,
 		Token:        *token,
 		Instances:    names,
 		Worker:       workerv1.NewWorkerServiceClient(originConn),
@@ -118,6 +122,15 @@ func main() {
 	if *botID == "" && *botIDFile != "" {
 		file := *botIDFile
 		botCfg.BotIDFunc = func() (string, error) { return identity("", file) }
+		if *platformKey == "" {
+			prefix := *actorPrefix
+			botCfg.PlatformKeyFunc = func(curID string) string {
+				if spec, ok := platform.ParseActorName(prefix, curID); ok {
+					return spec.Key()
+				}
+				return ""
+			}
+		}
 	}
 	b, err := bot.New(botCfg)
 	if err != nil {

@@ -42,6 +42,7 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/blob"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
 	"github.com/imjasonh/playground/ci-substrate/internal/invocation"
+	"github.com/imjasonh/playground/ci-substrate/internal/platform"
 	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 )
@@ -88,12 +89,13 @@ type Scheduler struct {
 }
 
 type job struct {
-	id         string
-	instance   string
-	action     *repb.Digest
-	doNotCache bool
-	priority   int32
-	enqueued   time.Time
+	id          string
+	instance    string
+	platformKey string
+	action      *repb.Digest
+	doNotCache  bool
+	priority    int32
+	enqueued    time.Time
 
 	// parent is the span of the Execute call that queued the job, and
 	// traceContext carries it to the runner. requestMetadata is that call's
@@ -121,8 +123,9 @@ type job struct {
 }
 
 type waiter struct {
-	instances map[string]bool
-	ch        chan *job
+	instances   map[string]bool
+	platformKey string
+	ch          chan *job
 }
 
 // New returns a scheduler that reads Actions from store, caches results in
@@ -192,7 +195,7 @@ func (s *Scheduler) Status(ctx context.Context, req *workerv1.StatusRequest) (*w
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.statusLocked(instances), nil
+	return s.statusLocked(instances, req.GetPlatformKey()), nil
 }
 
 // WatchStatus streams Status for the caller's instances: the current report,
@@ -206,7 +209,7 @@ func (s *Scheduler) WatchStatus(req *workerv1.StatusRequest, stream workerv1.Wor
 	var last *workerv1.StatusResponse
 	for {
 		s.mu.Lock()
-		resp, changed := s.statusLocked(instances), s.changed
+		resp, changed := s.statusLocked(instances, req.GetPlatformKey()), s.changed
 		s.mu.Unlock()
 		if last == nil || !proto.Equal(resp, last) {
 			if err := stream.Send(resp); err != nil {
@@ -222,7 +225,7 @@ func (s *Scheduler) WatchStatus(req *workerv1.StatusRequest, stream workerv1.Wor
 	}
 }
 
-func (s *Scheduler) statusLocked(instances map[string]bool) *workerv1.StatusResponse {
+func (s *Scheduler) statusLocked(instances map[string]bool, platformKey string) *workerv1.StatusResponse {
 	resp := &workerv1.StatusResponse{}
 	busy := map[string]bool{}
 	for _, j := range s.jobs {
@@ -231,10 +234,18 @@ func (s *Scheduler) statusLocked(instances map[string]bool) *workerv1.StatusResp
 		}
 		switch j.stage {
 		case repb.ExecutionStage_QUEUED:
-			resp.Queued++
+			if resp.QueuedByPlatform == nil {
+				resp.QueuedByPlatform = map[string]int32{}
+			}
+			resp.QueuedByPlatform[j.platformKey]++
+			if j.platformKey == platformKey {
+				resp.Queued++
+			}
 		case repb.ExecutionStage_EXECUTING:
-			resp.Executing++
-			if !busy[j.botID] {
+			if j.platformKey == platformKey {
+				resp.Executing++
+			}
+			if j.botID != "" && !busy[j.botID] {
 				busy[j.botID] = true
 				resp.BusyBotIds = append(resp.BusyBotIds, j.botID)
 			}
@@ -274,8 +285,13 @@ func (s *Scheduler) Execute(req *repb.ExecuteRequest, stream repb.Execution_Exec
 			return status.Error(codes.Internal, err.Error())
 		}
 	}
+	var cmd *repb.Command
+	if len(action.GetPlatform().GetProperties()) == 0 && action.GetCommandDigest() != nil {
+		cmd = s.tryLoadCommand(action.GetCommandDigest())
+	}
+	platformKey := platform.FromAction(action, cmd).Key()
 	priority := req.GetExecutionPolicy().GetPriority()
-	j, merged := s.submit(ctx, req.GetInstanceName(), req.GetActionDigest(), action.GetDoNotCache(), priority)
+	j, merged := s.submit(ctx, req.GetInstanceName(), platformKey, req.GetActionDigest(), action.GetDoNotCache(), priority)
 	result := "queued"
 	if merged {
 		result = "merged"
@@ -284,6 +300,7 @@ func (s *Scheduler) Execute(req *repb.ExecuteRequest, stream repb.Execution_Exec
 	s.recordExecute(ctx, req.GetInstanceName(), result)
 	trace.SpanFromContext(ctx).SetAttributes(
 		attribute.String("ci_substrate.operation", j.id),
+		attribute.String("ci_substrate.platform", platformKey),
 		attribute.Int64("ci_substrate.priority", int64(priority)),
 	)
 	return s.watch(ctx, j, stream.Send)
@@ -413,12 +430,29 @@ func (s *Scheduler) loadAction(d *repb.Digest) (*repb.Action, error) {
 	return action, nil
 }
 
+// tryLoadCommand best-effort loads Command to read REAPI v2.0/v2.1
+// Command.platform when Action.platform is unset.
+func (s *Scheduler) tryLoadCommand(d *repb.Digest) *repb.Command {
+	if digest.Validate(d) != nil {
+		return nil
+	}
+	b, err := s.store.Get(d)
+	if err != nil {
+		return nil
+	}
+	cmd := &repb.Command{}
+	if err := proto.Unmarshal(b, cmd); err != nil {
+		return nil
+	}
+	return cmd
+}
+
 // submit queues an action, or joins the job already in flight for the same
 // action in the same instance, so two clients asking for one action get one
 // run, and reports whether it joined one. Jobs never merge across
 // instances: that would let one tenant's queue position reveal another
 // tenant's actions.
-func (s *Scheduler) submit(ctx context.Context, instance string, action *repb.Digest, doNotCache bool, priority int32) (*job, bool) {
+func (s *Scheduler) submit(ctx context.Context, instance, platformKey string, action *repb.Digest, doNotCache bool, priority int32) (*job, bool) {
 	carrier := propagation.MapCarrier{}
 	otel.GetTextMapPropagator().Inject(ctx, carrier)
 	md := telemetry.RequestMetadata(ctx)
@@ -433,6 +467,7 @@ func (s *Scheduler) submit(ctx context.Context, instance string, action *repb.Di
 	j := &job{
 		id:                   uuid.NewString(),
 		instance:             instance,
+		platformKey:          platformKey,
 		action:               action,
 		doNotCache:           doNotCache,
 		priority:             priority,
@@ -456,7 +491,7 @@ func (s *Scheduler) enqueueLocked(j *job) {
 	j.queuedAt = time.Now()
 	s.notifyLocked(j)
 	for w := range s.waiters {
-		if w.instances[j.instance] {
+		if w.instances[j.instance] && w.platformKey == j.platformKey {
 			select {
 			case w.ch <- j:
 				delete(s.waiters, w)
@@ -618,16 +653,17 @@ func (s *Scheduler) Lease(ctx context.Context, req *workerv1.LeaseRequest) (*wor
 	if err != nil {
 		return nil, err
 	}
+	platformKey := req.GetPlatformKey()
 	s.mu.Lock()
 	for i, j := range s.queue {
-		if instances[j.instance] {
+		if instances[j.instance] && j.platformKey == platformKey {
 			s.queue = append(s.queue[:i], s.queue[i+1:]...)
 			s.leaseLocked(j, req.GetBotId())
 			s.mu.Unlock()
 			return &workerv1.LeaseResponse{Job: s.jobProto(j)}, nil
 		}
 	}
-	w := &waiter{instances: instances, ch: make(chan *job, 1)}
+	w := &waiter{instances: instances, platformKey: platformKey, ch: make(chan *job, 1)}
 	s.waiters[w] = struct{}{}
 	s.mu.Unlock()
 
@@ -703,6 +739,7 @@ func (s *Scheduler) jobProto(j *job) *workerv1.Job {
 		LeaseDuration:   durationpb.New(s.leaseDuration),
 		TraceContext:    j.traceContext,
 		RequestMetadata: j.requestMetadataBytes,
+		PlatformKey:     j.platformKey,
 	}
 }
 

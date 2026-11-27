@@ -202,9 +202,23 @@ func State(s ateapi.ActorState) actorpool.State {
 // policy. An actor that already exists from an earlier, interrupted Create
 // just gets the policy.
 func (a *Actors) Create(ctx context.Context, name string) error {
+	return a.create(ctx, name, "")
+}
+
+// CreateFromTag makes a suspended actor seeded from a published Substrate Tag
+// in the same atespace (copy-on-write memory and rootfs fork) and sets its
+// egress policy.
+func (a *Actors) CreateFromTag(ctx context.Context, name, tag string) error {
+	return a.create(ctx, name, tag)
+}
+
+func (a *Actors) create(ctx context.Context, name, sourceTag string) error {
 	actor := &ateapi.Actor{
 		Metadata:      &ateapi.ResourceMetadata{Atespace: a.atespace, Name: name},
 		ActorTemplate: a.ref(a.template),
+	}
+	if sourceTag != "" {
+		actor.SourceTag = a.ref(sourceTag)
 	}
 	if _, err := a.client.CreateActor(ctx, &ateapi.CreateActorRequest{Actor: actor}); err != nil && status.Code(err) != codes.AlreadyExists {
 		return err

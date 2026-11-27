@@ -10,6 +10,7 @@ go_test(
         "//api/worker/v1:worker",
         "//internal/cache",
         "//internal/digest",
+        "//internal/platform",
         "//internal/remote",
         "//internal/tenant",
         "//internal/tree",
