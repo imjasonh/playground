@@ -854,9 +854,9 @@ theorem boot_correct_halt {flash : Nat → BitVec 8} {R romStack : Nat} {romBase
     rw [a07, t7.zero]; rfl
   have hLock5 : EfuseLocked M5 := by
     rw [hM5eq]
-    exact efuseLocked_of_stores (fun x hx => by
+    exact efuseLocked_of_stores (M4 := n4.mem) (fun x hx => by
       have h := L7out x (by rw [show (0x600C1114 : Word).toNat = 0x600C1114 from rfl]; exact hx)
-      rw [h, u6.mem, t5.mem]) L7in
+      rw [h, u6.mem]) L7in
   have W8 : BtW n7.mem M5 := by
     rw [← hM5]; simp +decide only [runBlock, BInstr.run, btLk2, upd, ↓reduceIte]; rw [a07]
     exact ((BtW.refl _).store _ (by decide) (by decide)).store _ (by decide) (by decide)
