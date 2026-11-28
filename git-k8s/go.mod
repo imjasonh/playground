@@ -8,7 +8,7 @@ replace github.com/imjasonh/playground/kube => ../kube
 require (
 	cel.dev/cel-go v0.33.4
 	github.com/chainguard-dev/clog v1.8.1
-	github.com/imjasonh/playground/kube v0.0.0-20261126222027-063d633fbb96
+	github.com/imjasonh/playground/kube v0.0.0-20261127201139-30418de23901
 	go.yaml.in/yaml/v4 v4.0.0
 	golang.org/x/mod v0.43.0
 	golang.org/x/sync v0.25.0
@@ -26,7 +26,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
-	golang.org/x/exp v0.0.0-20261124000051-d6646c509b6d // indirect
+	golang.org/x/exp v0.0.0-20261128033645-f63ec7c7eed0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261123191846-1e707ab9fbc2 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261123191846-1e707ab9fbc2 // indirect

@@ -2,6 +2,6 @@
 # go.mod version). CI reads this channel; rustup uses the whole file for local
 # builds too.
 [toolchain]
-channel = "1.100.0"
+channel = "1.100.1"
 components = ["clippy", "rustfmt"]
 targets = ["wasm32-unknown-unknown"]
