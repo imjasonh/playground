@@ -667,7 +667,8 @@ theorem bootMain_correct_q {flash : Nat → BitVec 8} {pinned : Bytes} {policy :
         decodeImageHeader (bmcImage flash (BitVec.ofNat 32 (bmSlotNum slot)) mf) mf.image.length = some h ∧
         target ≤ level (Fuses.ofNat (((memLoad32 m'.mem efuseRd).toNat >>> 14) % 65536)) ∧
         (∃ X, memLoad32 m'.mem efuseRd = memLoad32 M0 efuseRd ||| X) ∧
-        m'.pc = BitVec.ofNat 32 h.entryPoint &&& ~~~1 ∧
+        EfuseLocked m'.mem ∧
+        m'.pc = BitVec.ofNat 32 h.entryPoint ∧
         reg m' a0 = BitVec.ofNat 32 (bmSlotNum slot) ∧
         BmKeep M0 Mb (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) ∧
         HdrAt Mb (bmAcc top) h ∧
@@ -716,7 +717,8 @@ theorem bootMain_correct {flash : Nat → BitVec 8} {pinned : Bytes} {policy : P
         decodeImageHeader (bmcImage flash (BitVec.ofNat 32 (bmSlotNum slot)) mf) mf.image.length = some h ∧
         target ≤ level (Fuses.ofNat (((memLoad32 m'.mem efuseRd).toNat >>> 14) % 65536)) ∧
         (∃ X, memLoad32 m'.mem efuseRd = memLoad32 M0 efuseRd ||| X) ∧
-        m'.pc = BitVec.ofNat 32 h.entryPoint &&& ~~~1 ∧
+        EfuseLocked m'.mem ∧
+        m'.pc = BitVec.ofNat 32 h.entryPoint ∧
         reg m' a0 = BitVec.ofNat 32 (bmSlotNum slot) ∧
         BmKeep M0 Mb (top - BitVec.ofNat 32 (bmK R romStack stack0)) (bmK R romStack stack0) ∧
         HdrAt Mb (bmAcc top) h ∧

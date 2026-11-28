@@ -100,6 +100,73 @@ def busOn (M : Word → BitVec 8) : Word → BitVec 8 :=
 def bootMem (flash : Nat → BitVec 8) (M0 : Word → BitVec 8) (acc imgf : Word) : Word → BitVec 8 :=
   busOn (mmuMap M0 acc imgf (mmuInv (ramLoad flash M0 acc imgf (sgCount M0 acc)) 128) (sgCount M0 acc))
 
+/-- The eFuse peripheral's PMS region registers after `efuse::lock()`:
+region 0 spans `0x60008800..0x60009000` (split addresses shifted right by 2:
+`0x18002200` at `0x600C1110` and `0x18002400` at the 7 words from `0x600C1114`),
+its permission field at `0x600C1108` has low 2 bits `2`, and the PMS lock
+register at `0x600C1104` is `1`. -/
+def EfuseLocked (M : Word → BitVec 8) : Prop :=
+  memLoad32 M 0x600C1110 = 0x18002200 ∧
+  (∀ i, i < 7 → memLoad32 M (0x600C1114 + BitVec.ofNat 32 (4 * i)) = 0x18002400) ∧
+  memLoad32 M 0x600C1108 &&& 3 = 2 ∧
+  memLoad32 M 0x600C1104 = 1
+
+theorem efuse_perm_bits (w : Word) : ((w &&& 0xFFFFFFFC) + 2) &&& 3 = 2 := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_and, BitVec.toNat_add, BitVec.toNat_and]
+  have hm : (0xFFFFFFFC : Word).toNat = 0xFFFFFFFC := rfl
+  have h2 : (2 : Word).toNat = 2 := rfl
+  have h3 : (3 : Word).toNat = 3 := rfl
+  rw [hm, h2, h3]
+  have ha : ∀ x : Nat, x &&& 3 = x % 4 := fun x => by
+    have h1 : x &&& 3 < 2 ^ 2 := Nat.and_lt_two_pow x (by decide : 3 < 2 ^ 2)
+    rw [← Nat.mod_eq_of_lt h1, Nat.and_mod_two_pow]
+    have k : ∀ y, y < 4 → y &&& 3 % 4 = y := by decide
+    exact k _ (Nat.mod_lt x (by decide))
+  have hmod : (w.toNat &&& 0xFFFFFFFC) % 4 = 0 := by
+    rw [← ha, Nat.and_assoc, show (0xFFFFFFFC &&& 3 : Nat) = 0 from rfl, Nat.and_zero]
+  rw [ha]
+  omega
+
+theorem EfuseLocked.congr {M M' : Word → BitVec 8} (h : EfuseLocked M)
+    (heq : ∀ x : Word, 0x600C1104 ≤ x.toNat → x.toNat < 0x600C1130 → M' x = M x) :
+    EfuseLocked M' := by
+  have hload : ∀ a : Word, 0x600C1104 ≤ a.toNat → a.toNat + 4 ≤ 0x600C1130 → memLoad32 M' a = memLoad32 M a :=
+    fun a h1 h2 => memLoad32_congr fun j hj => by
+      have e : (a + BitVec.ofNat 32 j).toNat = a.toNat + j := by
+        rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+      exact heq _ (by omega) (by omega)
+  refine ⟨(hload 0x600C1110 (by decide) (by decide)).trans h.1, fun i hi => ?_, ?_,
+    (hload 0x600C1104 (by decide) (by decide)).trans h.2.2.2⟩
+  · have e : (0x600C1114 + BitVec.ofNat 32 (4 * i) : Word).toNat = 0x600C1114 + 4 * i := by
+      rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (0x600C1114 : Word).toNat = 0x600C1114 from rfl]; omega
+    exact (hload _ (by omega) (by omega)).trans (h.2.1 i hi)
+  · rw [hload 0x600C1108 (by decide) (by decide)]; exact h.2.2.1
+
+theorem efuseLocked_of_stores {M4 M7 : Word → BitVec 8}
+    (h7out : ∀ x : Word, (x.toNat < 0x600C1114 ∨ 0x600C1114 + 4 * 7 ≤ x.toNat) →
+      M7 x = memStore32 M4 0x600C1110 0x18002200 x)
+    (h7in : ∀ i, i < 7 → memLoad32 M7 (0x600C1114 + BitVec.ofNat 32 (4 * i)) = 0x18002400) :
+    EfuseLocked (memStore32 (memStore32 M7 0x600C1108 ((memLoad32 M7 0x600C1108 &&& 0xFFFFFFFC) + 2))
+      0x600C1104 1) := by
+  refine ⟨?_, fun i hi => ?_, ?_, ?_⟩
+  · rw [memLoad32_store32_sep (sep_of_le (by decide) (by decide)),
+      memLoad32_store32_sep (sep_of_le (by decide) (by decide))]
+    have h10 : memLoad32 M7 0x600C1110 = memLoad32 (memStore32 M4 0x600C1110 0x18002200) 0x600C1110 :=
+      memLoad32_congr fun j hj => by
+        have e : (0x600C1110 + BitVec.ofNat 32 j : Word).toNat = 0x600C1110 + j := by
+          rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (0x600C1110 : Word).toNat = 0x600C1110 from rfl]; omega
+        exact h7out _ (.inl (by omega))
+    rw [h10, memLoad32_store32_same]
+  · have e : (0x600C1114 + BitVec.ofNat 32 (4 * i) : Word).toNat = 0x600C1114 + 4 * i := by
+      rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (0x600C1114 : Word).toNat = 0x600C1114 from rfl]; omega
+    rw [memLoad32_store32_sep (sep_of_le (by rw [show (0x600C1104 : Word).toNat = 0x600C1104 from rfl]; omega) (by omega)),
+      memLoad32_store32_sep (sep_of_le (by rw [show (0x600C1108 : Word).toNat = 0x600C1108 from rfl]; omega) (by omega))]
+    exact h7in i hi
+  · rw [memLoad32_store32_sep (sep_of_le (by decide) (by decide)), memLoad32_store32_same]
+    exact efuse_perm_bits _
+  · exact memLoad32_store32_same _ _ _
+
 set_option maxRecDepth 20000
 theorem bt_at_0 : fetchRel bootFnCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFC0, 2) := by decide
 theorem bt_at_2 : fetchRel bootFnCode 0x2 = some (.store .sw sp ra 0x3C, 2) := by decide

@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.BootMainSpec
 import C3BootProofs.Spec.Boot
+import C3BootProofs.Theorems.Formats
 
 /-!
 # `boot_main`: what it assumes, what it ends in, and its last call
@@ -118,7 +119,8 @@ def BmJump (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (M0 : W
     bmcAccept flash pinned policy (bmLevel M0) (BitVec.ofNat 32 (bmSlotNum slot)) = some (mf, sv, t) ∧
     decodeImageHeader (bmcImage flash (BitVec.ofNat 32 (bmSlotNum slot)) mf) mf.image.length = some h ∧
     target ≤ bmLevel m'.mem ∧ (∃ X, memLoad32 m'.mem efuseRd = memLoad32 M0 efuseRd ||| X) ∧
-    m'.pc = BitVec.ofNat 32 h.entryPoint &&& ~~~1 ∧
+    EfuseLocked m'.mem ∧
+    m'.pc = BitVec.ofNat 32 h.entryPoint ∧
     reg m' a0 = BitVec.ofNat 32 (bmSlotNum slot) ∧
     BmKeep M0 Mb (top - BitVec.ofNat 32 K) K ∧ HdrAt Mb (bmAcc top) h ∧
     ∀ x, Sep (top - BitVec.ofNat 32 K) K x 1 → (x.toNat < 0x60000000 ∨ 0x600C4000 ≤ x.toNat) →
@@ -577,17 +579,19 @@ theorem bmt_tail {flash : Nat → BitVec 8} {pinned : Bytes} {policy : Policy} {
   rcases boot_correct_halt (flash := flash) n5 BC X.rom pc5 (by rw [r5 _ (by decide), a0_4])
       (by rw [r5 _ (by decide), a1_4]) (by rw [r5 _ (by decide), a2_4]) (by rw [r5 _ (by decide), a3_4])
       (by rw [r5 _ (by decide), a4_4]) X.log X.suspend X.invalidate X.resume with
-    ⟨m', c6, pc6, a06, lev6, ⟨X6, hX6⟩, mem6⟩ | hp
+    ⟨m', c6, pc6, a06, lev6, ⟨X6, hX6⟩, elock6, mem6⟩ | hp
   · have e5 : memLoad32 n5.mem efuseRd = memLoad32 M0 efuseRd :=
       bmt_load_congr fun j hj => hi5 _ (by
         rw [BitVec.toNat_add, BitVec.toNat_ofNat, show efuseRd.toNat = 0x6000883C from rfl]; omega)
     refine .inl ⟨m', c1.trans (c2.trans (c3.trans (c4.trans (c5.trans c6)))), c, slot, target, mf, sv, t, h,
-      n5.mem, hcs, hD, hA, hd, ?_, ⟨X6, by rw [hX6, e5]⟩, ?_, a06, ?_, ?_, ?_⟩
+      n5.mem, hcs, hD, hA, hd, ?_, ⟨X6, by rw [hX6, e5]⟩, elock6, ?_, a06, ?_, ?_, ?_⟩
     · have ht : target < 2 ^ 32 := by omega
       rcases lev6 with e | ⟨e, ew⟩
       · exact bmt_ult ht e
       · rw [bmLevel, ew, e5]; exact bmt_ult ht e
     · rw [pc6, hA5.1]
+      exact even_clear (BitVec.ofNat 32 h.entryPoint)
+        (by rw [BitVec.toNat_ofNat]; have := decodeImageHeader_entryPoint_even hd; omega)
     · refine hK.step fun x hx => ?_
       rw [mem5, m4]
       exact out3 x (bmt_sep_in hx (by rw [hFm, BitVec.toNat_sub, BitVec.toNat_ofNat, hKv]; omega)

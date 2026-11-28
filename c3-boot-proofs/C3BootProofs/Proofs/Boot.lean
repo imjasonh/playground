@@ -143,6 +143,8 @@ theorem bt_lock (v : Word) :
       reg n a2 = p → reg n a3 = v → p.toNat % 4 = 0 → 0x60008A00 ≤ p.toNat → p.toNat + 4 * k ≤ 0x600C4000 →
       CodeIn n.mem BT bootFnCode →
       ∃ n', Steps n n' ∧ St n'.mem BT n' 0x17C (reg n') ∧ BtW n.mem n'.mem ∧
+        (∀ i, i < k → memLoad32 n'.mem (p + BitVec.ofNat 32 (4 * i)) = v) ∧
+        (∀ x : Word, (x.toNat < p.toNat ∨ p.toNat + 4 * k ≤ x.toNat) → n'.mem x = n.mem x) ∧
         ∀ r, r ≠ a1 → r ≠ a2 → reg n' r = reg n r
   | 0, _, _, _, hk, _, _, _, _, _, _, _ => absurd hk (by decide)
   | k + 1, n, p, s, _, h1, hp, h3, hal, hlo, hhi, hc => by
@@ -169,9 +171,18 @@ theorem bt_lock (v : Word) :
       obtain ⟨n5, d5, u5⟩ := u4.notTaken hc1 0x17C bt_at_17a (by decide) (by
         show ((_ : Word) != _) = false
         simp +decide only [upd, ↓reduceIte])
-      refine ⟨n5, .cons d1 (.cons d3 (.cons d4 (.single d5))), ⟨u5.pc, rfl, fun _ => rfl⟩, ?_,
+      refine ⟨n5, .cons d1 (.cons d3 (.cons d4 (.single d5))), ⟨u5.pc, rfl, fun _ => rfl⟩, ?_, ?_, ?_,
         fun r ha hb => by rw [u5.regs, q4 r ha hb]⟩
-      rw [u5.mem]; exact hm1
+      · rw [u5.mem]; exact hm1
+      · intro i hi
+        have hi0 : i = 0 := by omega
+        subst hi0
+        rw [u5.mem, u1.mem, show p + BitVec.ofNat 32 (4 * 0) = p from add_ofNat_zero p]
+        exact memLoad32_store32_same _ _ _
+      · intro x hx
+        rw [u5.mem, u1.mem]
+        exact memStore32_get_sep (hx.elim (fun h => (sep_of_le (by omega) (by omega)).symm)
+          (fun h => sep_of_le (by omega) (by have := x.isLt; omega)))
     · obtain ⟨n5, d5, u5⟩ := u4.taken hc1 0x174 bt_at_17a (by decide) (by
         show ((_ : Word) != _) = true
         simp +decide only [upd, ↓reduceIte]
@@ -180,16 +191,35 @@ theorem bt_lock (v : Word) :
           rw [BitVec.toNat_ofNat, show (0 : Word).toNat = 0 from rfl] at this; omega)
       have a2v : upd (upd (reg n) a2 (aluEval .add (reg n a2) 0x4)) a1 (BitVec.ofNat 32 k) a2 = p + 4 := by
         simp +decide only [upd, ↓reduceIte]; rw [hp]; rfl
-      obtain ⟨n6, c6, t6, hm6, k6⟩ := bt_lock v k (n := n5) (p + 4)
+      have hp4 : (p + 4).toNat = p.toNat + 4 := rs_p4 p (by omega)
+      obtain ⟨n6, c6, t6, hm6, hin6, hout6, k6⟩ := bt_lock v k (n := n5) (p + 4)
         ⟨u5.pc, by rw [u5.mem], fun _ => rfl⟩ hkp
         (by rw [u5.regs]; simp +decide only [upd, ↓reduceIte])
         (by rw [u5.regs, a2v]) (by rw [u5.regs, q4 a3 (by decide) (by decide), h3])
-        (by rw [rs_p4 p (by omega)]; omega) (by rw [rs_p4 p (by omega)]; omega)
-        (by rw [rs_p4 p (by omega)]; omega) (by rw [u5.mem]; exact hc1)
-      refine ⟨n6, .cons d1 (.cons d3 (.cons d4 (.cons d5 c6))), t6, ?_,
+        (by rw [hp4]; omega) (by rw [hp4]; omega)
+        (by rw [hp4]; omega) (by rw [u5.mem]; exact hc1)
+      refine ⟨n6, .cons d1 (.cons d3 (.cons d4 (.cons d5 c6))), t6, ?_, ?_, ?_,
         fun r ha hb => by rw [k6 r ha hb, u5.regs, q4 r ha hb]⟩
-      have : n5.mem = n1.mem := u5.mem
-      rw [this] at hm6; exact hm1.trans hm6
+      · have : n5.mem = n1.mem := u5.mem
+        rw [this] at hm6; exact hm1.trans hm6
+      · intro i hi
+        cases i with
+        | zero =>
+          rw [show p + BitVec.ofNat 32 (4 * 0) = p from add_ofNat_zero p]
+          have heq : memLoad32 n6.mem p = memLoad32 n5.mem p := memLoad32_congr fun j hj => by
+            have e : (p + BitVec.ofNat 32 j).toNat = p.toNat + j := by
+              rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+            exact hout6 _ (.inl (by omega))
+          rw [heq, u5.mem, u1.mem]; exact memLoad32_store32_same _ _ _
+        | succ i' =>
+          have heq : p + BitVec.ofNat 32 (4 * (i' + 1)) = (p + 4) + BitVec.ofNat 32 (4 * i') :=
+            BitVec.eq_of_toNat_eq (by
+              rw [BitVec.toNat_add, BitVec.toNat_add, hp4, BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)
+          rw [heq]; exact hin6 i' (by omega)
+      · intro x hx
+        rw [hout6 x (hx.imp (fun h => by omega) (fun h => by omega)), u5.mem, u1.mem]
+        exact memStore32_get_sep (hx.elim (fun h => (sep_of_le (by omega) (by omega)).symm)
+          (fun h => sep_of_le (by omega) (by have := x.isLt; omega)))
 
 /-- `bootMem` keeps memory from the ROM at 0x40000000 to the cache
 controller at 0x600C4000: `boot` copies RAM segments below 0x40000000 and
@@ -607,6 +637,7 @@ theorem boot_correct_halt {flash : Nat → BitVec 8} {R romStack : Nat} {romBase
       ((btPop (memLoad32 m'.mem efuseRd)).ult target = false ∨
         (level.ult target = false ∧ memLoad32 m'.mem efuseRd = memLoad32 m.mem efuseRd)) ∧
       (∃ X, memLoad32 m'.mem efuseRd = memLoad32 m.mem efuseRd ||| X) ∧
+      EfuseLocked m'.mem ∧
       ∀ x, Sep (reg m sp - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) x 1 →
         (x.toNat < 0x60000000 ∨ 0x600C4000 ≤ x.toNat) → m'.mem x = bootMem flash m.mem acc imgf x) ∨
       HaltsDeliberately m := by
@@ -798,7 +829,7 @@ theorem boot_correct_halt {flash : Nat → BitVec 8} {R romStack : Nat} {romBase
   have v1 : reg n5 a1 = 7 := by rw [r5]; simp +decide only [runBlock, BInstr.run, btLk1, upd, ↓reduceIte]
   obtain ⟨n6, d6, u6⟩ := t5.notTaken hc5 0x174 bt_at_172 (by decide) (by
     show (reg n5 a1 == reg n5 x0) = false; rw [v1, t5.zero]; rfl)
-  obtain ⟨n7, c7, t7, W7, k7⟩ := bt_lock 0x18002400 7 (n := n6) 0x600C1114 ⟨u6.pc, by rw [u6.mem], fun _ => rfl⟩
+  obtain ⟨n7, c7, t7, W7, L7in, L7out, k7⟩ := bt_lock 0x18002400 7 (n := n6) 0x600C1114 ⟨u6.pc, by rw [u6.mem], fun _ => rfl⟩
     (by decide) (by rw [u6.regs]; exact v1)
     (by rw [u6.regs, r5]; simp +decide only [runBlock, BInstr.run, btLk1, upd, ↓reduceIte])
     (by rw [u6.regs, r5]; simp +decide only [runBlock, BInstr.run, btLk1, upd, ↓reduceIte])
@@ -817,6 +848,15 @@ theorem boot_correct_halt {flash : Nat → BitVec 8} {R romStack : Nat} {romBase
     exact ⟨by decide, ⟨by decide, (sep_of_le (by decide) (by decide)).symm⟩, by decide,
       (sep_of_le (by decide) (by decide)).symm⟩)
   obtain ⟨M5, hM5⟩ : ∃ M5, (runBlock btLk2 (n7.mem, reg n7)).1 = M5 := ⟨_, rfl⟩
+  have hM5eq : M5 = memStore32 (memStore32 n7.mem 0x600C1108 ((memLoad32 n7.mem 0x600C1108 &&& 0xFFFFFFFC) + 2))
+      0x600C1104 1 := by
+    rw [← hM5]; simp +decide only [runBlock, BInstr.run, btLk2, upd, ↓reduceIte]
+    rw [a07, t7.zero]; rfl
+  have hLock5 : EfuseLocked M5 := by
+    rw [hM5eq]
+    exact efuseLocked_of_stores (fun x hx => by
+      have h := L7out x (by rw [show (0x600C1114 : Word).toNat = 0x600C1114 from rfl]; exact hx)
+      rw [h, u6.mem, t5.mem]) L7in
   have W8 : BtW n7.mem M5 := by
     rw [← hM5]; simp +decide only [runBlock, BInstr.run, btLk2, upd, ↓reduceIte]; rw [a07]
     exact ((BtW.refl _).store _ (by decide) (by decide)).store _ (by decide) (by decide)
@@ -857,8 +897,10 @@ theorem boot_correct_halt {flash : Nat → BitVec 8} {R romStack : Nat} {romBase
         bt_bootMem_hi (C.transfer hH5 hh5) (efuseRd + BitVec.ofNat 32 j) (by omega) (by omega),
         W (efuseRd + BitVec.ofNat 32 j) (Or.inl (by omega))]
     rw [← wfin] at hlev hmono
+    have hLock' : EfuseLocked m'.mem := hLock5.congr fun x h1 h2 => by
+      rw [mem' x (stkHi x (by omega)), bt_bootMem_hi (C.transfer hH5 hh5) x (by omega) (by omega)]
     refine Or.inl ⟨m', pre3.trans (c4.trans (c5.trans (.cons d6 (c7.trans (c8.trans c'))))), ?_, a0', hlev,
-      hmono, fun x hx hw => ?_⟩
+      hmono, hLock', fun x hx hw => ?_⟩
     · rw [pc', memLoad32_congr (M' := M5) (M := M0) (b := acc + 0x100) fun i hi => by
         rw [show acc + 0x100 + BitVec.ofNat 32 i = acc + BitVec.ofNat 32 (0x100 + i) from add_ofNat_assoc acc 0x100 i]
         exact (hh5 _ (by omega)).symm]
@@ -884,6 +926,7 @@ theorem boot_correct {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Wo
       ((btPop (memLoad32 m'.mem efuseRd)).ult target = false ∨
         (level.ult target = false ∧ memLoad32 m'.mem efuseRd = memLoad32 m.mem efuseRd)) ∧
       (∃ X, memLoad32 m'.mem efuseRd = memLoad32 m.mem efuseRd ||| X) ∧
+      EfuseLocked m'.mem ∧
       ∀ x, Sep (reg m sp - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) x 1 →
         (x.toNat < 0x60000000 ∨ 0x600C4000 ≤ x.toNat) → m'.mem x = bootMem flash m.mem acc imgf x) ∨
       Panics m :=

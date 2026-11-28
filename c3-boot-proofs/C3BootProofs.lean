@@ -755,3 +755,5 @@ import C3BootProofs.Proofs.AcceptSpecIdx
 import C3BootProofs.Proofs.AcceptSpecImg
 import C3BootProofs.Proofs.AcceptSpec
 import C3BootProofs.Proofs.AcceptLoaded
+import C3BootProofs.Headline
+import C3BootProofs.AuditHeadline
