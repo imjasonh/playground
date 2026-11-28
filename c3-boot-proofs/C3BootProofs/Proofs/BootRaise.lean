@@ -219,8 +219,7 @@ theorem EprAt.out {Mb M : Word → BitVec 8} (h : EprAt Mb) (hO : EfOut Mb M) : 
 controller's registers are plain memory, `efuse_program_run` writes the
 command and the mask, polls to its timeout, and leaves the level word as it
 was, so the contract holds with no new bits. The contract is consistent. -/
-theorem eprAt_of_code {M : Word → BitVec 8} (hc : CodeIn M EPR efuseProgramRunCode) : EprAt M := by
-  refine ⟨efuseProgramRunCode, hc, by decide, ⟨fun m hcm hpc ha1 => ?_⟩⟩
+theorem efuseCtl_plain : EfuseCtl efuseProgramRunCode := ⟨fun m hcm hpc ha1 => by
   obtain ⟨m', c, pc, mem, _, k⟩ := epr_correct hcm
     ⟨by rw [hpc]; exact (add_ofNat_zero _).symm, rfl, fun _ => rfl⟩
     (by rcases ha1 with h | h <;> rw [h] <;> decide)
@@ -228,7 +227,10 @@ theorem eprAt_of_code {M : Word → BitVec 8} (hc : CodeIn M EPR efuseProgramRun
     rw [mem]
     exact ((RsJ.refl _).store _ (by decide) (by decide) (by decide)).store _ (by decide) (by decide)
       (by decide)
-  exact ⟨m', c, pc, k, hJ.out, 0, by rw [hJ.field]; exact BitVec.or_zero.symm⟩
+  exact ⟨m', c, pc, k, hJ.out, 0, by rw [hJ.field]; exact BitVec.or_zero.symm⟩⟩
+
+theorem eprAt_of_code {M : Word → BitVec 8} (hc : CodeIn M EPR efuseProgramRunCode) : EprAt M :=
+  ⟨efuseProgramRunCode, hc, by decide, efuseCtl_plain⟩
 
 def rsInit : List BInstr :=
   [.aluImm .add 8 x0 0x0, .lui a0 0x5000, .lui a1 0x3000, .aluImm .add 24 a0 0x555,

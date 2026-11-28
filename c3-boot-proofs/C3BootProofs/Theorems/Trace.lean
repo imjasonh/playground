@@ -36,10 +36,11 @@ inductive Step : Device → Device → Option (Slot × Nat) → Prop where
       Step d { d with record := record, slots := slots } none
   | interrupted (d : Device) (m : Fuses) (record : State) :
       Step d { d with fuses := burn d.fuses m, record := record } none
-  | jumped (d : Device) (w : Option State) (slot : Slot) (t l : Nat) (record : State)
-      (hd : decideBoot d.record (level d.fuses) (accepted d.slots (level d.fuses)) =
-        ⟨w, .boot slot t⟩)
-      (hl : accepted d.slots (level d.fuses) slot = some l)
+  | jumped (d : Device) (check : Slot → Option Nat) (w : Option State) (slot : Slot) (t l : Nat)
+      (record : State)
+      (hsound : ∀ s l', check s = some l' → accepted d.slots (level d.fuses) s = some l')
+      (hd : decideBoot d.record (level d.fuses) check = ⟨w, .boot slot t⟩)
+      (hl : check slot = some l)
       (hr : record = w.getD d.record ∨ record = d.record) :
       Step d { d with fuses := raise d.fuses t, record := record } (some (slot, l))
 
@@ -60,14 +61,14 @@ theorem Step.level_mono {d d' : Device} {j : Option (Slot × Nat)} (h : Step d d
   cases h with
   | write => exact Nat.le_refl _
   | interrupted m => exact level_burn d.fuses m
-  | jumped w slot t => exact level_le_raise d.fuses t
+  | jumped _ _ _ t => exact level_le_raise d.fuses t
 
 theorem Step.length_eq {d d' : Device} {j : Option (Slot × Nat)} (h : Step d d' j) :
     d'.fuses.length = d.fuses.length := by
   cases h with
   | write => rfl
   | interrupted m => exact length_burn d.fuses m
-  | jumped w slot t => exact length_raise d.fuses t
+  | jumped _ _ _ t => exact length_raise d.fuses t
 
 /-- What a jump guarantees about the step that made it. -/
 theorem Step.jump_facts {d d' : Device} {slot : Slot} {l : Nat}
@@ -76,8 +77,8 @@ theorem Step.jump_facts {d d' : Device} {slot : Slot} {l : Nat}
       ∃ t, t = burnTarget l (d.record.isConfirmed slot) (level d.fuses) ∧
         d'.fuses = raise d.fuses t := by
   cases h with
-  | jumped w _ t _ record hd hl hr =>
-    refine ⟨hl, t, ?_, rfl⟩
+  | jumped check w _ t _ record hsound hd hl hr =>
+    refine ⟨hsound slot l hl, t, ?_, rfl⟩
     obtain ⟨l', hl', ht⟩ := decideBoot_boot hd
     rw [hl] at hl'
     cases hl'
@@ -169,6 +170,7 @@ theorem availability (d : Device)
     ∃ d' slot l, Step d d' (some (slot, l)) := by
   obtain ⟨w, slot, t, hd⟩ := decideBoot_available (s := d.record) h
   obtain ⟨l, hl, _⟩ := decideBoot_boot hd
-  exact ⟨_, slot, l, Step.jumped d w slot t l d.record hd hl (Or.inr rfl)⟩
+  exact ⟨_, slot, l, Step.jumped d (accepted d.slots (level d.fuses)) w slot t l d.record
+    (fun _ _ h => h) hd hl (Or.inr rfl)⟩
 
 end C3

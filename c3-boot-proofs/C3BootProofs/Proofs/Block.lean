@@ -222,4 +222,9 @@ theorem restoreBlock_ok {base : Word} {len : Nat} (M : Word → BitVec 8) (G : W
     show upd f r (memLoad32 M (f sp + o)) sp = G
     rw [← hG]; exact upd_ne (by decide) (Ne.symm hr)
 
+theorem upd_app (f : Fin 32 → Word) (rd : Fin 32) (v : Word) (r : Fin 32) :
+    upd f rd v r = if r.val = 0 then 0 else if r = rd then v else f r := rfl
+
+theorem ev_add (a b : Word) : aluEval .add a b = a + b := rfl
+
 end C3.RV32

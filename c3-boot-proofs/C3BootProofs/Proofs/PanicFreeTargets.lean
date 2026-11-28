@@ -60,7 +60,8 @@ def BootsSlot (flash : Nat → BitVec 8) (pinned : Bytes) (policy : Policy) (Ml 
       decodeImageHeader (bmcImage flash (BitVec.ofNat 32 (bmSlotNum slot)) mf) mf.image.length = some h ∧
       target ≤ level (Fuses.ofNat (((memLoad32 m'.mem efuseRd).toNat >>> 14) % 65536)) ∧
       (∃ X, memLoad32 m'.mem efuseRd = memLoad32 Ml efuseRd ||| X) ∧
-      m'.pc = BitVec.ofNat 32 h.entryPoint &&& ~~~1 ∧
+      EfuseLocked m'.mem ∧
+      m'.pc = BitVec.ofNat 32 h.entryPoint ∧
       reg m' a0 = BitVec.ofNat 32 (bmSlotNum slot) ∧
       BmKeep Mk Mb (top - BitVec.ofNat 32 K) K ∧
       HdrAt Mb (bmAcc top) h ∧

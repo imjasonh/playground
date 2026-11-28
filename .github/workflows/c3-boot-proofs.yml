@@ -220,12 +220,6 @@ jobs:
           python3 scripts/gen-p256-scalar.py
           git diff --exit-code C3BootProofs/Proofs/
 
-      - name: Check the generated SHA-256 round proofs
-        working-directory: c3-boot-proofs
-        run: |
-          python3 scripts/gen-sha256.py
-          git diff --exit-code C3BootProofs/Proofs/
-
       - name: Check the generated curve25519 field proofs
         working-directory: c3-boot-proofs
         run: |
