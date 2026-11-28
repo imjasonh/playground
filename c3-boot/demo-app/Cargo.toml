@@ -1,0 +1,17 @@
+[package]
+name = "c3-demo-app"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "c3-demo-app"
+test = false
+bench = false
+
+[dependencies]
+c3-verify = { path = "../verify" }
+
+[lints.rust]
+unused = { level = "deny", priority = -1 }

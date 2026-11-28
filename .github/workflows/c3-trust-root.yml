@@ -1,0 +1,79 @@
+# Checks Sigstore's production TUF metadata, trusted root, and signing
+# configuration every week, and opens a pull request that updates c3-boot's
+# copies in c3-boot/testdata/tuf/ and c3-boot/release/ when they change. The
+# pull request shows the TUF part that the next release would carry, checked
+# from the root that production bootloaders pin, and the entries the device
+# would read from the trusted root. It doesn't merge itself.
+
+name: c3-trust-root
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # Octo STS OIDC federation
+
+concurrency:
+  group: c3-trust-root
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Check Sigstore's trusted root
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: main
+
+      # App token (not GITHUB_TOKEN) so the pull request triggers checks.
+      - name: Federate GitHub App token via Octo STS
+        id: octo-sts
+        uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
+        with:
+          scope: imjasonh/playground
+          identity: c3-trust-root
+
+      - name: Fetch Sigstore's files
+        id: fetch
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: bash .github/scripts/update-c3-trust-root.sh fetch
+
+      - name: Check and describe the new metadata
+        if: ${{ steps.fetch.outputs.result == 'changed' }}
+        working-directory: c3-boot
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          {
+            echo '```'
+            if bash release/package-tuf.sh "${RUNNER_TEMP}/tuf.bin" 2>&1; then
+              echo "TUF part: $(stat -c %s "${RUNNER_TEMP}/tuf.bin") bytes"
+            else
+              echo "The TUF check failed, so c3-release.yml won't sign a release."
+            fi
+            echo '```'
+            echo
+            cargo run --locked -q -p c3-ota -- describe \
+              --trusted-root release/trusted_root.json
+          } > "${RUNNER_TEMP}/description.md"
+
+      - name: Open a pull request
+        if: ${{ steps.fetch.outputs.result == 'changed' }}
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+          COMMIT: ${{ steps.fetch.outputs.commit }}
+          REMOTE: ${{ steps.fetch.outputs.remote }}
+          DESCRIPTION: ${{ runner.temp }}/description.md
+        run: bash .github/scripts/update-c3-trust-root.sh open-pr
+
+      - name: Close a stale pull request
+        if: ${{ steps.fetch.outputs.result == 'unchanged' }}
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: bash .github/scripts/update-c3-trust-root.sh close-stale

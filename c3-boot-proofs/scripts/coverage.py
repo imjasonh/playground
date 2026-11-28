@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+"""Reports how much of the bootloader image the machine-code proofs cover.
+
+It counts two things:
+
+- Image coverage: the instructions in proved functions, out of every
+  instruction in the image's code.
+- Boot coverage: the instructions a boot runs at addresses in proved
+  functions, out of every instruction the boot runs, from a boot-sim
+  profile (`BOOT_SIM_PROFILE`).
+- Verification coverage: the instructions in proved functions, out of the
+  instructions of every function that `c3_verify::sigstore::verify` (the
+  Sigstore check of an update) and `boot_main` can call, directly or through
+  other functions. Boot coverage weighs a function by how long it runs, so
+  the field arithmetic dominates it; this counts the code that makes the
+  decisions as much as the code that runs longest.
+
+A function counts as proved when it is in PROVED below, which names the
+functions in `C3BootProofs/Image/Bootloader.lean` and `BootloaderReset.lean`,
+the current image, that a correctness theorem covers. Theorems about the earlier image in
+`BootloaderV0.lean` don't count until they are redone for the current one. Add a function when its theorem lands. Helpers that two
+functions share are counted once.
+
+A proved function's theorem has hypotheses, such as a stack layout or
+operands below a modulus, that its callers' proofs must still discharge.
+So boot coverage counts instructions in proved code, not instructions whose
+every call is proved.
+
+Usage: coverage.py PROFILE ELF NM OBJDUMP [TOP]
+
+With `-` as PROFILE, it skips boot coverage. When the profile comes from
+another build, such as the burns-off development build that
+`c3-boot/qemu/boot-lockstep.sh` boots, set `PROFILE_ELF` to that build's
+ELF. Each profiled address then counts as proved when its function in
+`PROFILE_ELF` has the name of a proved function in ELF, or, outside any
+sized symbol (such as `_start`), when the address is proved in ELF.
+"""
+
+import bisect
+import os
+import re
+import subprocess
+import sys
+
+PROVED = [
+    "crc32",
+    "readerBytes",
+    "readerArray4",
+    "readerU16",
+    "readerVersion1",
+    "readerReserved",
+    "readerU8",
+    "segmentPhysical",
+    "memcpyStub",
+    "memcpyBody",
+    "memset",
+    "borrowingSub",
+    "mulMont12",
+    "uintSelect12",
+    "sqMont12",
+    "subInner",
+    "wideMul",
+    "fieldMul",
+    "fieldAdd",
+    "fieldSub",
+    "fieldDouble",
+    "pointAdd",
+    "sha256Compress",
+    "rangeFromIndex",
+    "p384Add",
+    "p384Double",
+    "p384Sub",
+    "feReduce",
+    "feMul",
+    "feSquareInner",
+    "feSquare",
+    "romFlashReadWords",
+    "flashRead",
+    "feAdd",
+    "selectI64",
+    "feSub",
+    "wideMul12x2",
+    "wideMul8x2",
+    "edDouble",
+    "fePow2k",
+    "sha512Compress", "p384Mul", "p384Sqr", "p384PtDouble", "uintSelect2", "condNeg12", "uintSelect8", "condNeg8", "absSign2", "fromI64", "p384PtAdd", "fieldSquare", "p256PtDouble", "shr12", "leadMut12", "trailing12", "lincomb12", "blackBoxU8", "ctEqU8", "ctEqSlice", "memcmp", "uintRefIsNonzero", "lshrdi3", "asProjective", "asExtended", "p384Neg", "uint12IsNonzero", "derTlv", "derElement", "derOid", "derNested", "derSequence", "equalSameLength", "sliceEq", "shr8", "leadMut8", "trailing8", "feToBytes", "scalar29Sub", "scalar29Index", "scalar29IndexMut", "lincomb8", "mulMont8", "scalar29MontMul", "p256ScalarMul", "lincombShift12", "lincombShift8", "lowest12", "lowest8", "updateFg12", "updateFg8", "norm12", "uint8IsNonzero", "norm8", "toUintResize2", "lincombShiftMod12", "updateDe12", "lincombShiftMod8", "updateDe8", "derSet", "derOctetString", "derBitString", "derInteger", "derBooleanTrue", "derOptional", "uint12Eq", "uint8Eq", "lessThanLe", "inScalarRange", "p384ScalarMul", "p384ScalarNew", "u32Min", "sliceReverse", "splitAt12", "choiceNot", "uintRefIsZero", "limbCtEq", "uint12CtEq", "montRetrieve12", "p384FieldRetrieve", "sliceCtAssign", "uint12CtAssign", "copyFromSliceU8", "zipSkipNext", "derPositiveInteger", "derScalar48", "derScalar32", "ecdsaSignature48", "derIntegerIs", "checkpointLine", "tagMessageLen", "tagFromU8", "timeDigits2", "p256FieldNeg", "scalarIsZero384", "scalarIsZero256", "sliceNe", "arr32Eq", "arr32Ne", "choiceCtEq", "montyScalarCtEq384", "splitAt8", "tagAndThen", "condSelect384", "condSelect256", "unwrapOr384", "unwrapOr256", "ctMap384", "ctMap256", "uint8CtEq", "p256ScalarCtEq", "nonZero384", "nonZero256", "arr32EqCrypto", "feIsNegative", "ashldi3", "derAlgorithm", "listsOid", "leadingZeros", "feLoad3", "feLoad4", "feCtEq", "asProjNiels", "isSha256", "edAddNiels", "edSubNiels", "pow22501", "feCondAssign", "feNeg", "scalar29Pack", "incrementLimb", "nonAdjacentForm", "feCondNeg", "halt", "beginUnwind", "panicFmt", "assertFailedInner", "corePanic", "panicBoundsCheck", "expectFailed", "unwrapFailed", "lenMismatchFail", "sliceIndexFail", "assertFailedUsize", "assertFailedU8", "expectUsize", "expectTag", "nafSelect", "ctUnwrap384", "ctUnwrap256", "shaUpdate", "shaUpdateBlocks", "shaFinalize", "shaZero32", "shaFinBlock", "sha256Fn", "shaFinish", "sha256Parts", "merkleNodeHash", "rootFromInclusion", "encodedPointTag", "encodedPointIsIdentity", "sha512FinBlock", "sha384UpdateBlocks", "ctIntoAffine384", "ctIntoAffine256", "zeroArray48", "zeroArray64", "toBeBytes12", "toBeBytes8", "p256FieldRetrieve", "p384FromRepr", "p256FromRepr", "fillLimbsBeTrunc", "fromBeSliceTrunc12", "fromBeSliceTrunc8", "bytes2scalar384", "bytes2scalar256", "scalarFromSlice384", "scalarFromSlice256", "isSmallOrder", "dateTime", "base64DecodeInto", "base64EncodeTo", "sha512Update", "sha512UpdateArr32", "edDecompress", "edVerifyingKeyFromBytes", "ed25519PublicKeyOk", "nafTableFrom", "wnafForm", "ed25519Verify", "readerU32", "readerMagic", "manifestPart", "eqArr97", "fulcioIterNext", "fulcioEnumNext", "fulcioIterNth", "bundleField", "bootstateDecode", "imageParse", "bootMainClosure1", "p384Decompress", "p384FromSec1", "p256FromSec1", "p256Decompress", "p384VerifyPrehash",
+    "manifestParse", "x509ReadTime", "generalizedTime", "sigstoreVerify", "bootFn", "bootMain", "sha384Fn", "p256VerifyPrehash", "stripPrefix", "ecdsaSignature32", "allAsciiDigit", "timeDigits4", "timeRfc3339", "jsonSkipWs", "jsonStringEnd", "jsonKeyEnd", "jsonLiteralEnd", "jsonNumberEnd", "jsonReadItem", "jsonNextMember", "jsonNextElement", "jsonMembers", "jsonElements", "jsonGet", "jsonField", "jsonStr", "jsonU64", "jsonParse", "tufHexValue", "tufHexDecode", "tufPemSpki", "tufIndexDoc", "tufReadDoc", "tufParseMetadata", "tufParseRoot", "tufExpires", "tufRoleKeysRead", "tufRoleKeysMet", "trustedRootDecode", "trustedRootValidFor", "trustedRootReadChain", "flashPartRead", "efuseProgramRun", "startEntry", "setupFn", "watchdogArm", "clockRun160", "bootMainClosure0",
+]
+
+IMAGES = [os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", f)
+          for f in ("Bootloader.lean", "BootloaderReset.lean")]
+
+
+def extracted():
+    """Returns {name: (address, bytes)} for the code in Bootloader.lean and
+    BootloaderReset.lean."""
+    text = "".join(open(f).read() for f in IMAGES)
+    addrs = {m.group(1): int(m.group(2), 16)
+             for m in re.finditer(r"def (\w+)Address : Nat := (0x[0-9a-fA-F]+)", text)}
+    codes = {}
+    for m in re.finditer(r"def (\w+)Code : List Nat :=\s*\[([^\]]*)\]", text):
+        codes[m.group(1)] = [int(b, 16) for b in m.group(2).replace("\n", " ").split(",") if b.strip()]
+    return {n: (addrs[n], codes[n]) for n in codes if n in addrs}
+
+
+def starts(addr, code):
+    """The addresses where instructions start in `code` at `addr`."""
+    out, i = [], 0
+    while i < len(code):
+        out.append(addr + i)
+        i += 4 if code[i] & 3 == 3 else 2
+    return out
+
+
+def symbols(elf, nm):
+    funcs = []
+    for line in subprocess.run([nm, "-C", "-S", elf], check=True, capture_output=True,
+                               text=True).stdout.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) == 4 and parts[2] in ("t", "T") and int(parts[1], 16) > 0:
+            funcs.append((int(parts[0], 16), int(parts[1], 16), parts[3]))
+    funcs.sort()
+    return funcs
+
+
+def base_name(symbol):
+    """The symbol without the ` (.N)` suffix that tells local copies apart,
+    whose numbers differ between builds."""
+    return re.sub(r" \(\.\d+\)$", "", symbol)
+
+
+def disassemble(elf, objdump):
+    return subprocess.run([objdump, "-d", "--no-show-raw-insn", "-C", elf], check=True,
+                          capture_output=True, text=True).stdout.splitlines()
+
+
+ROOTS = ["c3_verify::sigstore::verify", "boot_main"]
+
+
+def reachable(lines, syms, proved):
+    """For each root, the instructions and proved instructions of every
+    function it can reach through calls, jumps, and tail calls."""
+    starts_ = [s[0] for s in syms]
+    size, done, calls = {}, {}, {}
+    for line in lines:
+        m = re.match(r"\s*([0-9a-f]+):\s+(\S+)\s*(.*)", line)
+        if not m:
+            continue
+        a = int(m.group(1), 16)
+        i = bisect.bisect_right(starts_, a) - 1
+        if i < 0 or a >= syms[i][0] + syms[i][1]:
+            continue
+        f = syms[i][2]
+        size[f] = size.get(f, 0) + 1
+        done[f] = done.get(f, 0) + (a in proved)
+        t = re.search(r"\s<(.*)>$", m.group(3)) if m.group(2) in ("jal", "jalr", "j", "jr") else None
+        if t:
+            callee = re.sub(r"\+0x[0-9a-f]+$", "", t.group(1))
+            if callee != f:
+                calls.setdefault(f, set()).add(callee)
+    out = {}
+    for root in ROOTS:
+        seen, stack = set(), [root]
+        while stack:
+            f = stack.pop()
+            if f in seen or f not in size:
+                continue
+            seen.add(f)
+            stack.extend(calls.get(f, ()))
+        out[root] = (sum(done[f] for f in seen), sum(size[f] for f in seen), len(seen))
+    return out
+
+
+def main():
+    profile, elf, nm, objdump = sys.argv[1:5]
+    top = int(sys.argv[5]) if len(sys.argv) > 5 else 15
+    funcs = extracted()
+    missing = [n for n in PROVED if n not in funcs]
+    if missing:
+        sys.exit(f"not in the image files: {missing}")
+    proved = set()
+    for n in PROVED:
+        proved.update(starts(*funcs[n]))
+    lines = disassemble(elf, objdump)
+    total_image = sum(1 for line in lines if re.match(r"\s*[0-9a-f]+:\s", line))
+
+    syms = symbols(elf, nm)
+    reach = reachable(lines, syms, proved)
+    boot_total = boot_proved = 0
+    unproved = {}
+    profile_elf = os.environ.get("PROFILE_ELF")
+    psyms = symbols(profile_elf, nm) if profile_elf else syms
+    psym_starts = [s[0] for s in psyms]
+    proved_names = {base_name(name) for a, _, name in syms if a in proved}
+    for line in open(profile) if profile != "-" else []:
+        a, c = line.split()
+        a, c = int(a, 16), int(c)
+        boot_total += c
+        i = bisect.bisect_right(psym_starts, a) - 1
+        found = i >= 0 and a < psyms[i][0] + psyms[i][1]
+        name = psyms[i][2] if found else f"0x{a:08x}"
+        if base_name(name) in proved_names if profile_elf and found else a in proved:
+            boot_proved += c
+            continue
+        unproved[name] = unproved.get(name, 0) + c
+
+    print("| Measure | Proved | Total | Share |")
+    print("| --- | --- | --- | --- |")
+    print(f"| Instructions in the image | {len(proved):,} | {total_image:,} | "
+          f"{100 * len(proved) / total_image:.1f}% |")
+    if boot_total:
+        print(f"| Instructions one boot runs | {boot_proved:,} | {boot_total:,} | "
+              f"{100 * boot_proved / boot_total:.3f}% |")
+    for root, (done, size, n) in reach.items():
+        print(f"| Instructions in the {n} functions `{root}` reaches | {done:,} | {size:,} | "
+              f"{100 * done / size:.1f}% |")
+    if not boot_total:
+        return
+    print()
+    print("| Unproved function | Instructions run | Share of the boot |")
+    print("| --- | --- | --- |")
+    for name, c in sorted(unproved.items(), key=lambda kv: -kv[1])[:top]:
+        short = name if len(name) <= 90 else name[:87] + "..."
+        print(f"| `{short}` | {c:,} | {100 * c / boot_total:.3f}% |")
+
+
+if __name__ == "__main__":
+    main()

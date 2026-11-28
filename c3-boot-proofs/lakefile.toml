@@ -1,0 +1,34 @@
+name = "c3-boot-proofs"
+version = "0.1.0"
+defaultTargets = ["C3BootProofs", "spec-vectors", "decode-check", "sigstore-check", "tuf-check", "rv-check", "rv-decode", "boot-sim"]
+
+[[lean_lib]]
+name = "C3BootProofs"
+
+[[lean_exe]]
+name = "spec-vectors"
+root = "Vectors"
+
+[[lean_exe]]
+name = "decode-check"
+root = "DecodeCheck"
+
+[[lean_exe]]
+name = "sigstore-check"
+root = "SigstoreCheck"
+
+[[lean_exe]]
+name = "tuf-check"
+root = "TufCheck"
+
+[[lean_exe]]
+name = "rv-check"
+root = "RvCheck"
+
+[[lean_exe]]
+name = "rv-decode"
+root = "RvDecode"
+
+[[lean_exe]]
+name = "boot-sim"
+root = "BootSim"
