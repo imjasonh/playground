@@ -11,10 +11,6 @@ namespace C3.RV32
 
 open C3.Image
 
-theorem upd_app (f : Fin 32 → Word) (rd : Fin 32) (v : Word) (r : Fin 32) :
-    upd f rd v r = if r.val = 0 then 0 else if r = rd then v else f r := rfl
-
-theorem ev_add (a b : Word) : aluEval .add a b = a + b := rfl
 theorem ev_xor (a b : Word) : aluEval .xor a b = a ^^^ b := rfl
 theorem ev_and (a b : Word) : aluEval .and a b = a &&& b := rfl
 
