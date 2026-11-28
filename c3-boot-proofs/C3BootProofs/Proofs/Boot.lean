@@ -851,7 +851,7 @@ theorem boot_correct_halt {flash : Nat → BitVec 8} {R romStack : Nat} {romBase
   have hM5eq : M5 = memStore32 (memStore32 n7.mem 0x600C1108 ((memLoad32 n7.mem 0x600C1108 &&& 0xFFFFFFFC) + 2))
       0x600C1104 1 := by
     rw [← hM5]; simp +decide only [runBlock, BInstr.run, btLk2, upd, ↓reduceIte]
-    rw [a07, t7.zero]; rfl
+    rw [a07]; rfl
   have hLock5 : EfuseLocked M5 := by
     rw [hM5eq]
     exact efuseLocked_of_stores (M4 := n4.mem) (fun x hx => by
